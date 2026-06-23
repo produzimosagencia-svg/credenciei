@@ -20,13 +20,13 @@ export default function ScannerView({
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const [result, setResult] = useState<ScanResult | null>(null)
-  const [scanning, setScanning] = useState(false)
+  const scanningRef = useRef(false)
   const scannerRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const processQR = async (data: string) => {
-    if (scanning) return
-    setScanning(true)
+    if (scanningRef.current) return
+    scanningRef.current = true
 
     try {
       const url = new URL(data)
@@ -78,7 +78,7 @@ export default function ScannerView({
 
     setTimeout(() => {
       setResult(null)
-      setScanning(false)
+      scanningRef.current = false
     }, 3000)
   }
 
