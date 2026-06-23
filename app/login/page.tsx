@@ -32,19 +32,19 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f1117] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl mb-4">
-            <QrCode className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-500 rounded-2xl mb-4 shadow-lg shadow-orange-200">
+            <QrCode className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Credenciei</h1>
-          <p className="text-slate-400 text-sm mt-1">Sistema de credenciamento para eventos</p>
+          <h1 className="text-3xl font-bold text-slate-800">Credenciei</h1>
+          <p className="text-slate-500 text-sm mt-1">Sistema de credenciamento para eventos</p>
         </div>
 
-        <form onSubmit={handleLogin} className="bg-[#161b22] border border-[#30363d] rounded-xl p-6 space-y-4">
+        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200 border border-slate-100 p-7 space-y-5">
           <div className="space-y-1.5">
-            <label className="text-sm text-slate-300">E-mail</label>
+            <label className="text-sm font-medium text-slate-700">E-mail</label>
             <input
               type="email"
               required
@@ -56,7 +56,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm text-slate-300">Senha</label>
+            <label className="text-sm font-medium text-slate-700">Senha</label>
             <div className="relative">
               <input
                 type={mostrarSenha ? 'text' : 'password'}
@@ -70,7 +70,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setMostrarSenha(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 {mostrarSenha ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -78,21 +78,22 @@ export default function LoginPage() {
           </div>
 
           {erro && (
-            <p className="text-red-400 text-sm bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2">
+            <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
               {erro}
             </p>
           )}
 
           <button
-            type="submit"
+            type="button"
+            onClick={handleLogin as any}
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2.5 rounded-lg font-medium transition-colors text-sm"
+            className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-orange-200"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
-        </form>
+        </div>
 
-        <p className="text-center text-slate-600 text-xs mt-6">
+        <p className="text-center text-slate-400 text-xs mt-6">
           Credenciei © {new Date().getFullYear()} — Produzimos
         </p>
       </div>

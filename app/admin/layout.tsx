@@ -8,7 +8,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!perfil) redirect('/login')
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar perfil={perfil} />
       <main className="flex-1 p-8 overflow-auto">{children}</main>
     </div>

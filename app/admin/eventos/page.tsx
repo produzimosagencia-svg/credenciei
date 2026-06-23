@@ -24,12 +24,12 @@ export default async function EventosPage() {
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Eventos</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{eventos?.length ?? 0} eventos • {ativos.length} ativo{ativos.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-slate-800">Eventos</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{eventos?.length ?? 0} eventos • {ativos.length} ativo{ativos.length !== 1 ? 's' : ''}</p>
         </div>
         <Link
           href="/admin/eventos/novo"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-orange-200"
         >
           <Plus className="w-4 h-4" />
           Novo Evento
@@ -37,11 +37,11 @@ export default async function EventosPage() {
       </div>
 
       {!eventos?.length ? (
-        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-16 text-center">
-          <CalendarDays className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-          <p className="text-slate-400 font-medium">Nenhum evento criado</p>
-          <p className="text-slate-600 text-sm mt-1">Crie seu primeiro evento para começar</p>
-          <Link href="/admin/eventos/novo" className="inline-block mt-4 bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+        <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
+          <CalendarDays className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+          <p className="text-slate-500 font-semibold">Nenhum evento criado</p>
+          <p className="text-slate-400 text-sm mt-1">Crie seu primeiro evento para começar</p>
+          <Link href="/admin/eventos/novo" className="inline-block mt-4 bg-orange-500 hover:bg-orange-600 text-white text-sm px-5 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-orange-200">
             Criar evento
           </Link>
         </div>
@@ -49,7 +49,7 @@ export default async function EventosPage() {
         <div className="space-y-8">
           {ativos.length > 0 && (
             <section>
-              <h2 className="text-xs text-slate-500 uppercase tracking-widest font-medium mb-3">Ativos</h2>
+              <h2 className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-3">Ativos</h2>
               <div className="grid gap-3">
                 {ativos.map(e => <EventoCard key={e.id} evento={e} />)}
               </div>
@@ -57,7 +57,7 @@ export default async function EventosPage() {
           )}
           {encerrados.length > 0 && (
             <section>
-              <h2 className="text-xs text-slate-500 uppercase tracking-widest font-medium mb-3">Encerrados</h2>
+              <h2 className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-3">Encerrados</h2>
               <div className="grid gap-3 opacity-60">
                 {encerrados.map(e => <EventoCard key={e.id} evento={e} />)}
               </div>
@@ -72,27 +72,27 @@ export default async function EventosPage() {
 function EventoCard({ evento }: { evento: any }) {
   const count = evento.fornecedores?.[0]?.count ?? 0
   return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 flex items-center justify-between hover:border-[#484f58] transition-colors">
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between hover:border-orange-200 hover:shadow-md transition-all shadow-sm">
       <Link href={`/admin/eventos/${evento.id}`} className="flex-1 min-w-0 group">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-white font-semibold group-hover:text-blue-300 transition-colors">{evento.nome}</h3>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${evento.ativo ? 'bg-green-900/40 text-green-400' : 'bg-slate-800 text-slate-500'}`}>
+        <div className="flex items-center gap-2.5 mb-1.5">
+          <h3 className="text-slate-800 font-bold group-hover:text-orange-600 transition-colors">{evento.nome}</h3>
+          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${evento.ativo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
             {evento.ativo ? 'Ativo' : 'Encerrado'}
           </span>
         </div>
         <div className="flex items-center gap-4 text-slate-400 text-xs">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="w-3 h-3" />
+          <span className="flex items-center gap-1.5">
+            <CalendarDays className="w-3.5 h-3.5" />
             {format(new Date(evento.data_inicio), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
           </span>
           {evento.local && (
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" />
+            <span className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5" />
               {evento.local}
             </span>
           )}
-          <span className="flex items-center gap-1">
-            <Users className="w-3 h-3" />
+          <span className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5" />
             {count} fornecedor{count !== 1 ? 'es' : ''}
           </span>
         </div>
