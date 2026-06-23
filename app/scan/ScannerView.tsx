@@ -29,10 +29,11 @@ export default function ScannerView({
     scanningRef.current = true
 
     try {
-      const url = new URL(data)
-      const token = url.searchParams.get('token')
-      const tipoQR = url.searchParams.get('tipo') as 'entrada' | 'saida' | null
-      if (!token || !tipoQR) throw new Error('QR inválido')
+      // Formato: "token|tipo"
+      const parts = data.split('|')
+      if (parts.length !== 2) throw new Error('QR inválido')
+      const [token, tipoQR] = parts
+      if (!token || (tipoQR !== 'entrada' && tipoQR !== 'saida')) throw new Error('QR inválido')
 
       const { data: func } = await supabase
         .from('funcionarios')
@@ -53,7 +54,7 @@ export default function ScannerView({
         return
       }
 
-      const tipo: 'entrada' | 'saida' = tipoQR
+      const tipo = tipoQR as 'entrada' | 'saida'
 
       await supabase.from('registros').insert([{
         funcionario_id: func.id,

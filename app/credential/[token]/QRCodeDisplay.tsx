@@ -7,10 +7,12 @@ function QRCanvas({ token, tipo }: { token: string; tipo: 'entrada' | 'saida' })
 
   useEffect(() => {
     if (!canvasRef.current) return
-    const url = `${window.location.origin}/scan/verify?token=${token}&tipo=${tipo}`
-    QRCode.toCanvas(canvasRef.current, url, {
-      width: 220,
-      margin: 2,
+    // Conteúdo curto = QR menos denso = mais fácil de ler
+    const conteudo = `${token}|${tipo}`
+    QRCode.toCanvas(canvasRef.current, conteudo, {
+      width: 280,
+      margin: 3,
+      errorCorrectionLevel: 'M',
       color: { dark: '#000000', light: '#ffffff' },
     })
   }, [token, tipo])
