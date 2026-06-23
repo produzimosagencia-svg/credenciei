@@ -62,19 +62,20 @@ export default async function AdminPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
+          <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">{format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
         </div>
         <Link
           href="/admin/eventos/novo"
           className="bg-orange-500 hover:bg-orange-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-orange-200 flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          Novo Evento
+          <span className="hidden sm:inline">Novo Evento</span>
+          <span className="sm:hidden">Novo</span>
         </Link>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(({ label, value, sub, icon: Icon, color, bg, border }) => (
           <div key={label} className={`bg-white border ${border} rounded-2xl p-5 shadow-sm`}>
             <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl ${bg} mb-3`}>
@@ -87,9 +88,9 @@ export default async function AdminPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         {/* Eventos */}
-        <div className="col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-slate-800 font-bold text-base">Eventos</h2>
             <Link href="/admin/eventos" className="text-orange-500 text-xs hover:underline font-medium flex items-center gap-1">
@@ -140,7 +141,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Feed */}
-        <div className="col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h2 className="text-slate-800 font-bold text-base mb-5">Atividade recente</h2>
           {!ultimosRegistros?.length ? (
             <p className="text-slate-400 text-sm text-center py-10">Sem atividade ainda</p>

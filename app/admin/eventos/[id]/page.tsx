@@ -46,19 +46,19 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/admin/eventos" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300 transition-all shadow-sm">
+          <Link href="/admin/eventos" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm shrink-0">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-bold text-slate-800">{evento.nome}</h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-xl font-bold text-slate-800">{evento.nome}</h1>
               <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${evento.ativo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
                 {evento.ativo ? 'Ativo' : 'Encerrado'}
               </span>
             </div>
-            <div className="flex items-center gap-4 mt-1 text-slate-400 text-xs">
+            <div className="flex flex-wrap items-center gap-3 mt-1 text-slate-400 text-xs">
               <span className="flex items-center gap-1.5">
                 <CalendarDays className="w-3.5 h-3.5" />
                 {format(new Date(evento.data_inicio), "dd/MM/yyyy HH:mm", { locale: ptBR })} → {format(new Date(evento.data_fim), "dd/MM/yyyy HH:mm", { locale: ptBR })}
@@ -72,7 +72,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <EventoStatusToggle eventoId={id} ativo={evento.ativo} />
           <Link
             href={`/admin/eventos/${id}/editar`}
@@ -101,16 +101,16 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Fornecedores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
         <StatCard label="Credenciados" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
         <StatCard label="Dentro agora" value={dentroAgora} icon={ScanLine} color="text-green-600" bg="bg-green-100" border="border-green-200" />
         <StatCard label="Entradas hoje" value={registros?.filter(r => r.tipo === 'entrada').length ?? 0} icon={Clock} color="text-orange-600" bg="bg-orange-100" border="border-orange-200" />
       </div>
 
-      <div className="grid grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         {/* Fornecedores */}
-        <div className="col-span-3 space-y-4">
+        <div className="md:col-span-3 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-slate-800 font-bold">Fornecedores</h2>
             <FornecedorModal eventoId={id} mode="criar" />
@@ -131,7 +131,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         </div>
 
         {/* Feed de atividade */}
-        <div className="col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <h2 className="text-slate-800 font-bold mb-4">Atividade do evento</h2>
           {!registros?.length ? (
             <p className="text-slate-400 text-sm text-center py-8">Nenhuma entrada/saída registrada</p>

@@ -1,8 +1,9 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { CalendarDays, LayoutDashboard, QrCode, ScanLine, Users, LogOut } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, QrCode, ScanLine, Users, LogOut, Menu, X } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
+import { useState } from 'react'
 
 type Perfil = {
   id: string
@@ -27,6 +28,7 @@ export default function Sidebar({ perfil }: { perfil: Perfil }) {
   const router = useRouter()
   const isAdmin = perfil.role === 'admin'
   const links = isAdmin ? adminLinks : clienteLinks
+  const [open, setOpen] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,8 +40,8 @@ export default function Sidebar({ perfil }: { perfil: Perfil }) {
     router.push('/login')
   }
 
-  return (
-    <aside className="w-60 bg-white border-r border-slate-200 flex flex-col min-h-screen shadow-sm">
+  const SidebarContent = () => (
+    <>
       {/* Logo */}
       <div className="px-5 py-5 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
@@ -62,6 +64,7 @@ export default function Sidebar({ perfil }: { perfil: Perfil }) {
             <Link
               key={href}
               href={href}
+              onClick={() => setOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 active
                   ? 'bg-orange-500 text-white shadow-sm'
@@ -79,6 +82,7 @@ export default function Sidebar({ perfil }: { perfil: Perfil }) {
       <div className="px-3 pb-4 space-y-1 border-t border-slate-100 pt-3">
         <Link
           href="/scan"
+          onClick={() => setOpen(false)}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-green-50 text-green-700 hover:bg-green-100 transition-all"
         >
           <ScanLine className="w-4 h-4" />
@@ -97,6 +101,44 @@ export default function Sidebar({ perfil }: { perfil: Perfil }) {
           Sair
         </button>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-60 bg-white border-r border-slate-200 flex-col min-h-screen shadow-sm">
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+            <QrCode className="w-4 h-4 text-white" />
+          </div>
+          <span className="font-bold text-slate-800 text-sm">Credenciei</span>
+        </div>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 text-slate-600"
+        >
+          {open ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Mobile drawer */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-30" onClick={() => setOpen(false)}>
+          <div className="absolute inset-0 bg-black/30" />
+          <aside
+            className="absolute top-0 left-0 bottom-0 w-64 bg-white flex flex-col shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <SidebarContent />
+          </aside>
+        </div>
+      )}
+    </>
   )
 }
