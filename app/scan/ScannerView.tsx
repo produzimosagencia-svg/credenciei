@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { CheckCircle, XCircle, ScanLine } from 'lucide-react'
+import { ScanLine } from 'lucide-react'
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -20,9 +20,9 @@ export default function ScannerView({
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const [result, setResult] = useState<ScanResult | null>(null)
+  const [show, setShow] = useState(false)
   const scanningRef = useRef(false)
   const scannerRef = useRef<any>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
 
   const processQR = async (data: string) => {
     if (scanningRef.current) return
@@ -42,12 +42,14 @@ export default function ScannerView({
 
       if (!func) {
         setResult({ success: false, message: 'Funcionário não encontrado' })
+        setShow(true)
         return
       }
 
       const fornecedor = func.fornecedores as any
       if (fornecedor?.evento_id !== eventoId) {
         setResult({ success: false, message: 'Credencial não pertence a este evento' })
+        setShow(true)
         return
       }
 
@@ -59,7 +61,6 @@ export default function ScannerView({
         tipo,
       }])
 
-      // Sincroniza com Google Sheets em background
       fetch('/api/sheets/registro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,13 +73,18 @@ export default function ScannerView({
         funcionario: { nome: func.nome, empresa: func.empresa, cargo: func.cargo },
         tipo,
       })
-    } catch (err) {
+      setShow(true)
+    } catch {
       setResult({ success: false, message: 'Erro ao processar QR Code' })
+      setShow(true)
     }
 
     setTimeout(() => {
-      setResult(null)
-      scanningRef.current = false
+      setShow(false)
+      setTimeout(() => {
+        setResult(null)
+        scanningRef.current = false
+      }, 400)
     }, 3000)
   }
 
@@ -91,7 +97,7 @@ export default function ScannerView({
       scannerRef.current = html5QrCode
       html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        { fps: 15, qrbox: { width: 280, height: 280 } },
         (decodedText: string) => processQR(decodedText),
         () => {}
       ).catch(console.error)
@@ -103,6 +109,13 @@ export default function ScannerView({
       }
     }
   }, [eventoId])
+
+  const isEntrada = result?.tipo === 'entrada'
+  const overlayColor = !result?.success
+    ? 'bg-red-600'
+    : isEntrada
+    ? 'bg-green-600'
+    : 'bg-orange-500'
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-6">
@@ -121,46 +134,34 @@ export default function ScannerView({
 
       <div className="relative w-full max-w-sm">
         <div id="qr-reader" className="rounded-xl overflow-hidden" />
-        {!result && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className="w-56 h-56 border-2 border-blue-400 rounded-xl opacity-60" />
-          </div>
-        )}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-64 h-64 border-2 border-blue-400 rounded-2xl opacity-60" />
+        </div>
       </div>
 
+      <p className="text-slate-500 text-sm flex items-center gap-2">
+        <ScanLine className="w-4 h-4" />
+        Aponte a câmera para o QR Code
+      </p>
+
+      {/* Overlay full-screen de resultado */}
       {result && (
-        <div className={`w-full max-w-sm rounded-xl p-5 border ${
-          result.success
-            ? result.tipo === 'entrada'
-              ? 'bg-green-900/30 border-green-500/50'
-              : 'bg-yellow-900/30 border-yellow-500/50'
-            : 'bg-red-900/30 border-red-500/50'
-        }`}>
-          <div className="flex items-center gap-3">
-            {result.success
-              ? <CheckCircle className={`w-6 h-6 ${result.tipo === 'entrada' ? 'text-green-400' : 'text-yellow-400'}`} />
-              : <XCircle className="w-6 h-6 text-red-400" />
-            }
-            <div>
-              <p className={`font-semibold ${result.success ? (result.tipo === 'entrada' ? 'text-green-300' : 'text-yellow-300') : 'text-red-300'}`}>
-                {result.message}
-              </p>
-              {result.funcionario && (
-                <div className="mt-1">
-                  <p className="text-white text-sm font-medium">{result.funcionario.nome}</p>
-                  <p className="text-slate-400 text-xs">{result.funcionario.cargo} • {result.funcionario.empresa}</p>
-                </div>
-              )}
+        <div
+          className={`fixed inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-300 ${overlayColor} ${show ? 'opacity-100' : 'opacity-0'}`}
+        >
+          <div className="text-white text-center px-8">
+            <div className="text-8xl mb-6">
+              {result.success ? (isEntrada ? '✓' : '↩') : '✕'}
             </div>
+            <p className="text-3xl font-bold mb-2">{result.message}</p>
+            {result.funcionario && (
+              <>
+                <p className="text-xl font-semibold mt-4 opacity-90">{result.funcionario.nome}</p>
+                <p className="text-base opacity-70 mt-1">{result.funcionario.cargo} • {result.funcionario.empresa}</p>
+              </>
+            )}
           </div>
         </div>
-      )}
-
-      {!result && (
-        <p className="text-slate-500 text-sm flex items-center gap-2">
-          <ScanLine className="w-4 h-4" />
-          Aponte a câmera para o QR Code
-        </p>
       )}
     </div>
   )
