@@ -31,7 +31,8 @@ export default function ScannerView({
     try {
       const url = new URL(data)
       const token = url.searchParams.get('token')
-      if (!token) throw new Error('QR inválido')
+      const tipoQR = url.searchParams.get('tipo') as 'entrada' | 'saida' | null
+      if (!token || !tipoQR) throw new Error('QR inválido')
 
       const { data: func } = await supabase
         .from('funcionarios')
@@ -50,16 +51,7 @@ export default function ScannerView({
         return
       }
 
-      const { data: ultimo } = await supabase
-        .from('registros')
-        .select('tipo')
-        .eq('funcionario_id', func.id)
-        .eq('evento_id', eventoId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      const tipo: 'entrada' | 'saida' = ultimo?.tipo === 'entrada' ? 'saida' : 'entrada'
+      const tipo: 'entrada' | 'saida' = tipoQR
 
       await supabase.from('registros').insert([{
         funcionario_id: func.id,
