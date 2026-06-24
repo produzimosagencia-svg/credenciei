@@ -108,53 +108,57 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         <StatCard label="Entradas hoje" value={registros?.filter(r => r.tipo === 'entrada').length ?? 0} icon={Clock} color="text-orange-600" bg="bg-orange-100" border="border-orange-200" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
         {/* Fornecedores */}
-        <div className="md:col-span-3 space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
+          <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100 shrink-0">
             <h2 className="text-slate-800 font-bold">Fornecedores</h2>
             <FornecedorModal eventoId={id} mode="criar" />
           </div>
 
-          {!fornecedores?.length ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm">
-              <Users className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-              <p className="text-slate-400 text-sm font-medium">Nenhum fornecedor ainda</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {fornecedores.map((f) => (
+          <div className="overflow-y-auto flex-1 p-4 space-y-3">
+            {!fornecedores?.length ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <Users className="w-8 h-8 text-slate-200 mb-2" />
+                <p className="text-slate-400 text-sm font-medium">Nenhum fornecedor ainda</p>
+              </div>
+            ) : (
+              fornecedores.map((f) => (
                 <FornecedorCard key={f.id} fornecedor={f} eventoId={id} />
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
 
         {/* Feed de atividade */}
-        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-          <h2 className="text-slate-800 font-bold mb-4">Atividade do evento</h2>
-          {!registros?.length ? (
-            <p className="text-slate-400 text-sm text-center py-8">Nenhuma entrada/saída registrada</p>
-          ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-              {registros.map((r) => {
-                const func = r.funcionarios as any
-                const forn = func?.fornecedores as any
-                return (
-                  <div key={r.created_at + r.funcionario_id} className="flex items-start gap-2.5">
-                    <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.tipo === 'entrada' ? 'bg-green-500' : 'bg-orange-400'}`} />
-                    <div className="min-w-0">
-                      <p className="text-slate-700 text-xs font-semibold truncate">{func?.nome}</p>
-                      <p className="text-slate-400 text-xs">{forn?.nome} • {func?.cargo}</p>
-                      <p className="text-slate-300 text-xs">
-                        {r.tipo === 'entrada' ? 'Entrada' : 'Saída'} • {format(new Date(r.created_at), "dd/MM HH:mm")}
-                      </p>
+        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
+          <div className="px-5 pt-5 pb-4 border-b border-slate-100 shrink-0">
+            <h2 className="text-slate-800 font-bold">Atividade do evento</h2>
+          </div>
+          <div className="overflow-y-auto flex-1 p-5">
+            {!registros?.length ? (
+              <p className="text-slate-400 text-sm text-center py-8">Nenhuma entrada/saída registrada</p>
+            ) : (
+              <div className="space-y-3">
+                {registros.map((r) => {
+                  const func = r.funcionarios as any
+                  const forn = func?.fornecedores as any
+                  return (
+                    <div key={r.created_at + r.funcionario_id} className="flex items-start gap-2.5">
+                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.tipo === 'entrada' ? 'bg-green-500' : 'bg-orange-400'}`} />
+                      <div className="min-w-0">
+                        <p className="text-slate-700 text-xs font-semibold truncate">{func?.nome}</p>
+                        <p className="text-slate-400 text-xs">{forn?.nome} • {func?.cargo}</p>
+                        <p className="text-slate-300 text-xs">
+                          {r.tipo === 'entrada' ? 'Entrada' : 'Saída'} • {format(new Date(r.created_at), "dd/MM HH:mm")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
