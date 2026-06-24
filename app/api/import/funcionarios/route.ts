@@ -63,11 +63,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Sincroniza com Google Sheets em background (não bloqueia a resposta)
+    // Sincroniza com Google Sheets (aguarda antes de retornar)
     if (spreadsheetId && inseridos) {
-      Promise.all(
-        inseridos.map(f =>
-          adicionarFuncionarioNaPlanilha(spreadsheetId, fornecedor.nome, {
+      try {
+        for (const f of inseridos) {
+          await adicionarFuncionarioNaPlanilha(spreadsheetId, fornecedor.nome, {
             nome: f.nome,
             cpf: f.cpf,
             telefone: f.telefone,
@@ -76,8 +76,10 @@ export async function POST(request: NextRequest) {
             cargo: f.cargo,
             qr_token: f.qr_token,
           })
-        )
-      ).catch(console.error)
+        }
+      } catch (e) {
+        console.error('[import/funcionarios] Erro ao sincronizar planilha:', e)
+      }
     }
 
     return NextResponse.json({ ok: true, total: inseridos?.length ?? 0 })

@@ -118,7 +118,24 @@ export async function garantirAbaFornecedor(
   const meta = await sheets.spreadsheets.get({ spreadsheetId })
   const existente = meta.data.sheets?.find(s => s.properties?.title === fornecedorNome)
 
-  if (existente) return existente.properties!.sheetId!
+  if (existente) {
+    const sheetId = existente.properties!.sheetId!
+    // Atualiza cabeçalho se estiver no formato antigo (sem coluna QR Code)
+    try {
+      const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A1:J1` })
+      const header = headerRes.data.values?.[0] ?? []
+      if (!header.includes('QR Code')) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${fornecedorNome}!A1:J1`,
+          valueInputOption: 'RAW',
+          requestBody: { values: [HEADERS] },
+        })
+        await formatarCabecalho(sheets, spreadsheetId, sheetId)
+      }
+    } catch {}
+    return sheetId
+  }
 
   // Cria a aba
   const res = await sheets.spreadsheets.batchUpdate({
