@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Copy, Check, Trash2, Users, ExternalLink } from 'lucide-react'
 import { deletarFornecedor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
+import ImportarFuncionarios from './ImportarFuncionarios'
 
 type Fornecedor = {
   id: string
@@ -85,18 +86,21 @@ export default function FornecedorCard({ fornecedor: f, eventoId }: { fornecedor
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-        <button onClick={copyLink} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors font-medium">
-          {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-          {copied ? 'Copiado!' : 'Link do formulário'}
-        </button>
-        <Link
-          href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors font-medium"
-        >
-          <ExternalLink className="w-3 h-3" />
-          Ver funcionários
-        </Link>
+      <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+        <div className="flex items-center gap-2">
+          <button onClick={copyLink} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors font-medium">
+            {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+            {copied ? 'Copiado!' : 'Link do formulário'}
+          </button>
+          <Link
+            href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors font-medium"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Ver funcionários
+          </Link>
+        </div>
+        <ImportarFuncionarios fornecedorId={f.id} />
       </div>
     </div>
   )
