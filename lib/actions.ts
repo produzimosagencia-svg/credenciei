@@ -202,6 +202,7 @@ export async function sincronizarFuncionarioNaPlanilha(funcionarioId: string) {
       email: func.email,
       empresa: func.empresa,
       cargo: func.cargo,
+      qr_token: func.qr_token,
     })
   } catch (e) {
     console.error('Erro ao sincronizar funcionário na planilha:', e)

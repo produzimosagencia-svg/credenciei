@@ -93,9 +93,9 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           )}
           <Link
             href={`/scan?evento=${id}`}
-            className="flex items-center gap-1.5 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-semibold"
+            className="flex items-center gap-2 text-base px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
           >
-            <ScanLine className="w-3.5 h-3.5" /> Credenciar
+            <ScanLine className="w-5 h-5" /> Credenciar
           </Link>
         </div>
       </div>

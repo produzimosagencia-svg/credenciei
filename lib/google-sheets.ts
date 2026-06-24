@@ -26,7 +26,8 @@ function getAuth() {
   })
 }
 
-const HEADERS = ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo', 'Cadastro', 'Entrada', 'Saída']
+const HEADERS = ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo', 'QR Code', 'Cadastro', 'Entrada', 'Saída']
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
 
 const CREDENCIEI_FOLDER_NAME = 'Credenciei'
 
@@ -91,7 +92,7 @@ export async function criarPlanilhaEvento(nomeEvento: string, clienteFolderId?: 
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Geral!A1:I1',
+    range: 'Geral!A1:J1',
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -132,7 +133,7 @@ export async function garantirAbaFornecedor(
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${fornecedorNome}!A1:I1`,
+    range: `${fornecedorNome}!A1:J1`,
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -152,6 +153,7 @@ export async function adicionarFuncionarioNaPlanilha(
     email: string
     empresa: string
     cargo: string
+    qr_token?: string
   }
 ): Promise<void> {
   const auth = getAuth()
@@ -162,10 +164,11 @@ export async function adicionarFuncionarioNaPlanilha(
   const cpfFormatado = funcionario.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
   const telFormatado = funcionario.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
   const cadastro = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const qrLink = funcionario.qr_token ? `${SITE_URL}/credential/${funcionario.qr_token}` : ''
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${fornecedorNome}!A:I`,
+    range: `${fornecedorNome}!A:J`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
@@ -176,9 +179,10 @@ export async function adicionarFuncionarioNaPlanilha(
         funcionario.email,
         funcionario.empresa,
         funcionario.cargo,
-        cadastro,
-        '', // Entrada
-        '', // Saída
+        qrLink,  // QR Code (col G)
+        cadastro, // Cadastro (col H)
+        '',       // Entrada (col I)
+        '',       // Saída (col J)
       ]],
     },
   })
@@ -204,8 +208,8 @@ export async function registrarPresencaNaPlanilha(
   const rowIndex = rows.findIndex((row, i) => i > 0 && row[0] === funcionarioNome)
   if (rowIndex === -1) return
 
-  // Coluna H (index 7) = Entrada, I (index 8) = Saída
-  const col = tipo === 'entrada' ? 'H' : 'I'
+  // Coluna I (index 8) = Entrada, J (index 9) = Saída
+  const col = tipo === 'entrada' ? 'I' : 'J'
   const rowNum = rowIndex + 1 // 1-based
 
   await sheets.spreadsheets.values.update({

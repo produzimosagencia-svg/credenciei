@@ -9,8 +9,10 @@ export default function EventoStatusToggle({ eventoId, ativo }: { eventoId: stri
     <button
       onClick={() => startTransition(() => toggleAtivoEvento(eventoId, ativo))}
       disabled={isPending}
-      className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg transition-colors disabled:opacity-50 ${
-        ativo ? 'bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400' : 'bg-green-900/30 hover:bg-green-900/50 text-green-400'
+      className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl transition-all disabled:opacity-50 font-medium border ${
+        ativo
+          ? 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200'
+          : 'bg-green-50 hover:bg-green-100 text-green-600 border-green-200'
       }`}
     >
       <Power className="w-3.5 h-3.5" />

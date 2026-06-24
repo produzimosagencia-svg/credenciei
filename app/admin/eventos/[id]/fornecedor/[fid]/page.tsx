@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import FuncionarioTable from './FuncionarioTable'
@@ -42,7 +42,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const saiu = Object.values(statusMap).filter(s => s === 'saiu').length
   const ausente = (funcionarios?.length ?? 0) - dentro - saiu
 
-  const formLink = `http://localhost:3000/form/${fornecedor.token_formulario}`
+  const formLink = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/form/${fornecedor.token_formulario}`
 
   const funcionariosEnriquecidos = (funcionarios ?? []).map(f => ({
     ...f,
@@ -50,32 +50,33 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     ultimo_registro: lastMap[f.id] ?? null,
   }))
 
+  const stats = [
+    { label: 'Total', value: funcionarios?.length ?? 0, color: 'text-slate-800', bg: 'bg-slate-100', border: 'border-slate-200' },
+    { label: 'Dentro agora', value: dentro, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
+    { label: 'Já saíram', value: saiu, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
+    { label: 'Não apareceram', value: ausente, color: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-100' },
+  ]
+
   return (
     <div className="space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <Link href={`/admin/eventos/${id}`} className="text-slate-400 hover:text-white transition-colors">
-            <ArrowLeft className="w-5 h-5" />
+          <Link href={`/admin/eventos/${id}`} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
+            <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-white">{fornecedor.nome}</h1>
+            <h1 className="text-2xl font-bold text-slate-800">{fornecedor.nome}</h1>
             <p className="text-slate-400 text-sm">{(fornecedor.eventos as any)?.nome}</p>
           </div>
         </div>
         <CopyLinkButton link={formLink} label="Copiar link do formulário" />
       </div>
 
-      {/* Resumo */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Total', value: funcionarios?.length ?? 0, color: 'text-white' },
-          { label: 'Dentro agora', value: dentro, color: 'text-green-400' },
-          { label: 'Já saíram', value: saiu, color: 'text-yellow-400' },
-          { label: 'Não apareceram', value: ausente, color: 'text-slate-400' },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-center">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map(({ label, value, color, bg, border }) => (
+          <div key={label} className={`bg-white border ${border} rounded-2xl p-4 text-center shadow-sm`}>
             <p className={`text-2xl font-bold ${color}`}>{value}</p>
-            <p className="text-slate-400 text-xs mt-1">{label}</p>
+            <p className="text-slate-400 text-xs mt-1 font-medium">{label}</p>
           </div>
         ))}
       </div>

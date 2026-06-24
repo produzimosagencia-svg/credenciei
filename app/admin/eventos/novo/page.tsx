@@ -6,11 +6,11 @@ export default function NovoEventoPage() {
   return (
     <div className="max-w-xl space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/admin/eventos" className="text-slate-400 hover:text-white transition-colors">
-          <ArrowLeft className="w-5 h-5" />
+        <Link href="/admin/eventos" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
+          <ArrowLeft className="w-4 h-4" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">Novo Evento</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Novo Evento</h1>
           <p className="text-slate-400 text-sm">Preencha os dados do evento</p>
         </div>
       </div>
@@ -25,7 +25,7 @@ function EventoForm({ action, submitLabel, defaults }: {
   defaults?: { nome?: string; descricao?: string; data_inicio?: string; data_fim?: string; local?: string }
 }) {
   return (
-    <form action={action} className="bg-[#161b22] border border-[#30363d] rounded-xl p-6 space-y-4">
+    <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       <Field label="Nome do evento *">
         <input name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />
       </Field>
@@ -43,10 +43,9 @@ function EventoForm({ action, submitLabel, defaults }: {
       <Field label="Local">
         <input name="local" defaultValue={defaults?.local ?? ''} placeholder="Ex: Expo Center Norte, São Paulo" className="input" />
       </Field>
-      <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-lg font-medium transition-colors text-sm">
+      <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-orange-200">
         {submitLabel}
       </button>
-
     </form>
   )
 }
@@ -54,7 +53,7 @@ function EventoForm({ action, submitLabel, defaults }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm text-slate-300">{label}</label>
+      <label className="text-sm font-medium text-slate-700">{label}</label>
       {children}
     </div>
   )

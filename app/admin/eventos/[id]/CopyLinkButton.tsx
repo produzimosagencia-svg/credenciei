@@ -13,9 +13,9 @@ export default function CopyLinkButton({ link, label = 'Copiar link' }: { link: 
     <button
       onClick={copy}
       title={link}
-      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-[#21262d] hover:bg-[#30363d] text-slate-300 rounded-lg transition-colors"
+      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors font-medium"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
       {copied ? 'Copiado!' : label}
     </button>
   )
