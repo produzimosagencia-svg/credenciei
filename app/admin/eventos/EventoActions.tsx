@@ -5,7 +5,7 @@ import { MoreHorizontal, Pencil, Trash2, Power } from 'lucide-react'
 import { toggleAtivoEvento, deletarEvento } from '@/lib/actions'
 import Link from 'next/link'
 
-export default function EventoActions({ eventoId, ativo }: { eventoId: string; ativo: boolean }) {
+export default function EventoActions({ eventoId, ativo, podeExcluir = false }: { eventoId: string; ativo: boolean; podeExcluir?: boolean }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -47,13 +47,17 @@ export default function EventoActions({ eventoId, ativo }: { eventoId: string; a
               <Power className="w-3.5 h-3.5" />
               {ativo ? 'Encerrar' : 'Reativar'}
             </button>
-            <div className="border-t border-slate-100 my-1" />
-            <button
-              onClick={handleDelete}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Excluir
-            </button>
+            {podeExcluir && (
+              <>
+                <div className="border-t border-slate-100 my-1" />
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

@@ -2,7 +2,8 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download } from 'lucide-react'
-import * as XLSX from 'xlsx'
+// xlsx é pesado e só é usado nestes dois handlers (importar/baixar modelo) —
+// carregado sob demanda para não engordar o bundle inicial da página do evento.
 
 type Status = { ok: boolean; total?: number; error?: string } | null
 
@@ -20,6 +21,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
     setStatus(null)
 
     try {
+      const XLSX = await import('xlsx')
       const buffer = await file.arrayBuffer()
       const wb = XLSX.read(buffer, { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
@@ -40,6 +42,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
         email: get(row, ['email', 'e-mail']),
         empresa: get(row, ['empresa', 'company']),
         cargo: get(row, ['cargo', 'função', 'funcao', 'role']),
+        setor: get(row, ['setor', 'equipe', 'área', 'area']),
       })).filter(f => f.nome)
 
       if (funcionarios.length === 0) {
@@ -69,11 +72,12 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const downloadModelo = () => {
+  const downloadModelo = async () => {
+    const XLSX = await import('xlsx')
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo'],
-      ['João Silva', '12345678901', '11999999999', 'joao@email.com', 'Empresa ABC', 'Técnico'],
-      ['Maria Souza', '98765432100', '11988888888', 'maria@email.com', 'Empresa ABC', 'Coordenadora'],
+      ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo', 'Setor'],
+      ['João Silva', '12345678901', '11999999999', 'joao@email.com', 'Empresa ABC', 'Técnico', 'Palco principal'],
+      ['Maria Souza', '98765432100', '11988888888', 'maria@email.com', 'Empresa ABC', 'Coordenadora', 'Bar'],
     ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Funcionários')

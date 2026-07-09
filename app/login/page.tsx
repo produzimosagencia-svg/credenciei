@@ -32,10 +32,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-amber-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-500 rounded-2xl mb-4 shadow-lg shadow-orange-200">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-500 rounded-2xl mb-4 shadow-lg shadow-brand-200">
             <QrCode className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-800">Credenciei</h1>
@@ -87,7 +87,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleLogin as any}
             disabled={loading}
-            className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-orange-200"
+            className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

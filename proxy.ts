@@ -2,6 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Rotas públicas: sai imediatamente, sem tocar no Supabase
+  if (pathname.startsWith('/form/') || pathname.startsWith('/credential/') || pathname === '/login') {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -21,16 +28,13 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const { pathname } = request.nextUrl
-
-  // Rotas públicas
-  if (pathname.startsWith('/form/') || pathname.startsWith('/credential/') || pathname === '/login') {
-    return supabaseResponse
-  }
+  // getSession lê o cookie localmente (rede só quando o token expira e precisa
+  // de refresh). Serve apenas para o redirect otimista → a checagem autoritativa
+  // de acesso continua no admin/layout via getPerfil() (auth.getUser no servidor).
+  const { data: { session } } = await supabase.auth.getSession()
 
   // Sem sessão → login
-  if (!user) {
+  if (!session) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 

@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
+import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { veTodosEventos } from '@/lib/permissions'
+import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-import { ArrowLeft, Users, UserCheck, Clock, ScanLine, Pencil, MapPin, CalendarDays } from 'lucide-react'
+import { ArrowLeft, Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import EventoStatusToggle from './EventoStatusToggle'
@@ -13,35 +13,40 @@ export const revalidate = 0
 export default async function EventoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const { data: evento } = await supabase.from('eventos').select('*').eq('id', id).single()
+  // Todas dependem apenas do id → uma única wave em paralelo
+  const [{ data: evento }, { data: fornecedores }, { data: registros }, todosRegistros] = await Promise.all([
+    supabase.from('eventos').select('*').eq('id', id).single(),
+    supabase
+      .from('fornecedores')
+      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, funcionarios(count)')
+      .eq('evento_id', id)
+      .order('created_at'),
+    supabase
+      .from('registros')
+      .select('funcionario_id, tipo, created_at, funcionarios(nome, empresa, fornecedor_id, fornecedores(nome))')
+      .eq('evento_id', id)
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('registros')
+      .select('funcionario_id, tipo')
+      .eq('evento_id', id),
+  ])
+
   if (!evento) notFound()
 
-  const { data: fornecedores } = await supabase
-    .from('fornecedores')
-    .select('id, nome, email_contato, token_formulario, quantidade_estimada, funcionarios(count)')
-    .eq('evento_id', id)
-    .order('created_at')
+  // Isolamento por organização: admin/supervisor só acessam eventos da própria org
+  const perfil = await getPerfil()
+  if (!veTodosEventos(perfil?.role) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
-  const { data: registros } = await supabase
-    .from('registros')
-    .select('funcionario_id, tipo, created_at, funcionarios(nome, cargo, empresa, fornecedor_id, fornecedores(nome))')
-    .eq('evento_id', id)
-    .order('created_at', { ascending: false })
-    .limit(20)
-
-  const statusMap: Record<string, string> = {}
-  const todosRegistros = await supabase
-    .from('registros')
-    .select('funcionario_id, tipo')
-    .eq('evento_id', id)
-    .order('created_at', { ascending: false })
-
-  for (const r of todosRegistros.data ?? []) {
-    if (!statusMap[r.funcionario_id]) statusMap[r.funcionario_id] = r.tipo
-  }
-  const dentroAgora = Object.values(statusMap).filter(v => v === 'entrada').length
+  // Presença por foto: quantos funcionários já registraram cada etapa
+  const regs = todosRegistros.data ?? []
+  const contarEtapa = (t: string) => new Set(regs.filter(r => r.tipo === t).map(r => r.funcionario_id)).size
+  const totEntrada = contarEtapa('entrada')
+  const totMeio = contarEtapa('meio')
+  const totFim = contarEtapa('fim')
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -61,7 +66,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
             <div className="flex flex-wrap items-center gap-3 mt-1 text-slate-400 text-xs">
               <span className="flex items-center gap-1.5">
                 <CalendarDays className="w-3.5 h-3.5" />
-                {format(new Date(evento.data_inicio), "dd/MM/yyyy HH:mm", { locale: ptBR })} → {format(new Date(evento.data_fim), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                {formatarBR(evento.data_inicio)} → {formatarBR(evento.data_fim)}
               </span>
               {evento.local && (
                 <span className="flex items-center gap-1.5">
@@ -93,19 +98,20 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           )}
           <Link
             href={`/scan?evento=${id}`}
-            className="flex items-center gap-2 text-base px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
+            className="flex items-center gap-2 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
           >
-            <ScanLine className="w-5 h-5" /> Credenciar
+            <ScanLine className="w-4 h-4" /> Escanear QR
           </Link>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Fornecedores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
-        <StatCard label="Credenciados" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
-        <StatCard label="Dentro agora" value={dentroAgora} icon={ScanLine} color="text-green-600" bg="bg-green-100" border="border-green-200" />
-        <StatCard label="Entradas hoje" value={registros?.filter(r => r.tipo === 'entrada').length ?? 0} icon={Clock} color="text-orange-600" bg="bg-orange-100" border="border-orange-200" />
+        <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
+        <StatCard label="Registraram entrada" value={totEntrada} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
+        <StatCard label="Registraram meio" value={totMeio} icon={Clock} color="text-amber-600" bg="bg-amber-100" border="border-amber-200" />
+        <StatCard label="Registraram fim" value={totFim} icon={UserCheck} color="text-brand-600" bg="bg-brand-100" border="border-brand-200" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
@@ -137,20 +143,21 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           </div>
           <div className="overflow-y-auto flex-1 p-5">
             {!registros?.length ? (
-              <p className="text-slate-400 text-sm text-center py-8">Nenhuma entrada/saída registrada</p>
+              <p className="text-slate-400 text-sm text-center py-8">Nenhuma presença registrada</p>
             ) : (
               <div className="space-y-3">
                 {registros.map((r) => {
                   const func = r.funcionarios as any
                   const forn = func?.fornecedores as any
+                  const etapa = r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Fim'
                   return (
                     <div key={r.created_at + r.funcionario_id} className="flex items-start gap-2.5">
-                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.tipo === 'entrada' ? 'bg-green-500' : 'bg-orange-400'}`} />
+                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.tipo === 'entrada' ? 'bg-green-500' : r.tipo === 'meio' ? 'bg-blue-500' : 'bg-brand-400'}`} />
                       <div className="min-w-0">
                         <p className="text-slate-700 text-xs font-semibold truncate">{func?.nome}</p>
-                        <p className="text-slate-400 text-xs">{forn?.nome} • {func?.cargo}</p>
+                        <p className="text-slate-400 text-xs">{forn?.nome}{func?.empresa ? ` • ${func.empresa}` : ''}</p>
                         <p className="text-slate-300 text-xs">
-                          {r.tipo === 'entrada' ? 'Entrada' : 'Saída'} • {format(new Date(r.created_at), "dd/MM HH:mm")}
+                          {etapa} • {formatarBR(r.created_at, 'curto')}
                         </p>
                       </div>
                     </div>

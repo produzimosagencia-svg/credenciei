@@ -10,6 +10,18 @@
   --color-foreground: var(--foreground);
 }
 
+/* Paleta da marca — roxo #4940df como tom base (500) */
+@theme {
+  --color-brand-50: #eeedfc;
+  --color-brand-100: #e0defa;
+  --color-brand-200: #c6c2f5;
+  --color-brand-300: #a49df0;
+  --color-brand-400: #6f66e9;
+  --color-brand-500: #4940df;
+  --color-brand-600: #3a30c4;
+  --color-brand-700: #2f27a0;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -32,7 +44,96 @@ body {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .input:focus {
-  border-color: #f97316;
-  box-shadow: 0 0 0 3px rgba(249,115,22,0.15);
+  border-color: #4940df;
+  box-shadow: 0 0 0 3px rgba(73,64,223,0.15);
 }
 .input::placeholder { color: #94a3b8; }
+
+/* ============================================================
+   TEMA DARK (escopo .theme-dark — aplicado no layout do MASTER)
+   As telas usam utilitárias claras (bg-white, text-slate-*...);
+   aqui elas são remapeadas para a paleta escura dentro do escopo,
+   sem precisar reescrever cada página.
+   ============================================================ */
+.theme-dark { background: #0d1117; color: #e6edf3; }
+
+/* Superfícies */
+.theme-dark .bg-white { background-color: #161b22; }
+.theme-dark .bg-slate-50 { background-color: #1c2128; }
+.theme-dark .bg-slate-100 { background-color: #21262d; }
+.theme-dark .bg-slate-200 { background-color: #30363d; }
+.theme-dark .hover\:bg-slate-50:hover { background-color: #21262d; }
+.theme-dark .hover\:bg-slate-100:hover { background-color: #2d333b; }
+.theme-dark .hover\:bg-slate-200:hover { background-color: #363d47; }
+
+/* Bordas */
+.theme-dark .border-slate-100 { border-color: #262c36; }
+.theme-dark .border-slate-200 { border-color: #30363d; }
+.theme-dark .hover\:border-slate-200:hover { border-color: #3d444d; }
+.theme-dark .hover\:border-brand-200:hover,
+.theme-dark .hover\:border-brand-300:hover { border-color: #4940df; }
+
+/* Textos */
+.theme-dark .text-slate-800, .theme-dark .text-slate-900 { color: #e6edf3; }
+.theme-dark .text-slate-700 { color: #d0d7de; }
+.theme-dark .text-slate-600 { color: #b1bac4; }
+.theme-dark .text-slate-500 { color: #8b949e; }
+.theme-dark .text-slate-400 { color: #767e88; }
+.theme-dark .text-slate-300 { color: #57606a; }
+.theme-dark .text-slate-200 { color: #3d444d; }
+.theme-dark .hover\:text-slate-600:hover { color: #d0d7de; }
+.theme-dark .hover\:text-slate-700:hover,
+.theme-dark .hover\:text-slate-800:hover { color: #e6edf3; }
+
+/* Tons de marca (roxo) sobre fundo escuro */
+.theme-dark .bg-brand-50 { background-color: #1b1940; }
+.theme-dark .bg-brand-100 { background-color: #221f4d; }
+.theme-dark .border-brand-100, .theme-dark .border-brand-200 { border-color: #332e73; }
+.theme-dark .text-brand-500 { color: #8b83f0; }
+.theme-dark .text-brand-600 { color: #a49df0; }
+.theme-dark .text-brand-700 { color: #c6c2f5; }
+.theme-dark .hover\:text-brand-500:hover { color: #a49df0; }
+.theme-dark .shadow-brand-200 { --tw-shadow-color: rgba(73, 64, 223, 0.35); }
+
+/* Badges/tintas coloridas */
+.theme-dark .bg-green-50 { background-color: #0f2418; }
+.theme-dark .bg-green-100 { background-color: #12341f; }
+.theme-dark .border-green-200 { border-color: #1f4d2e; }
+.theme-dark .text-green-600 { color: #3fb950; }
+.theme-dark .text-green-700 { color: #4ade80; }
+.theme-dark .text-green-800 { color: #56d364; }
+.theme-dark .hover\:bg-green-50:hover { background-color: #12341f; }
+.theme-dark .hover\:bg-green-100:hover { background-color: #17422a; }
+
+.theme-dark .bg-blue-50 { background-color: #10233f; }
+.theme-dark .bg-blue-100 { background-color: #122544; }
+.theme-dark .border-blue-200 { border-color: #1d3a66; }
+.theme-dark .text-blue-600 { color: #58a6ff; }
+.theme-dark .text-blue-700, .theme-dark .text-blue-800 { color: #79c0ff; }
+
+.theme-dark .bg-purple-100 { background-color: #2a1f47; }
+.theme-dark .border-purple-200 { border-color: #3b2d63; }
+.theme-dark .text-purple-600 { color: #c4a7ff; }
+
+.theme-dark .bg-amber-50 { background-color: #2d2306; }
+.theme-dark .bg-amber-100 { background-color: #3a2c10; }
+.theme-dark .border-amber-200 { border-color: #5c4512; }
+.theme-dark .text-amber-600 { color: #e3b341; }
+
+.theme-dark .bg-red-50 { background-color: #2d1215; }
+.theme-dark .border-red-200 { border-color: #58151c; }
+.theme-dark .text-red-600 { color: #f85149; }
+.theme-dark .text-red-400 { color: #f0883e; }
+.theme-dark .hover\:bg-red-50:hover { background-color: #2d1215; }
+.theme-dark .hover\:text-red-500:hover, .theme-dark .hover\:text-red-600:hover { color: #f85149; }
+
+/* Inputs e sombras */
+.theme-dark .input {
+  background: #0d1117;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+.theme-dark .input::placeholder { color: #6e7681; }
+.theme-dark .shadow-sm, .theme-dark .shadow-md, .theme-dark .shadow-xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.45);
+}

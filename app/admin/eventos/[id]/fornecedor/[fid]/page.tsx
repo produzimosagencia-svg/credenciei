@@ -1,60 +1,75 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-import FuncionarioTable from './FuncionarioTable'
+import FuncionarioTable, { type Presenca } from './FuncionarioTable'
 import CopyLinkButton from '../../CopyLinkButton'
+import NovoFuncionarioModal from './NovoFuncionarioModal'
 
 export const revalidate = 0
+
+type MomentoTipo = 'entrada' | 'meio' | 'fim'
 
 export default async function FornecedorPage({ params }: { params: Promise<{ id: string; fid: string }> }) {
   const { id, fid } = await params
 
-  const [{ data: fornecedor }, { data: funcionarios }] = await Promise.all([
+  const [{ data: fornecedor }, { data: funcionarios }, { data: registros }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome)').eq('id', fid).single(),
-    supabase.from('funcionarios').select('*').eq('fornecedor_id', fid).order('nome'),
+    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token').eq('fornecedor_id', fid).order('nome'),
+    supabase
+      .from('registros')
+      .select('funcionario_id, tipo, created_at, foto_url, latitude, longitude, funcionarios!inner(fornecedor_id)')
+      .eq('evento_id', id)
+      .eq('funcionarios.fornecedor_id', fid)
+      .in('tipo', ['entrada', 'meio', 'fim']),
   ])
 
   if (!fornecedor) notFound()
 
-  const funcionarioIds = funcionarios?.map(f => f.id) ?? []
-  const { data: registros } = funcionarioIds.length
-    ? await supabase
-        .from('registros')
-        .select('*')
-        .in('funcionario_id', funcionarioIds)
-        .eq('evento_id', id)
-        .order('created_at', { ascending: false })
-    : { data: [] }
+  // Assina as URLs das fotos em lote (bucket privado)
+  const paths = (registros ?? []).map(r => r.foto_url).filter((p): p is string => !!p)
+  const urlPorPath: Record<string, string> = {}
+  if (paths.length) {
+    const { data: signed } = await supabase.storage.from('presencas').createSignedUrls(paths, 60 * 60)
+    for (const s of signed ?? []) if (s.path && s.signedUrl) urlPorPath[s.path] = s.signedUrl
+  }
 
-  const statusMap: Record<string, 'dentro' | 'saiu' | 'ausente'> = {}
-  const lastMap: Record<string, string> = {}
+  // Mapa funcionario → { entrada, meio, fim }
+  const presencaPorFunc: Record<string, Record<MomentoTipo, Presenca>> = {}
   for (const r of registros ?? []) {
-    if (!statusMap[r.funcionario_id]) {
-      statusMap[r.funcionario_id] = r.tipo === 'entrada' ? 'dentro' : 'saiu'
-      lastMap[r.funcionario_id] = r.created_at
+    const tipo = r.tipo as MomentoTipo
+    if (!presencaPorFunc[r.funcionario_id]) presencaPorFunc[r.funcionario_id] = { entrada: null, meio: null, fim: null }
+    presencaPorFunc[r.funcionario_id][tipo] = {
+      feitoEm: r.created_at,
+      fotoUrl: r.foto_url ? urlPorPath[r.foto_url] ?? null : null,
+      lat: r.latitude ?? null,
+      lng: r.longitude ?? null,
     }
   }
 
-  const dentro = Object.values(statusMap).filter(s => s === 'dentro').length
-  const saiu = Object.values(statusMap).filter(s => s === 'saiu').length
-  const ausente = (funcionarios?.length ?? 0) - dentro - saiu
+  const funcionariosEnriquecidos = (funcionarios ?? []).map(f => ({
+    id: f.id,
+    nome: f.nome,
+    cpf: f.cpf,
+    telefone: f.telefone,
+    empresa: f.empresa ?? '',
+    cargo: f.cargo ?? '',
+    qr_token: f.qr_token,
+    entrada: presencaPorFunc[f.id]?.entrada ?? null,
+    meio: presencaPorFunc[f.id]?.meio ?? null,
+    fim: presencaPorFunc[f.id]?.fim ?? null,
+  }))
+
+  const total = funcionarios?.length ?? 0
+  const contar = (t: MomentoTipo) => funcionariosEnriquecidos.filter(f => f[t]).length
 
   const formLink = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/form/${fornecedor.token_formulario}`
 
-  const funcionariosEnriquecidos = (funcionarios ?? []).map(f => ({
-    ...f,
-    status: statusMap[f.id] ?? 'ausente' as const,
-    ultimo_registro: lastMap[f.id] ?? null,
-  }))
-
   const stats = [
-    { label: 'Total', value: funcionarios?.length ?? 0, color: 'text-slate-800', bg: 'bg-slate-100', border: 'border-slate-200' },
-    { label: 'Dentro agora', value: dentro, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
-    { label: 'Já saíram', value: saiu, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
-    { label: 'Não apareceram', value: ausente, color: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-100' },
+    { label: 'Total', value: total, color: 'text-slate-800', bg: 'bg-slate-100', border: 'border-slate-200' },
+    { label: 'Entrada', value: contar('entrada'), color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
+    { label: 'Meio', value: contar('meio'), color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
+    { label: 'Fim', value: contar('fim'), color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-200' },
   ]
 
   return (
@@ -69,7 +84,10 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             <p className="text-slate-400 text-sm">{(fornecedor.eventos as any)?.nome}</p>
           </div>
         </div>
-        <CopyLinkButton link={formLink} label="Copiar link do formulário" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} />
+          <CopyLinkButton link={formLink} label="Copiar link do formulário" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

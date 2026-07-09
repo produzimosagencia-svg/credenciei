@@ -35,6 +35,15 @@ export type Funcionario = {
   empresa: string
   cargo: string
   qr_token: string
+  setor_id: string | null
+  qr_expira_em: string | null
+  created_at: string
+}
+
+export type Setor = {
+  id: string
+  evento_id: string
+  nome: string
   created_at: string
 }
 
@@ -42,6 +51,6 @@ export type Registro = {
   id: string
   funcionario_id: string
   evento_id: string
-  tipo: 'entrada' | 'saida'
+  tipo: 'entrada' | 'saida' | 'conferencia'
   created_at: string
 }

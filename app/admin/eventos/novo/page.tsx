@@ -1,8 +1,14 @@
 import { criarEvento } from '@/lib/actions'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
+import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
 
-export default function NovoEventoPage() {
+export default async function NovoEventoPage() {
+  const perfil = await getPerfil()
+  // Sem licença de evento disponível → volta para a lista
+  if ((await licencasDeEventoRestantes(perfil)) <= 0) redirect('/admin/eventos')
+
   return (
     <div className="max-w-xl space-y-6">
       <div className="flex items-center gap-3">
@@ -19,10 +25,17 @@ export default function NovoEventoPage() {
   )
 }
 
+type EventoDefaults = {
+  nome?: string; descricao?: string; data_inicio?: string; data_fim?: string; local?: string
+  janela_entrada_inicio?: string; janela_entrada_fim?: string
+  janela_meio_inicio?: string; janela_meio_fim?: string
+  janela_fim_inicio?: string; janela_fim_fim?: string
+}
+
 function EventoForm({ action, submitLabel, defaults }: {
   action: (formData: FormData) => Promise<void>
   submitLabel: string
-  defaults?: { nome?: string; descricao?: string; data_inicio?: string; data_fim?: string; local?: string }
+  defaults?: EventoDefaults
 }) {
   return (
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
@@ -43,10 +56,39 @@ function EventoForm({ action, submitLabel, defaults }: {
       <Field label="Local">
         <input name="local" defaultValue={defaults?.local ?? ''} placeholder="Ex: Expo Center Norte, São Paulo" className="input" />
       </Field>
-      <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-orange-200">
+
+      <JanelasHorario defaults={defaults} />
+
+      <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
         {submitLabel}
       </button>
     </form>
+  )
+}
+
+function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
+  const janelas = [
+    { key: 'entrada', label: 'Entrada', cor: 'text-green-600' },
+    { key: 'meio', label: 'Meio (durante o evento)', cor: 'text-blue-600' },
+    { key: 'fim', label: 'Fim', cor: 'text-brand-600' },
+  ] as const
+  return (
+    <div className="border-t border-slate-100 pt-4 space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-slate-700">Janelas de registro de presença</p>
+        <p className="text-xs text-slate-400">Os funcionários tiram a foto dentro destes horários. Deixe em branco pra definir depois.</p>
+      </div>
+      {janelas.map(j => (
+        <div key={j.key} className="grid grid-cols-2 gap-3">
+          <Field label={`${j.label} — início`}>
+            <input name={`janela_${j.key}_inicio`} type="datetime-local" defaultValue={defaults?.[`janela_${j.key}_inicio` as keyof EventoDefaults]} className="input" />
+          </Field>
+          <Field label={`${j.label} — fim`}>
+            <input name={`janela_${j.key}_fim`} type="datetime-local" defaultValue={defaults?.[`janela_${j.key}_fim` as keyof EventoDefaults]} className="input" />
+          </Field>
+        </div>
+      ))}
+    </div>
   )
 }
 

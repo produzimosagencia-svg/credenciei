@@ -6,7 +6,7 @@ import { criarFornecedor, editarFornecedor } from '@/lib/actions'
 
 type Props =
   | { mode: 'criar'; eventoId: string }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; email: string; quantidade_estimada: number | null }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; quantidade_estimada: number | null; valor_combinado: number | null }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -15,8 +15,8 @@ export default function FornecedorModal(props: Props) {
 
   const isEditar = props.mode === 'editar'
   const defaultNome = isEditar ? (props as any).nome : ''
-  const defaultEmail = isEditar ? (props as any).email ?? '' : ''
   const defaultQtd = isEditar ? (props as any).quantidade_estimada ?? '' : ''
+  const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
 
   const handleAction = (formData: FormData) => {
     startTransition(async () => {
@@ -37,7 +37,7 @@ export default function FornecedorModal(props: Props) {
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl transition-all font-semibold shadow-sm shadow-orange-200">
+        <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-sm bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-xl transition-all font-semibold shadow-sm shadow-brand-200">
           <Plus className="w-3.5 h-3.5" />
           Novo Fornecedor
         </button>
@@ -54,21 +54,21 @@ export default function FornecedorModal(props: Props) {
             </div>
             <form action={handleAction} className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa *</label>
-                <input name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança Total Ltda" className="input" />
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Setor *</label>
+                <input name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">E-mail de contato</label>
-                <input name="email_contato" type="email" defaultValue={defaultEmail} placeholder="contato@empresa.com" className="input" />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">
-                  Quantidade estimada
-                  <span className="text-slate-400 font-normal ml-1">(apenas referência)</span>
-                </label>
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Quantidade de funcionários</label>
                 <input name="quantidade_estimada" type="number" min="1" defaultValue={defaultQtd} placeholder="Ex: 20" className="input" />
               </div>
-              <button type="submit" disabled={isPending} className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-orange-200">
+              <div>
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Valor combinado por funcionário</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
+                  <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9" />
+                </div>
+              </div>
+              <button type="submit" disabled={isPending} className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-200">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor')}
               </button>
             </form>

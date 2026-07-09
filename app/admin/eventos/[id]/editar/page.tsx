@@ -1,6 +1,7 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import { editarEvento } from '@/lib/actions'
+import { isoParaInput } from '@/lib/tz'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 
@@ -10,7 +11,13 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   if (!evento) notFound()
 
   const action = editarEvento.bind(null, id)
-  const fmt = (d: string) => new Date(d).toISOString().slice(0, 16)
+  const fmt = (d: string | null | undefined) => isoParaInput(d)
+
+  const janelas = [
+    { key: 'entrada', label: 'Entrada' },
+    { key: 'meio', label: 'Meio (durante o evento)' },
+    { key: 'fim', label: 'Fim' },
+  ] as const
 
   return (
     <div className="max-w-xl space-y-6">
@@ -42,7 +49,25 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         <Field label="Local">
           <input name="local" defaultValue={evento.local ?? ''} className="input" />
         </Field>
-        <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-orange-200">
+
+        <div className="border-t border-slate-100 pt-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-700">Janelas de registro de presença</p>
+            <p className="text-xs text-slate-400">Os funcionários tiram a foto de entrada, meio e fim dentro destes horários.</p>
+          </div>
+          {janelas.map(j => (
+            <div key={j.key} className="grid grid-cols-2 gap-3">
+              <Field label={`${j.label} — início`}>
+                <input name={`janela_${j.key}_inicio`} type="datetime-local" defaultValue={fmt(evento[`janela_${j.key}_inicio`])} className="input" />
+              </Field>
+              <Field label={`${j.label} — fim`}>
+                <input name={`janela_${j.key}_fim`} type="datetime-local" defaultValue={fmt(evento[`janela_${j.key}_fim`])} className="input" />
+              </Field>
+            </div>
+          ))}
+        </div>
+
+        <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
           Salvar alterações
         </button>
       </form>

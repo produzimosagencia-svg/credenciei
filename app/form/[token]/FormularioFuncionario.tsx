@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { cadastrarFuncionarioPublico } from '@/lib/actions'
 
 const initialForm = {
   nome: '',
   cpf: '',
   telefone: '',
-  email: '',
   empresa: '',
   cargo: '',
 }
@@ -37,27 +36,18 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    const payload = {
-      ...form,
-      cpf: form.cpf.replace(/\D/g, ''),
-      telefone: form.telefone.replace(/\D/g, ''),
-      fornecedor_id: fornecedorId,
-    }
-    const { data, error } = await supabase
-      .from('funcionarios')
-      .insert([payload])
-      .select('id, qr_token')
-      .single()
+    const res = await cadastrarFuncionarioPublico(fornecedorId, {
+      nome: form.nome,
+      cpf: form.cpf,
+      telefone: form.telefone,
+      empresa: form.empresa,
+      cargo: form.cargo,
+    })
 
-    if (!error && data) {
-      setQrToken(data.qr_token)
-      fetch('/api/sheets/funcionario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ funcionarioId: data.id }),
-      }).catch(() => {})
+    if (res.qrToken) {
+      setQrToken(res.qrToken)
     } else {
-      alert('Erro ao enviar formulário. Tente novamente.')
+      alert(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
     }
     setLoading(false)
   }
@@ -71,12 +61,14 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
           </svg>
         </div>
         <h2 className="text-slate-800 font-bold text-xl">Cadastro realizado!</h2>
-        <p className="text-slate-500 text-sm">Seu credencial foi gerado com sucesso.</p>
+        <p className="text-slate-500 text-sm">
+          Salve o link abaixo. Nele está seu QR code (apresente na entrada e na saída) e o registro por foto durante o evento.
+        </p>
         <a
           href={`/credential/${qrToken}`}
-          className="block w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-orange-200"
+          className="block w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
         >
-          Ver meu QR Code →
+          Abrir minha credencial →
         </a>
       </div>
     )
@@ -93,22 +85,19 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       <Field label="Telefone *">
         <input required value={form.telefone} onChange={e => set('telefone', formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
       </Field>
-      <Field label="E-mail *">
-        <input required type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="seu@email.com" className="input" />
-      </Field>
       <Field label="Empresa *">
         <input required value={form.empresa} onChange={e => set('empresa', e.target.value)} placeholder="Nome da sua empresa" className="input" />
       </Field>
       <Field label="Cargo *">
-        <input required value={form.cargo} onChange={e => set('cargo', e.target.value)} placeholder="Seu cargo" className="input" />
+        <input required value={form.cargo} onChange={e => set('cargo', e.target.value)} placeholder="Ex: Segurança, Garçom..." className="input" />
       </Field>
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-orange-200"
+        className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
       >
-        {loading ? 'Enviando...' : 'Enviar e gerar meu credencial →'}
+        {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}
       </button>
     </form>
   )

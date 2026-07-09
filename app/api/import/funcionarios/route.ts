@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
+import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 
 type FuncionarioRow = {
   nome: string
@@ -14,10 +10,16 @@ type FuncionarioRow = {
   email: string
   empresa: string
   cargo: string
+  setor?: string
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const perfil = await getPerfil()
+    if (!perfil || !podeGerenciarEventos(perfil.role)) {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+
     const { fornecedorId, funcionarios }: { fornecedorId: string; funcionarios: FuncionarioRow[] } = await request.json()
 
     if (!fornecedorId || !Array.isArray(funcionarios) || funcionarios.length === 0) {
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
     // Busca o fornecedor e o evento para pegar o spreadsheet_id
     const { data: fornecedor } = await supabaseAdmin
       .from('fornecedores')
-      .select('*, eventos(spreadsheet_id, nome)')
+      .select('*, eventos(id, spreadsheet_id, nome, organizacao_id)')
       .eq('id', fornecedorId)
       .single()
 
@@ -36,7 +38,35 @@ export async function POST(request: NextRequest) {
     }
 
     const evento = fornecedor.eventos as any
+
+    // Isolamento por organização: só master ou admin da mesma org do evento
+    if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
+      return NextResponse.json({ error: 'Sem permissão sobre este fornecedor' }, { status: 403 })
+    }
     const spreadsheetId = evento?.spreadsheet_id
+    const eventoId = evento?.id ?? fornecedor.evento_id
+
+    // Resolve setores pelo nome (cria automaticamente os que não existirem)
+    const nomesSetores = [...new Set(
+      funcionarios.map(f => f.setor?.trim()).filter((s): s is string => !!s)
+    )]
+    const setorIdPorNome: Record<string, string> = {}
+    if (nomesSetores.length && eventoId) {
+      const { data: existentes } = await supabaseAdmin
+        .from('setores')
+        .select('id, nome')
+        .eq('evento_id', eventoId)
+      for (const s of existentes ?? []) setorIdPorNome[s.nome.toLowerCase()] = s.id
+
+      const faltantes = nomesSetores.filter(n => !setorIdPorNome[n.toLowerCase()])
+      if (faltantes.length) {
+        const { data: criados } = await supabaseAdmin
+          .from('setores')
+          .insert(faltantes.map(nome => ({ evento_id: eventoId, nome })))
+          .select('id, nome')
+        for (const s of criados ?? []) setorIdPorNome[s.nome.toLowerCase()] = s.id
+      }
+    }
 
     // Prepara os registros com CPF e telefone limpos
     const payload = funcionarios.map(f => ({
@@ -46,6 +76,7 @@ export async function POST(request: NextRequest) {
       email: f.email?.trim() ?? '',
       empresa: f.empresa?.trim() ?? fornecedor.nome,
       cargo: f.cargo?.trim() ?? '',
+      setor_id: f.setor?.trim() ? setorIdPorNome[f.setor.trim().toLowerCase()] ?? null : null,
       fornecedor_id: fornecedorId,
     })).filter(f => f.nome && f.cpf)
 

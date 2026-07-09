@@ -2,18 +2,18 @@
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal, Trash2 } from 'lucide-react'
-import { deletarCliente } from '@/lib/actions'
+import { deletarUsuario } from '@/lib/actions'
 
-export default function ClienteActions({ clienteId, clienteNome }: { clienteId: string; clienteNome: string }) {
+export default function UsuarioActions({ usuarioId, usuarioNome }: { usuarioId: string; usuarioNome: string }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const handleDelete = () => {
-    if (!confirm(`Excluir cliente "${clienteNome}"? Todos os eventos e dados serão removidos.`)) return
+    if (!confirm(`Excluir usuário "${usuarioNome}"? Todos os eventos e dados vinculados a ele serão removidos.`)) return
     setOpen(false)
     startTransition(async () => {
-      await deletarCliente(clienteId)
+      await deletarUsuario(usuarioId)
       router.refresh()
     })
   }
