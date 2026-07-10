@@ -1,5 +1,6 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
 import { redirect } from 'next/navigation'
 import {
@@ -387,8 +388,8 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
   }
   await db.from('fornecedores').insert([data])
 
-  // Cria a aba na planilha em segundo plano (não trava a resposta pro usuário)
-  garantirAbaFornecedorAsync(eventoId, nomeFornecedor)
+  // Cria a aba na planilha depois da resposta (after: sobrevive ao serverless da Vercel)
+  after(() => garantirAbaFornecedorAsync(eventoId, nomeFornecedor))
 
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
@@ -482,8 +483,8 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 
   if (error) throw new Error(`Erro ao cadastrar funcionário: ${error.message}`)
 
-  // Sincroniza com a planilha (não bloqueia em caso de falha)
-  sincronizarFuncionarioNaPlanilha(novo.id).catch(console.error)
+  // Sincroniza com a planilha depois da resposta (não bloqueia; sobrevive ao serverless)
+  after(() => sincronizarFuncionarioNaPlanilha(novo.id).catch(console.error))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
@@ -716,7 +717,7 @@ export async function cadastrarFuncionarioPublico(
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
 
-  sincronizarFuncionarioNaPlanilha(data.id).catch(console.error)
+  after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   return { qrToken: data.qr_token }
 }
 
