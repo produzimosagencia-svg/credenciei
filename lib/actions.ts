@@ -1,7 +1,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
-import { getPerfil, supabaseAdmin } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento } from './supabase-server'
 import { redirect } from 'next/navigation'
 import {
   criarPlanilhaEvento,
@@ -17,6 +17,7 @@ import {
   podeGerenciarEventos,
   podeGerenciarOrganizacoes,
   podeExcluirEventos,
+  podeEscanear,
   ehMaster,
 } from './permissions'
 import { inputParaISO } from './tz'
@@ -81,6 +82,17 @@ function janelasDoForm(formData: FormData) {
   }
 }
 
+/** Traduz erros comuns do Supabase Auth para mensagens amigáveis em PT-BR. */
+function mensagemAuth(msg: string): string {
+  const m = msg.toLowerCase()
+  if (m.includes('already') && (m.includes('registered') || m.includes('exist'))) {
+    return 'Este e-mail já está em uso. Use outro e-mail.'
+  }
+  if (m.includes('password')) return 'Senha inválida. Use ao menos 6 caracteres.'
+  if (m.includes('email')) return 'E-mail inválido. Confira o endereço.'
+  return 'Não foi possível criar o acesso. Confira os dados e tente de novo.'
+}
+
 // ─── Organizações (somente master) ───────────────────────────────────────────
 
 /**
@@ -137,7 +149,7 @@ export async function criarOrganizacao(formData: FormData) {
   if (userErr) {
     // desfaz a organização para não deixar lixo caso o e-mail já exista
     await admin.from('organizacoes').delete().eq('id', org.id)
-    throw new Error(`Erro ao criar usuário admin: ${userErr.message}`)
+    throw new Error(mensagemAuth(userErr.message))
   }
 
   await admin.from('perfis').insert([{
@@ -234,7 +246,7 @@ export async function criarUsuario(formData: FormData) {
     password: senha,
     email_confirm: true,
   })
-  if (error) throw new Error(`Erro ao criar usuário: ${error.message}`)
+  if (error) throw new Error(mensagemAuth(error.message))
 
   await admin.from('perfis').insert([{
     id: user.user!.id,
@@ -318,7 +330,7 @@ export async function criarEvento(formData: FormData) {
 
   const db = supabaseAdmin
   const { data: novo, error } = await db.from('eventos').insert([data]).select('id').single()
-  if (error) throw new Error(`Erro ao criar evento: ${error.message} (code: ${error.code})`)
+  if (error) throw new Error('Não foi possível criar o evento. Confira os dados e tente de novo.')
 
   // Cria planilha na pasta da organização no Drive
   try {
@@ -472,10 +484,22 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
 
+  const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
+  if (cpf.length !== 11) throw new Error('CPF inválido. Confira os números.')
+
+  // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento
+  const { data: existentes } = await db
+    .from('funcionarios')
+    .select('id, fornecedores!inner(evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .limit(1)
+  if (existentes && existentes.length) throw new Error('Já existe um funcionário com este CPF neste evento.')
+
   const { data: novo, error } = await db.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
     nome: (formData.get('nome') as string).trim(),
-    cpf: (formData.get('cpf') as string).replace(/\D/g, ''),
+    cpf,
     telefone: (formData.get('telefone') as string).replace(/\D/g, ''),
     empresa: (formData.get('empresa') as string).trim(),
     cargo: ((formData.get('cargo') as string) || '').trim(),
@@ -593,7 +617,8 @@ export type ResultadoScan = {
  */
 export async function registrarPresencaQR(eventoId: string, qrData: string, momento: 'entrada' | 'fim'): Promise<ResultadoScan> {
   const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarEventos(perfil.role)) return { success: false, message: 'Sem permissão' }
+  // Todos os papéis autenticados podem escanear (inclui supervisor).
+  if (!perfil || !podeEscanear(perfil.role)) return { success: false, message: 'Sem permissão' }
   if (momento !== 'entrada' && momento !== 'fim') return { success: false, message: 'Momento inválido' }
 
   // Tolerante ao formato antigo "token|tipo": usa só o token
@@ -606,7 +631,8 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     .eq('id', eventoId)
     .single()
   if (!evento) return { success: false, message: 'Evento não encontrado' }
-  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  // Isolamento: master → qualquer evento; admin → só da org; supervisor → só vinculado
+  if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { success: false, message: 'Sem acesso a este evento' }
   }
 
@@ -706,10 +732,23 @@ export async function cadastrarFuncionarioPublico(
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
 
+  const cpf = dados.cpf.replace(/\D/g, '')
+  if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números e tente de novo.' }
+
+  // Evita credenciais duplicadas: se o mesmo CPF já foi cadastrado neste evento,
+  // devolve a credencial existente em vez de criar outra.
+  const { data: existentes } = await supabaseAdmin
+    .from('funcionarios')
+    .select('qr_token, fornecedores!inner(evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', fornecedor.evento_id)
+    .limit(1)
+  if (existentes && existentes.length) return { qrToken: (existentes[0] as any).qr_token }
+
   const { data, error } = await supabaseAdmin.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
     nome: dados.nome.trim(),
-    cpf: dados.cpf.replace(/\D/g, ''),
+    cpf,
     telefone: dados.telefone.replace(/\D/g, ''),
     empresa: dados.empresa.trim(),
     cargo: dados.cargo.trim(),

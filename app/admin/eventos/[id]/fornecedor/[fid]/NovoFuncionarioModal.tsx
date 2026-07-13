@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { UserPlus, X } from 'lucide-react'
 import { criarFuncionario } from '@/lib/actions'
+import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 
 export default function NovoFuncionarioModal({
   fornecedorId,
@@ -58,19 +59,19 @@ export default function NovoFuncionarioModal({
 
             <form action={handleSubmit} className="p-6 space-y-4">
               <Field label="Nome completo *">
-                <input name="nome" required placeholder="Nome do funcionário" className="input" />
+                <NomeInput name="nome" required placeholder="Nome do funcionário" className="input" />
               </Field>
               <Field label="CPF *">
-                <input name="cpf" required placeholder="000.000.000-00" className="input" inputMode="numeric" />
+                <CpfInput name="cpf" required placeholder="000.000.000-00" className="input" />
               </Field>
               <Field label="Telefone *">
-                <input name="telefone" required placeholder="(11) 99999-9999" className="input" inputMode="tel" />
+                <TelefoneInput name="telefone" required placeholder="(11) 99999-9999" className="input" />
               </Field>
               <Field label="Empresa *">
-                <input name="empresa" required defaultValue={empresaPadrao} className="input" />
+                <NomeInput name="empresa" required defaultValue={empresaPadrao} className="input" />
               </Field>
               <Field label="Cargo *">
-                <input name="cargo" required placeholder="Ex: Segurança, Garçom..." className="input" />
+                <NomeInput name="cargo" required placeholder="Ex: Segurança, Garçom..." className="input" />
               </Field>
 
               {erro && <p className="text-red-500 text-xs">{erro}</p>}

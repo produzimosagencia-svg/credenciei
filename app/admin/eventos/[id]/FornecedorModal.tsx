@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Pencil } from 'lucide-react'
 import { criarFornecedor, editarFornecedor } from '@/lib/actions'
+import { NomeInput } from '@/components/inputs'
 
 type Props =
   | { mode: 'criar'; eventoId: string }
@@ -55,7 +56,7 @@ export default function FornecedorModal(props: Props) {
             <form action={handleAction} className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Setor *</label>
-                <input name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
+                <NomeInput name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Quantidade de funcionários</label>

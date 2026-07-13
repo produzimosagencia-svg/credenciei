@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { cadastrarFuncionarioPublico } from '@/lib/actions'
+import { formatCpf, formatTelefone, titleCaseNome } from '@/lib/format'
 
 const initialForm = {
   nome: '',
@@ -8,21 +9,6 @@ const initialForm = {
   telefone: '',
   empresa: '',
   cargo: '',
-}
-
-function formatCPF(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 11)
-  return digits
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d{1,2})$/, '$1-$2')
-}
-
-function formatPhone(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 11)
-  return digits
-    .replace(/(\d{2})(\d)/, '($1) $2')
-    .replace(/(\d{5})(\d)/, '$1-$2')
 }
 
 export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
@@ -77,19 +63,19 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       <Field label="Nome completo *">
-        <input required value={form.nome} onChange={e => set('nome', e.target.value)} placeholder="Seu nome completo" className="input" />
+        <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />
       </Field>
       <Field label="CPF *">
-        <input required value={form.cpf} onChange={e => set('cpf', formatCPF(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
+        <input required value={form.cpf} onChange={e => set('cpf', formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
       </Field>
       <Field label="Telefone *">
-        <input required value={form.telefone} onChange={e => set('telefone', formatPhone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
+        <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
       </Field>
       <Field label="Empresa *">
-        <input required value={form.empresa} onChange={e => set('empresa', e.target.value)} placeholder="Nome da sua empresa" className="input" />
+        <input required value={form.empresa} onChange={e => set('empresa', titleCaseNome(e.target.value))} placeholder="Nome da sua empresa" className="input" />
       </Field>
       <Field label="Cargo *">
-        <input required value={form.cargo} onChange={e => set('cargo', e.target.value)} placeholder="Ex: Segurança, Garçom..." className="input" />
+        <input required value={form.cargo} onChange={e => set('cargo', titleCaseNome(e.target.value))} placeholder="Ex: Segurança, Garçom..." className="input" />
       </Field>
 
       <button

@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, User, CalendarDays } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
+import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 
 export default async function NovaOrganizacaoPage() {
   const perfil = await getPerfil()
@@ -25,25 +26,25 @@ export default async function NovaOrganizacaoPage() {
         {/* Organização */}
         <Section icon={Building2} title="Organização">
           <Field label="Nome da organização *">
-            <input name="org_nome" required placeholder="Ex: Brilha Shows" className="input" />
+            <NomeInput name="org_nome" required placeholder="Ex: Brilha Shows" className="input" />
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="CPF ou CNPJ">
-              <input name="documento" placeholder="000.000.000-00" className="input" />
+              <CpfCnpjInput name="documento" placeholder="000.000.000-00" className="input" />
             </Field>
             <Field label="Limite de eventos *">
               <input name="limite_eventos" type="number" min={1} defaultValue={1} required className="input" />
             </Field>
           </div>
           <Field label="Responsável">
-            <input name="responsavel_nome" placeholder="Nome do responsável pela empresa" className="input" />
+            <NomeInput name="responsavel_nome" placeholder="Nome do responsável pela empresa" className="input" />
           </Field>
         </Section>
 
         {/* Admin */}
         <Section icon={User} title="Login do admin">
           <Field label="Nome do admin *">
-            <input name="admin_nome" required placeholder="Nome de quem vai gerenciar" className="input" />
+            <NomeInput name="admin_nome" required placeholder="Nome de quem vai gerenciar" className="input" />
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="E-mail *">
@@ -62,7 +63,7 @@ export default async function NovaOrganizacaoPage() {
             depois — ele poderá criar até o limite de licenças definido acima.
           </p>
           <Field label="Nome do evento">
-            <input name="evento_nome" placeholder="Ex: Show da Virada 2026" className="input" />
+            <NomeInput name="evento_nome" placeholder="Ex: Show da Virada 2026" className="input" />
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Data de início">

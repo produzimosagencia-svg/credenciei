@@ -2,6 +2,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import { editarEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
+import { NomeInput } from '@/components/inputs'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 
@@ -33,7 +34,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
 
       <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
         <Field label="Nome do evento *">
-          <input name="nome" required defaultValue={evento.nome} className="input" />
+          <NomeInput name="nome" required defaultValue={evento.nome} className="input" />
         </Field>
         <Field label="Descrição">
           <textarea name="descricao" rows={2} defaultValue={evento.descricao ?? ''} className="input resize-none" />
@@ -47,7 +48,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           </Field>
         </div>
         <Field label="Local">
-          <input name="local" defaultValue={evento.local ?? ''} className="input" />
+          <NomeInput name="local" defaultValue={evento.local ?? ''} className="input" />
         </Field>
 
         <div className="border-t border-slate-100 pt-4 space-y-3">

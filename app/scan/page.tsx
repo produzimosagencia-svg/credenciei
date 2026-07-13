@@ -1,6 +1,6 @@
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, eventosEscaneaveis } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
-import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
+import { podeEscanear } from '@/lib/permissions'
 import ScannerView from './ScannerView'
 import { QrCode } from 'lucide-react'
 import Link from 'next/link'
@@ -12,16 +12,11 @@ export default async function ScanPage({
 }) {
   const [{ evento }, perfil] = await Promise.all([searchParams, getPerfil()])
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeEscanear(perfil.role)) redirect('/admin')
 
-  // master → todos os eventos ativos | admin → os da própria organização
-  const query = supabase
-    .from('eventos')
-    .select('id, nome')
-    .eq('ativo', true)
-    .order('data_inicio', { ascending: false })
-  if (!veTodosEventos(perfil.role)) query.eq('organizacao_id', perfil.organizacao_id)
-  const { data: eventos } = await query
+  // Eventos que ESTE usuário pode escanear:
+  // master → todos ativos | admin → da própria org | supervisor → só vinculados
+  const eventos = await eventosEscaneaveis(perfil)
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">

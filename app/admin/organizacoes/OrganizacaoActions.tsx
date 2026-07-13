@@ -2,6 +2,7 @@
 import { useState, useTransition } from 'react'
 import { MoreHorizontal, Power, Trash2, Save, X } from 'lucide-react'
 import { toggleAtivoOrganizacao, deletarOrganizacao, editarOrganizacao } from '@/lib/actions'
+import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 
 type Org = {
   id: string
@@ -84,9 +85,9 @@ export default function OrganizacaoActions({ org }: { org: Org }) {
               </button>
             </div>
             <form action={handleSave} className="space-y-2.5">
-              <input name="org_nome" required defaultValue={org.nome} placeholder="Nome" className="input" />
-              <input name="documento" defaultValue={org.documento ?? ''} placeholder="CPF ou CNPJ" className="input" />
-              <input name="responsavel_nome" defaultValue={org.responsavel_nome ?? ''} placeholder="Responsável" className="input" />
+              <NomeInput name="org_nome" required defaultValue={org.nome} placeholder="Nome" className="input" />
+              <CpfCnpjInput name="documento" defaultValue={org.documento ?? ''} placeholder="CPF ou CNPJ" className="input" />
+              <NomeInput name="responsavel_nome" defaultValue={org.responsavel_nome ?? ''} placeholder="Responsável" className="input" />
               <label className="block text-xs font-medium text-slate-500">Limite de eventos</label>
               <input name="limite_eventos" type="number" min={1} required defaultValue={org.limite_eventos} className="input" />
               <button

@@ -1,5 +1,6 @@
 'use client'
 import { criarUsuario } from '@/lib/actions'
+import { NomeInput } from '@/components/inputs'
 
 type Evento = { id: string; nome: string }
 
@@ -15,7 +16,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
 
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-slate-700">Nome *</label>
-        <input name="nome" required placeholder="Nome da pessoa" className="input" />
+        <NomeInput name="nome" required placeholder="Nome da pessoa" className="input" />
       </div>
       <div className="space-y-1.5">
         <label className="text-sm font-medium text-slate-700">E-mail *</label>

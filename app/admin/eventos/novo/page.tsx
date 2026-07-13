@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
+import { NomeInput } from '@/components/inputs'
 
 export default async function NovoEventoPage() {
   const perfil = await getPerfil()
@@ -40,7 +41,7 @@ function EventoForm({ action, submitLabel, defaults }: {
   return (
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       <Field label="Nome do evento *">
-        <input name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />
+        <NomeInput name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />
       </Field>
       <Field label="Descrição">
         <textarea name="descricao" rows={2} defaultValue={defaults?.descricao ?? ''} placeholder="Descrição opcional" className="input resize-none" />
@@ -54,7 +55,7 @@ function EventoForm({ action, submitLabel, defaults }: {
         </Field>
       </div>
       <Field label="Local">
-        <input name="local" defaultValue={defaults?.local ?? ''} placeholder="Ex: Expo Center Norte, São Paulo" className="input" />
+        <NomeInput name="local" defaultValue={defaults?.local ?? ''} placeholder="Ex: Expo Center Norte, São Paulo" className="input" />
       </Field>
 
       <JanelasHorario defaults={defaults} />

@@ -1,14 +1,18 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { CalendarDays, Users, UserCheck, TrendingUp, ArrowRight, Circle, Plus, Building2 } from 'lucide-react'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 
 export const revalidate = 0
 
 export default async function AdminPage() {
   const perfil = await getPerfil()
+  if (!perfil) redirect('/login')
+  // Supervisor não gerencia nada: a função dele é escanear. Vai direto pro scanner.
+  if (podeEscanear(perfil.role) && !podeGerenciarEventos(perfil.role)) redirect('/scan')
   const db = supabaseAdmin
   const podeCriarEvento = (await licencasDeEventoRestantes(perfil)) > 0
 
