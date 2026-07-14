@@ -97,15 +97,28 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
     coordsRef.current = null
     if (!file || !coords) { setBusy(false); return }
     try {
-      const base64 = await comprimir(file)
-      const res = await registrarPresencaFoto(token, base64, coords.lat, coords.lng)
-      if (res.ok) {
+      // Trava de segurança: não importa o que aconteça (foto que o navegador
+      // não consegue decodificar, rede do evento travando o envio, etc.), a
+      // tela NUNCA fica presa em "Registrando..." pra sempre — no máximo 15s
+      // ela desiste e deixa a pessoa tentar de novo.
+      const resultado = await Promise.race([
+        (async () => {
+          const base64 = await comprimir(file)
+          return registrarPresencaFoto(token, base64, coords.lat, coords.lng)
+        })(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+      ])
+      if (resultado.ok) {
         router.refresh()
       } else {
-        setErro(res.error ?? 'Não foi possível registrar. Tente de novo.')
+        setErro(resultado.error ?? 'Não foi possível registrar. Tente de novo.')
       }
-    } catch {
-      setErro('Não foi possível processar a foto. Tente de novo.')
+    } catch (err) {
+      setErro(
+        err instanceof Error && err.message === 'timeout'
+          ? 'Demorou demais para processar. Verifique sua internet e tente de novo.'
+          : 'Não foi possível processar a foto. Tente de novo.'
+      )
     } finally {
       setBusy(false)
     }
