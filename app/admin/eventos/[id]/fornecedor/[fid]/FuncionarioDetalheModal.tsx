@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, Check } from 'lucide-react'
+import { X, Camera, MapPin, Minus } from 'lucide-react'
 import { atualizarValorReceber } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import type { Presenca } from './FuncionarioTable'
@@ -32,14 +32,12 @@ export default function FuncionarioDetalheModal({
 }) {
   const [open, setOpen] = useState(false)
   const [valor, setValor] = useState(String(f.valorReceber))
-  const [salvo, setSalvo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const handleSalvar = () => {
     setErro(null)
-    setSalvo(false)
     const n = parseFloat(valor.replace(',', '.'))
     if (!Number.isFinite(n) || n < 0) {
       setErro('Valor inválido')
@@ -48,9 +46,8 @@ export default function FuncionarioDetalheModal({
     startTransition(async () => {
       try {
         await atualizarValorReceber(f.id, fornecedorId, eventoId, n)
-        setSalvo(true)
         router.refresh()
-        setTimeout(() => setSalvo(false), 2000)
+        setOpen(false)
       } catch (e: any) {
         setErro(e?.message ?? 'Erro ao salvar o valor')
       }
@@ -112,7 +109,7 @@ export default function FuncionarioDetalheModal({
                       min="0"
                       step="0.01"
                       value={valor}
-                      onChange={e => setValor(e.target.value)}
+                      onChange={e => setValor(e.target.value.replace(/^0+(?=\d)/, ''))}
                       className="input pl-9"
                     />
                   </div>
@@ -121,7 +118,7 @@ export default function FuncionarioDetalheModal({
                     disabled={isPending}
                     className="flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-all shrink-0"
                   >
-                    {salvo ? <Check className="w-4 h-4" /> : isPending ? 'Salvando...' : 'Salvar'}
+                    {isPending ? 'Salvando...' : 'Salvar'}
                   </button>
                 </div>
                 {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}

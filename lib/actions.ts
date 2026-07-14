@@ -241,7 +241,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, eventos(organizacao_id, nome, data_inicio)')
+    .select('id, evento_id, nome, token_formulario, eventos(organizacao_id, nome, data_inicio)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) throw new Error('Setor não encontrado')
@@ -289,6 +289,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
       dataEvento: formatarBR(eventoDoFornecedor?.data_inicio, 'data'),
       email,
       senha,
+      linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
     }).catch(console.error))
   }
 
