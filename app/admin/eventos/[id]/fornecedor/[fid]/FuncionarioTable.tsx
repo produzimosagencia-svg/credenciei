@@ -4,6 +4,9 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus } from 'lucide-react'
 import { deletarFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
+import FuncionarioDetalheModal from './FuncionarioDetalheModal'
+
+const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const PAGE_SIZE = 25
 
@@ -22,6 +25,7 @@ type Funcionario = {
   empresa: string
   cargo: string
   qr_token: string
+  valorReceber: number
   entrada: Presenca
   meio: Presenca
   fim: Presenca
@@ -89,7 +93,7 @@ export default function FuncionarioTable({
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50">
-              {['Nome', 'CPF', 'Telefone', 'Entrada', 'Meio', 'Fim', ''].map(h => (
+              {['Nome', 'CPF', 'Telefone', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -97,7 +101,7 @@ export default function FuncionarioTable({
           <tbody>
             {!filtered.length ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-slate-400 text-sm">
+                <td colSpan={8} className="text-center py-12 text-slate-400 text-sm">
                   {search ? 'Nenhum resultado para a busca' : 'Nenhum funcionário cadastrado ainda'}
                 </td>
               </tr>
@@ -105,14 +109,32 @@ export default function FuncionarioTable({
               paginated.map(f => (
                 <tr key={f.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="text-slate-800 text-sm font-semibold">{f.nome}</p>
-                    <p className="text-slate-400 text-xs">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                    <FuncionarioDetalheModal
+                      funcionario={f}
+                      fornecedorId={fornecedorId}
+                      eventoId={eventoId}
+                      trigger={
+                        <div className="hover:text-brand-600 transition-colors">
+                          <p className="text-slate-800 text-sm font-semibold">{f.nome}</p>
+                          <p className="text-slate-400 text-xs">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                        </div>
+                      }
+                    />
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-sm font-mono whitespace-nowrap">
                     {f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-sm whitespace-nowrap">
                     {f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {f.valorReceber > 0 ? (
+                      <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg">
+                        {brl(f.valorReceber)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
                   </td>
                   <CelulaPresenca p={f.entrada} />
                   <CelulaPresenca p={f.meio} />

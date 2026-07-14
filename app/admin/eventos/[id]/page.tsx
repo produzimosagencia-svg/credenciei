@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
 import { ArrowLeft, Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine } from 'lucide-react'
@@ -12,6 +12,10 @@ export const revalidate = 0
 
 export default async function EventoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+
+  // Supervisor não gerencia o evento inteiro — só o próprio setor (via /scan → Minha equipe)
+  const perfil = await getPerfil()
+  if (perfil?.role === 'supervisor') redirect('/scan')
 
   // Todas dependem apenas do id → uma única wave em paralelo
   const [{ data: evento }, { data: fornecedores }, { data: registros }, todosRegistros] = await Promise.all([
@@ -35,9 +39,19 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   if (!evento) notFound()
 
-  // Isolamento por organização: admin/supervisor só acessam eventos da própria org
-  const perfil = await getPerfil()
+  // Isolamento por organização: admin só acessa eventos da própria org
   if (!veTodosEventos(perfil?.role) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
+
+  // Supervisores vinculados a cada setor (fornecedor) deste evento
+  const fornecedorIds = fornecedores?.map(f => f.id) ?? []
+  const { data: supervisoresRows } = fornecedorIds.length
+    ? await supabase.from('perfis').select('id, nome, email, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
+    : { data: [] as any[] }
+  const supervisoresPorFornecedor: Record<string, { id: string; nome: string; email: string; telefone: string | null; ativo: boolean }[]> = {}
+  for (const s of supervisoresRows ?? []) {
+    (supervisoresPorFornecedor[s.fornecedor_id] ??= []).push(s)
+  }
+  const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil?.role)
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
@@ -130,7 +144,13 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               </div>
             ) : (
               fornecedores.map((f) => (
-                <FornecedorCard key={f.id} fornecedor={f} eventoId={id} />
+                <FornecedorCard
+                  key={f.id}
+                  fornecedor={f}
+                  eventoId={id}
+                  supervisores={supervisoresPorFornecedor[f.id] ?? []}
+                  podeGerenciarSupervisores={podeGerenciarSupervisores}
+                />
               ))
             )}
           </div>

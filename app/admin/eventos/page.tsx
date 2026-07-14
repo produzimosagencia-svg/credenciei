@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus, CalendarDays, MapPin, Users } from 'lucide-react'
@@ -12,6 +13,8 @@ const PAGE_SIZE = 12
 
 export default async function EventosPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const perfil = await getPerfil()
+  // Supervisor não gerencia eventos — só o próprio setor (via /scan → Minha equipe)
+  if (perfil?.role === 'supervisor') redirect('/scan')
   const db = supabaseAdmin
   const isAdmin = veTodosEventos(perfil?.role)
   const podeExcluir = podeExcluirEventos(perfil?.role)

@@ -11,10 +11,11 @@ export default async function NovoUsuarioPage() {
   // Master não cria equipe aqui — cria admins/organizações
   if (ehMaster(perfil?.role)) redirect('/admin/organizacoes/novo')
 
-  // Eventos ativos da própria organização para vincular a equipe
+  // Eventos ativos da própria organização, com os setores (fornecedores) de cada um —
+  // todo supervisor tem que ser criado vinculado a um setor específico.
   const { data: eventos } = await supabaseAdmin
     .from('eventos')
-    .select('id, nome')
+    .select('id, nome, fornecedores(id, nome)')
     .eq('ativo', true)
     .eq('organizacao_id', perfil!.organizacao_id)
     .order('data_inicio', { ascending: false })

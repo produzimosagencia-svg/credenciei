@@ -9,6 +9,7 @@ const initialForm = {
   telefone: '',
   empresa: '',
   cargo: '',
+  chavePix: '',
 }
 
 export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
@@ -28,6 +29,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       telefone: form.telefone,
       empresa: form.empresa,
       cargo: form.cargo,
+      chavePix: form.chavePix,
     })
 
     if (res.qrToken) {
@@ -76,6 +78,9 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       </Field>
       <Field label="Cargo *">
         <input required value={form.cargo} onChange={e => set('cargo', titleCaseNome(e.target.value))} placeholder="Ex: Segurança, Garçom..." className="input" />
+      </Field>
+      <Field label="Chave PIX (opcional)">
+        <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />
       </Field>
 
       <button

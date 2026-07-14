@@ -102,7 +102,6 @@ export async function POST(request: NextRequest) {
             nome: f.nome,
             cpf: f.cpf,
             telefone: f.telefone,
-            email: f.email,
             empresa: f.empresa,
             cargo: f.cargo,
             qr_token: f.qr_token,

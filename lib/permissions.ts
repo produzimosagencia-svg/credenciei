@@ -5,8 +5,9 @@
 //                organização (eventos.organizacao_id = perfil.organizacao_id).
 //                Cria a equipe (supervisores) e eventos até o limite da org.
 //                NÃO pode excluir eventos (só o master exclui).
-//   supervisor → apenas escaneia/confere QR nos eventos vinculados
-//                (supervisor_eventos), dentro da própria organização.
+//   supervisor → vinculado a UM setor (fornecedor) específico via
+//                perfis.fornecedor_id. Só escaneia QR e gerencia a equipe
+//                daquele setor — nunca vê outros setores/eventos/organização.
 //
 // Papéis legados ('gerente', 'cliente') continuam válidos no banco, mas não
 // são mais oferecidos na UI. Tratamos 'gerente' como equivalente a admin.

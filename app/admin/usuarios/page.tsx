@@ -30,7 +30,7 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
 
   const usuariosQuery = supabaseAdmin
     .from('perfis')
-    .select('*, eventos(count)', { count: 'exact' })
+    .select('*, eventos!eventos_cliente_id_fkey(count), fornecedores(nome)', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, to)
   // Admin enxerga apenas a equipe da própria organização
@@ -66,7 +66,7 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {['Usuário', 'E-mail', 'Papel', 'Eventos', 'Criado em', ''].map(h => (
+                {['Usuário', 'E-mail', 'Papel', 'Setor / Eventos', 'Status', 'Criado em', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -75,6 +75,8 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
               {usuarios.map(u => {
                 const eventoCount = (u.eventos as any)?.[0]?.count ?? 0
                 const role = (u.role ?? 'cliente') as Role
+                const setorNome = (u.fornecedores as any)?.nome as string | undefined
+                const ativo = u.ativo !== false
                 return (
                   <tr key={u.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
@@ -87,10 +89,19 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 text-slate-500 text-sm">
-                        <CalendarDays className="w-3.5 h-3.5" />
-                        {eventoCount}
-                      </div>
+                      {role === 'supervisor' ? (
+                        <span className="text-slate-500 text-sm">{setorNome ?? '—'}</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-slate-500 text-sm">
+                          <CalendarDays className="w-3.5 h-3.5" />
+                          {eventoCount}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${ativo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                        {ativo ? 'Ativo' : 'Inativo'}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {format(new Date(u.created_at), "dd/MM/yyyy", { locale: ptBR })}

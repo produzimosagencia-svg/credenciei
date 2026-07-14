@@ -49,6 +49,8 @@ export const getPerfil = cache(async () => {
   if (!user) return null
   // Usa service role para bypassar RLS na leitura do perfil
   const { data } = await admin.from('perfis').select('*').eq('id', user.id).single()
+  // Conta desativada (Status = Inativo) é tratada como não-logada em todo o app
+  if (data && data.ativo === false) return null
   return data
 })
 
@@ -71,10 +73,23 @@ export async function licencasDeEventoRestantes(perfil: any): Promise<number> {
   return Math.max(0, org.limite_eventos - (count ?? 0))
 }
 
-// ─── Scanner: quais eventos cada papel pode escanear ──────────────────────────
+// ─── Scanner e escopo por SETOR (fornecedor) ──────────────────────────────────
 // master  → todos os eventos ativos
 // admin/gerente/cliente → eventos ativos da própria organização
-// supervisor → apenas os eventos ativos a que foi vinculado (supervisor_eventos)
+// supervisor → apenas o setor (fornecedor) ao qual foi vinculado na criação,
+//              e portanto só o evento dono desse setor.
+
+/** O setor (fornecedor) do supervisor logado, com o evento a que pertence. Null se não for supervisor de setor. */
+export async function meuSetor(perfil: any): Promise<{ id: string; nome: string; evento_id: string; evento_nome: string } | null> {
+  if (!perfil || perfil.role !== 'supervisor' || !perfil.fornecedor_id) return null
+  const { data } = await admin
+    .from('fornecedores')
+    .select('id, nome, evento_id, eventos(nome)')
+    .eq('id', perfil.fornecedor_id)
+    .single()
+  if (!data) return null
+  return { id: data.id, nome: data.nome, evento_id: data.evento_id, evento_nome: (data.eventos as any)?.nome ?? '' }
+}
 
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nome: string }[]> {
@@ -90,15 +105,10 @@ export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nom
   }
 
   if (perfil.role === 'supervisor') {
-    const { data } = await admin
-      .from('supervisor_eventos')
-      .select('eventos!inner(id, nome, ativo, data_inicio)')
-      .eq('perfil_id', perfil.id)
-    return (data ?? [])
-      .map((r: any) => r.eventos)
-      .filter((e: any) => e?.ativo)
-      .sort((a: any, b: any) => (a.data_inicio < b.data_inicio ? 1 : -1))
-      .map((e: any) => ({ id: e.id, nome: e.nome }))
+    const setor = await meuSetor(perfil)
+    if (!setor) return []
+    const { data: evento } = await admin.from('eventos').select('id, nome, ativo').eq('id', setor.evento_id).single()
+    return evento?.ativo ? [{ id: evento.id, nome: evento.nome }] : []
   }
 
   // admin / gerente / cliente → eventos ativos da própria organização
@@ -112,19 +122,14 @@ export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nom
   return data ?? []
 }
 
-/** Este usuário pode escanear ESTE evento? (checa vínculo do supervisor / org do admin) */
+/** Este usuário pode escanear ESTE evento? (checa o setor do supervisor / org do admin) */
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {
   if (!perfil || !podeEscanear(perfil.role)) return false
   if (ehMaster(perfil.role)) return true
 
   if (perfil.role === 'supervisor') {
-    const { data } = await admin
-      .from('supervisor_eventos')
-      .select('evento_id')
-      .eq('perfil_id', perfil.id)
-      .eq('evento_id', eventoId)
-      .maybeSingle()
-    return !!data
+    const setor = await meuSetor(perfil)
+    return setor?.evento_id === eventoId
   }
 
   // admin / gerente / cliente → evento tem que ser da própria organização

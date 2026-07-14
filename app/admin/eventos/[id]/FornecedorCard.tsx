@@ -2,10 +2,11 @@
 import Link from 'next/link'
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Copy, Check, Trash2, Users, ExternalLink } from 'lucide-react'
+import { Copy, Check, Trash2, Users, ExternalLink, Shield } from 'lucide-react'
 import { deletarFornecedor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import ImportarFuncionarios from './ImportarFuncionarios'
+import SupervisorModal from './SupervisorModal'
 
 type Fornecedor = {
   id: string
@@ -16,9 +17,21 @@ type Fornecedor = {
   funcionarios: { count: number }[]
 }
 
+type Supervisor = { id: string; nome: string; email: string; telefone: string | null; ativo: boolean }
+
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-export default function FornecedorCard({ fornecedor: f, eventoId }: { fornecedor: Fornecedor; eventoId: string }) {
+export default function FornecedorCard({
+  fornecedor: f,
+  eventoId,
+  supervisores = [],
+  podeGerenciarSupervisores = false,
+}: {
+  fornecedor: Fornecedor
+  eventoId: string
+  supervisores?: Supervisor[]
+  podeGerenciarSupervisores?: boolean
+}) {
   const [copied, setCopied] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -36,8 +49,12 @@ export default function FornecedorCard({ fornecedor: f, eventoId }: { fornecedor
   const handleDelete = () => {
     if (!confirm(`Excluir "${f.nome}" e todos os funcionários cadastrados?`)) return
     startTransition(async () => {
-      await deletarFornecedor(f.id, eventoId)
-      router.refresh()
+      try {
+        await deletarFornecedor(f.id, eventoId)
+        router.refresh()
+      } catch (e: any) {
+        alert(e?.message ?? 'Erro ao excluir setor')
+      }
     })
   }
 
@@ -110,6 +127,26 @@ export default function FornecedorCard({ fornecedor: f, eventoId }: { fornecedor
         </div>
         <ImportarFuncionarios fornecedorId={f.id} />
       </div>
+
+      {podeGerenciarSupervisores && (
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
+              <Shield className="w-3 h-3" /> Supervisores
+            </p>
+            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} />
+          </div>
+          {!supervisores.length ? (
+            <p className="text-slate-300 text-xs">Nenhum supervisor cadastrado</p>
+          ) : (
+            <div className="space-y-0.5">
+              {supervisores.map(s => (
+                <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} supervisor={s} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

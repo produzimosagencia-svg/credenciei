@@ -26,7 +26,12 @@ function getAuth() {
   })
 }
 
-const HEADERS = ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo', 'QR Code', 'Cadastro', 'Entrada', 'Saída']
+// Colunas alinhadas ao formulário de cadastro atual (nome, CPF, telefone,
+// empresa, cargo, chave PIX — sem e-mail). "Valor por Funcionário" é
+// preenchido depois pelo supervisor do setor (não faz parte do cadastro).
+// Entrada/Saída saíram: a presença hoje é feita por QR (entrada/fim) + foto/GPS
+// (meio), acompanhada direto no painel — a planilha não tenta mais espelhar isso.
+const HEADERS = ['Nome', 'CPF', 'Telefone', 'Empresa', 'Cargo', 'Chave PIX', 'Valor por Funcionário', 'QR Code', 'Cadastro']
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
 
 const CREDENCIEI_FOLDER_NAME = 'Credenciei'
@@ -92,7 +97,7 @@ export async function criarPlanilhaEvento(nomeEvento: string, clienteFolderId?: 
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Geral!A1:J1',
+    range: 'Geral!A1:I1',
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -120,14 +125,21 @@ export async function garantirAbaFornecedor(
 
   if (existente) {
     const sheetId = existente.properties!.sheetId!
-    // Atualiza cabeçalho se estiver no formato antigo (sem coluna QR Code)
+    // Atualiza cabeçalho pro formato atual — só quando a aba ainda não tem
+    // nenhum funcionário lançado, pra não desalinhar dados já existentes
+    // (colunas antigas como E-mail/Entrada/Saída saíram do layout).
     try {
-      const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A1:J1` })
+      const [headerRes, dadosRes] = await Promise.all([
+        sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A1:I1` }),
+        sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A2` }),
+      ])
       const header = headerRes.data.values?.[0] ?? []
-      if (!header.includes('QR Code')) {
+      const temDados = !!dadosRes.data.values?.length
+      const headerDesatualizado = JSON.stringify(header) !== JSON.stringify(HEADERS)
+      if (headerDesatualizado && !temDados) {
         await sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${fornecedorNome}!A1:J1`,
+          range: `${fornecedorNome}!A1:I1`,
           valueInputOption: 'RAW',
           requestBody: { values: [HEADERS] },
         })
@@ -150,7 +162,7 @@ export async function garantirAbaFornecedor(
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${fornecedorNome}!A1:J1`,
+    range: `${fornecedorNome}!A1:I1`,
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -167,9 +179,10 @@ export async function adicionarFuncionarioNaPlanilha(
     nome: string
     cpf: string
     telefone: string
-    email: string
     empresa: string
     cargo: string
+    chavePix?: string | null
+    valorReceber?: number
     qr_token?: string
   }
 ): Promise<void> {
@@ -182,10 +195,12 @@ export async function adicionarFuncionarioNaPlanilha(
   const telFormatado = funcionario.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
   const cadastro = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const qrLink = funcionario.qr_token ? `${SITE_URL}/credential/${funcionario.qr_token}` : ''
+  // Sem valor definido ainda (o supervisor do setor configura depois) → fica em branco
+  const valor = funcionario.valorReceber ? funcionario.valorReceber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${fornecedorNome}!A:J`,
+    range: `${fornecedorNome}!A:I`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
@@ -193,15 +208,44 @@ export async function adicionarFuncionarioNaPlanilha(
         funcionario.nome,
         cpfFormatado,
         telFormatado,
-        funcionario.email,
         funcionario.empresa,
         funcionario.cargo,
-        qrLink,  // QR Code (col G)
-        cadastro, // Cadastro (col H)
-        '',       // Entrada (col I)
-        '',       // Saída (col J)
+        funcionario.chavePix || '', // Chave PIX (col F)
+        valor,    // Valor por Funcionário (col G)
+        qrLink,   // QR Code (col H)
+        cadastro, // Cadastro (col I)
       ]],
     },
+  })
+}
+
+/** Atualiza o "Valor por Funcionário" (col G) da linha do funcionário, pelo nome. */
+export async function atualizarValorNaPlanilha(
+  spreadsheetId: string,
+  fornecedorNome: string,
+  funcionarioNome: string,
+  valor: number
+): Promise<void> {
+  const auth = getAuth()
+  const sheets = google.sheets({ version: 'v4', auth })
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${fornecedorNome}!A:A`,
+  })
+
+  const rows = res.data.values ?? []
+  const rowIndex = rows.findIndex((row, i) => i > 0 && row[0] === funcionarioNome)
+  if (rowIndex === -1) return
+
+  const rowNum = rowIndex + 1 // 1-based
+  const valorFormatado = valor > 0 ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${fornecedorNome}!G${rowNum}`,
+    valueInputOption: 'RAW',
+    requestBody: { values: [[valorFormatado]] },
   })
 }
 

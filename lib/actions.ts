@@ -8,6 +8,7 @@ import {
   garantirAbaFornecedor,
   adicionarFuncionarioNaPlanilha,
   registrarPresencaNaPlanilha,
+  atualizarValorNaPlanilha,
   garantirPastaCliente,
 } from './google-sheets'
 import { format } from 'date-fns'
@@ -53,18 +54,23 @@ async function exigirEventoDaOrg(eventoId: string) {
   return perfil
 }
 
-/** Igual ao anterior, mas resolvendo a org a partir do fornecedor. */
-async function exigirFornecedorDaOrg(fornecedorId: string) {
-  const perfil = await exigirGestorDeEventos()
-  const { data: fornecedor } = await supabaseAdmin
-    .from('fornecedores')
-    .select('id, eventos(organizacao_id)')
-    .eq('id', fornecedorId)
-    .single()
-  if (!fornecedor) throw new Error('Fornecedor não encontrado')
-  const orgDoEvento = (fornecedor.eventos as any)?.organizacao_id
-  if (!ehMaster(perfil.role) && orgDoEvento !== perfil.organizacao_id) {
-    throw new Error('Sem permissão sobre este fornecedor')
+/**
+ * Acesso à equipe (funcionários) de um fornecedor/setor: gestores de evento da
+ * própria organização, OU o supervisor vinculado a ESTE setor especificamente
+ * ("Gerenciar a equipe vinculada ao seu setor").
+ */
+async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) {
+  const perfil = await getPerfil()
+  if (!perfil) throw new Error('Sem permissão')
+  if (perfil.role === 'supervisor') {
+    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+    return perfil
+  }
+  if (!podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão')
+  const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    throw new Error('Sem permissão sobre este evento')
   }
   return perfil
 }
@@ -221,23 +227,33 @@ export async function deletarOrganizacao(id: string) {
   revalidatePath('/admin/organizacoes')
 }
 
-// ─── Usuários (equipe da organização) ─────────────────────────────────────────
+// ─── Supervisores (equipe vinculada a um setor/fornecedor) ────────────────────
 
 /**
- * Cria um supervisor (equipe de credenciamento) dentro da organização de quem
- * está criando. Admin cria a própria equipe; o master cria admins via organização.
+ * Cria um supervisor vinculado a EXATAMENTE UM setor (fornecedor). Ele só
+ * enxerga/gerencia a equipe e o scanner daquele setor. Apenas admin/gerente
+ * da organização (ou master) pode criar.
  */
-export async function criarUsuario(formData: FormData) {
+export async function criarSupervisor(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar usuários')
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar supervisores')
 
-  const organizacaoId = perfil!.organizacao_id
-  if (!organizacaoId) throw new Error('Somente admins de uma organização cadastram equipe. O master cria admins pela tela de Organizações.')
+  const { data: fornecedor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('id, evento_id, eventos(organizacao_id)')
+    .eq('id', fornecedorId)
+    .single()
+  if (!fornecedor) throw new Error('Setor não encontrado')
+  const organizacaoId = (fornecedor.eventos as any)?.organizacao_id
+  if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este setor')
+  }
 
-  const nome = formData.get('nome') as string
-  const email = formData.get('email') as string
+  const nome = (formData.get('nome') as string).trim()
+  const email = (formData.get('email') as string).trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
   const senha = formData.get('senha') as string
-  const eventoIds = formData.getAll('evento_ids') as string[]
+  const ativo = formData.get('ativo') !== 'false'
 
   const admin = getAdminSupabase()
 
@@ -252,27 +268,49 @@ export async function criarUsuario(formData: FormData) {
     id: user.user!.id,
     nome,
     email,
+    telefone,
+    ativo,
     role: 'supervisor',
     organizacao_id: organizacaoId,
+    fornecedor_id: fornecedorId,
   }])
 
-  // Vincula o supervisor aos eventos escolhidos (apenas da própria organização)
-  if (eventoIds.length) {
-    const { data: eventosDaOrg } = await admin
-      .from('eventos')
-      .select('id')
-      .eq('organizacao_id', organizacaoId)
-      .in('id', eventoIds)
-    const permitidos = eventosDaOrg?.map(e => e.id) ?? []
-    if (permitidos.length) {
-      await admin.from('supervisor_eventos').insert(
-        permitidos.map(eventoId => ({ perfil_id: user.user!.id, evento_id: eventoId }))
-      )
-    }
+  revalidatePath('/admin/usuarios')
+  revalidatePath(`/admin/eventos/${eventoId}`)
+}
+
+/** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
+export async function editarSupervisor(id: string, formData: FormData) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão')
+
+  const admin = getAdminSupabase()
+  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id').eq('id', id).single()
+  if (!alvo) throw new Error('Supervisor não encontrado')
+  if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este supervisor')
   }
 
+  const nome = (formData.get('nome') as string).trim()
+  const email = (formData.get('email') as string).trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const ativo = formData.get('ativo') !== 'false'
+  const novaSenha = (formData.get('senha') as string) || ''
+  if (novaSenha && novaSenha.length < 6) throw new Error('Senha muito curta. Use ao menos 6 caracteres.')
+
+  const { error: authErr } = await admin.auth.admin.updateUserById(id, {
+    email,
+    ...(novaSenha ? { password: novaSenha } : {}),
+  })
+  if (authErr) throw new Error(mensagemAuth(authErr.message))
+
+  await admin.from('perfis').update({ nome, email, telefone, ativo }).eq('id', id)
+
   revalidatePath('/admin/usuarios')
-  redirect('/admin/usuarios')
+  if (alvo.fornecedor_id) {
+    const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
+    if (fornecedor) revalidatePath(`/admin/eventos/${fornecedor.evento_id}`)
+  }
 }
 
 export async function deletarUsuario(id: string) {
@@ -430,6 +468,14 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
 export async function deletarFornecedor(id: string, eventoId: string) {
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
+
+  // Setor com supervisores vinculados não pode ser excluído (teriam que ser
+  // realocados ou removidos primeiro)
+  const { data: supervisores } = await db.from('perfis').select('id').eq('fornecedor_id', id).limit(1)
+  if (supervisores && supervisores.length) {
+    throw new Error('Este setor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o setor.')
+  }
+
   await db.from('fornecedores').delete().eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}`)
   redirect(`/admin/eventos/${eventoId}`)
@@ -481,7 +527,7 @@ export async function renovarQRs(eventoId: string) {
 // ─── Funcionários ────────────────────────────────────────────────────────────
 
 export async function criarFuncionario(fornecedorId: string, eventoId: string, formData: FormData) {
-  await exigirEventoDaOrg(eventoId)
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
@@ -514,10 +560,41 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 }
 
 export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
   await db.from('funcionarios').delete().eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+}
+
+/**
+ * Valor que este funcionário deve receber dos demais integrantes do setor.
+ * Mesma permissão de "gerenciar a equipe": admin/master da organização, ou o
+ * supervisor vinculado a este setor especificamente.
+ */
+export async function atualizarValorReceber(funcionarioId: string, fornecedorId: string, eventoId: string, valor: number) {
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  if (!Number.isFinite(valor) || valor < 0) throw new Error('Valor inválido')
+  const db = supabaseAdmin
+  const { error } = await db.from('funcionarios').update({ valor_receber: valor }).eq('id', funcionarioId)
+  if (error) throw new Error('Erro ao salvar o valor')
+
+  // Reflete na planilha depois da resposta (não bloqueia; sobrevive ao serverless)
+  after(() => sincronizarValorNaPlanilha(funcionarioId, valor).catch(console.error))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+}
+
+async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('nome, fornecedores(nome, eventos(spreadsheet_id))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func) return
+  const fornecedor = func.fornecedores as any
+  const evento = fornecedor?.eventos as any
+  if (!evento?.spreadsheet_id) return
+  await atualizarValorNaPlanilha(evento.spreadsheet_id, fornecedor.nome, func.nome, valor)
 }
 
 // ─── Google Sheets ───────────────────────────────────────────────────────────
@@ -539,9 +616,10 @@ export async function sincronizarFuncionarioNaPlanilha(funcionarioId: string) {
       nome: func.nome,
       cpf: func.cpf,
       telefone: func.telefone,
-      email: func.email,
       empresa: func.empresa,
       cargo: func.cargo,
+      valorReceber: func.valor_receber,
+      chavePix: func.chave_pix,
       qr_token: func.qr_token,
     })
   } catch (e) {
@@ -638,7 +716,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedores(evento_id)')
+    .select('id, nome, empresa, cargo, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
@@ -646,6 +724,11 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   const funcInfo = { nome: func.nome, empresa: func.empresa, cargo: func.cargo ?? null }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
+  }
+
+  // Supervisor de setor só escaneia funcionários do próprio setor (fornecedor)
+  if (perfil.role === 'supervisor' && perfil.fornecedor_id && func.fornecedor_id !== perfil.fornecedor_id) {
+    return { success: false, message: 'Funcionário não pertence ao seu setor', funcionario: funcInfo }
   }
 
   const erroJanela = validarJanela(evento, momento)
@@ -723,7 +806,7 @@ export async function registrarPresencaFoto(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string }
+  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -752,6 +835,7 @@ export async function cadastrarFuncionarioPublico(
     telefone: dados.telefone.replace(/\D/g, ''),
     empresa: dados.empresa.trim(),
     cargo: dados.cargo.trim(),
+    chave_pix: dados.chavePix?.trim() || null,
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
