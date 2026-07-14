@@ -67,15 +67,15 @@ function formatarTelefoneExibicao(tel: string): string {
   return tel
 }
 
-function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string; link: string }): string {
-  const { nome, nomeEvento, horarioLimite, link } = ctx
+function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioAbertura: string; horarioLimite: string; link: string }): string {
+  const { nome, nomeEvento, horarioAbertura, horarioLimite, link } = ctx
   if (tipo === 'lembrete_entrada') {
-    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Horário limite para o registro: ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code: ${link}`
+    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Registro de entrada disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code: ${link}`
   }
   if (tipo === 'lembrete_meio') {
-    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Prazo para realizar o registro: ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque aqui para registrar: ${link}`
+    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Registro disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque aqui para registrar: ${link}`
   }
-  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code: ${link}`
+  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Registro de saída disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code: ${link}`
 }
 
 function montarMensagemAlerta(ctx: { nomeSupervisor: string; nomeFuncionario: string; telefoneFuncionario: string; setorNome: string; rotulo: string }): string {
@@ -178,6 +178,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
             mensagem: montarMensagemLembrete(janela.tipoLembrete, {
               nome: func.nome,
               nomeEvento: evento.nome,
+              horarioAbertura: formatarBR(horarioInicioISO, 'hora'),
               horarioLimite: horarioLimiteFmt,
               link: `${SITE_URL}/credential/${func.qr_token}`,
             }),
