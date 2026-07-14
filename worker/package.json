@@ -1,0 +1,16 @@
+{
+  "name": "credenciei-whatsapp-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Worker standalone (fora do Vercel) que drena a fila de lembretes de WhatsApp 24/7. Roda na VPS via EasyPanel, reaproveitando lib/mensagens.ts e lib/evolution.ts do app principal.",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20"
+  }
+}

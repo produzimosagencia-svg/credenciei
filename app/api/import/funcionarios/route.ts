@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
+import { sincronizarAgendamentos } from '@/lib/mensagens'
 
 type FuncionarioRow = {
   nome: string
@@ -110,6 +111,11 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error('[import/funcionarios] Erro ao sincronizar planilha:', e)
       }
+    }
+
+    // Agenda os lembretes de WhatsApp pra quem acabou de entrar (uma vez pro lote, não por linha)
+    if (inseridos?.length) {
+      after(() => sincronizarAgendamentos(eventoId).catch(console.error))
     }
 
     return NextResponse.json({ ok: true, total: inseridos?.length ?? 0 })

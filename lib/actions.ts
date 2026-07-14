@@ -21,7 +21,8 @@ import {
   podeEscanear,
   ehMaster,
 } from './permissions'
-import { inputParaISO } from './tz'
+import { inputParaISO, formatarBR } from './tz'
+import { sincronizarAgendamentos, agendarCredenciaisSupervisor } from './mensagens'
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
@@ -240,11 +241,12 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, eventos(organizacao_id)')
+    .select('id, evento_id, nome, eventos(organizacao_id, nome, data_inicio)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) throw new Error('Setor não encontrado')
-  const organizacaoId = (fornecedor.eventos as any)?.organizacao_id
+  const eventoDoFornecedor = fornecedor.eventos as any
+  const organizacaoId = eventoDoFornecedor?.organizacao_id
   if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
     throw new Error('Sem permissão sobre este setor')
   }
@@ -274,6 +276,21 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     organizacao_id: organizacaoId,
     fornecedor_id: fornecedorId,
   }])
+
+  // Envia as credenciais de acesso por WhatsApp (não bloqueia; sobrevive ao serverless)
+  if (telefone) {
+    after(() => agendarCredenciaisSupervisor({
+      eventoId,
+      perfilId: user.user!.id,
+      telefone,
+      nome,
+      setorNome: fornecedor.nome,
+      eventoNome: eventoDoFornecedor?.nome ?? '',
+      dataEvento: formatarBR(eventoDoFornecedor?.data_inicio, 'data'),
+      email,
+      senha,
+    }).catch(console.error))
+  }
 
   revalidatePath('/admin/usuarios')
   revalidatePath(`/admin/eventos/${eventoId}`)
@@ -378,6 +395,7 @@ export async function criarEvento(formData: FormData) {
     console.error('Erro ao criar planilha:', e)
   }
 
+  after(() => sincronizarAgendamentos(novo.id).catch(console.error))
   redirect(`/admin/eventos/${novo.id}`)
 }
 
@@ -393,6 +411,7 @@ export async function editarEvento(id: string, formData: FormData) {
     ...janelasDoForm(formData),
   }
   await db.from('eventos').update(data).eq('id', id)
+  after(() => sincronizarAgendamentos(id).catch(console.error))
   revalidatePath(`/admin/eventos/${id}`)
   redirect(`/admin/eventos/${id}`)
 }
@@ -553,8 +572,10 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 
   if (error) throw new Error(`Erro ao cadastrar funcionário: ${error.message}`)
 
-  // Sincroniza com a planilha depois da resposta (não bloqueia; sobrevive ao serverless)
+  // Sincroniza com a planilha e agenda os lembretes de WhatsApp depois da
+  // resposta (não bloqueia; sobrevive ao serverless)
   after(() => sincronizarFuncionarioNaPlanilha(novo.id).catch(console.error))
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
@@ -841,6 +862,7 @@ export async function cadastrarFuncionarioPublico(
   if (error || !data) return { error: 'Erro ao enviar formulário' }
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
+  after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
   return { qrToken: data.qr_token }
 }
 
