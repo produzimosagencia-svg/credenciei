@@ -8,10 +8,10 @@ type FuncionarioRow = {
   nome: string
   cpf: string
   telefone: string
-  email: string
+  chavePix?: string
   empresa: string
   cargo: string
-  setor?: string
+  valor?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
     }
 
-    // Busca o fornecedor e o evento para pegar o spreadsheet_id
+    // Busca o fornecedor (setor) e o evento para pegar o spreadsheet_id
     const { data: fornecedor } = await supabaseAdmin
       .from('fornecedores')
       .select('*, eventos(id, spreadsheet_id, nome, organizacao_id)')
@@ -47,39 +47,22 @@ export async function POST(request: NextRequest) {
     const spreadsheetId = evento?.spreadsheet_id
     const eventoId = evento?.id ?? fornecedor.evento_id
 
-    // Resolve setores pelo nome (cria automaticamente os que não existirem)
-    const nomesSetores = [...new Set(
-      funcionarios.map(f => f.setor?.trim()).filter((s): s is string => !!s)
-    )]
-    const setorIdPorNome: Record<string, string> = {}
-    if (nomesSetores.length && eventoId) {
-      const { data: existentes } = await supabaseAdmin
-        .from('setores')
-        .select('id, nome')
-        .eq('evento_id', eventoId)
-      for (const s of existentes ?? []) setorIdPorNome[s.nome.toLowerCase()] = s.id
-
-      const faltantes = nomesSetores.filter(n => !setorIdPorNome[n.toLowerCase()])
-      if (faltantes.length) {
-        const { data: criados } = await supabaseAdmin
-          .from('setores')
-          .insert(faltantes.map(nome => ({ evento_id: eventoId, nome })))
-          .select('id, nome')
-        for (const s of criados ?? []) setorIdPorNome[s.nome.toLowerCase()] = s.id
+    // Prepara os registros com CPF e telefone limpos. O funcionário já fica
+    // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
+    // vira só o campo "empresa" — não cria setores novos).
+    const payload = funcionarios.map(f => {
+      const valor = parseFloat(String(f.valor ?? '').replace(',', '.'))
+      return {
+        nome: f.nome?.trim(),
+        cpf: String(f.cpf ?? '').replace(/\D/g, ''),
+        telefone: String(f.telefone ?? '').replace(/\D/g, ''),
+        chave_pix: f.chavePix?.trim() || null,
+        empresa: f.empresa?.trim() || fornecedor.nome,
+        cargo: f.cargo?.trim() ?? '',
+        valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
+        fornecedor_id: fornecedorId,
       }
-    }
-
-    // Prepara os registros com CPF e telefone limpos
-    const payload = funcionarios.map(f => ({
-      nome: f.nome?.trim(),
-      cpf: String(f.cpf ?? '').replace(/\D/g, ''),
-      telefone: String(f.telefone ?? '').replace(/\D/g, ''),
-      email: f.email?.trim() ?? '',
-      empresa: f.empresa?.trim() ?? fornecedor.nome,
-      cargo: f.cargo?.trim() ?? '',
-      setor_id: f.setor?.trim() ? setorIdPorNome[f.setor.trim().toLowerCase()] ?? null : null,
-      fornecedor_id: fornecedorId,
-    })).filter(f => f.nome && f.cpf)
+    }).filter(f => f.nome && f.cpf)
 
     if (payload.length === 0) {
       return NextResponse.json({ error: 'Nenhum funcionário válido encontrado' }, { status: 400 })
@@ -89,7 +72,7 @@ export async function POST(request: NextRequest) {
     const { data: inseridos, error } = await supabaseAdmin
       .from('funcionarios')
       .insert(payload)
-      .select('id, nome, cpf, telefone, email, empresa, cargo, qr_token')
+      .select('id, nome, cpf, telefone, empresa, cargo, chave_pix, valor_receber, qr_token')
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -105,6 +88,8 @@ export async function POST(request: NextRequest) {
             telefone: f.telefone,
             empresa: f.empresa,
             cargo: f.cargo,
+            chavePix: f.chave_pix,
+            valorReceber: f.valor_receber,
             qr_token: f.qr_token,
           })
         }

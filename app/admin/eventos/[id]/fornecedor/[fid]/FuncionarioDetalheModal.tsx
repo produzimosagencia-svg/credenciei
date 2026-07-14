@@ -1,10 +1,12 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus } from 'lucide-react'
-import { atualizarValorReceber } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import type { Presenca } from './FuncionarioTable'
+
+const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 type Funcionario = {
   id: string
@@ -14,6 +16,10 @@ type Funcionario = {
   empresa: string
   cargo: string
   valorReceber: number
+  chavePix: string | null
+  pago: boolean
+  pagoEm: string | null
+  fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
   fim: Presenca
@@ -23,17 +29,20 @@ export default function FuncionarioDetalheModal({
   funcionario: f,
   fornecedorId,
   eventoId,
+  valorCombinado,
   trigger,
 }: {
   funcionario: Funcionario
   fornecedorId: string
   eventoId: string
+  valorCombinado: number | null
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [valor, setValor] = useState(String(f.valorReceber))
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [isPendingPagamento, startTransitionPagamento] = useTransition()
   const router = useRouter()
 
   const handleSalvar = () => {
@@ -54,6 +63,17 @@ export default function FuncionarioDetalheModal({
     })
   }
 
+  const handleAlternarPagamento = () => {
+    startTransitionPagamento(async () => {
+      try {
+        await alternarPagamento(f.id, fornecedorId, eventoId, !f.pago)
+        router.refresh()
+      } catch (e: any) {
+        setErro(e?.message ?? 'Erro ao atualizar o pagamento')
+      }
+    })
+  }
+
   return (
     <>
       <button onClick={() => setOpen(true)} className="text-left">{trigger}</button>
@@ -66,11 +86,21 @@ export default function FuncionarioDetalheModal({
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
-              <div>
-                <h2 className="text-slate-800 font-bold">{f.nome}</h2>
-                <p className="text-slate-400 text-xs mt-0.5">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+              <div className="flex items-center gap-3 min-w-0">
+                {f.fotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.fotoUrl} alt={f.nome} className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                    <User className="w-6 h-6 text-slate-300" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2 className="text-slate-800 font-bold truncate">{f.nome}</h2>
+                  <p className="text-slate-400 text-xs mt-0.5 truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                </div>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={() => setOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -93,6 +123,35 @@ export default function FuncionarioDetalheModal({
                   <LinhaPresenca label="Entrada" p={f.entrada} />
                   <LinhaPresenca label="Meio" p={f.meio} />
                   <LinhaPresenca label="Fim" p={f.fim} />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Financeiro</p>
+                  <button
+                    onClick={handleAlternarPagamento}
+                    disabled={isPendingPagamento}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                      f.pago ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                    title={f.pago && f.pagoEm ? `Pago em ${formatarBR(f.pagoEm, 'curto')} — clique para desfazer` : 'Marcar como pago'}
+                  >
+                    {f.pago ? <Check className="w-3.5 h-3.5" /> : null}
+                    {isPendingPagamento ? 'Salvando...' : f.pago ? 'PAGO' : 'Marcar como pago'}
+                  </button>
+                </div>
+                {valorCombinado != null && (
+                  <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="text-slate-500">Valor combinado (setor)</span>
+                    <span className="text-slate-700 font-semibold">{brl(valorCombinado)}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 gap-2">
+                  <span className="text-slate-500 shrink-0">Chave PIX</span>
+                  <span className={`font-medium font-mono truncate ${f.chavePix ? 'text-slate-700' : 'text-slate-300'}`}>
+                    {f.chavePix || 'Não informada'}
+                  </span>
                 </div>
               </div>
 
@@ -133,24 +192,36 @@ export default function FuncionarioDetalheModal({
 
 function LinhaPresenca({ label, p }: { label: string; p: Presenca }) {
   return (
-    <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
-      <span className="text-slate-500">{label}</span>
-      {!p ? (
-        <span className="text-slate-300 flex items-center gap-1"><Minus className="w-3.5 h-3.5" /></span>
-      ) : (
-        <div className="flex items-center gap-1.5">
-          <span className="text-green-600 text-xs font-semibold">{formatarBR(p.feitoEm, 'curto')}</span>
-          {p.fotoUrl && (
-            <a href={p.fotoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-brand-500" title="Ver foto">
-              <Camera className="w-3.5 h-3.5" />
-            </a>
-          )}
-          {p.lat != null && p.lng != null && (
-            <a href={`https://maps.google.com/?q=${p.lat},${p.lng}`} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-brand-500" title="Ver local">
-              <MapPin className="w-3.5 h-3.5" />
-            </a>
-          )}
-        </div>
+    <div className="bg-slate-50 rounded-lg px-3 py-2 space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-slate-500">{label}</span>
+        {!p ? (
+          <span className="text-slate-300 flex items-center gap-1"><Minus className="w-3.5 h-3.5" /></span>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span className="text-green-600 text-xs font-semibold">{formatarBR(p.feitoEm, 'curto')}</span>
+            {p.fotoUrl && (
+              <a href={p.fotoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-brand-500" title="Ver foto">
+                <Camera className="w-3.5 h-3.5" />
+              </a>
+            )}
+            {p.lat != null && p.lng != null && (
+              <a href={`https://maps.google.com/?q=${p.lat},${p.lng}`} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-brand-500" title="Ver local">
+                <MapPin className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+      {p?.enderecoAproximado && (
+        <p className="text-slate-400 text-[11px] flex items-center gap-1">
+          <MapPin className="w-2.5 h-2.5 shrink-0" /> {p.enderecoAproximado}
+        </p>
+      )}
+      {p?.registradoPor && (
+        <p className="text-slate-400 text-[11px] flex items-center gap-1">
+          <ScanLine className="w-2.5 h-2.5 shrink-0" /> Registrado por {p.registradoPor}
+        </p>
       )}
     </div>
   )

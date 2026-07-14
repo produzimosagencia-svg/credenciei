@@ -39,10 +39,10 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
         nome: get(row, ['nome', 'name', 'nome completo']),
         cpf: get(row, ['cpf']),
         telefone: get(row, ['telefone', 'phone', 'celular', 'tel']),
-        email: get(row, ['email', 'e-mail']),
-        empresa: get(row, ['empresa', 'company']),
+        chavePix: get(row, ['chave pix', 'chave_pix', 'pix']),
+        empresa: get(row, ['empresa/setor', 'empresa', 'setor', 'company', 'equipe']),
         cargo: get(row, ['cargo', 'função', 'funcao', 'role']),
-        setor: get(row, ['setor', 'equipe', 'área', 'area']),
+        valor: get(row, ['valor', 'valor a receber', 'valor_receber']),
       })).filter(f => f.nome)
 
       if (funcionarios.length === 0) {
@@ -72,18 +72,6 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const downloadModelo = async () => {
-    const XLSX = await import('xlsx')
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['Nome', 'CPF', 'Telefone', 'E-mail', 'Empresa', 'Cargo', 'Setor'],
-      ['João Silva', '12345678901', '11999999999', 'joao@email.com', 'Empresa ABC', 'Técnico', 'Palco principal'],
-      ['Maria Souza', '98765432100', '11988888888', 'maria@email.com', 'Empresa ABC', 'Coordenadora', 'Bar'],
-    ])
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Funcionários')
-    XLSX.writeFile(wb, 'modelo-importacao.xlsx')
-  }
-
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -98,13 +86,14 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
           }
           {loading ? 'Importando...' : 'Importar planilha'}
         </button>
-        <button
-          onClick={downloadModelo}
+        <a
+          href="/modelo-importacao.xlsx"
+          download="modelo-importacao.xlsx"
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 rounded-lg transition-colors font-medium"
         >
           <Download className="w-3 h-3" />
           Modelo
-        </button>
+        </a>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
       </div>
 

@@ -23,6 +23,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor } from './mensagens'
+import { enderecoAproximado } from './geocoding'
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
@@ -606,6 +607,18 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
+/** Marca/desmarca a baixa de pagamento do valor a receber do setor. */
+export async function alternarPagamento(funcionarioId: string, fornecedorId: string, eventoId: string, pago: boolean) {
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const db = supabaseAdmin
+  const { error } = await db.from('funcionarios').update({
+    pago,
+    pago_em: pago ? new Date().toISOString() : null,
+  }).eq('id', funcionarioId)
+  if (error) throw new Error('Erro ao atualizar o pagamento')
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+}
+
 async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
@@ -701,7 +714,14 @@ function validarJanela(evento: any, momento: MomentoPresenca): string | null {
 /** Substitui o registro do momento (um por etapa) e insere o novo. */
 async function upsertRegistro(funcionarioId: string, eventoId: string, momento: MomentoPresenca, extra: Record<string, unknown> = {}) {
   await supabaseAdmin.from('registros').delete().eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', momento)
-  return supabaseAdmin.from('registros').insert([{ funcionario_id: funcionarioId, evento_id: eventoId, tipo: momento, ...extra }])
+  return supabaseAdmin.from('registros').insert([{ funcionario_id: funcionarioId, evento_id: eventoId, tipo: momento, ...extra }]).select('id').single()
+}
+
+/** Preenche o endereço aproximado (geocoding reverso) em background — cosmético, sem retry. */
+async function sincronizarEndereco(registroId: string, lat: number, lng: number) {
+  const endereco = await enderecoAproximado(lat, lng)
+  if (!endereco) return
+  await supabaseAdmin.from('registros').update({ endereco_aproximado: endereco }).eq('id', registroId)
 }
 
 export type ResultadoScan = {
@@ -756,7 +776,8 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   const erroJanela = validarJanela(evento, momento)
   if (erroJanela) return { success: false, message: erroJanela, funcionario: funcInfo }
 
-  const { error } = await upsertRegistro(func.id, eventoId, momento)
+  const extra = perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}
+  const { error } = await upsertRegistro(func.id, eventoId, momento, extra)
   if (error) return { success: false, message: 'Erro ao registrar. Tente de novo.' }
 
   return {
@@ -813,8 +834,10 @@ export async function registrarPresencaFoto(
     return { error: 'Não foi possível salvar a foto. Tente de novo.' }
   }
 
-  const { error } = await upsertRegistro(func.id, eventoId, 'meio', { foto_url: path, latitude, longitude })
+  const { data: registro, error } = await upsertRegistro(func.id, eventoId, 'meio', { foto_url: path, latitude, longitude })
   if (error) return { error: 'Erro ao registrar. Tente de novo.' }
+
+  after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
 
   return { ok: true }
 }
@@ -828,7 +851,7 @@ export async function registrarPresencaFoto(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string }
+  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; fotoBase64?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -861,6 +884,17 @@ export async function cadastrarFuncionarioPublico(
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
+
+  // Avatar é opcional — falha no upload não impede o cadastro
+  const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
+  if (match) {
+    const contentType = match[1]
+    const ext = contentType.split('/')[1] || 'jpg'
+    const buffer = Buffer.from(match[2], 'base64')
+    const path = `avatares/${data.qr_token}.${ext}`
+    const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
+    if (!up.error) await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
+  }
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))

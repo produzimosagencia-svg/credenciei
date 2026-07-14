@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { CalendarDays, Users, UserCheck, TrendingUp, ArrowRight, Circle, Plus, Building2 } from 'lucide-react'
-import { getPerfil, supabaseAdmin, licencasDeEventoRestantes } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 
 export const revalidate = 0
@@ -11,8 +11,12 @@ export const revalidate = 0
 export default async function AdminPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Supervisor não gerencia nada: a função dele é escanear. Vai direto pro scanner.
-  if (podeEscanear(perfil.role) && !podeGerenciarEventos(perfil.role)) redirect('/scan')
+  // Supervisor não gerencia nada: vai direto pro dashboard do próprio setor
+  // (ou pro scanner, se por algum motivo não tiver setor vinculado).
+  if (podeEscanear(perfil.role) && !podeGerenciarEventos(perfil.role)) {
+    const setor = await meuSetor(perfil)
+    redirect(setor ? `/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}` : '/scan')
+  }
   const db = supabaseAdmin
   const podeCriarEvento = (await licencasDeEventoRestantes(perfil)) > 0
 
@@ -62,7 +66,7 @@ export default async function AdminPage() {
   const stats = [
     { label: 'Total de eventos', value: eventos?.length ?? 0, sub: `${eventosAtivos.length} ativo${eventosAtivos.length !== 1 ? 's' : ''}`, icon: CalendarDays, color: 'text-brand-600', bg: 'bg-brand-100', border: 'border-brand-200' },
     { label: 'Fornecedores', value: totalFornecedores ?? 0, sub: 'cadastrados', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100', border: 'border-purple-200' },
-    { label: 'Credenciados', value: totalFuncionarios ?? 0, sub: 'no total', icon: UserCheck, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' },
+    { label: 'Funcionários', value: totalFuncionarios ?? 0, sub: 'no total', icon: UserCheck, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' },
     { label: 'Entradas hoje', value: entradasHoje, sub: 'registros', icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200' },
   ]
 

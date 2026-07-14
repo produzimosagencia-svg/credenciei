@@ -13,7 +13,7 @@ const supabase = createClient(
 )
 
 const ANTECEDENCIA_LEMBRETE_MINUTOS = 5
-const ANTECEDENCIA_REFORCO_MINUTOS = 3
+const ANTECEDENCIA_REFORCO_MINUTOS = 2
 const BATCH_SIZE_PADRAO = 10
 const PACING_MS = 1500
 const BACKOFF_MINUTOS = [2, 10, 30] // por tentativa: 1ª, 2ª, 3ª...
@@ -30,7 +30,7 @@ type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 // limite" de fechamento (janela_X_fim, o mesmo campo que já valida o
 // check-in em registrarPresencaQR/registrarPresencaFoto).
 //   - lembrete ao funcionário: 5min antes da janela ABRIR.
-//   - reforço ao funcionário: 3min antes do limite FECHAR, só se ele ainda
+//   - reforço ao funcionário: 2min antes do limite FECHAR, só se ele ainda
 //     não tiver registrado (condicional).
 //   - alerta ao supervisor: exatamente quando o limite expira, também
 //     condicional a não ter registro.
@@ -67,30 +67,30 @@ function formatarTelefoneExibicao(tel: string): string {
   return tel
 }
 
-function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string }): string {
-  const { nome, nomeEvento, horarioLimite } = ctx
+function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string; link: string }): string {
+  const { nome, nomeEvento, horarioLimite, link } = ctx
   if (tipo === 'lembrete_entrada') {
-    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Horário limite para o registro: ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.`
+    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Horário limite para o registro: ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code: ${link}`
   }
   if (tipo === 'lembrete_meio') {
-    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Prazo para realizar o registro: ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.`
+    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Prazo para realizar o registro: ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque aqui para registrar: ${link}`
   }
-  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.`
+  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code: ${link}`
 }
 
 function montarMensagemAlerta(ctx: { nomeSupervisor: string; nomeFuncionario: string; telefoneFuncionario: string; setorNome: string; rotulo: string }): string {
   return `Olá, ${ctx.nomeSupervisor}! 👋\n\n⚠️ O funcionário ${ctx.nomeFuncionario} (${formatarTelefoneExibicao(ctx.telefoneFuncionario)}), do setor ${ctx.setorNome}, não registrou o ponto de ${ctx.rotulo} dentro do prazo estabelecido.\n\n🔎 Verifique a situação e, caso necessário, entre em contato com o colaborador para identificar o motivo da ausência do registro.`
 }
 
-function montarMensagemReforco(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string }): string {
-  const { nome, nomeEvento, horarioLimite } = ctx
+function montarMensagemReforco(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string; link: string }): string {
+  const { nome, nomeEvento, horarioLimite, link } = ctx
   if (tipo === 'reforco_entrada') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua entrada no evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de entrada.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua entrada poderá não ser validada.`
+    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua entrada no evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de entrada.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua entrada poderá não ser validada.\n\n🔗 Sua credencial com QR Code: ${link}`
   }
   if (tipo === 'reforco_meio') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de confirmação da sua presença no evento ${nomeEvento} se encerrar!\n\nTire sua selfie AGORA pelo sistema, com a geolocalização ativada 📍\n\n⏰ Prazo: ${horarioLimite}.\n\n⚠️ Após esse horário, sua presença nesse período poderá não ser validada.`
+    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de confirmação da sua presença no evento ${nomeEvento} se encerrar!\n\nTire sua selfie AGORA pelo sistema, com a geolocalização ativada 📍\n\n⏰ Prazo: ${horarioLimite}.\n\n⚠️ Após esse horário, sua presença nesse período poderá não ser validada.\n\n🔗 Toque aqui para registrar: ${link}`
   }
-  return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua saída do evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada.`
+  return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua saída do evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada.\n\n🔗 Sua credencial com QR Code: ${link}`
 }
 
 function montarMensagemCredenciais(ctx: {
@@ -179,12 +179,13 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
               nome: func.nome,
               nomeEvento: evento.nome,
               horarioLimite: horarioLimiteFmt,
+              link: `${SITE_URL}/credential/${func.qr_token}`,
             }),
           })
         }
       }
 
-      // Reforço ao próprio funcionário, 3min antes do limite fechar, condicionado a não ter registro
+      // Reforço ao próprio funcionário, 2min antes do limite fechar, condicionado a não ter registro
       if (horarioLimiteISO && !travados.has(`${func.id}:${janela.tipoReforco}`)) {
         const agendadoPara = new Date(new Date(horarioLimiteISO).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000)
         if (agendadoPara.getTime() > agora) {
@@ -198,6 +199,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
               nome: func.nome,
               nomeEvento: evento.nome,
               horarioLimite: horarioLimiteFmt,
+              link: `${SITE_URL}/credential/${func.qr_token}`,
             }),
             condicao: 'sem_registro',
           })
@@ -358,6 +360,8 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
     status_http: resultado.statusHttp,
     resposta_evolution: resultado.resposta,
     erro: resultado.ok ? null : JSON.stringify(resultado.resposta),
+    destinatario_telefone: msg.telefone,
+    tipo: msg.tipo,
   })
 
   if (resultado.ok) {

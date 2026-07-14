@@ -1,5 +1,6 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Camera as CameraIcon, X } from 'lucide-react'
 import { cadastrarFuncionarioPublico } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome } from '@/lib/format'
 
@@ -12,13 +13,50 @@ const initialForm = {
   chavePix: '',
 }
 
+// Reduz a foto antes de enviar (mesmo padrão de app/credential/[token]/CheckinPresenca.tsx)
+function comprimir(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const max = 640
+      let { width, height } = img
+      if (width > height && width > max) { height = Math.round((height * max) / width); width = max }
+      else if (height >= width && height > max) { width = Math.round((width * max) / height); height = max }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return reject(new Error('canvas'))
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', 0.7))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')) }
+    img.src = url
+  })
+}
+
 export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
   const [form, setForm] = useState(initialForm)
+  const [foto, setFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [qrToken, setQrToken] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const set = (field: keyof typeof form, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
+
+  const onFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      setFoto(await comprimir(file))
+    } catch {
+      // foto é opcional — falha na compressão não impede o cadastro
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,6 +68,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       empresa: form.empresa,
       cargo: form.cargo,
       chavePix: form.chavePix,
+      fotoBase64: foto ?? undefined,
     })
 
     if (res.qrToken) {
@@ -64,6 +103,26 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
+      <Field label="Foto (opcional)">
+        <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onFoto} />
+        {foto ? (
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={foto} alt="Prévia da foto" className="w-16 h-16 rounded-xl object-cover border border-slate-200" />
+            <button type="button" onClick={() => setFoto(null)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+              <X className="w-3 h-3" /> Remover
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-3 text-slate-500 text-sm hover:border-brand-400 hover:text-brand-600 transition-colors"
+          >
+            <CameraIcon className="w-4 h-4" /> Tirar foto
+          </button>
+        )}
+      </Field>
       <Field label="Nome completo *">
         <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />
       </Field>

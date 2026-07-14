@@ -24,14 +24,16 @@ function horaBR(iso: string | null) {
   })
 }
 
-// Reduz a foto antes de enviar (limite de tamanho da server action + rapidez)
+// Reduz a foto antes de enviar (limite de tamanho da server action + rapidez —
+// durante o evento, a rede do local costuma ser ruim, então prioriza velocidade
+// sobre qualidade aqui: são só fotos de conferência, não precisam de nitidez).
 function comprimir(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(url)
-      const max = 1080
+      const max = 720
       let { width, height } = img
       if (width > height && width > max) { height = Math.round((height * max) / width); width = max }
       else if (height >= width && height > max) { width = Math.round((width * max) / height); height = max }
@@ -41,7 +43,7 @@ function comprimir(file: File): Promise<string> {
       const ctx = canvas.getContext('2d')
       if (!ctx) return reject(new Error('canvas'))
       ctx.drawImage(img, 0, 0, width, height)
-      resolve(canvas.toDataURL('image/jpeg', 0.6))
+      resolve(canvas.toDataURL('image/jpeg', 0.5))
     }
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')) }
     img.src = url
@@ -68,6 +70,17 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       pos => {
         coordsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         fileRef.current?.click()
+        // Se a pessoa cancelar a câmera/seletor de arquivo, o evento "change"
+        // do input NUNCA dispara em boa parte dos navegadores — sem isso o
+        // botão ficava travado em "Registrando..." pra sempre. Ao voltar o
+        // foco pra janela, confere se algum arquivo foi mesmo selecionado.
+        const aoVoltarFoco = () => {
+          window.removeEventListener('focus', aoVoltarFoco)
+          setTimeout(() => {
+            if (!fileRef.current?.files?.length) setBusy(false)
+          }, 500)
+        }
+        window.addEventListener('focus', aoVoltarFoco)
       },
       () => {
         setBusy(false)
