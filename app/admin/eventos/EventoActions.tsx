@@ -3,10 +3,12 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal, Pencil, Trash2, Power } from 'lucide-react'
 import { toggleAtivoEvento, deletarEvento } from '@/lib/actions'
+import ConfirmModal from '@/components/ConfirmModal'
 import Link from 'next/link'
 
 export default function EventoActions({ eventoId, ativo, podeExcluir = false }: { eventoId: string; ativo: boolean; podeExcluir?: boolean }) {
   const [open, setOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const handleToggle = () => {
@@ -15,8 +17,11 @@ export default function EventoActions({ eventoId, ativo, podeExcluir = false }: 
   }
 
   const handleDelete = () => {
-    if (!confirm('Tem certeza? Isso vai apagar o evento e todos os dados relacionados.')) return
     setOpen(false)
+    setConfirmOpen(true)
+  }
+
+  const confirmarExclusao = () => {
     startTransition(() => deletarEvento(eventoId))
   }
 
@@ -61,6 +66,13 @@ export default function EventoActions({ eventoId, ativo, podeExcluir = false }: 
           </div>
         </>
       )}
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        mensagem="Tem certeza? Isso vai apagar o evento e todos os dados relacionados."
+      />
     </div>
   )
 }

@@ -121,7 +121,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Fornecedores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
+        <StatCard label="Fornecedores/Setores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
         <StatCard label="Registraram entrada" value={totEntrada} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
         <StatCard label="Registraram meio" value={totMeio} icon={Clock} color="text-amber-600" bg="bg-amber-100" border="border-amber-200" />
@@ -132,7 +132,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         {/* Fornecedores */}
         <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
           <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100 shrink-0">
-            <h2 className="text-slate-800 font-bold">Fornecedores</h2>
+            <h2 className="text-slate-800 font-bold">Fornecedores/Setores</h2>
             <FornecedorModal eventoId={id} mode="criar" />
           </div>
 

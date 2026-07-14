@@ -65,7 +65,7 @@ export default async function AdminPage() {
 
   const stats = [
     { label: 'Total de eventos', value: eventos?.length ?? 0, sub: `${eventosAtivos.length} ativo${eventosAtivos.length !== 1 ? 's' : ''}`, icon: CalendarDays, color: 'text-brand-600', bg: 'bg-brand-100', border: 'border-brand-200' },
-    { label: 'Fornecedores', value: totalFornecedores ?? 0, sub: 'cadastrados', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100', border: 'border-purple-200' },
+    { label: 'Fornecedores/Setores', value: totalFornecedores ?? 0, sub: 'cadastrados', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100', border: 'border-purple-200' },
     { label: 'Funcionários', value: totalFuncionarios ?? 0, sub: 'no total', icon: UserCheck, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' },
     { label: 'Entradas hoje', value: entradasHoje, sub: 'registros', icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200' },
   ]
@@ -103,7 +103,7 @@ export default async function AdminPage() {
           href="/admin/eventos"
           icon={CalendarDays}
           title="Eventos"
-          descricao="Gerenciar eventos, fornecedores e presença"
+          descricao="Gerenciar eventos, fornecedores/setores e presença"
         />
       </div>
 

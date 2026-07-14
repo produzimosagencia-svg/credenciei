@@ -3,6 +3,7 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User } from 'lucide-react'
 import { deletarFuncionario } from '@/lib/actions'
+import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 
@@ -97,11 +98,17 @@ export default function FuncionarioTable({
 
   const updateSearch = (value: string) => { setSearch(value); setPage(1) }
 
-  const handleDelete = (f: Funcionario) => {
-    if (!confirm(`Remover "${f.nome}"?`)) return
+  const [paraExcluir, setParaExcluir] = useState<Funcionario | null>(null)
+
+  const handleDelete = (f: Funcionario) => setParaExcluir(f)
+
+  const confirmarExclusao = () => {
+    if (!paraExcluir) return
+    const f = paraExcluir
     startTransition(async () => {
       await deletarFuncionario(f.id, fornecedorId, eventoId)
       router.refresh()
+      setParaExcluir(null)
     })
   }
 
@@ -252,6 +259,13 @@ export default function FuncionarioTable({
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!paraExcluir}
+        onClose={() => setParaExcluir(null)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        mensagem={paraExcluir ? `Remover "${paraExcluir.nome}"?` : ''}
+      />
     </div>
   )
 }

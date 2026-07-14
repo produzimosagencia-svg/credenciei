@@ -34,13 +34,13 @@ export default function FornecedorModal(props: Props) {
   return (
     <>
       {isEditar ? (
-        <button onClick={() => setOpen(true)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" title="Editar fornecedor">
+        <button onClick={() => setOpen(true)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" title="Editar fornecedor/setor">
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
         <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-sm bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-xl transition-all font-semibold shadow-sm shadow-brand-200">
           <Plus className="w-3.5 h-3.5" />
-          Novo Fornecedor
+          Novo Fornecedor/Setor
         </button>
       )}
 
@@ -48,7 +48,7 @@ export default function FornecedorModal(props: Props) {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpen(false)}>
           <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-slate-800 font-bold text-base">{isEditar ? 'Editar Fornecedor' : 'Novo Fornecedor'}</h3>
+              <h3 className="text-slate-800 font-bold text-base">{isEditar ? 'Editar Fornecedor/Setor' : 'Novo Fornecedor/Setor'}</h3>
               <button onClick={() => setOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
                 <X className="w-4 h-4" />
               </button>
@@ -70,7 +70,7 @@ export default function FornecedorModal(props: Props) {
                 </div>
               </div>
               <button type="submit" disabled={isPending} className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-200">
-                {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor')}
+                {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
               </button>
             </form>
           </div>

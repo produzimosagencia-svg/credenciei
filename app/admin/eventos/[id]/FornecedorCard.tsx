@@ -7,6 +7,7 @@ import { deletarFornecedor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import ImportarFuncionarios from './ImportarFuncionarios'
 import SupervisorModal from './SupervisorModal'
+import ConfirmModal from '@/components/ConfirmModal'
 
 type Fornecedor = {
   id: string
@@ -33,6 +34,7 @@ export default function FornecedorCard({
   podeGerenciarSupervisores?: boolean
 }) {
   const [copied, setCopied] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const count = f.funcionarios?.[0]?.count ?? 0
@@ -46,13 +48,16 @@ export default function FornecedorCard({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleDelete = () => {
-    if (!confirm(`Excluir "${f.nome}" e todos os funcionários cadastrados?`)) return
+  const handleDelete = () => setConfirmOpen(true)
+
+  const confirmarExclusao = () => {
     startTransition(async () => {
       try {
         await deletarFornecedor(f.id, eventoId)
         router.refresh()
+        setConfirmOpen(false)
       } catch (e: any) {
+        setConfirmOpen(false)
         alert(e?.message ?? 'Erro ao excluir setor')
       }
     })
@@ -147,6 +152,13 @@ export default function FornecedorCard({
           )}
         </div>
       )}
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        mensagem={`Excluir "${f.nome}" e todos os funcionários cadastrados?`}
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { MoreHorizontal, Power, Trash2, Save, X } from 'lucide-react'
 import { toggleAtivoOrganizacao, deletarOrganizacao, editarOrganizacao } from '@/lib/actions'
 import { NomeInput, CpfCnpjInput } from '@/components/inputs'
+import ConfirmModal from '@/components/ConfirmModal'
 
 type Org = {
   id: string
@@ -16,6 +17,7 @@ type Org = {
 export default function OrganizacaoActions({ org }: { org: Org }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const handleToggle = () => {
@@ -24,8 +26,12 @@ export default function OrganizacaoActions({ org }: { org: Org }) {
   }
 
   const handleDelete = () => {
-    if (!confirm(`Excluir "${org.nome}"? Isso remove o admin, a equipe e TODOS os eventos da organização. Não dá pra desfazer.`)) return
     setOpen(false)
+    setConfirmOpen(true)
+  }
+
+  const confirmarExclusao = () => {
+    setConfirmOpen(false)
     startTransition(() => deletarOrganizacao(org.id))
   }
 
@@ -101,6 +107,13 @@ export default function OrganizacaoActions({ org }: { org: Org }) {
           </div>
         </>
       )}
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        mensagem={`Excluir "${org.nome}"? Isso remove o admin, a equipe e TODOS os eventos da organização. Não dá pra desfazer.`}
+      />
     </div>
   )
 }

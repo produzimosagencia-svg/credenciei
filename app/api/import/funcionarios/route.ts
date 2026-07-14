@@ -35,14 +35,14 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (!fornecedor) {
-      return NextResponse.json({ error: 'Fornecedor não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Fornecedor/Setor não encontrado' }, { status: 404 })
     }
 
     const evento = fornecedor.eventos as any
 
     // Isolamento por organização: só master ou admin da mesma org do evento
     if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
-      return NextResponse.json({ error: 'Sem permissão sobre este fornecedor' }, { status: 403 })
+      return NextResponse.json({ error: 'Sem permissão sobre este fornecedor/setor' }, { status: 403 })
     }
     const spreadsheetId = evento?.spreadsheet_id
     const eventoId = evento?.id ?? fornecedor.evento_id

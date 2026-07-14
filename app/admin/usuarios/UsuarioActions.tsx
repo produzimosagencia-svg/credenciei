@@ -3,18 +3,24 @@ import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { deletarUsuario } from '@/lib/actions'
+import ConfirmModal from '@/components/ConfirmModal'
 
 export default function UsuarioActions({ usuarioId, usuarioNome }: { usuarioId: string; usuarioNome: string }) {
   const [open, setOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const handleDelete = () => {
-    if (!confirm(`Excluir usuário "${usuarioNome}"? Todos os eventos e dados vinculados a ele serão removidos.`)) return
     setOpen(false)
+    setConfirmOpen(true)
+  }
+
+  const confirmarExclusao = () => {
     startTransition(async () => {
       await deletarUsuario(usuarioId)
       router.refresh()
+      setConfirmOpen(false)
     })
   }
 
@@ -33,6 +39,13 @@ export default function UsuarioActions({ usuarioId, usuarioNome }: { usuarioId: 
           </div>
         </>
       )}
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        mensagem={`Excluir usuário "${usuarioNome}"? Todos os eventos e dados vinculados a ele serão removidos.`}
+      />
     </div>
   )
 }

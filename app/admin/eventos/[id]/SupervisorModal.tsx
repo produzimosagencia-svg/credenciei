@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { UserPlus, Pencil, X, Trash2 } from 'lucide-react'
 import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
 import { NomeInput, TelefoneInput } from '@/components/inputs'
+import ConfirmModal from '@/components/ConfirmModal'
 
 type Props =
   | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string }
@@ -11,6 +12,7 @@ type Props =
 
 export default function SupervisorModal(props: Props) {
   const [open, setOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
   const router = useRouter()
@@ -36,7 +38,12 @@ export default function SupervisorModal(props: Props) {
 
   const handleDelete = () => {
     if (!isEditar) return
-    if (!confirm(`Excluir o supervisor "${props.supervisor.nome}"?`)) return
+    setConfirmOpen(true)
+  }
+
+  const confirmarExclusao = () => {
+    if (!isEditar) return
+    setConfirmOpen(false)
     startTransition(async () => {
       try {
         await deletarUsuario(props.supervisor.id)
@@ -144,6 +151,16 @@ export default function SupervisorModal(props: Props) {
             </form>
           </div>
         </div>
+      )}
+      {isEditar && (
+        <ConfirmModal
+          open={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={confirmarExclusao}
+          isPending={isPending}
+          zIndexClassName="z-[60]"
+          mensagem={`Excluir o supervisor "${props.supervisor.nome}"?`}
+        />
       )}
     </>
   )
