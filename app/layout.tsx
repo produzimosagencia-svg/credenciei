@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Credenciamento",
+  title: "Credenciei",
   description: "Sistema de credenciamento para eventos",
 };
 
