@@ -55,48 +55,39 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
   const [busy, setBusy] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const coordsRef = useRef<{ lat: number; lng: number } | null>(null)
 
-  // Fluxo da etapa MEIO: GPS → câmera → envia foto
-  const iniciarFoto = () => {
+  // Fluxo da etapa MEIO: câmera primeiro, GPS depois.
+  // IMPORTANTE: fileRef.current.click() precisa rodar SÍNCRONO, direto no
+  // clique do usuário — se passar por qualquer await antes (ex: esperar o
+  // GPS), o navegador (principalmente celular) recusa abrir a câmera com
+  // "File chooser dialog can only be shown with a user activation" e o
+  // change do input nunca dispara, travando o botão pra sempre.
+  const abrirCamera = () => {
     setErro(null)
-    setBusy(true)
-    if (!('geolocation' in navigator)) {
-      setBusy(false)
-      setErro('Seu aparelho não permite pegar a localização.')
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        coordsRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-        fileRef.current?.click()
-        // Se a pessoa cancelar a câmera/seletor de arquivo, o evento "change"
-        // do input NUNCA dispara em boa parte dos navegadores — sem isso o
-        // botão ficava travado em "Registrando..." pra sempre. Ao voltar o
-        // foco pra janela, confere se algum arquivo foi mesmo selecionado.
-        const aoVoltarFoco = () => {
-          window.removeEventListener('focus', aoVoltarFoco)
-          setTimeout(() => {
-            if (!fileRef.current?.files?.length) setBusy(false)
-          }, 500)
-        }
-        window.addEventListener('focus', aoVoltarFoco)
-      },
-      () => {
-        setBusy(false)
-        setErro('Precisamos da sua localização. Ative o GPS e permita o acesso, depois tente de novo.')
-      },
-      { enableHighAccuracy: true, timeout: 15000 }
-    )
+    fileRef.current?.click()
   }
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
-    const coords = coordsRef.current
-    coordsRef.current = null
-    if (!file || !coords) { setBusy(false); return }
+    // Cancelou a câmera sem tirar foto: como "busy" só liga depois daqui,
+    // não sobra nenhum estado travado pra desfazer.
+    if (!file) return
+
+    setBusy(true)
     try {
+      if (!('geolocation' in navigator)) {
+        setErro('Seu aparelho não permite pegar a localização.')
+        return
+      }
+      const coords = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => reject(new Error('geo')),
+          { enableHighAccuracy: true, timeout: 15000 }
+        )
+      })
+
       // Trava de segurança: não importa o que aconteça (foto que o navegador
       // não consegue decodificar, rede do evento travando o envio, etc.), a
       // tela NUNCA fica presa em "Registrando..." pra sempre — no máximo 15s
@@ -115,9 +106,11 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       }
     } catch (err) {
       setErro(
-        err instanceof Error && err.message === 'timeout'
-          ? 'Demorou demais para processar. Verifique sua internet e tente de novo.'
-          : 'Não foi possível processar a foto. Tente de novo.'
+        err instanceof Error && err.message === 'geo'
+          ? 'Precisamos da sua localização. Ative o GPS e permita o acesso, depois tente de novo.'
+          : err instanceof Error && err.message === 'timeout'
+            ? 'Demorou demais para processar. Verifique sua internet e tente de novo.'
+            : 'Não foi possível processar a foto. Tente de novo.'
       )
     } finally {
       setBusy(false)
@@ -135,7 +128,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       )}
 
       {momentos.map(m => (
-        <Cartao key={m.momento} info={m} busy={busy} onFoto={iniciarFoto} />
+        <Cartao key={m.momento} info={m} busy={busy} onFoto={abrirCamera} />
       ))}
 
       <p className="text-center text-slate-400 text-[11px] pt-1 flex items-center justify-center gap-1">
