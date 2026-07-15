@@ -40,6 +40,7 @@ function comprimir(file: File): Promise<string> {
 export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
   const [form, setForm] = useState(initialForm)
   const [foto, setFoto] = useState<string | null>(null)
+  const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [qrToken, setQrToken] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -53,13 +54,18 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
     if (!file) return
     try {
       setFoto(await comprimir(file))
+      setErroFoto(null)
     } catch {
-      // foto é opcional — falha na compressão não impede o cadastro
+      setErroFoto('Não foi possível processar essa foto. Tente outra.')
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!foto) {
+      setErroFoto('A foto é obrigatória para o cadastro.')
+      return
+    }
     setLoading(true)
     const res = await cadastrarFuncionarioPublico(fornecedorId, {
       nome: form.nome,
@@ -68,7 +74,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       empresa: form.empresa,
       cargo: form.cargo,
       chavePix: form.chavePix,
-      fotoBase64: foto ?? undefined,
+      fotoBase64: foto,
     })
 
     if (res.qrToken) {
@@ -103,7 +109,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
-      <Field label="Foto (opcional)">
+      <Field label="Foto *">
         <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onFoto} />
         {foto ? (
           <div className="flex items-center gap-3">
@@ -117,11 +123,14 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-3 text-slate-500 text-sm hover:border-brand-400 hover:text-brand-600 transition-colors"
+            className={`w-full flex items-center justify-center gap-2 border border-dashed rounded-xl py-3 text-sm transition-colors ${
+              erroFoto ? 'border-red-300 text-red-500' : 'border-slate-300 text-slate-500 hover:border-brand-400 hover:text-brand-600'
+            }`}
           >
             <CameraIcon className="w-4 h-4" /> Tirar foto
           </button>
         )}
+        {erroFoto && <p className="text-red-500 text-xs mt-1">{erroFoto}</p>}
       </Field>
       <Field label="Nome completo *">
         <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />

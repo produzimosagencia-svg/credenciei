@@ -38,9 +38,10 @@ export default function FornecedorModal(props: Props) {
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-sm bg-brand-500 hover:bg-brand-600 text-white px-3 py-2 rounded-xl transition-all font-semibold shadow-sm shadow-brand-200">
-          <Plus className="w-3.5 h-3.5" />
-          Novo Fornecedor/Setor
+        <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-xs sm:text-sm bg-brand-500 hover:bg-brand-600 text-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all font-semibold shadow-sm shadow-brand-200">
+          <Plus className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden sm:inline">Novo Fornecedor/Setor</span>
+          <span className="sm:hidden">Novo</span>
         </button>
       )}
 

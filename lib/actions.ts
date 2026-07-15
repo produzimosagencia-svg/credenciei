@@ -863,6 +863,11 @@ export async function cadastrarFuncionarioPublico(
   const cpf = dados.cpf.replace(/\D/g, '')
   if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números e tente de novo.' }
 
+  // Foto é obrigatória — valida o formato antes de qualquer coisa (defesa em
+  // profundidade; o client já bloqueia o envio sem foto).
+  const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
+  if (!match) return { error: 'A foto é obrigatória para o cadastro.' }
+
   // Evita credenciais duplicadas: se o mesmo CPF já foi cadastrado neste evento,
   // devolve a credencial existente em vez de criar outra.
   const { data: existentes } = await supabaseAdmin
@@ -885,16 +890,19 @@ export async function cadastrarFuncionarioPublico(
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
 
-  // Avatar é opcional — falha no upload não impede o cadastro
-  const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
-  if (match) {
-    const contentType = match[1]
-    const ext = contentType.split('/')[1] || 'jpg'
-    const buffer = Buffer.from(match[2], 'base64')
-    const path = `avatares/${data.qr_token}.${ext}`
-    const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
-    if (!up.error) await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
+  const contentType = match[1]
+  const ext = contentType.split('/')[1] || 'jpg'
+  const buffer = Buffer.from(match[2], 'base64')
+  const path = `avatares/${data.qr_token}.${ext}`
+  const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
+  if (up.error) {
+    // Sem foto, o cadastro fica incompleto — desfaz pra não deixar um
+    // funcionário "fantasma" sem avatar, e pra não bloquear nova tentativa
+    // com o mesmo CPF (o dedup acima devolveria esse registro incompleto).
+    await supabaseAdmin.from('funcionarios').delete().eq('id', data.id)
+    return { error: 'Erro ao enviar a foto. Tente novamente.' }
   }
+  await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
