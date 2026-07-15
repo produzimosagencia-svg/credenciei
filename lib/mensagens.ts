@@ -12,7 +12,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const ANTECEDENCIA_LEMBRETE_MINUTOS = 5
 const ANTECEDENCIA_REFORCO_MINUTOS = 2
 // Baileys (WhatsApp Web não-oficial) pune padrão de envio automatizado —
 // mensagens parecidas, pra gente diferente, com link, num intervalo curto
@@ -35,7 +34,7 @@ type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 // Cada batida tem uma janela de abertura (janela_X_inicio) e um "horário
 // limite" de fechamento (janela_X_fim, o mesmo campo que já valida o
 // check-in em registrarPresencaQR/registrarPresencaFoto).
-//   - lembrete ao funcionário: 5min antes da janela ABRIR.
+//   - lembrete ao funcionário: exatamente quando a janela ABRE.
 //   - reforço ao funcionário: 2min antes do limite FECHAR, só se ele ainda
 //     não tiver registrado (condicional).
 //   - alerta ao supervisor: exatamente quando o limite expira, também
@@ -171,9 +170,9 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
       const horarioLimiteFmt = horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : ''
 
-      // Lembrete ao funcionário, 5min antes da janela abrir
+      // Lembrete ao funcionário, exatamente quando a janela abre
       if (horarioInicioISO && !travados.has(`${func.id}:${janela.tipoLembrete}`)) {
-        const agendadoPara = new Date(new Date(horarioInicioISO).getTime() - ANTECEDENCIA_LEMBRETE_MINUTOS * 60_000)
+        const agendadoPara = new Date(horarioInicioISO)
         if (agendadoPara.getTime() > agora) {
           linhas.push({
             evento_id: eventoId,
