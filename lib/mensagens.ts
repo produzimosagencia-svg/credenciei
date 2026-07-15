@@ -14,8 +14,14 @@ const supabase = createClient(
 
 const ANTECEDENCIA_LEMBRETE_MINUTOS = 5
 const ANTECEDENCIA_REFORCO_MINUTOS = 2
-const BATCH_SIZE_PADRAO = 10
-const PACING_MS = 1500
+// Baileys (WhatsApp Web não-oficial) pune padrão de envio automatizado —
+// mensagens parecidas, pra gente diferente, com link, num intervalo curto
+// e uniforme é a assinatura clássica de spam. Lote pequeno + intervalo
+// variável (não fixo) reduz bastante o risco de restrição da conta.
+const BATCH_SIZE_PADRAO = 5
+const PACING_MS_MIN = 4000
+const PACING_MS_MAX = 9000
+const pacingAleatorio = () => PACING_MS_MIN + Math.floor(Math.random() * (PACING_MS_MAX - PACING_MS_MIN))
 const BACKOFF_MINUTOS = [2, 10, 30] // por tentativa: 1ª, 2ª, 3ª...
 
 export type TipoMensagem =
@@ -280,6 +286,11 @@ export async function agendarCredenciaisSupervisor(params: {
  * (fallback via Vercel Cron).
  */
 export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promise<{ processadas: number }> {
+  // Interruptor de emergência: seta WHATSAPP_PAUSADO=true (worker na VPS e/ou
+  // Vercel) pra parar todo envio na hora, sem precisar redeployar — útil se a
+  // conta levar uma restrição da própria WhatsApp e for preciso parar rápido.
+  if (process.env.WHATSAPP_PAUSADO === 'true') return { processadas: 0 }
+
   const agoraISO = new Date().toISOString()
 
   const { data: candidatos } = await supabase
@@ -309,7 +320,7 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
   for (const msg of claimados ?? []) {
     await enviarUma(msg)
     processadas++
-    await new Promise(r => setTimeout(r, PACING_MS))
+    await new Promise(r => setTimeout(r, pacingAleatorio()))
   }
   return { processadas }
 }
