@@ -28,6 +28,7 @@ export type TipoMensagem =
   | 'alerta_supervisor_entrada' | 'alerta_supervisor_meio' | 'alerta_supervisor_fim'
   | 'reforco_entrada' | 'reforco_meio' | 'reforco_fim'
   | 'credenciais_supervisor'
+  | 'confirmacao_escala'
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 
@@ -75,34 +76,49 @@ function formatarTelefoneExibicao(tel: string): string {
 function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioAbertura: string; horarioLimite: string; link: string }): string {
   const { nome, nomeEvento, horarioAbertura, horarioLimite, link } = ctx
   if (tipo === 'lembrete_entrada') {
-    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Registro de entrada disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code: ${link}`
+    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Registro de entrada disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code:\n${link}`
   }
   if (tipo === 'lembrete_meio') {
-    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Registro disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque aqui para registrar: ${link}`
+    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Registro disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque no link para registrar:\n${link}`
   }
-  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Registro de saída disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code: ${link}`
-}
-
-function montarMensagemAlerta(ctx: { nomeSupervisor: string; nomeFuncionario: string; telefoneFuncionario: string; setorNome: string; rotulo: string }): string {
-  return `Olá, ${ctx.nomeSupervisor}! 👋\n\n⚠️ O funcionário ${ctx.nomeFuncionario} (${formatarTelefoneExibicao(ctx.telefoneFuncionario)}), do setor ${ctx.setorNome}, não registrou o ponto de ${ctx.rotulo} dentro do prazo estabelecido.\n\n🔎 Verifique a situação e, caso necessário, entre em contato com o colaborador para identificar o motivo da ausência do registro.`
+  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Registro de saída disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code:\n${link}`
 }
 
 function montarMensagemReforco(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string; link: string }): string {
   const { nome, nomeEvento, horarioLimite, link } = ctx
   if (tipo === 'reforco_entrada') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua entrada no evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de entrada.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua entrada poderá não ser validada.\n\n🔗 Sua credencial com QR Code: ${link}`
+    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua entrada no evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de entrada.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua entrada poderá não ser validada.\n\n🔗 Sua credencial com QR Code:\n${link}`
   }
   if (tipo === 'reforco_meio') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de confirmação da sua presença no evento ${nomeEvento} se encerrar!\n\nTire sua selfie AGORA pelo sistema, com a geolocalização ativada 📍\n\n⏰ Prazo: ${horarioLimite}.\n\n⚠️ Após esse horário, sua presença nesse período poderá não ser validada.\n\n🔗 Toque aqui para registrar: ${link}`
+    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de confirmação da sua presença no evento ${nomeEvento} se encerrar!\n\nTire sua selfie AGORA pelo sistema, com a geolocalização ativada 📍\n\n⏰ Prazo: ${horarioLimite}.\n\n⚠️ Após esse horário, sua presença nesse período poderá não ser validada.\n\n🔗 Toque no link para registrar:\n${link}`
   }
-  return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua saída do evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada.\n\n🔗 Sua credencial com QR Code: ${link}`
+  return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua saída do evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada.\n\n🔗 Sua credencial com QR Code:\n${link}`
+}
+
+/**
+ * Confirmação de escala pré-evento: enviada no horário que o produtor definir
+ * (horas antes ou no dia), confirmando função/setor e trazendo as instruções
+ * específicas do evento (documento, uniforme etc.), personalizáveis por evento.
+ */
+function montarMensagemConfirmacaoEscala(ctx: {
+  nome: string; nomeEvento: string; setorNome: string; cargo: string
+  dataEvento: string; local: string | null; instrucoes: string | null; link: string
+}): string {
+  const partes = [
+    `Olá, ${ctx.nome}! 👋`,
+    `✅ Confirmação de escala: você está escalado para trabalhar no evento ${ctx.nomeEvento} 🎉`,
+    `📋 Função: ${ctx.cargo || 'não informada'}\n🏢 Setor/Equipe: ${ctx.setorNome}\n📅 Data: ${ctx.dataEvento}${ctx.local ? `\n📍 Local: ${ctx.local}` : ''}`,
+  ]
+  if (ctx.instrucoes) partes.push(`ℹ️ Instruções do evento:\n${ctx.instrucoes}`)
+  partes.push(`🔗 Sua credencial com QR Code:\n${ctx.link}`)
+  return partes.join('\n\n')
 }
 
 function montarMensagemCredenciais(ctx: {
   nome: string; setorNome: string; eventoNome: string; dataEvento: string; email: string; senha: string; linkFormulario: string
 }): string {
   const link = `${SITE_URL}/login`
-  return `Olá, ${ctx.nome}! 🎉\n\nVocê foi cadastrado como Supervisor no sistema Credenciei e será o responsável pela equipe do setor ${ctx.setorNome} durante o evento ${ctx.eventoNome}, que acontecerá no dia ${ctx.dataEvento} 📅\n\n🔑 Abaixo estão seus dados de acesso:\n\nLogin: ${ctx.email}\nSenha: ${ctx.senha}\n🔗 Acesso ao sistema: ${link}\n\n📝 Link do formulário de cadastro da sua equipe: ${ctx.linkFormulario}\n\nEm caso de dúvidas sobre a utilização da plataforma, entre em contato com o administrador do evento.\n\nSeja bem-vindo! 👏`
+  return `Olá, ${ctx.nome}! 🎉\n\nVocê foi cadastrado como Supervisor no sistema Credenciei e será o responsável pela equipe do setor ${ctx.setorNome} durante o evento ${ctx.eventoNome}, que acontecerá no dia ${ctx.dataEvento} 📅\n\n🔑 Abaixo estão seus dados de acesso:\n\nLogin: ${ctx.email}\nSenha: ${ctx.senha}\n\n🔗 Acesso ao sistema:\n${link}\n\n📝 Formulário de cadastro da sua equipe:\n${ctx.linkFormulario}\n\nEm caso de dúvidas sobre a utilização da plataforma, entre em contato com o administrador do evento.\n\nSeja bem-vindo! 👏`
 }
 
 /**
@@ -117,31 +133,34 @@ function montarMensagemCredenciais(ctx: {
 export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, nome, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+    .select('id, nome, local, data_inicio, msg_pre_evento_envio, msg_pre_evento_instrucoes, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
     .eq('id', eventoId)
     .single()
   if (!evento) return
 
+  // Só quem está ATIVADO trabalha — excedentes (acima do teto do setor) não
+  // recebem lembrete nenhum até serem ativados no painel.
   const { data: funcionarios } = await supabase
     .from('funcionarios')
-    .select('id, nome, telefone, qr_token, fornecedor_id, fornecedores!inner(evento_id)')
+    .select('id, nome, telefone, cargo, qr_token, fornecedor_id, fornecedores!inner(evento_id)')
     .eq('fornecedores.evento_id', eventoId)
+    .eq('ativo', true)
   if (!funcionarios?.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
   const { data: supervisores } = await supabase
     .from('perfis')
-    .select('nome, telefone, fornecedor_id')
+    .select('id, nome, telefone, fornecedor_id')
     .eq('role', 'supervisor')
     .eq('ativo', true)
     .in('fornecedor_id', fornecedorIds)
   // Se houver mais de um supervisor ativo no mesmo setor, o alerta vai só
-  // pro primeiro encontrado (a constraint de dedupe é por funcionário+tipo,
-  // não dá pra notificar vários sem redesenhar a chave de dedupe).
-  const supervisorPorFornecedor = new Map<string, { nome: string; telefone: string | null }>()
+  // pro primeiro encontrado (a constraint de dedupe é por perfil+tipo, não
+  // dá pra notificar vários sem redesenhar a chave de dedupe).
+  const supervisorPorFornecedor = new Map<string, { perfilId: string; nome: string; telefone: string | null }>()
   for (const s of supervisores ?? []) {
     if (!supervisorPorFornecedor.has(s.fornecedor_id as string)) {
-      supervisorPorFornecedor.set(s.fornecedor_id as string, { nome: s.nome, telefone: s.telefone })
+      supervisorPorFornecedor.set(s.fornecedor_id as string, { perfilId: s.id, nome: s.nome, telefone: s.telefone })
     }
   }
 
@@ -150,31 +169,64 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
 
   const { data: existentes } = await supabase
     .from('mensagens_agendadas')
-    .select('funcionario_id, tipo, status')
+    .select('funcionario_id, perfil_id, tipo, status')
     .eq('evento_id', eventoId)
-  const travados = new Set(
+  const travadosPorFuncionario = new Set(
     (existentes ?? [])
-      .filter(m => m.status === 'enviado' || m.status === 'cancelado')
+      .filter(m => m.funcionario_id && (m.status === 'enviado' || m.status === 'cancelado'))
       .map(m => `${m.funcionario_id}:${m.tipo}`)
+  )
+  const travadosPorSupervisor = new Set(
+    (existentes ?? [])
+      .filter(m => m.perfil_id && (m.status === 'enviado' || m.status === 'cancelado'))
+      .map(m => `${m.perfil_id}:${m.tipo}`)
   )
 
   const agora = Date.now()
-  const linhas: {
+  const linhasFuncionario: {
     evento_id: string; funcionario_id: string; tipo: TipoMensagem
+    agendado_para: string; telefone: string; mensagem: string; condicao?: string
+  }[] = []
+  const linhasSupervisor: {
+    evento_id: string; perfil_id: string; tipo: TipoMensagem
     agendado_para: string; telefone: string; mensagem: string; condicao?: string
   }[] = []
 
   for (const func of funcionarios) {
+    // Confirmação de escala pré-evento, no horário definido pelo produtor
+    if (evento.msg_pre_evento_envio && !travadosPorFuncionario.has(`${func.id}:confirmacao_escala`)) {
+      const agendadoPara = new Date(evento.msg_pre_evento_envio)
+      if (agendadoPara.getTime() > agora) {
+        linhasFuncionario.push({
+          evento_id: eventoId,
+          funcionario_id: func.id,
+          tipo: 'confirmacao_escala',
+          agendado_para: agendadoPara.toISOString(),
+          telefone: func.telefone,
+          mensagem: montarMensagemConfirmacaoEscala({
+            nome: func.nome,
+            nomeEvento: evento.nome,
+            setorNome: nomeSetorPorFornecedor.get(func.fornecedor_id as string) ?? 'seu setor',
+            cargo: func.cargo ?? '',
+            dataEvento: evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
+            local: evento.local ?? null,
+            instrucoes: evento.msg_pre_evento_instrucoes ?? null,
+            link: `${SITE_URL}/credential/${func.qr_token}`,
+          }),
+        })
+      }
+    }
+
     for (const janela of JANELAS) {
       const horarioInicioISO = (evento as Record<string, unknown>)[janela.campoInicio] as string | null
       const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
       const horarioLimiteFmt = horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : ''
 
       // Lembrete ao funcionário, exatamente quando a janela abre
-      if (horarioInicioISO && !travados.has(`${func.id}:${janela.tipoLembrete}`)) {
+      if (horarioInicioISO && !travadosPorFuncionario.has(`${func.id}:${janela.tipoLembrete}`)) {
         const agendadoPara = new Date(horarioInicioISO)
         if (agendadoPara.getTime() > agora) {
-          linhas.push({
+          linhasFuncionario.push({
             evento_id: eventoId,
             funcionario_id: func.id,
             tipo: janela.tipoLembrete,
@@ -192,10 +244,10 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       }
 
       // Reforço ao próprio funcionário, 2min antes do limite fechar, condicionado a não ter registro
-      if (horarioLimiteISO && !travados.has(`${func.id}:${janela.tipoReforco}`)) {
+      if (horarioLimiteISO && !travadosPorFuncionario.has(`${func.id}:${janela.tipoReforco}`)) {
         const agendadoPara = new Date(new Date(horarioLimiteISO).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000)
         if (agendadoPara.getTime() > agora) {
-          linhas.push({
+          linhasFuncionario.push({
             evento_id: eventoId,
             funcionario_id: func.id,
             tipo: janela.tipoReforco,
@@ -211,34 +263,40 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
           })
         }
       }
-
-      // Alerta ao supervisor, exatamente no limite (fechamento da janela), condicionado a não ter registro
-      if (horarioLimiteISO && !travados.has(`${func.id}:${janela.tipoAlerta}`)) {
-        const supervisor = supervisorPorFornecedor.get(func.fornecedor_id as string)
-        const limiteMs = new Date(horarioLimiteISO).getTime()
-        if (supervisor?.telefone && limiteMs > agora) {
-          linhas.push({
-            evento_id: eventoId,
-            funcionario_id: func.id,
-            tipo: janela.tipoAlerta,
-            agendado_para: horarioLimiteISO,
-            telefone: supervisor.telefone,
-            mensagem: montarMensagemAlerta({
-              nomeSupervisor: supervisor.nome,
-              nomeFuncionario: func.nome,
-              telefoneFuncionario: func.telefone,
-              setorNome: nomeSetorPorFornecedor.get(func.fornecedor_id as string) ?? 'setor',
-              rotulo: janela.rotulo,
-            }),
-            condicao: 'sem_registro',
-          })
-        }
-      }
     }
   }
-  if (!linhas.length) return
 
-  await supabase.from('mensagens_agendadas').upsert(linhas, { onConflict: 'evento_id,funcionario_id,tipo' })
+  // Alerta ao supervisor: UMA mensagem por setor/etapa (não por funcionário),
+  // listando todo mundo que ainda estiver sem registro. O texto real (quem
+  // exatamente está faltando) só dá pra saber no momento do envio — aqui só
+  // agenda o "gatilho"; processarFilaMensagens monta a lista na hora.
+  for (const janela of JANELAS) {
+    const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
+    if (!horarioLimiteISO) continue
+    const limiteMs = new Date(horarioLimiteISO).getTime()
+    if (limiteMs <= agora) continue
+
+    for (const [, supervisor] of supervisorPorFornecedor) {
+      if (!supervisor.telefone) continue
+      if (travadosPorSupervisor.has(`${supervisor.perfilId}:${janela.tipoAlerta}`)) continue
+      linhasSupervisor.push({
+        evento_id: eventoId,
+        perfil_id: supervisor.perfilId,
+        tipo: janela.tipoAlerta,
+        agendado_para: horarioLimiteISO,
+        telefone: supervisor.telefone,
+        mensagem: '(gerado no momento do envio)',
+        condicao: 'lista_sem_registro',
+      })
+    }
+  }
+
+  if (linhasFuncionario.length) {
+    await supabase.from('mensagens_agendadas').upsert(linhasFuncionario, { onConflict: 'evento_id,funcionario_id,tipo' })
+  }
+  if (linhasSupervisor.length) {
+    await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo' })
+  }
 }
 
 /**
@@ -328,6 +386,7 @@ type MensagemClaimada = {
   id: string
   evento_id: string
   funcionario_id: string | null
+  perfil_id: string | null
   tipo: TipoMensagem
   condicao: string | null
   telefone: string
@@ -336,7 +395,7 @@ type MensagemClaimada = {
   max_tentativas: number
 }
 
-/** Pra alertas condicionais: só envia se o funcionário AINDA não tiver o registro daquela batida. */
+/** Pra alertas condicionais ao próprio funcionário: só envia se ele AINDA não tiver o registro daquela batida. */
 async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
   if (msg.condicao !== 'sem_registro') return true
   const momento = MOMENTO_POR_TIPO_CONDICIONAL[msg.tipo]
@@ -351,8 +410,64 @@ async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
   return !(data && data.length)
 }
 
+/**
+ * Alerta agregado ao supervisor: monta, na hora do envio (não dá pra
+ * pré-computar no agendamento), a lista de todos os funcionários do setor
+ * ainda sem registro naquela batida. Retorna null se ninguém estiver
+ * faltando (nada a avisar) — nesse caso a mensagem é cancelada.
+ */
+async function montarMensagemAgregada(msg: MensagemClaimada): Promise<string | null> {
+  const momento = MOMENTO_POR_TIPO_CONDICIONAL[msg.tipo]
+  if (!momento || !msg.perfil_id) return null
+
+  const { data: supervisor } = await supabase
+    .from('perfis')
+    .select('nome, fornecedor_id')
+    .eq('id', msg.perfil_id)
+    .single()
+  if (!supervisor?.fornecedor_id) return null
+
+  const { data: fornecedor } = await supabase
+    .from('fornecedores')
+    .select('nome')
+    .eq('id', supervisor.fornecedor_id)
+    .single()
+
+  const { data: funcionarios } = await supabase
+    .from('funcionarios')
+    .select('id, nome, telefone')
+    .eq('fornecedor_id', supervisor.fornecedor_id)
+    .eq('ativo', true)
+  if (!funcionarios?.length) return null
+
+  const { data: registros } = await supabase
+    .from('registros')
+    .select('funcionario_id')
+    .eq('evento_id', msg.evento_id)
+    .eq('tipo', momento)
+    .in('funcionario_id', funcionarios.map(f => f.id))
+
+  const registrados = new Set((registros ?? []).map(r => r.funcionario_id))
+  const semRegistro = funcionarios.filter(f => !registrados.has(f.id))
+  if (!semRegistro.length) return null
+
+  const rotulo = JANELAS.find(j => j.momento === momento)?.rotulo ?? momento
+  const lista = semRegistro.map(f => `• ${f.nome} (${formatarTelefoneExibicao(f.telefone)})`).join('\n')
+
+  return `Olá, ${supervisor.nome}! 👋\n\n⚠️ Os funcionários abaixo do setor ${fornecedor?.nome ?? 'seu setor'} não registraram o ponto de ${rotulo} dentro do prazo estabelecido:\n\n${lista}\n\n🔎 Verifique a situação e, caso necessário, entre em contato com os colaboradores para identificar o motivo da ausência do registro.`
+}
+
 async function enviarUma(msg: MensagemClaimada): Promise<void> {
-  if (!(await devoEnviar(msg))) {
+  let mensagem = msg.mensagem
+
+  if (msg.condicao === 'lista_sem_registro') {
+    const agregada = await montarMensagemAgregada(msg)
+    if (!agregada) {
+      await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
+      return
+    }
+    mensagem = agregada
+  } else if (!(await devoEnviar(msg))) {
     await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
     return
   }
@@ -361,7 +476,7 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
   const numero = formatarNumeroWhatsApp(msg.telefone)
 
   const resultado: ResultadoEnvio = numero
-    ? await enviarWhatsApp(numero, msg.mensagem)
+    ? await enviarWhatsApp(numero, mensagem)
     : { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
 
   await supabase.from('mensagens_log').insert({

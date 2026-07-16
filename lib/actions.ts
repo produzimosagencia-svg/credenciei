@@ -90,6 +90,49 @@ function janelasDoForm(formData: FormData) {
   }
 }
 
+/** Campos da mensagem pré-evento (confirmação de escala via WhatsApp). */
+function preEventoDoForm(formData: FormData) {
+  return {
+    msg_pre_evento_envio: inputParaISO(formData.get('msg_pre_evento_envio') as string),
+    msg_pre_evento_instrucoes: ((formData.get('msg_pre_evento_instrucoes') as string) || '').trim() || null,
+  }
+}
+
+/**
+ * Normaliza a lista de CPFs pré-autorizados do setor (um por linha ou
+ * separados por vírgula/;). Guarda só dígitos, um CPF por linha.
+ * Lista vazia → null (trava desligada).
+ */
+function normalizarCpfsAutorizados(bruto: FormDataEntryValue | null): string | null {
+  const cpfs = ((bruto as string) || '')
+    .split(/[\n,;]+/)
+    .map(c => c.replace(/\D/g, ''))
+    .filter(c => c.length === 11)
+  return cpfs.length ? [...new Set(cpfs)].join('\n') : null
+}
+
+/**
+ * Decide se um funcionário recém-cadastrado já entra ATIVADO: dentro do teto
+ * (quantidade_estimada do setor) sim; acima do teto entra como excedente
+ * (ativo=false), aguardando o produtor/supervisor ativar manualmente.
+ * Sem teto definido, todo mundo entra ativado.
+ */
+async function estaDentroDoTeto(fornecedorId: string): Promise<boolean> {
+  const { data: fornecedor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('quantidade_estimada')
+    .eq('id', fornecedorId)
+    .single()
+  const teto = fornecedor?.quantidade_estimada
+  if (!teto || teto <= 0) return true
+  const { count } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id', { count: 'exact', head: true })
+    .eq('fornecedor_id', fornecedorId)
+    .eq('ativo', true)
+  return (count ?? 0) < teto
+}
+
 /** Traduz erros comuns do Supabase Auth para mensagens amigáveis em PT-BR. */
 function mensagemAuth(msg: string): string {
   const m = msg.toLowerCase()
@@ -383,6 +426,7 @@ export async function criarEvento(formData: FormData) {
     cliente_id: perfil.id,
     organizacao_id: organizacaoId,
     ...janelasDoForm(formData),
+    ...preEventoDoForm(formData),
   }
 
   const db = supabaseAdmin
@@ -411,6 +455,7 @@ export async function editarEvento(id: string, formData: FormData) {
     data_fim: inputParaISO(formData.get('data_fim') as string),
     local: (formData.get('local') as string) || null,
     ...janelasDoForm(formData),
+    ...preEventoDoForm(formData),
   }
   await db.from('eventos').update(data).eq('id', id)
   after(() => sincronizarAgendamentos(id).catch(console.error))
@@ -456,6 +501,7 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
     nome: nomeFornecedor,
     quantidade_estimada: qtd ? parseInt(qtd) : null,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    cpfs_autorizados: normalizarCpfsAutorizados(formData.get('cpfs_autorizados')),
   }
   await db.from('fornecedores').insert([data])
 
@@ -482,6 +528,7 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
     nome: formData.get('nome') as string,
     quantidade_estimada: qtd ? parseInt(qtd) : null,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    cpfs_autorizados: normalizarCpfsAutorizados(formData.get('cpfs_autorizados')),
   }).eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
@@ -570,6 +617,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
     telefone: (formData.get('telefone') as string).replace(/\D/g, ''),
     empresa: (formData.get('empresa') as string).trim(),
     cargo: ((formData.get('cargo') as string) || '').trim(),
+    ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id').single()
 
   if (error) throw new Error(`Erro ao cadastrar funcionário: ${error.message}`)
@@ -611,11 +659,50 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
 export async function alternarPagamento(funcionarioId: string, fornecedorId: string, eventoId: string, pago: boolean) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
+
+  // Pagamento só para quem está ativado (selecionado dentro do teto do setor)
+  if (pago) {
+    const { data: func } = await db.from('funcionarios').select('ativo').eq('id', funcionarioId).single()
+    if (func && func.ativo === false) {
+      throw new Error('Este funcionário não está ativado. Ative-o antes de marcar o pagamento.')
+    }
+  }
+
   const { error } = await db.from('funcionarios').update({
     pago,
     pago_em: pago ? new Date().toISOString() : null,
   }).eq('id', funcionarioId)
   if (error) throw new Error('Erro ao atualizar o pagamento')
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+}
+
+/**
+ * Ativa/desativa um funcionário do setor. A ATIVAÇÃO respeita o teto
+ * (quantidade_estimada): o cadastro pode passar do estimado, mas só até o
+ * teto pode estar ativo ao mesmo tempo — é a trava de seleção pedida pelo
+ * cliente (pagamento e presença só para os ativados).
+ */
+export async function alternarAtivacao(funcionarioId: string, fornecedorId: string, eventoId: string, ativo: boolean) {
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const db = supabaseAdmin
+
+  if (ativo) {
+    const { data: fornecedor } = await db.from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).single()
+    const teto = fornecedor?.quantidade_estimada
+    if (teto && teto > 0) {
+      const { count } = await db
+        .from('funcionarios')
+        .select('id', { count: 'exact', head: true })
+        .eq('fornecedor_id', fornecedorId)
+        .eq('ativo', true)
+      if ((count ?? 0) >= teto) {
+        throw new Error(`O setor já tem ${teto} funcionários ativados (limite definido). Desative alguém antes de ativar este.`)
+      }
+    }
+  }
+
+  const { error } = await db.from('funcionarios').update({ ativo }).eq('id', funcionarioId)
+  if (error) throw new Error('Erro ao atualizar a ativação')
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
@@ -758,7 +845,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedor_id, fornecedores(evento_id)')
+    .select('id, nome, empresa, cargo, ativo, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
@@ -766,6 +853,9 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   const funcInfo = { nome: func.nome, empresa: func.empresa, cargo: func.cargo ?? null }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
+  }
+  if (func.ativo === false) {
+    return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do setor antes de registrar.', funcionario: funcInfo }
   }
 
   // Supervisor de setor só escaneia funcionários do próprio setor (fornecedor)
@@ -804,10 +894,11 @@ export async function registrarPresencaFoto(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, fornecedores(evento_id, eventos(${JANELA_SELECT}))`)
+    .select(`id, ativo, fornecedores(evento_id, eventos(${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
+  if (func.ativo === false) return { error: 'Seu cadastro ainda não foi ativado pelo organizador. Fale com o seu supervisor.' }
 
   const fornecedor = func.fornecedores as any
   const evento = fornecedor?.eventos as any
@@ -855,7 +946,7 @@ export async function cadastrarFuncionarioPublico(
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id')
+    .select('id, evento_id, nome, cpfs_autorizados')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
@@ -863,20 +954,37 @@ export async function cadastrarFuncionarioPublico(
   const cpf = dados.cpf.replace(/\D/g, '')
   if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números e tente de novo.' }
 
+  // Trava opcional do setor: se o organizador definiu uma lista de CPFs
+  // autorizados, só quem está nela consegue se cadastrar por este link.
+  if (fornecedor.cpfs_autorizados) {
+    const autorizados = new Set(fornecedor.cpfs_autorizados.split('\n'))
+    if (!autorizados.has(cpf)) {
+      return { error: 'Seu CPF não está na lista de pessoas autorizadas deste setor. Fale com o seu supervisor.' }
+    }
+  }
+
   // Foto é obrigatória — valida o formato antes de qualquer coisa (defesa em
   // profundidade; o client já bloqueia o envio sem foto).
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return { error: 'A foto é obrigatória para o cadastro.' }
 
-  // Evita credenciais duplicadas: se o mesmo CPF já foi cadastrado neste evento,
-  // devolve a credencial existente em vez de criar outra.
+  // Anti-duplicidade POR EVENTO: o mesmo CPF não pode estar em duas
+  // empresas/funções do mesmo evento (dupla contratação). No MESMO setor,
+  // devolve a credencial existente (a pessoa só perdeu o link). Em eventos
+  // DIFERENTES, mesmo no mesmo dia, o cadastro é livre — freelancer escolhe
+  // onde vai trabalhar.
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedores!inner(evento_id)')
+    .select('qr_token, fornecedor_id, fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
     .limit(1)
-  if (existentes && existentes.length) return { qrToken: (existentes[0] as any).qr_token }
+  if (existentes && existentes.length) {
+    const existente = existentes[0] as any
+    if (existente.fornecedor_id === fornecedorId) return { qrToken: existente.qr_token }
+    const setorExistente = existente.fornecedores?.nome ?? 'outro setor'
+    return { error: `Este CPF já está credenciado neste evento pelo setor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
+  }
 
   const { data, error } = await supabaseAdmin.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
@@ -886,6 +994,7 @@ export async function cadastrarFuncionarioPublico(
     empresa: dados.empresa.trim(),
     cargo: dados.cargo.trim(),
     chave_pix: dados.chavePix?.trim() || null,
+    ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
@@ -907,6 +1016,105 @@ export async function cadastrarFuncionarioPublico(
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
   return { qrToken: data.qr_token }
+}
+
+/**
+ * Base central de cadastros: busca o cadastro mais recente deste CPF dentro
+ * da MESMA organização (dona do evento do formulário) para pré-preencher o
+ * formulário público — quem já trabalhou em um evento anterior não precisa
+ * digitar tudo de novo. Escopado por organização para não vazar dados entre
+ * clientes diferentes da plataforma.
+ */
+export async function buscarCadastroPorCpf(
+  fornecedorId: string,
+  cpfBruto: string
+): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null } | null> {
+  const cpf = cpfBruto.replace(/\D/g, '')
+  if (cpf.length !== 11) return null
+
+  const { data: fornecedor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('id, eventos(organizacao_id)')
+    .eq('id', fornecedorId)
+    .single()
+  const eventoRel = fornecedor?.eventos as { organizacao_id: string | null } | { organizacao_id: string | null }[] | null
+  const organizacaoId = Array.isArray(eventoRel) ? eventoRel[0]?.organizacao_id : eventoRel?.organizacao_id
+  if (!organizacaoId) return null
+
+  const { data } = await supabaseAdmin
+    .from('funcionarios')
+    .select('nome, telefone, empresa, cargo, chave_pix, created_at, fornecedores!inner(eventos!inner(organizacao_id))')
+    .eq('cpf', cpf)
+    .eq('fornecedores.eventos.organizacao_id', organizacaoId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const func = data?.[0]
+  if (!func) return null
+  return {
+    nome: func.nome,
+    telefone: func.telefone,
+    empresa: func.empresa ?? '',
+    cargo: func.cargo ?? '',
+    chavePix: func.chave_pix ?? null,
+  }
+}
+
+/**
+ * Registro manual de presença pelo supervisor — plano B para funcionário sem
+ * celular/bateria. O supervisor digita o CPF e tira uma foto DA PESSOA na hora
+ * (obrigatória, para o próprio supervisor não conseguir burlar); o sistema
+ * vincula ao cadastro pelo CPF. Fica marcado como registro manual, com o
+ * supervisor responsável, para auditoria. Não valida a janela de horário: o
+ * caso de uso típico é o supervisor resolvendo a pendência DEPOIS do alerta
+ * de quem não bateu (janela já fechada).
+ */
+export async function registrarPresencaManual(
+  fornecedorId: string,
+  eventoId: string,
+  dados: { cpf: string; momento: MomentoPresenca; fotoBase64: string }
+): Promise<{ ok?: boolean; error?: string; nome?: string }> {
+  let perfil
+  try {
+    perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  } catch {
+    return { error: 'Sem permissão para registrar neste setor.' }
+  }
+  if (!['entrada', 'meio', 'fim'].includes(dados.momento)) return { error: 'Etapa inválida' }
+
+  const cpf = dados.cpf.replace(/\D/g, '')
+  if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números.' }
+
+  const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
+  if (!match) return { error: 'A foto é obrigatória no registro manual.' }
+
+  const { data: funcs } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, ativo, fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .limit(1)
+  const func = funcs?.[0]
+  if (!func) return { error: 'Nenhum funcionário com este CPF neste evento.' }
+  if (func.fornecedor_id !== fornecedorId) return { error: 'Este funcionário pertence a outro setor.' }
+  if (func.ativo === false) return { error: 'Funcionário não está ativado. Ative-o no painel antes de registrar.' }
+
+  const contentType = match[1]
+  const ext = contentType.split('/')[1] || 'jpg'
+  const buffer = Buffer.from(match[2], 'base64')
+  const path = `${eventoId}/${func.id}/manual-${dados.momento}.${ext}`
+  const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
+  if (up.error) return { error: 'Não foi possível salvar a foto. Tente de novo.' }
+
+  const { error } = await upsertRegistro(func.id, eventoId, dados.momento, {
+    foto_url: path,
+    criado_por_perfil_id: perfil.id,
+    registro_manual: true,
+  })
+  if (error) return { error: 'Erro ao registrar. Tente de novo.' }
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true, nome: func.nome }
 }
 
 /** Gera URLs assinadas (temporárias) para o admin ver as fotos de presença. */

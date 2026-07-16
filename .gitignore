@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Gravações e transcrições de reuniões com cliente (dados pessoais)
+ReuniãoCliente/

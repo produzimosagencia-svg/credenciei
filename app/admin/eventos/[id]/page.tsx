@@ -22,7 +22,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
     supabase.from('eventos').select('*').eq('id', id).single(),
     supabase
       .from('fornecedores')
-      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, funcionarios(count)')
+      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
       .eq('evento_id', id)
       .order('created_at'),
     supabase

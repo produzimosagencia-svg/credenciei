@@ -6,6 +6,7 @@ import { ArrowLeft, ScanLine, Users, UserCheck, AlertTriangle, Wallet } from 'lu
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import CopyLinkButton from '../../CopyLinkButton'
 import NovoFuncionarioModal from './NovoFuncionarioModal'
+import RegistroManualModal from './RegistroManualModal'
 import StatCard from '@/components/StatCard'
 import AutoRefresh from './AutoRefresh'
 
@@ -30,7 +31,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id)').eq('id', fid).single(),
-    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em').eq('fornecedor_id', fid).order('nome'),
+    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo').eq('fornecedor_id', fid).order('nome'),
     supabase
       .from('registros')
       .select('funcionario_id, tipo, created_at, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, funcionarios!inner(fornecedor_id)')
@@ -103,6 +104,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       chavePix: f.chave_pix ?? null,
       pago: f.pago ?? false,
       pagoEm: f.pago_em ?? null,
+      ativo: f.ativo ?? true,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
       entrada,
       meio,
@@ -114,6 +116,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   })
 
   const total = funcionariosEnriquecidos.length
+  const ativados = funcionariosEnriquecidos.filter(f => f.ativo).length
+  const teto = fornecedor.quantidade_estimada as number | null
   const contar = (t: MomentoTipo) => funcionariosEnriquecidos.filter(f => f[t]).length
   const comPendencia = funcionariosEnriquecidos.filter(f => f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado').length
   const totalReceber = funcionariosEnriquecidos.reduce((acc, f) => acc + f.valorReceber, 0)
@@ -123,6 +127,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
   const stats = [
     { label: 'Total', value: total, icon: Users, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200' },
+    { label: teto ? `Ativados (teto ${teto})` : 'Ativados', value: ativados, icon: UserCheck, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
     { label: 'Bateram meio', value: contar('meio'), icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
     { label: 'Bateram saída', value: contar('fim'), icon: UserCheck, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-200' },
     { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
@@ -149,12 +154,13 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           >
             <ScanLine className="w-4 h-4" /> Escanear QR
           </Link>
+          <RegistroManualModal fornecedorId={fid} eventoId={id} />
           <NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} />
           <CopyLinkButton link={formLink} label="Copiar link do formulário" />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 

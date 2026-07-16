@@ -1,8 +1,8 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User } from 'lucide-react'
-import { deletarFuncionario } from '@/lib/actions'
+import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User, UserCheck, UserX } from 'lucide-react'
+import { deletarFuncionario, alternarAtivacao } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
@@ -34,6 +34,7 @@ type Funcionario = {
   chavePix: string | null
   pago: boolean
   pagoEm: string | null
+  ativo: boolean
   fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
@@ -43,7 +44,7 @@ type Funcionario = {
   statusFim: StatusEtapa
 }
 
-type FiltroRapido = 'todos' | 'pendencias' | 'presentes' | 'ausentes'
+type FiltroRapido = 'todos' | 'pendencias' | 'presentes' | 'ausentes' | 'nao_ativados'
 
 const OPCOES_STATUS: { value: StatusEtapa | 'todos'; label: string }[] = [
   { value: 'todos', label: 'Qualquer status' },
@@ -88,6 +89,7 @@ export default function FuncionarioTable({
     if (filtroRapido === 'presentes' && !(f.entrada && !f.fim)) return false
     if (filtroRapido === 'ausentes' && f.entrada) return false
     if (filtroRapido === 'pendencias' && !(f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado')) return false
+    if (filtroRapido === 'nao_ativados' && f.ativo) return false
 
     return true
   }), [funcionarios, search, filtroRapido, statusEntrada, statusMeio, statusFim])
@@ -99,8 +101,20 @@ export default function FuncionarioTable({
   const updateSearch = (value: string) => { setSearch(value); setPage(1) }
 
   const [paraExcluir, setParaExcluir] = useState<Funcionario | null>(null)
+  const [erroAtivacao, setErroAtivacao] = useState<string | null>(null)
 
   const handleDelete = (f: Funcionario) => setParaExcluir(f)
+
+  const handleAtivacao = (f: Funcionario) => {
+    startTransition(async () => {
+      try {
+        await alternarAtivacao(f.id, fornecedorId, eventoId, !f.ativo)
+        router.refresh()
+      } catch (e) {
+        setErroAtivacao(e instanceof Error ? e.message : 'Não foi possível atualizar a ativação.')
+      }
+    })
+  }
 
   const confirmarExclusao = () => {
     if (!paraExcluir) return
@@ -114,6 +128,14 @@ export default function FuncionarioTable({
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      {erroAtivacao && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <p className="text-amber-800 text-xs font-medium">{erroAtivacao}</p>
+          <button onClick={() => setErroAtivacao(null)} className="text-amber-500 hover:text-amber-700 shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* Filtros */}
       <div className="p-4 border-b border-slate-100 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -140,6 +162,7 @@ export default function FuncionarioTable({
             ['pendencias', 'Com pendências'],
             ['presentes', 'Presentes'],
             ['ausentes', 'Ausentes'],
+            ['nao_ativados', 'Não ativados'],
           ] as [FiltroRapido, string][]).map(([value, label]) => (
             <button
               key={value}
@@ -189,7 +212,12 @@ export default function FuncionarioTable({
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors">
                           <Avatar url={f.fotoUrl} nome={f.nome} />
                           <div className="min-w-0">
-                            <p className="text-slate-800 text-sm font-semibold truncate">{f.nome}</p>
+                            <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>
+                              {f.nome}
+                              {!f.ativo && (
+                                <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full align-middle">NÃO ATIVADO</span>
+                              )}
+                            </p>
                             <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                           </div>
                         </div>
@@ -220,14 +248,24 @@ export default function FuncionarioTable({
                   <CelulaPresenca p={f.meio} status={f.statusMeio} />
                   <CelulaPresenca p={f.fim} status={f.statusFim} />
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => handleDelete(f)}
-                      disabled={isPending}
-                      className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
-                      title="Remover"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => handleAtivacao(f)}
+                        disabled={isPending}
+                        className={`p-1.5 transition-colors disabled:opacity-50 ${f.ativo ? 'text-green-500 hover:text-amber-500' : 'text-amber-500 hover:text-green-600'}`}
+                        title={f.ativo ? 'Ativado — clique para desativar' : 'Não ativado — clique para ativar'}
+                      >
+                        {f.ativo ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(f)}
+                        disabled={isPending}
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                        title="Remover"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

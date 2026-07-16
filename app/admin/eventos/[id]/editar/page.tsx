@@ -5,7 +5,7 @@ import { isoParaInput } from '@/lib/tz'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import Link from 'next/link'
-import { ArrowLeft, CalendarDays, MapPin, LogIn, Camera, LogOut, Save } from 'lucide-react'
+import { ArrowLeft, CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
 
 export default async function EditarEventoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -87,6 +87,32 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Mensagem pré-evento */}
+        <div className="p-6 sm:p-8 space-y-4 border-t border-slate-100">
+          <SectionTitle
+            title="Mensagem pré-evento (WhatsApp)"
+            subtitle="Confirmação de escala enviada aos funcionários antes do evento, com instruções personalizadas"
+            icon={MessageCircle}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Enviar em">
+              <DateTimePicker name="msg_pre_evento_envio" defaultValue={fmt(evento.msg_pre_evento_envio)} />
+            </Field>
+          </div>
+          <Field label="Instruções do evento (opcional)">
+            <textarea
+              name="msg_pre_evento_instrucoes"
+              rows={3}
+              defaultValue={evento.msg_pre_evento_instrucoes ?? ''}
+              placeholder="Ex: Leve seu documento com foto e esteja com o uniforme da sua empresa."
+              className="input resize-none"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Este texto entra na mensagem de confirmação de escala, junto com função, setor, data e local. Deixe o horário em branco para não enviar.
+            </p>
+          </Field>
         </div>
 
         {/* Ação */}

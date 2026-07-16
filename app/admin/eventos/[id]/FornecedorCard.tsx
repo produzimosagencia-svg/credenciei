@@ -15,6 +15,7 @@ type Fornecedor = {
   token_formulario: string
   quantidade_estimada: number | null
   valor_combinado: number | null
+  cpfs_autorizados: string | null
   funcionarios: { count: number }[]
 }
 
@@ -109,6 +110,7 @@ export default function FornecedorCard({
             nome={f.nome}
             quantidade_estimada={f.quantidade_estimada}
             valor_combinado={f.valor_combinado}
+            cpfs_autorizados={f.cpfs_autorizados}
           />
           <button onClick={handleDelete} disabled={isPending} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors disabled:opacity-50">
             <Trash2 className="w-3.5 h-3.5" />

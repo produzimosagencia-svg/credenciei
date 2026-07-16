@@ -7,7 +7,7 @@ import { NomeInput } from '@/components/inputs'
 
 type Props =
   | { mode: 'criar'; eventoId: string }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; quantidade_estimada: number | null; valor_combinado: number | null }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; quantidade_estimada: number | null; valor_combinado: number | null; cpfs_autorizados: string | null }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -18,6 +18,7 @@ export default function FornecedorModal(props: Props) {
   const defaultNome = isEditar ? (props as any).nome : ''
   const defaultQtd = isEditar ? (props as any).quantidade_estimada ?? '' : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
+  const defaultCpfs = isEditar ? (props as any).cpfs_autorizados ?? '' : ''
 
   const handleAction = (formData: FormData) => {
     startTransition(async () => {
@@ -69,6 +70,17 @@ export default function FornecedorModal(props: Props) {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
                   <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9" />
                 </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Trava de CPFs autorizados (opcional)</label>
+                <textarea
+                  name="cpfs_autorizados"
+                  rows={3}
+                  defaultValue={defaultCpfs}
+                  placeholder={'Um CPF por linha. Se preenchido, SÓ estes CPFs\nconseguem se cadastrar pelo link do formulário.'}
+                  className="input resize-none font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Deixe em branco para permitir qualquer pessoa com o link.</p>
               </div>
               <button type="submit" disabled={isPending} className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-200">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}

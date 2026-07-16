@@ -47,6 +47,20 @@ export async function POST(request: NextRequest) {
     const spreadsheetId = evento?.spreadsheet_id
     const eventoId = evento?.id ?? fornecedor.evento_id
 
+    // Trava de ativação: cadastro em lote pode passar do estimado, mas só
+    // entra ATIVADO quem couber no teto (quantidade_estimada); o excedente
+    // fica aguardando ativação manual no painel.
+    const teto = fornecedor.quantidade_estimada as number | null
+    let vagasAtivas = Infinity
+    if (teto && teto > 0) {
+      const { count: jaAtivos } = await supabaseAdmin
+        .from('funcionarios')
+        .select('id', { count: 'exact', head: true })
+        .eq('fornecedor_id', fornecedorId)
+        .eq('ativo', true)
+      vagasAtivas = Math.max(0, teto - (jaAtivos ?? 0))
+    }
+
     // Prepara os registros com CPF e telefone limpos. O funcionário já fica
     // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
     // vira só o campo "empresa" — não cria setores novos).
@@ -62,7 +76,7 @@ export async function POST(request: NextRequest) {
         valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
         fornecedor_id: fornecedorId,
       }
-    }).filter(f => f.nome && f.cpf)
+    }).filter(f => f.nome && f.cpf).map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
 
     if (payload.length === 0) {
       return NextResponse.json({ error: 'Nenhum funcionário válido encontrado' }, { status: 400 })

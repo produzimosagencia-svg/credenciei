@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
-import { Camera as CameraIcon, X } from 'lucide-react'
-import { cadastrarFuncionarioPublico } from '@/lib/actions'
+import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
+import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome } from '@/lib/format'
 
 const initialForm = {
@@ -43,10 +43,34 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [qrToken, setQrToken] = useState<string | null>(null)
+  const [autofill, setAutofill] = useState(false)
+  const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const set = (field: keyof typeof form, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
+
+  // Base central de cadastros: quando o CPF fica completo, busca o cadastro
+  // mais recente da pessoa (eventos anteriores do mesmo organizador) e
+  // pré-preenche o resto do formulário — só a foto continua sendo nova.
+  const onCpf = (value: string) => {
+    set('cpf', value)
+    const digitos = value.replace(/\D/g, '')
+    if (digitos.length !== 11 || cpfBuscado.current === digitos) return
+    cpfBuscado.current = digitos
+    buscarCadastroPorCpf(fornecedorId, digitos).then(dados => {
+      if (!dados) return
+      setForm(f => ({
+        ...f,
+        nome: f.nome || dados.nome,
+        telefone: f.telefone || formatTelefone(dados.telefone),
+        empresa: f.empresa || dados.empresa,
+        cargo: f.cargo || dados.cargo,
+        chavePix: f.chavePix || (dados.chavePix ?? ''),
+      }))
+      setAutofill(true)
+    }).catch(() => {})
+  }
 
   const onFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -136,7 +160,12 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />
       </Field>
       <Field label="CPF *">
-        <input required value={form.cpf} onChange={e => set('cpf', formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
+        <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
+        {autofill && (
+          <p className="flex items-center gap-1 text-brand-600 text-xs mt-1">
+            <Sparkles className="w-3 h-3" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo.
+          </p>
+        )}
       </Field>
       <Field label="Telefone *">
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
