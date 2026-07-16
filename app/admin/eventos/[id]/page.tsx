@@ -7,6 +7,7 @@ import { ArrowLeft, Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanL
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import EventoStatusToggle from './EventoStatusToggle'
+import StatCard from '@/components/StatCard'
 
 export const revalidate = 0
 
@@ -188,18 +189,6 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function StatCard({ label, value, icon: Icon, color, bg, border }: { label: string; value: number; icon: React.ElementType; color: string; bg: string; border: string }) {
-  return (
-    <div className={`bg-white border ${border} rounded-2xl p-4 shadow-sm`}>
-      <div className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${bg} mb-3`}>
-        <Icon className={`w-4 h-4 ${color}`} />
-      </div>
-      <p className="text-2xl font-bold text-slate-800">{value}</p>
-      <p className="text-slate-500 text-xs mt-0.5 font-medium">{label}</p>
     </div>
   )
 }

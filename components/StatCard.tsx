@@ -19,13 +19,13 @@ export default function StatCard({
   small?: boolean
 }) {
   return (
-    <div className={`bg-white border ${border} rounded-2xl p-4 shadow-sm`}>
+    <div className={`group bg-white border ${border} rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow`}>
       {Icon && (
-        <div className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${bg} mb-3`}>
+        <div className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${bg} mb-3 transition-transform group-hover:scale-105`}>
           <Icon className={`w-4 h-4 ${color}`} />
         </div>
       )}
-      <p className={`${small ? 'text-lg' : 'text-2xl'} font-bold ${Icon ? 'text-slate-800' : color}`}>{value}</p>
+      <p className={`${small ? 'text-lg' : 'text-2xl'} font-bold tracking-tight ${Icon ? 'text-slate-800' : color}`}>{value}</p>
       <p className="text-slate-500 text-xs mt-0.5 font-medium">{label}</p>
     </div>
   )
