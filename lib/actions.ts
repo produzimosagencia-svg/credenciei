@@ -22,6 +22,7 @@ import {
   ehMaster,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
+import { validarCpf } from './format'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 
@@ -599,7 +600,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   const db = supabaseAdmin
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
-  if (cpf.length !== 11) throw new Error('CPF inválido. Confira os números.')
+  if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os números.')
 
   // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento
   const { data: existentes } = await db
@@ -952,7 +953,7 @@ export async function cadastrarFuncionarioPublico(
   if (!fornecedor) return { error: 'Formulário inválido' }
 
   const cpf = dados.cpf.replace(/\D/g, '')
-  if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números e tente de novo.' }
+  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números e tente de novo.' }
 
   // Trava opcional do setor: se o organizador definiu uma lista de CPFs
   // autorizados, só quem está nela consegue se cadastrar por este link.
@@ -1030,7 +1031,7 @@ export async function buscarCadastroPorCpf(
   cpfBruto: string
 ): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null } | null> {
   const cpf = cpfBruto.replace(/\D/g, '')
-  if (cpf.length !== 11) return null
+  if (!validarCpf(cpf)) return null
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -1083,7 +1084,7 @@ export async function registrarPresencaManual(
   if (!['entrada', 'meio', 'fim'].includes(dados.momento)) return { error: 'Etapa inválida' }
 
   const cpf = dados.cpf.replace(/\D/g, '')
-  if (cpf.length !== 11) return { error: 'CPF inválido. Confira os números.' }
+  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números.' }
 
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return { error: 'A foto é obrigatória no registro manual.' }

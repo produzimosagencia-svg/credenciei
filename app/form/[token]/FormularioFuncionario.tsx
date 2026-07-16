@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
-import { formatCpf, formatTelefone, titleCaseNome } from '@/lib/format'
+import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 
 const initialForm = {
   nome: '',
@@ -44,6 +44,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   const [loading, setLoading] = useState(false)
   const [qrToken, setQrToken] = useState<string | null>(null)
   const [autofill, setAutofill] = useState(false)
+  const [erroCpf, setErroCpf] = useState<string | null>(null)
   const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -55,8 +56,12 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   // pré-preenche o resto do formulário — só a foto continua sendo nova.
   const onCpf = (value: string) => {
     set('cpf', value)
+    setAutofill(false)
     const digitos = value.replace(/\D/g, '')
-    if (digitos.length !== 11 || cpfBuscado.current === digitos) return
+    if (digitos.length < 11) { setErroCpf(null); return }
+    if (!validarCpf(digitos)) { setErroCpf('CPF inválido. Confira os números.'); return }
+    setErroCpf(null)
+    if (cpfBuscado.current === digitos) return
     cpfBuscado.current = digitos
     buscarCadastroPorCpf(fornecedorId, digitos).then(dados => {
       if (!dados) return
@@ -86,6 +91,10 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!validarCpf(form.cpf)) {
+      setErroCpf('CPF inválido. Confira os números.')
+      return
+    }
     if (!foto) {
       setErroFoto('A foto é obrigatória para o cadastro.')
       return
@@ -161,7 +170,8 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       </Field>
       <Field label="CPF *">
         <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
-        {autofill && (
+        {erroCpf && <p className="text-red-500 text-xs mt-1">{erroCpf}</p>}
+        {!erroCpf && autofill && (
           <p className="flex items-center gap-1 text-brand-600 text-xs mt-1">
             <Sparkles className="w-3 h-3" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo.
           </p>

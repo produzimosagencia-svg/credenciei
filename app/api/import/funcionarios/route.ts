@@ -3,6 +3,7 @@ import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 import { sincronizarAgendamentos } from '@/lib/mensagens'
+import { validarCpf } from '@/lib/format'
 
 type FuncionarioRow = {
   nome: string
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Prepara os registros com CPF e telefone limpos. O funcionário já fica
     // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
     // vira só o campo "empresa" — não cria setores novos).
-    const payload = funcionarios.map(f => {
+    const preparados = funcionarios.map(f => {
       const valor = parseFloat(String(f.valor ?? '').replace(',', '.'))
       return {
         nome: f.nome?.trim(),
@@ -76,10 +77,15 @@ export async function POST(request: NextRequest) {
         valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
         fornecedor_id: fornecedorId,
       }
-    }).filter(f => f.nome && f.cpf).map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
+    }).filter(f => f.nome && f.cpf)
+
+    // Linhas com CPF que não passa no dígito verificador não entram —
+    // reportadas separadamente pro usuário corrigir na planilha e reenviar.
+    const invalidos = preparados.filter(f => !validarCpf(f.cpf)).length
+    const payload = preparados.filter(f => validarCpf(f.cpf)).map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
 
     if (payload.length === 0) {
-      return NextResponse.json({ error: 'Nenhum funcionário válido encontrado' }, { status: 400 })
+      return NextResponse.json({ error: invalidos ? `Nenhum CPF válido encontrado (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF inválido).` : 'Nenhum funcionário válido encontrado' }, { status: 400 })
     }
 
     // Insere em lote no Supabase
@@ -117,7 +123,7 @@ export async function POST(request: NextRequest) {
       after(() => sincronizarAgendamentos(eventoId).catch(console.error))
     }
 
-    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0 })
+    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos })
   } catch (err) {
     console.error('[import/funcionarios]', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

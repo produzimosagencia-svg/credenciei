@@ -26,6 +26,28 @@ export function formatCpfCnpj(value: string): string {
   return d.length <= 11 ? formatCpf(value) : formatCnpj(value)
 }
 
+/**
+ * Valida o CPF pelo algoritmo oficial dos dígitos verificadores (módulo 11),
+ * não só a quantidade de dígitos. Recebe com ou sem máscara. Rejeita
+ * sequências repetidas (000.000.000-00, 111.111.111-11 etc.), que passam no
+ * cálculo mas nunca são CPFs reais.
+ */
+export function validarCpf(value: string): boolean {
+  const d = value.replace(/\D/g, '')
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false
+
+  const digito = (base: string) => {
+    let soma = 0
+    for (let i = 0; i < base.length; i++) soma += parseInt(base[i], 10) * (base.length + 1 - i)
+    const resto = (soma * 10) % 11
+    return resto === 10 ? 0 : resto
+  }
+
+  const d1 = digito(d.slice(0, 9))
+  const d2 = digito(d.slice(0, 9) + d1)
+  return d === d.slice(0, 9) + d1 + d2
+}
+
 /** Formata telefone: (00) 00000-0000 ou (00) 0000-0000 */
 export function formatTelefone(value: string): string {
   const d = value.replace(/\D/g, '').slice(0, 11)
