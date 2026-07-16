@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
+import DateTimePicker from '@/components/DateTimePicker'
 
 export default async function NovoEventoPage() {
   const perfil = await getPerfil()
@@ -48,10 +49,10 @@ function EventoForm({ action, submitLabel, defaults }: {
       </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Data de início *">
-          <input name="data_inicio" required type="datetime-local" defaultValue={defaults?.data_inicio} className="input" />
+          <DateTimePicker name="data_inicio" required defaultValue={defaults?.data_inicio} />
         </Field>
         <Field label="Data de fim *">
-          <input name="data_fim" required type="datetime-local" defaultValue={defaults?.data_fim} className="input" />
+          <DateTimePicker name="data_fim" required defaultValue={defaults?.data_fim} />
         </Field>
       </div>
       <Field label="Local">
@@ -82,10 +83,10 @@ function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
       {janelas.map(j => (
         <div key={j.key} className="grid grid-cols-2 gap-3">
           <Field label={`${j.label} — início`}>
-            <input name={`janela_${j.key}_inicio`} type="datetime-local" defaultValue={defaults?.[`janela_${j.key}_inicio` as keyof EventoDefaults]} className="input" />
+            <DateTimePicker name={`janela_${j.key}_inicio`} defaultValue={defaults?.[`janela_${j.key}_inicio` as keyof EventoDefaults]} />
           </Field>
           <Field label={`${j.label} — fim`}>
-            <input name={`janela_${j.key}_fim`} type="datetime-local" defaultValue={defaults?.[`janela_${j.key}_fim` as keyof EventoDefaults]} className="input" />
+            <DateTimePicker name={`janela_${j.key}_fim`} defaultValue={defaults?.[`janela_${j.key}_fim` as keyof EventoDefaults]} />
           </Field>
         </div>
       ))}

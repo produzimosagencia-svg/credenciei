@@ -5,6 +5,7 @@ import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
 import { NomeInput, CpfCnpjInput } from '@/components/inputs'
+import DateTimePicker from '@/components/DateTimePicker'
 
 export default async function NovaOrganizacaoPage() {
   const perfil = await getPerfil()
@@ -67,10 +68,10 @@ export default async function NovaOrganizacaoPage() {
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Data de início">
-              <input name="data_inicio" type="datetime-local" className="input" />
+              <DateTimePicker name="data_inicio" />
             </Field>
             <Field label="Data de fim">
-              <input name="data_fim" type="datetime-local" className="input" />
+              <DateTimePicker name="data_fim" />
             </Field>
           </div>
           <Field label="Local">
