@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { criarSupervisor } from '@/lib/actions'
 import { NomeInput, TelefoneInput } from '@/components/inputs'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
 
 type Fornecedor = { id: string; nome: string }
 type Evento = { id: string; nome: string; fornecedores: Fornecedor[] }
@@ -113,6 +114,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
       >
         {isPending ? 'Criando...' : 'Criar acesso'}
       </button>
+      {isPending && <LoadingOverlay mensagem="Criando acesso..." />}
     </form>
   )
 }

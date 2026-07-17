@@ -4,6 +4,7 @@ import { editarEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
+import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
 
@@ -125,6 +126,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             Salvar alterações
           </button>
         </div>
+        <FormLoadingOverlay mensagem="Salvando evento..." />
       </form>
     </div>
   )

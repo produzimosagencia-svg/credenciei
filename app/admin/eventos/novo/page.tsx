@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react'
 import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
+import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 
 export default async function NovoEventoPage() {
   const perfil = await getPerfil()
@@ -64,6 +65,7 @@ function EventoForm({ action, submitLabel, defaults }: {
       <button type="submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
         {submitLabel}
       </button>
+      <FormLoadingOverlay mensagem="Criando evento..." />
     </form>
   )
 }

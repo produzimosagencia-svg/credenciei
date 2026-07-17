@@ -6,6 +6,7 @@ import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
 import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
+import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 
 export default async function NovaOrganizacaoPage() {
   const perfil = await getPerfil()
@@ -85,6 +86,7 @@ export default async function NovaOrganizacaoPage() {
         >
           Criar organização
         </button>
+        <FormLoadingOverlay mensagem="Criando organização..." />
       </form>
     </div>
   )

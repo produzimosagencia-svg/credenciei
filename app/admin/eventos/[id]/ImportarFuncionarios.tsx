@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download } from 'lucide-react'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
 // xlsx é pesado e só é usado nestes dois handlers (importar/baixar modelo) —
 // carregado sob demanda para não engordar o bundle inicial da página do evento.
 
@@ -74,6 +75,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
 
   return (
     <div className="flex flex-col gap-2">
+      {loading && <LoadingOverlay mensagem="Importando funcionários..." />}
       <div className="flex items-center gap-2">
         <button
           onClick={() => fileRef.current?.click()}
