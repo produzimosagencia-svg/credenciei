@@ -5,6 +5,10 @@ import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 import { sincronizarAgendamentos } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
 
+// Lotes grandes (100+): a resposta volta rápido (só o insert), mas o espelho
+// no Google Sheets roda depois dela (after) e precisa desta folga pra concluir.
+export const maxDuration = 60
+
 type FuncionarioRow = {
   nome: string
   cpf: string
@@ -82,10 +86,41 @@ export async function POST(request: NextRequest) {
     // Linhas com CPF que não passa no dígito verificador não entram —
     // reportadas separadamente pro usuário corrigir na planilha e reenviar.
     const invalidos = preparados.filter(f => !validarCpf(f.cpf)).length
-    const payload = preparados.filter(f => validarCpf(f.cpf)).map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
+    const validos = preparados.filter(f => validarCpf(f.cpf))
+
+    // Anti-duplicidade (mesma regra do formulário público): cada CPF entra
+    // UMA vez por evento. Remove repetidos dentro da própria planilha e
+    // quem já está cadastrado em qualquer setor deste evento — assim dá pra
+    // reenviar a mesma planilha corrigida sem duplicar ninguém.
+    const vistos = new Set<string>()
+    const semRepetidos = validos.filter(f => {
+      if (vistos.has(f.cpf)) return false
+      vistos.add(f.cpf)
+      return true
+    })
+
+    let jaCadastrados = new Set<string>()
+    if (semRepetidos.length) {
+      const { data: existentes } = await supabaseAdmin
+        .from('funcionarios')
+        .select('cpf, fornecedores!inner(evento_id)')
+        .eq('fornecedores.evento_id', eventoId)
+        .in('cpf', semRepetidos.map(f => f.cpf))
+      jaCadastrados = new Set((existentes ?? []).map(e => e.cpf as string))
+    }
+    const duplicados = (validos.length - semRepetidos.length) + semRepetidos.filter(f => jaCadastrados.has(f.cpf)).length
+
+    const payload = semRepetidos
+      .filter(f => !jaCadastrados.has(f.cpf))
+      .map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
 
     if (payload.length === 0) {
-      return NextResponse.json({ error: invalidos ? `Nenhum CPF válido encontrado (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF inválido).` : 'Nenhum funcionário válido encontrado' }, { status: 400 })
+      const motivo = duplicados
+        ? `Todos os CPFs da planilha já estão cadastrados neste evento (${duplicados} duplicado${duplicados !== 1 ? 's' : ''}).`
+        : invalidos
+          ? `Nenhum CPF válido encontrado (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF inválido).`
+          : 'Nenhum funcionário válido encontrado'
+      return NextResponse.json({ error: motivo }, { status: 400 })
     }
 
     // Insere em lote no Supabase
@@ -98,24 +133,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Sincroniza com Google Sheets (aguarda antes de retornar)
-    if (spreadsheetId && inseridos) {
-      try {
+    // Google Sheets sincroniza DEPOIS da resposta (after → waitUntil): com
+    // 100+ linhas, a escrita linha a linha na planilha demora mais que o
+    // limite da função e derrubava a importação inteira — o cadastro no banco
+    // já está garantido acima, a planilha é espelho.
+    if (spreadsheetId && inseridos?.length) {
+      after(async () => {
         for (const f of inseridos) {
-          await adicionarFuncionarioNaPlanilha(spreadsheetId, fornecedor.nome, {
-            nome: f.nome,
-            cpf: f.cpf,
-            telefone: f.telefone,
-            empresa: f.empresa,
-            cargo: f.cargo,
-            chavePix: f.chave_pix,
-            valorReceber: f.valor_receber,
-            qr_token: f.qr_token,
-          })
+          try {
+            await adicionarFuncionarioNaPlanilha(spreadsheetId, fornecedor.nome, {
+              nome: f.nome,
+              cpf: f.cpf,
+              telefone: f.telefone,
+              empresa: f.empresa,
+              cargo: f.cargo,
+              chavePix: f.chave_pix,
+              valorReceber: f.valor_receber,
+              qr_token: f.qr_token,
+            })
+          } catch (e) {
+            console.error('[import/funcionarios] Erro ao sincronizar planilha:', e)
+          }
         }
-      } catch (e) {
-        console.error('[import/funcionarios] Erro ao sincronizar planilha:', e)
-      }
+      })
     }
 
     // Agenda os lembretes de WhatsApp pra quem acabou de entrar (uma vez pro lote, não por linha)
@@ -123,7 +163,7 @@ export async function POST(request: NextRequest) {
       after(() => sincronizarAgendamentos(eventoId).catch(console.error))
     }
 
-    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos })
+    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos, duplicados })
   } catch (err) {
     console.error('[import/funcionarios]', err)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

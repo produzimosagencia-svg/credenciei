@@ -5,7 +5,7 @@ import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download } from 'luc
 // xlsx é pesado e só é usado nestes dois handlers (importar/baixar modelo) —
 // carregado sob demanda para não engordar o bundle inicial da página do evento.
 
-type Status = { ok: boolean; total?: number; invalidos?: number; error?: string } | null
+type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; error?: string } | null
 
 export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: string }) {
   const [loading, setLoading] = useState(false)
@@ -59,7 +59,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
 
       const json = await res.json()
       if (res.ok) {
-        setStatus({ ok: true, total: json.total, invalidos: json.invalidos })
+        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados })
         router.refresh()
       } else {
         setStatus({ ok: false, error: json.error ?? 'Erro ao importar.' })
@@ -109,6 +109,12 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
             <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-amber-600">
               <AlertCircle className="w-3 h-3 shrink-0" />
               {status.invalidos} linha{status.invalidos !== 1 ? 's' : ''} com CPF inválido {status.invalidos !== 1 ? 'foram ignoradas' : 'foi ignorada'}. Corrija na planilha e importe de novo.
+            </div>
+          )}
+          {status.ok && !!status.duplicados && (
+            <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-amber-600">
+              <AlertCircle className="w-3 h-3 shrink-0" />
+              {status.duplicados} CPF{status.duplicados !== 1 ? 's' : ''} já cadastrado{status.duplicados !== 1 ? 's' : ''} neste evento {status.duplicados !== 1 ? 'foram ignorados' : 'foi ignorado'} (sem duplicar ninguém).
             </div>
           )}
         </div>
