@@ -95,10 +95,6 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       setErroCpf('CPF inválido. Confira os números.')
       return
     }
-    if (!foto) {
-      setErroFoto('A foto é obrigatória para o cadastro.')
-      return
-    }
     setLoading(true)
     const res = await cadastrarFuncionarioPublico(fornecedorId, {
       nome: form.nome,
@@ -107,7 +103,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       empresa: form.empresa,
       cargo: form.cargo,
       chavePix: form.chavePix,
-      fotoBase64: foto,
+      fotoBase64: foto ?? undefined,
     })
 
     if (res.qrToken) {
@@ -142,7 +138,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
-      <Field label="Foto *">
+      <Field label="Foto (opcional)">
         <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onFoto} />
         {foto ? (
           <div className="flex items-center gap-3">

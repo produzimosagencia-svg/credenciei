@@ -964,10 +964,9 @@ export async function cadastrarFuncionarioPublico(
     }
   }
 
-  // Foto é obrigatória — valida o formato antes de qualquer coisa (defesa em
-  // profundidade; o client já bloqueia o envio sem foto).
-  const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
-  if (!match) return { error: 'A foto é obrigatória para o cadastro.' }
+  // Foto é OPCIONAL — mas, quando enviada, o formato precisa ser válido.
+  const match = dados.fotoBase64 ? dados.fotoBase64.match(/^data:(image\/\w+);base64,(.+)$/) : null
+  if (dados.fotoBase64 && !match) return { error: 'Foto inválida. Tente novamente.' }
 
   // Anti-duplicidade POR EVENTO: o mesmo CPF não pode estar em duas
   // empresas/funções do mesmo evento (dupla contratação). No MESMO setor,
@@ -1000,19 +999,20 @@ export async function cadastrarFuncionarioPublico(
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
 
-  const contentType = match[1]
-  const ext = contentType.split('/')[1] || 'jpg'
-  const buffer = Buffer.from(match[2], 'base64')
-  const path = `avatares/${data.qr_token}.${ext}`
-  const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
-  if (up.error) {
-    // Sem foto, o cadastro fica incompleto — desfaz pra não deixar um
-    // funcionário "fantasma" sem avatar, e pra não bloquear nova tentativa
-    // com o mesmo CPF (o dedup acima devolveria esse registro incompleto).
-    await supabaseAdmin.from('funcionarios').delete().eq('id', data.id)
-    return { error: 'Erro ao enviar a foto. Tente novamente.' }
+  if (match) {
+    const contentType = match[1]
+    const ext = contentType.split('/')[1] || 'jpg'
+    const buffer = Buffer.from(match[2], 'base64')
+    const path = `avatares/${data.qr_token}.${ext}`
+    const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
+    if (up.error) {
+      // A pessoa tentou enviar foto e falhou — desfaz o cadastro pra ela poder
+      // tentar de novo (o dedup acima devolveria esse registro sem avatar).
+      await supabaseAdmin.from('funcionarios').delete().eq('id', data.id)
+      return { error: 'Erro ao enviar a foto. Tente novamente.' }
+    }
+    await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
   }
-  await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
