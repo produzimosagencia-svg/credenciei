@@ -65,7 +65,7 @@ export default function FornecedorCard({
   }
 
   return (
-    <div className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm transition-opacity ${isPending ? 'opacity-50' : ''}`}>
+    <div className={`bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow ${isPending ? 'opacity-50' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-slate-800 font-semibold">{f.nome}</p>
@@ -74,13 +74,13 @@ export default function FornecedorCard({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <Users className="w-3 h-3 text-slate-400" />
-                <span className="text-slate-500 text-xs">
+                <span className="text-slate-500 text-xs tabular-nums">
                   {count} cadastrado{count !== 1 ? 's' : ''}
                   {estimado > 0 && <span className="text-slate-300"> / {estimado} estimado{estimado !== 1 ? 's' : ''}</span>}
                 </span>
               </div>
               {pct !== null && (
-                <span className={`text-xs font-semibold ${pct >= 100 ? 'text-green-600' : pct >= 60 ? 'text-yellow-600' : 'text-slate-400'}`}>
+                <span className={`text-xs font-semibold tabular-nums ${pct >= 100 ? 'text-green-600' : pct >= 60 ? 'text-yellow-600' : 'text-slate-400'}`}>
                   {pct}%
                 </span>
               )}
@@ -94,7 +94,7 @@ export default function FornecedorCard({
               </div>
             )}
             {valor !== null && (
-              <p className="text-slate-500 text-xs">
+              <p className="text-slate-500 text-xs tabular-nums">
                 {brl(valor)} / funcionário
                 {count > 0 && <span className="text-slate-400"> • total {brl(valor * count)}</span>}
               </p>
@@ -102,7 +102,7 @@ export default function FornecedorCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           <FornecedorModal
             mode="editar"
             eventoId={eventoId}
@@ -112,7 +112,11 @@ export default function FornecedorCard({
             valor_combinado={f.valor_combinado}
             cpfs_autorizados={f.cpfs_autorizados}
           />
-          <button onClick={handleDelete} disabled={isPending} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors disabled:opacity-50">
+          <button
+            onClick={handleDelete}
+            disabled={isPending}
+            className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
+          >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>

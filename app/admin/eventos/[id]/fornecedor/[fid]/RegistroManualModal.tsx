@@ -106,14 +106,14 @@ export default function RegistroManualModal({ fornecedorId, eventoId }: { fornec
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={fechar}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
-            className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
               <h2 className="text-slate-800 font-bold">Registro manual de presença</h2>
-              <button onClick={fechar} disabled={isPending} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={fechar} disabled={isPending} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -127,7 +127,7 @@ export default function RegistroManualModal({ fornecedorId, eventoId }: { fornec
                 </p>
                 <button
                   onClick={fechar}
-                  className="w-full bg-brand-500 hover:bg-brand-600 text-white py-2.5 rounded-xl text-sm font-semibold transition-all"
+                  className="btn-press w-full bg-brand-500 hover:bg-brand-600 text-white py-2.5 rounded-xl text-sm font-semibold"
                 >
                   Fechar
                 </button>
@@ -179,7 +179,7 @@ export default function RegistroManualModal({ fornecedorId, eventoId }: { fornec
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-200"
+                  className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-brand-200"
                 >
                   {isPending ? 'Registrando...' : 'Registrar presença'}
                 </button>

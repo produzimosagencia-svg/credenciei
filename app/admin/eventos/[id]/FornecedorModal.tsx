@@ -35,11 +35,11 @@ export default function FornecedorModal(props: Props) {
   return (
     <>
       {isEditar ? (
-        <button onClick={() => setOpen(true)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors" title="Editar fornecedor/setor">
+        <button onClick={() => setOpen(true)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor/setor">
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 text-xs sm:text-sm bg-brand-500 hover:bg-brand-600 text-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition-all font-semibold shadow-sm shadow-brand-200">
+        <button onClick={() => setOpen(true)} className="btn-press flex items-center gap-1.5 text-xs sm:text-sm bg-brand-500 hover:bg-brand-600 text-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-semibold shadow-sm shadow-brand-200">
           <Plus className="w-3.5 h-3.5 shrink-0" />
           <span className="hidden sm:inline">Novo Fornecedor/Setor</span>
           <span className="sm:hidden">Novo</span>
@@ -47,11 +47,11 @@ export default function FornecedorModal(props: Props) {
       )}
 
       {open && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpen(false)}>
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="overlay-fade-in fixed inset-0 bg-black/45 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpen(false)}>
+          <div className="modal-pop-in bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-slate-800 font-bold text-base">{isEditar ? 'Editar Fornecedor/Setor' : 'Novo Fornecedor/Setor'}</h3>
-              <button onClick={() => setOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
+              <button onClick={() => setOpen(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -68,7 +68,7 @@ export default function FornecedorModal(props: Props) {
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Valor combinado por funcionário</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-                  <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9" />
+                  <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9 tabular-nums" />
                 </div>
               </div>
               <div>
@@ -82,7 +82,7 @@ export default function FornecedorModal(props: Props) {
                 />
                 <p className="text-[11px] text-slate-400 mt-1">Deixe em branco para permitir qualquer pessoa com o link.</p>
               </div>
-              <button type="submit" disabled={isPending} className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-semibold transition-all shadow-md shadow-brand-200">
+              <button type="submit" disabled={isPending} className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-brand-200">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
               </button>
             </form>

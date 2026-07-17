@@ -41,9 +41,9 @@ export default function NovoFuncionarioModal({
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !isPending && setOpen(false)}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
-            className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
@@ -51,7 +51,7 @@ export default function NovoFuncionarioModal({
               <button
                 onClick={() => setOpen(false)}
                 disabled={isPending}
-                className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+                className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -79,7 +79,7 @@ export default function NovoFuncionarioModal({
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
+                className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-3 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
               >
                 {isPending ? 'Cadastrando...' : 'Cadastrar funcionário'}
               </button>

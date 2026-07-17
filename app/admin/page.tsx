@@ -5,6 +5,8 @@ import { ptBR } from 'date-fns/locale'
 import { CalendarDays, Users, UserCheck, TrendingUp, ArrowRight, Circle, Plus, Building2 } from 'lucide-react'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
+import StatCard from '@/components/StatCard'
+import { BarrasMagnitude, DonutComposicao, COR_ETAPA } from '@/components/charts'
 
 export const revalidate = 0
 
@@ -28,12 +30,21 @@ export default async function AdminPage() {
   const eventoIds = eventos?.map(e => e.id) ?? []
   const eventosAtivos = eventos?.filter(e => e.ativo) ?? []
 
+  const ativosIds = eventosAtivos.map(e => e.id)
+  const contarEtapaAtivos = (tipo: 'entrada' | 'meio' | 'fim') =>
+    ativosIds.length
+      ? db.from('registros').select('id', { count: 'exact', head: true }).in('evento_id', ativosIds).eq('tipo', tipo)
+      : Promise.resolve({ count: 0 })
+
   // Todas as queries abaixo dependem só de eventoIds → uma única wave em paralelo
   const [
     [
       { count: totalFornecedores },
       { count: totalFuncionarios },
       { data: ultimosRegistros },
+      { count: regEntrada },
+      { count: regMeio },
+      { count: regFim },
     ],
     presencaData,
   ] = await Promise.all([
@@ -47,6 +58,9 @@ export default async function AdminPage() {
       eventoIds.length
         ? db.from('registros').select('*, funcionarios(nome, cargo, empresa), eventos(nome)').in('evento_id', eventoIds).order('created_at', { ascending: false }).limit(12)
         : Promise.resolve({ data: [] }),
+      contarEtapaAtivos('entrada'),
+      contarEtapaAtivos('meio'),
+      contarEtapaAtivos('fim'),
     ]),
     Promise.all(
       eventosAtivos.map(async (e) => {
@@ -75,12 +89,12 @@ export default async function AdminPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">{format(new Date(), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
+          <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">Visão geral dos seus eventos</p>
         </div>
         {podeCriarEvento && (
           <Link
             href="/admin/eventos/novo"
-            className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200 flex items-center gap-2"
+            className="btn-press bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold shadow-md shadow-brand-200 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Evento</span>
@@ -109,16 +123,39 @@ export default async function AdminPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map(({ label, value, sub, icon: Icon, color, bg, border }) => (
-          <div key={label} className={`bg-white border ${border} rounded-2xl p-5 shadow-sm`}>
-            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl ${bg} mb-3`}>
-              <Icon className={`w-5 h-5 ${color}`} />
-            </div>
-            <p className="text-3xl font-bold text-slate-800">{value}</p>
-            <p className="text-slate-600 text-sm mt-0.5 font-medium">{label}</p>
-            <p className="text-slate-400 text-xs">{sub}</p>
+        {stats.map(s => <StatCard key={s.label} {...s} />)}
+      </div>
+
+      {/* Gráficos operacionais (eventos ativos) */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="mb-5">
+            <h2 className="text-slate-800 font-bold text-base">Presença por evento</h2>
+            <p className="text-slate-400 text-xs mt-0.5">Quem já registrou entrada, nos eventos ativos</p>
           </div>
-        ))}
+          {!presencaData.length ? (
+            <p className="text-slate-400 text-sm text-center py-8">Nenhum evento ativo no momento</p>
+          ) : (
+            <BarrasMagnitude
+              itens={presencaData.map(p => ({ label: p.evento.nome, valor: p.dentro, total: p.total }))}
+            />
+          )}
+        </div>
+
+        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="mb-5">
+            <h2 className="text-slate-800 font-bold text-base">Registros por etapa</h2>
+            <p className="text-slate-400 text-xs mt-0.5">Somando todos os eventos ativos</p>
+          </div>
+          <DonutComposicao
+            rotuloCentro="registros"
+            dados={[
+              { label: 'Entrada', valor: regEntrada ?? 0, cor: COR_ETAPA.entrada },
+              { label: 'Meio', valor: regMeio ?? 0, cor: COR_ETAPA.meio },
+              { label: 'Saída', valor: regFim ?? 0, cor: COR_ETAPA.fim },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -162,7 +199,7 @@ export default async function AdminPage() {
                     <div className="flex items-center gap-3 shrink-0 ml-4">
                       {e.ativo && p && (
                         <div className="text-right">
-                          <p className="text-slate-700 text-xs font-bold">{p.dentro}/{p.total}</p>
+                          <p className="text-slate-700 text-xs font-bold tabular-nums">{p.dentro}/{p.total}</p>
                           <p className="text-slate-400 text-xs">presentes</p>
                         </div>
                       )}
@@ -190,7 +227,7 @@ export default async function AdminPage() {
                     <div className="min-w-0">
                       <p className="text-slate-700 text-xs font-semibold truncate">{func?.nome}</p>
                       <p className="text-slate-400 text-xs truncate">{func?.empresa}{func?.cargo ? ` • ${func.cargo}` : ''}</p>
-                      <p className="text-slate-300 text-xs mt-0.5">
+                      <p className="text-slate-300 text-xs mt-0.5 tabular-nums">
                         {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Fim'} •{' '}
                         {format(new Date(r.created_at), "HH:mm", { locale: ptBR })}
                       </p>

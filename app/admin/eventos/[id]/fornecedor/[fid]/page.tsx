@@ -9,6 +9,7 @@ import NovoFuncionarioModal from './NovoFuncionarioModal'
 import RegistroManualModal from './RegistroManualModal'
 import StatCard from '@/components/StatCard'
 import AutoRefresh from './AutoRefresh'
+import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 
 export const revalidate = 0
 
@@ -162,6 +163,21 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
+      </div>
+
+      {/* Progresso da equipe por etapa */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-slate-800 font-bold text-base">Progresso da equipe</h2>
+          <p className="text-slate-400 text-xs mt-0.5">Quantos dos {total} funcionários já registraram cada etapa</p>
+        </div>
+        <ProgressoEtapas
+          itens={[
+            { label: 'Entrada', valor: contar('entrada'), total, cor: COR_ETAPA.entrada },
+            { label: 'Meio', valor: contar('meio'), total, cor: COR_ETAPA.meio },
+            { label: 'Saída', valor: contar('fim'), total, cor: COR_ETAPA.fim },
+          ]}
+        />
       </div>
 
       <FuncionarioTable

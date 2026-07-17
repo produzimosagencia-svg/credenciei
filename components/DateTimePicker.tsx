@@ -98,15 +98,15 @@ export default function DateTimePicker({
         onClick={abrir}
         className="input flex items-center justify-between text-left"
       >
-        <span className={exibicao ? 'text-slate-800' : 'text-slate-400'}>{exibicao || placeholder}</span>
+        <span className={`tabular-nums ${exibicao ? 'text-slate-800' : 'text-slate-400'}`}>{exibicao || placeholder}</span>
         <CalendarDays className="w-4 h-4 text-slate-400 shrink-0" />
       </button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
-            className="relative bg-white rounded-3xl shadow-xl w-full max-w-md sm:max-w-lg overflow-hidden"
+            className="modal-pop-in relative bg-white rounded-3xl shadow-xl w-full max-w-md sm:max-w-lg overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex flex-col sm:flex-row">
@@ -163,7 +163,7 @@ export default function DateTimePicker({
                       type="button"
                       data-hora={h}
                       onClick={() => setHoraSelecionada(h)}
-                      className={`w-full text-sm font-medium py-2 rounded-xl border transition-colors ${
+                      className={`w-full text-sm font-medium tabular-nums py-2 rounded-xl border transition-colors ${
                         horaSelecionada === h
                           ? 'bg-brand-500 border-brand-500 text-white'
                           : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
@@ -188,7 +188,7 @@ export default function DateTimePicker({
                   type="button"
                   onClick={aplicar}
                   disabled={!dataSelecionada || !horaSelecionada}
-                  className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-xl transition-colors"
+                  className="btn-press bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-xl"
                 >
                   Aplicar
                 </button>

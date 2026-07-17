@@ -80,9 +80,9 @@ export default function FuncionarioDetalheModal({
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
-            className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
@@ -100,7 +100,7 @@ export default function FuncionarioDetalheModal({
                   <p className="text-slate-400 text-xs mt-0.5 truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors shrink-0">
+              <button onClick={() => setOpen(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -109,11 +109,11 @@ export default function FuncionarioDetalheModal({
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-slate-400 text-xs">CPF</p>
-                  <p className="text-slate-700 font-medium font-mono">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
+                  <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
                 </div>
                 <div>
                   <p className="text-slate-400 text-xs">Telefone</p>
-                  <p className="text-slate-700 font-medium">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
+                  <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
                 </div>
               </div>
 
@@ -132,7 +132,7 @@ export default function FuncionarioDetalheModal({
                   <button
                     onClick={handleAlternarPagamento}
                     disabled={isPendingPagamento}
-                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                    className={`btn-press flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:active:scale-100 ${
                       f.pago ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     }`}
                     title={f.pago && f.pagoEm ? `Pago em ${formatarBR(f.pagoEm, 'curto')} — clique para desfazer` : 'Marcar como pago'}
@@ -144,7 +144,7 @@ export default function FuncionarioDetalheModal({
                 {valorCombinado != null && (
                   <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
                     <span className="text-slate-500">Valor combinado (setor)</span>
-                    <span className="text-slate-700 font-semibold">{brl(valorCombinado)}</span>
+                    <span className="text-slate-700 font-semibold tabular-nums">{brl(valorCombinado)}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 gap-2">
@@ -169,13 +169,13 @@ export default function FuncionarioDetalheModal({
                       step="0.01"
                       value={valor}
                       onChange={e => setValor(e.target.value.replace(/^0+(?=\d)/, ''))}
-                      className="input pl-9"
+                      className="input pl-9 tabular-nums"
                     />
                   </div>
                   <button
                     onClick={handleSalvar}
                     disabled={isPending}
-                    className="flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-all shrink-0"
+                    className="btn-press flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shrink-0"
                   >
                     {isPending ? 'Salvando...' : 'Salvar'}
                   </button>

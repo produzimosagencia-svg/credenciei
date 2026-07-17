@@ -20,16 +20,50 @@
   --color-brand-500: #4940df;
   --color-brand-600: #3a30c4;
   --color-brand-700: #2f27a0;
+
+  /*
+   * Escala de sombra do sistema inteiro: troca o padrão do Tailwind
+   * (cinza puro, uma camada) por sombras em camadas (contato + ambiente),
+   * em neutro frio (slate-900) e sempre na mesma direção (luz vindo de
+   * cima) — todo `shadow-sm/md/lg/xl/2xl` do app herda isso automaticamente,
+   * sem precisar trocar classe por classe.
+   */
+  --shadow-2xs: 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.05), 0 6px 12px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 4px 8px rgba(15, 23, 42, 0.06), 0 12px 24px rgba(15, 23, 42, 0.08);
+  --shadow-xl: 0 8px 16px rgba(15, 23, 42, 0.07), 0 20px 40px rgba(15, 23, 42, 0.10);
+  --shadow-2xl: 0 12px 24px rgba(15, 23, 42, 0.10), 0 32px 64px rgba(15, 23, 42, 0.14);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-jakarta), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Feedback de toque consistente pra botões primários (aplicado via classe,
+   não em todo `button` — nem todo botão do app deve "afundar" ao clicar). */
+.btn-press {
+  transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+.btn-press:active {
+  transform: scale(0.98);
 }
 
 .input {
@@ -54,3 +88,14 @@ body {
   to { transform: translateX(0); }
 }
 .drawer-slide-in { animation: drawer-slide-in 0.22s ease-out; }
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.overlay-fade-in { animation: overlay-fade-in 150ms ease-out; }
+.modal-pop-in { animation: modal-pop-in 180ms ease-out; }

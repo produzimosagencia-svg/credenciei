@@ -8,6 +8,7 @@ import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import EventoStatusToggle from './EventoStatusToggle'
 import StatCard from '@/components/StatCard'
+import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 
 export const revalidate = 0
 
@@ -127,6 +128,21 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         <StatCard label="Registraram entrada" value={totEntrada} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
         <StatCard label="Registraram meio" value={totMeio} icon={Clock} color="text-amber-600" bg="bg-amber-100" border="border-amber-200" />
         <StatCard label="Registraram fim" value={totFim} icon={UserCheck} color="text-brand-600" bg="bg-brand-100" border="border-brand-200" />
+      </div>
+
+      {/* Progresso de presença por etapa */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-slate-800 font-bold text-base">Progresso de presença</h2>
+          <p className="text-slate-400 text-xs mt-0.5">Quantos dos {totalFuncionarios} funcionários já registraram cada etapa</p>
+        </div>
+        <ProgressoEtapas
+          itens={[
+            { label: 'Entrada', valor: totEntrada, total: totalFuncionarios, cor: COR_ETAPA.entrada },
+            { label: 'Meio', valor: totMeio, total: totalFuncionarios, cor: COR_ETAPA.meio },
+            { label: 'Saída', valor: totFim, total: totalFuncionarios, cor: COR_ETAPA.fim },
+          ]}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">

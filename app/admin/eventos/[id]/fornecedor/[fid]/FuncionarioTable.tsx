@@ -224,16 +224,16 @@ export default function FuncionarioTable({
                       }
                     />
                   </td>
-                  <td className="px-4 py-3 text-slate-500 text-sm font-mono whitespace-nowrap">
+                  <td className="px-4 py-3 text-slate-500 text-sm font-mono tabular-nums whitespace-nowrap">
                     {f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
                   </td>
-                  <td className="px-4 py-3 text-slate-500 text-sm whitespace-nowrap">
+                  <td className="px-4 py-3 text-slate-500 text-sm tabular-nums whitespace-nowrap">
                     {f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
                       {f.valorReceber > 0 ? (
-                        <span className="text-xs font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg">
+                        <span className="text-xs font-semibold tabular-nums text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg">
                           {brl(f.valorReceber)}
                         </span>
                       ) : (
@@ -248,22 +248,22 @@ export default function FuncionarioTable({
                   <CelulaPresenca p={f.meio} status={f.statusMeio} />
                   <CelulaPresenca p={f.fim} status={f.statusFim} />
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleAtivacao(f)}
                         disabled={isPending}
-                        className={`p-1.5 transition-colors disabled:opacity-50 ${f.ativo ? 'text-green-500 hover:text-amber-500' : 'text-amber-500 hover:text-green-600'}`}
+                        className={`btn-press w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-50 disabled:active:scale-100 ${f.ativo ? 'text-green-500 hover:text-amber-600 hover:bg-amber-50' : 'text-amber-500 hover:text-green-600 hover:bg-green-50'}`}
                         title={f.ativo ? 'Ativado — clique para desativar' : 'Não ativado — clique para ativar'}
                       >
-                        {f.ativo ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                        {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
                       </button>
                       <button
                         onClick={() => handleDelete(f)}
                         disabled={isPending}
-                        className="p-1.5 text-slate-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
                         title="Remover"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -281,7 +281,7 @@ export default function FuncionarioTable({
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:active:scale-100 disabled:hover:bg-transparent"
               aria-label="Página anterior"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -289,7 +289,7 @@ export default function FuncionarioTable({
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+              className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:active:scale-100 disabled:hover:bg-transparent"
               aria-label="Próxima página"
             >
               <ChevronRight className="w-4 h-4" />
