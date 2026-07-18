@@ -1,9 +1,10 @@
 # Worker de lembretes WhatsApp
 
 Processo independente do Vercel, pensado pra rodar 24/7 na VPS (EasyPanel),
-do lado da Evolution API. Faz o mesmo trabalho da rota `/api/cron/enviar-mensagens`
-do Next (que serve só de fallback redundante) — os dois chamam a mesma função
-`processarFilaMensagens()` de `lib/mensagens.ts`, então nunca há lógica duplicada.
+disparando pela WhatsApp Cloud API oficial (Meta). Faz o mesmo trabalho da
+rota `/api/cron/enviar-mensagens` do Next (que serve só de fallback
+redundante) — os dois chamam a mesma função `processarFilaMensagens()` de
+`lib/mensagens.ts`, então nunca há lógica duplicada.
 
 ## Deploy no EasyPanel
 
@@ -13,9 +14,8 @@ do Next (que serve só de fallback redundante) — os dois chamam a mesma funç�
 4. Variáveis de ambiente obrigatórias:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `EVOLUTION_API_URL`
-   - `EVOLUTION_API_KEY`
-   - `EVOLUTION_INSTANCE_NAME`
+   - `WHATSAPP_CLOUD_TOKEN` (token permanente do WhatsApp Business Platform, gerado no Meta Business Manager)
+   - `WHATSAPP_PHONE_NUMBER_ID` (ID do número na Cloud API — não é o número em si)
 5. Sem porta HTTP exposta — é um processo de background puro (loop `setInterval`), não um servidor.
 
 ## Rodando localmente pra testar

@@ -1,11 +1,17 @@
-// Fila de mensagens automáticas via WhatsApp (Evolution API).
+// Fila de mensagens automáticas via WhatsApp (Cloud API oficial da Meta).
 // Framework-agnostic de propósito: importado tanto pelos server actions/rotas
 // do Next.js quanto pelo worker standalone que roda 24/7 na VPS — por isso
 // cria o próprio client Supabase (service role) em vez de depender de
 // lib/supabase-server.ts, que usa cookies do Next.
+//
+// Mensagens iniciadas pelo sistema só podem ser TEMPLATE aprovado pela Meta
+// (nunca texto livre) — por isso o conteúdo de cada tipo não é mais montado
+// no agendamento; só decide QUANDO enviar. O texto real (nome do template +
+// parâmetros {{1}}, {{2}}...) é montado na hora do envio, com dados frescos
+// do banco — mesmo padrão que o alerta ao supervisor já usava antes.
 import { createClient } from '@supabase/supabase-js'
 import { formatarBR } from './tz'
-import { formatarNumeroWhatsApp, enviarWhatsApp, type ResultadoEnvio } from './evolution'
+import { formatarNumeroWhatsApp, enviarWhatsApp, type ResultadoEnvio } from './whatsapp'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,13 +19,9 @@ const supabase = createClient(
 )
 
 const ANTECEDENCIA_REFORCO_MINUTOS = 2
-// Baileys (WhatsApp Web não-oficial) pune padrão de envio automatizado —
-// mensagens parecidas, pra gente diferente, com link, num intervalo curto
-// e uniforme é a assinatura clássica de spam. Lote pequeno + intervalo
-// variável (não fixo) reduz bastante o risco de restrição da conta.
-const BATCH_SIZE_PADRAO = 5
-const PACING_MS_MIN = 4000
-const PACING_MS_MAX = 9000
+const BATCH_SIZE_PADRAO = 10
+const PACING_MS_MIN = 1000
+const PACING_MS_MAX = 2000
 const pacingAleatorio = () => PACING_MS_MIN + Math.floor(Math.random() * (PACING_MS_MAX - PACING_MS_MIN))
 const BACKOFF_MINUTOS = [2, 10, 30] // por tentativa: 1ª, 2ª, 3ª...
 
@@ -54,77 +56,46 @@ const JANELAS: {
   { momento: 'fim', campoInicio: 'janela_fim_inicio', campoFim: 'janela_fim_fim', tipoLembrete: 'lembrete_fim', tipoReforco: 'reforco_fim', tipoAlerta: 'alerta_supervisor_fim', rotulo: 'Saída' },
 ]
 
-const MOMENTO_POR_TIPO_CONDICIONAL: Partial<Record<TipoMensagem, MomentoRegistro>> = {
-  alerta_supervisor_entrada: 'entrada',
-  alerta_supervisor_meio: 'meio',
-  alerta_supervisor_fim: 'fim',
-  reforco_entrada: 'entrada',
-  reforco_meio: 'meio',
-  reforco_fim: 'fim',
+/** A qual etapa (entrada/meio/fim) cada tipo de mensagem pertence — usado tanto pra achar a janela quanto pro texto do template. */
+const MOMENTO_POR_TIPO: Partial<Record<TipoMensagem, MomentoRegistro>> = {
+  lembrete_entrada: 'entrada', lembrete_meio: 'meio', lembrete_fim: 'fim',
+  reforco_entrada: 'entrada', reforco_meio: 'meio', reforco_fim: 'fim',
+  alerta_supervisor_entrada: 'entrada', alerta_supervisor_meio: 'meio', alerta_supervisor_fim: 'fim',
+}
+
+const INSTRUCAO_ETAPA: Record<MomentoRegistro, string> = {
+  entrada: 'Procure seu supervisor para registrar seu QR Code de entrada',
+  meio: 'Tire uma selfie pelo sistema, com a localização ativada',
+  fim: 'Procure seu supervisor para registrar seu QR Code de saída',
+}
+
+/**
+ * Nome do template aprovado no WhatsApp Manager (Meta) pra cada tipo.
+ * Vários tipos compartilham o mesmo template (a etapa entra como parâmetro
+ * de texto) — reduz de 11 pra 5 templates precisando de aprovação.
+ */
+const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
+  lembrete_entrada: 'lembrete_credenciamento',
+  lembrete_meio: 'lembrete_credenciamento',
+  lembrete_fim: 'lembrete_credenciamento',
+  reforco_entrada: 'reforco_credenciamento',
+  reforco_meio: 'reforco_credenciamento',
+  reforco_fim: 'reforco_credenciamento',
+  alerta_supervisor_entrada: 'alerta_supervisor_pendencia',
+  alerta_supervisor_meio: 'alerta_supervisor_pendencia',
+  alerta_supervisor_fim: 'alerta_supervisor_pendencia',
+  confirmacao_escala: 'confirmacao_escala',
+  credenciais_supervisor: 'credenciais_supervisor',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
 
-/** Telefone de exibição (mensagens_agendadas.telefone/funcionarios.telefone são só dígitos, sem DDI). */
-function formatarTelefoneExibicao(tel: string): string {
-  const d = (tel ?? '').replace(/\D/g, '')
-  if (d.length === 11) return d.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
-  if (d.length === 10) return d.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3')
-  return tel
-}
-
-function montarMensagemLembrete(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioAbertura: string; horarioLimite: string; link: string }): string {
-  const { nome, nomeEvento, horarioAbertura, horarioLimite, link } = ctx
-  if (tipo === 'lembrete_entrada') {
-    return `Olá, ${nome}! 👋\n\nVocê está escalado para trabalhar no evento ${nomeEvento} 🎉\n\n📋 Lembre-se de procurar seu supervisor para registrar seu QR Code de entrada.\n\n⏰ Registro de entrada disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Não deixe de registrar sua entrada para evitar problemas na validação da sua presença.\n\n🔗 Sua credencial com QR Code:\n${link}`
-  }
-  if (tipo === 'lembrete_meio') {
-    return `Olá, ${nome}! 👋\n\n📸 Está chegando o momento de confirmar sua presença durante o evento.\n\nTire uma selfie utilizando o sistema, mantendo a geolocalização do seu celular ativada 📍\n\n⏰ Registro disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Caso o registro não seja realizado dentro do prazo, sua presença durante esse período poderá não ser validada.\n\nℹ️ Importante: para esta etapa, não é necessário procurar seu supervisor. Você pode realizar o registro de qualquer local dentro do evento.\n\n🔗 Toque no link para registrar:\n${link}`
-  }
-  return `Olá, ${nome}! 👋\n\nO evento ${nomeEvento} está chegando ao fim 🏁\n\n📋 Procure seu supervisor para realizar o registro do seu QR Code de saída.\n\n⏰ Registro de saída disponível de ${horarioAbertura} até ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada corretamente.\n\n🔗 Sua credencial com QR Code:\n${link}`
-}
-
-function montarMensagemReforco(tipo: TipoMensagem, ctx: { nome: string; nomeEvento: string; horarioLimite: string; link: string }): string {
-  const { nome, nomeEvento, horarioLimite, link } = ctx
-  if (tipo === 'reforco_entrada') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua entrada no evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de entrada.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua entrada poderá não ser validada.\n\n🔗 Sua credencial com QR Code:\n${link}`
-  }
-  if (tipo === 'reforco_meio') {
-    return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de confirmação da sua presença no evento ${nomeEvento} se encerrar!\n\nTire sua selfie AGORA pelo sistema, com a geolocalização ativada 📍\n\n⏰ Prazo: ${horarioLimite}.\n\n⚠️ Após esse horário, sua presença nesse período poderá não ser validada.\n\n🔗 Toque no link para registrar:\n${link}`
-  }
-  return `Olá, ${nome}! ⏰\n\n🚨 Faltam poucos minutos para o prazo de registro da sua saída do evento ${nomeEvento} se encerrar!\n\nProcure seu supervisor AGORA para registrar seu QR Code de saída.\n\n⏰ Horário limite: ${horarioLimite}.\n\n⚠️ Após esse horário, sua saída poderá não ser validada.\n\n🔗 Sua credencial com QR Code:\n${link}`
-}
-
-/**
- * Confirmação de escala pré-evento: enviada no horário que o produtor definir
- * (horas antes ou no dia), confirmando função/setor e trazendo as instruções
- * específicas do evento (documento, uniforme etc.), personalizáveis por evento.
- */
-function montarMensagemConfirmacaoEscala(ctx: {
-  nome: string; nomeEvento: string; setorNome: string; cargo: string
-  dataEvento: string; local: string | null; instrucoes: string | null; link: string
-}): string {
-  const partes = [
-    `Olá, ${ctx.nome}! 👋`,
-    `✅ Confirmação de escala: você está escalado para trabalhar no evento ${ctx.nomeEvento} 🎉`,
-    `📋 Função: ${ctx.cargo || 'não informada'}\n🏢 Setor/Equipe: ${ctx.setorNome}\n📅 Data: ${ctx.dataEvento}${ctx.local ? `\n📍 Local: ${ctx.local}` : ''}`,
-  ]
-  if (ctx.instrucoes) partes.push(`ℹ️ Instruções do evento:\n${ctx.instrucoes}`)
-  partes.push(`🔗 Sua credencial com QR Code:\n${ctx.link}`)
-  return partes.join('\n\n')
-}
-
-function montarMensagemCredenciais(ctx: {
-  nome: string; setorNome: string; eventoNome: string; dataEvento: string; email: string; senha: string; linkFormulario: string
-}): string {
-  const link = `${SITE_URL}/login`
-  return `Olá, ${ctx.nome}! 🎉\n\nVocê foi cadastrado como Supervisor no sistema Credenciei e será o responsável pela equipe do setor ${ctx.setorNome} durante o evento ${ctx.eventoNome}, que acontecerá no dia ${ctx.dataEvento} 📅\n\n🔑 Abaixo estão seus dados de acesso:\n\nLogin: ${ctx.email}\nSenha: ${ctx.senha}\n\n🔗 Acesso ao sistema:\n${link}\n\n📝 Formulário de cadastro da sua equipe:\n${ctx.linkFormulario}\n\nEm caso de dúvidas sobre a utilização da plataforma, entre em contato com o administrador do evento.\n\nSeja bem-vindo! 👏`
-}
-
 /**
  * Garante que todo funcionário do evento tenha agendado (1) o lembrete de
  * cada batida, (2) o reforço condicional a ele mesmo perto do fechamento e
- * (3) o alerta condicional ao supervisor caso não registre.
+ * (3) o alerta condicional ao supervisor caso não registre. Só decide
+ * QUANDO enviar — o conteúdo (template + parâmetros) é montado na hora do
+ * envio, com dados frescos.
  * Idempotente: chamado toda vez que o evento (janelas) ou a equipe
  * (funcionários) mudam. Nunca mexe em linhas já 'enviado'/'cancelado';
  * linhas 'pendente'/'falhou' são atualizadas (reagendamento quando o admin
@@ -133,7 +104,7 @@ function montarMensagemCredenciais(ctx: {
 export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, nome, local, data_inicio, msg_pre_evento_envio, msg_pre_evento_instrucoes, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+    .select('id, msg_pre_evento_envio, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
     .eq('id', eventoId)
     .single()
   if (!evento) return
@@ -142,7 +113,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   // recebem lembrete nenhum até serem ativados no painel.
   const { data: funcionarios } = await supabase
     .from('funcionarios')
-    .select('id, nome, telefone, cargo, qr_token, fornecedor_id, fornecedores!inner(evento_id)')
+    .select('id, telefone, fornecedor_id, fornecedores!inner(evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
   if (!funcionarios?.length) return
@@ -150,22 +121,19 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
   const { data: supervisores } = await supabase
     .from('perfis')
-    .select('id, nome, telefone, fornecedor_id')
+    .select('id, telefone, fornecedor_id')
     .eq('role', 'supervisor')
     .eq('ativo', true)
     .in('fornecedor_id', fornecedorIds)
   // Se houver mais de um supervisor ativo no mesmo setor, o alerta vai só
   // pro primeiro encontrado (a constraint de dedupe é por perfil+tipo, não
   // dá pra notificar vários sem redesenhar a chave de dedupe).
-  const supervisorPorFornecedor = new Map<string, { perfilId: string; nome: string; telefone: string | null }>()
+  const supervisorPorFornecedor = new Map<string, { perfilId: string; telefone: string | null }>()
   for (const s of supervisores ?? []) {
     if (!supervisorPorFornecedor.has(s.fornecedor_id as string)) {
-      supervisorPorFornecedor.set(s.fornecedor_id as string, { perfilId: s.id, nome: s.nome, telefone: s.telefone })
+      supervisorPorFornecedor.set(s.fornecedor_id as string, { perfilId: s.id, telefone: s.telefone })
     }
   }
-
-  const { data: fornecedores } = await supabase.from('fornecedores').select('id, nome').in('id', fornecedorIds)
-  const nomeSetorPorFornecedor = new Map((fornecedores ?? []).map(f => [f.id as string, f.nome as string]))
 
   const { data: existentes } = await supabase
     .from('mensagens_agendadas')
@@ -183,13 +151,14 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   )
 
   const agora = Date.now()
+  const PLACEHOLDER = '(gerado no momento do envio)'
   const linhasFuncionario: {
     evento_id: string; funcionario_id: string; tipo: TipoMensagem
     agendado_para: string; telefone: string; mensagem: string; condicao?: string
   }[] = []
   const linhasSupervisor: {
     evento_id: string; perfil_id: string; tipo: TipoMensagem
-    agendado_para: string; telefone: string; mensagem: string; condicao?: string
+    agendado_para: string; telefone: string; mensagem: string
   }[] = []
 
   for (const func of funcionarios) {
@@ -203,16 +172,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
           tipo: 'confirmacao_escala',
           agendado_para: agendadoPara.toISOString(),
           telefone: func.telefone,
-          mensagem: montarMensagemConfirmacaoEscala({
-            nome: func.nome,
-            nomeEvento: evento.nome,
-            setorNome: nomeSetorPorFornecedor.get(func.fornecedor_id as string) ?? 'seu setor',
-            cargo: func.cargo ?? '',
-            dataEvento: evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
-            local: evento.local ?? null,
-            instrucoes: evento.msg_pre_evento_instrucoes ?? null,
-            link: `${SITE_URL}/credential/${func.qr_token}`,
-          }),
+          mensagem: PLACEHOLDER,
         })
       }
     }
@@ -220,7 +180,6 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     for (const janela of JANELAS) {
       const horarioInicioISO = (evento as Record<string, unknown>)[janela.campoInicio] as string | null
       const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
-      const horarioLimiteFmt = horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : ''
 
       // Lembrete ao funcionário, exatamente quando a janela abre
       if (horarioInicioISO && !travadosPorFuncionario.has(`${func.id}:${janela.tipoLembrete}`)) {
@@ -232,13 +191,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
             tipo: janela.tipoLembrete,
             agendado_para: agendadoPara.toISOString(),
             telefone: func.telefone,
-            mensagem: montarMensagemLembrete(janela.tipoLembrete, {
-              nome: func.nome,
-              nomeEvento: evento.nome,
-              horarioAbertura: formatarBR(horarioInicioISO, 'hora'),
-              horarioLimite: horarioLimiteFmt,
-              link: `${SITE_URL}/credential/${func.qr_token}`,
-            }),
+            mensagem: PLACEHOLDER,
           })
         }
       }
@@ -253,12 +206,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
             tipo: janela.tipoReforco,
             agendado_para: agendadoPara.toISOString(),
             telefone: func.telefone,
-            mensagem: montarMensagemReforco(janela.tipoReforco, {
-              nome: func.nome,
-              nomeEvento: evento.nome,
-              horarioLimite: horarioLimiteFmt,
-              link: `${SITE_URL}/credential/${func.qr_token}`,
-            }),
+            mensagem: PLACEHOLDER,
             condicao: 'sem_registro',
           })
         }
@@ -266,10 +214,9 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     }
   }
 
-  // Alerta ao supervisor: UMA mensagem por setor/etapa (não por funcionário),
-  // listando todo mundo que ainda estiver sem registro. O texto real (quem
-  // exatamente está faltando) só dá pra saber no momento do envio — aqui só
-  // agenda o "gatilho"; processarFilaMensagens monta a lista na hora.
+  // Alerta ao supervisor: UMA mensagem por setor/etapa (não por
+  // funcionário). O texto real (quantos e quem está faltando) só dá pra
+  // saber no momento do envio — aqui só agenda o "gatilho".
   for (const janela of JANELAS) {
     const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
     if (!horarioLimiteISO) continue
@@ -285,8 +232,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
         tipo: janela.tipoAlerta,
         agendado_para: horarioLimiteISO,
         telefone: supervisor.telefone,
-        mensagem: '(gerado no momento do envio)',
-        condicao: 'lista_sem_registro',
+        mensagem: PLACEHOLDER,
       })
     }
   }
@@ -303,6 +249,11 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
  * Agenda o envio (imediato) das credenciais de acesso pro supervisor
  * recém-criado. Chamado uma vez, direto de criarSupervisor. Não repete: se
  * já existe uma linha pra esse perfil (por qualquer motivo), não duplica.
+ *
+ * Diferente dos outros tipos, os parâmetros aqui (principalmente a senha em
+ * texto puro) não existem em lugar nenhum do banco depois deste momento —
+ * por isso ficam salvos como JSON na própria coluna `mensagem`, em vez de
+ * recalculados na hora do envio.
  */
 export async function agendarCredenciaisSupervisor(params: {
   eventoId: string
@@ -324,28 +275,38 @@ export async function agendarCredenciaisSupervisor(params: {
     .limit(1)
   if (existe?.length) return
 
+  const templateParams = [
+    params.nome,
+    params.setorNome,
+    params.eventoNome,
+    params.dataEvento,
+    params.email,
+    params.senha,
+    `${SITE_URL}/login`,
+    params.linkFormulario,
+  ]
+
   const { error } = await supabase.from('mensagens_agendadas').insert([{
     evento_id: params.eventoId,
     perfil_id: params.perfilId,
     tipo: 'credenciais_supervisor',
     agendado_para: new Date().toISOString(),
     telefone: params.telefone,
-    mensagem: montarMensagemCredenciais(params),
+    mensagem: JSON.stringify(templateParams),
   }])
   if (error && error.code !== '23505') throw error // 23505 = unique_violation (corrida rara), ignora
 }
 
 /**
  * Processa um lote de mensagens devidas: reivindica (claim atômico via UPDATE
- * condicional — sem função de banco), checa condição (quando houver), envia
- * pela Evolution API, loga cada tentativa e aplica retry com backoff.
- * Chamado tanto pelo worker da VPS (a cada ~20s) quanto pela rota /api/cron
- * (fallback via Vercel Cron).
+ * condicional — sem função de banco), checa condição (quando houver), monta
+ * o template + parâmetros com dados frescos, envia pela Cloud API, loga cada
+ * tentativa e aplica retry com backoff. Chamado tanto pelo worker da VPS
+ * (a cada ~20s) quanto pela rota /api/cron (fallback via Vercel Cron).
  */
 export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promise<{ processadas: number }> {
   // Interruptor de emergência: seta WHATSAPP_PAUSADO=true (worker na VPS e/ou
-  // Vercel) pra parar todo envio na hora, sem precisar redeployar — útil se a
-  // conta levar uma restrição da própria WhatsApp e for preciso parar rápido.
+  // Vercel) pra parar todo envio na hora, sem precisar redeployar.
   if (process.env.WHATSAPP_PAUSADO === 'true') return { processadas: 0 }
 
   const agoraISO = new Date().toISOString()
@@ -395,10 +356,10 @@ type MensagemClaimada = {
   max_tentativas: number
 }
 
-/** Pra alertas condicionais ao próprio funcionário: só envia se ele AINDA não tiver o registro daquela batida. */
+/** Pra reforços condicionais: só envia se o funcionário AINDA não tiver o registro daquela batida. */
 async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
   if (msg.condicao !== 'sem_registro') return true
-  const momento = MOMENTO_POR_TIPO_CONDICIONAL[msg.tipo]
+  const momento = MOMENTO_POR_TIPO[msg.tipo]
   if (!momento || !msg.funcionario_id) return true
   const { data } = await supabase
     .from('registros')
@@ -411,63 +372,132 @@ async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
 }
 
 /**
- * Alerta agregado ao supervisor: monta, na hora do envio (não dá pra
- * pré-computar no agendamento), a lista de todos os funcionários do setor
- * ainda sem registro naquela batida. Retorna null se ninguém estiver
- * faltando (nada a avisar) — nesse caso a mensagem é cancelada.
+ * Monta o template + parâmetros de envio com dados frescos do banco — nunca
+ * pré-computado no agendamento. Retorna null quando a mensagem deve ser
+ * cancelada (ex.: alerta ao supervisor sem ninguém pendente).
  */
-async function montarMensagemAgregada(msg: MensagemClaimada): Promise<string | null> {
-  const momento = MOMENTO_POR_TIPO_CONDICIONAL[msg.tipo]
-  if (!momento || !msg.perfil_id) return null
+async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[] } | null> {
+  const template = TEMPLATE_POR_TIPO[msg.tipo]
 
-  const { data: supervisor } = await supabase
-    .from('perfis')
-    .select('nome, fornecedor_id')
-    .eq('id', msg.perfil_id)
-    .single()
-  if (!supervisor?.fornecedor_id) return null
+  // Credenciais do supervisor: parâmetros já foram capturados no agendamento
+  // (a senha em texto puro não existe em nenhum outro lugar do banco).
+  if (msg.tipo === 'credenciais_supervisor') {
+    try {
+      const params = JSON.parse(msg.mensagem)
+      return Array.isArray(params) ? { template, params } : null
+    } catch {
+      return null
+    }
+  }
 
-  const { data: fornecedor } = await supabase
-    .from('fornecedores')
-    .select('nome')
-    .eq('id', supervisor.fornecedor_id)
-    .single()
+  // Lembrete e reforço: mesma estrutura de parâmetros, só muda a instrução da etapa.
+  if (msg.tipo.startsWith('lembrete_') || msg.tipo.startsWith('reforco_')) {
+    if (!msg.funcionario_id) return null
+    const momento = MOMENTO_POR_TIPO[msg.tipo]
+    const janela = JANELAS.find(j => j.momento === momento)
+    if (!momento || !janela) return null
 
-  const { data: funcionarios } = await supabase
-    .from('funcionarios')
-    .select('id, nome, telefone')
-    .eq('fornecedor_id', supervisor.fornecedor_id)
-    .eq('ativo', true)
-  if (!funcionarios?.length) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select(`nome, ${janela.campoFim}`).eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+    const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
 
-  const { data: registros } = await supabase
-    .from('registros')
-    .select('funcionario_id')
-    .eq('evento_id', msg.evento_id)
-    .eq('tipo', momento)
-    .in('funcionario_id', funcionarios.map(f => f.id))
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome as string,
+        INSTRUCAO_ETAPA[momento],
+        horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : 'a definir',
+        `${SITE_URL}/credential/${func.qr_token}`,
+      ],
+    }
+  }
 
-  const registrados = new Set((registros ?? []).map(r => r.funcionario_id))
-  const semRegistro = funcionarios.filter(f => !registrados.has(f.id))
-  if (!semRegistro.length) return null
+  // Alerta ao supervisor: conta quantos do setor ainda estão sem registro
+  // naquela etapa. Cancela (retorna null) se ninguém estiver faltando.
+  if (msg.tipo.startsWith('alerta_supervisor_')) {
+    if (!msg.perfil_id) return null
+    const momento = MOMENTO_POR_TIPO[msg.tipo]
+    if (!momento) return null
 
-  const rotulo = JANELAS.find(j => j.momento === momento)?.rotulo ?? momento
-  const lista = semRegistro.map(f => `• ${f.nome} (${formatarTelefoneExibicao(f.telefone)})`).join('\n')
+    const { data: supervisor } = await supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single()
+    if (!supervisor?.fornecedor_id) return null
 
-  return `Olá, ${supervisor.nome}! 👋\n\n⚠️ Os funcionários abaixo do setor ${fornecedor?.nome ?? 'seu setor'} não registraram o ponto de ${rotulo} dentro do prazo estabelecido:\n\n${lista}\n\n🔎 Verifique a situação e, caso necessário, entre em contato com os colaboradores para identificar o motivo da ausência do registro.`
+    const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', supervisor.fornecedor_id).single()
+
+    const { data: funcionarios } = await supabase
+      .from('funcionarios')
+      .select('id')
+      .eq('fornecedor_id', supervisor.fornecedor_id)
+      .eq('ativo', true)
+    if (!funcionarios?.length) return null
+
+    const { data: registros } = await supabase
+      .from('registros')
+      .select('funcionario_id')
+      .eq('evento_id', msg.evento_id)
+      .eq('tipo', momento)
+      .in('funcionario_id', funcionarios.map(f => f.id))
+
+    const registrados = new Set((registros ?? []).map(r => r.funcionario_id))
+    const semRegistro = funcionarios.filter(f => !registrados.has(f.id))
+    if (!semRegistro.length) return null
+
+    const rotulo = JANELAS.find(j => j.momento === momento)?.rotulo ?? momento
+
+    return {
+      template,
+      params: [
+        supervisor.nome,
+        String(semRegistro.length),
+        fornecedor?.nome ?? 'seu setor',
+        rotulo,
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/fornecedor/${supervisor.fornecedor_id}`,
+      ],
+    }
+  }
+
+  // Confirmação de escala pré-evento
+  if (msg.tipo === 'confirmacao_escala') {
+    if (!msg.funcionario_id) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, cargo, qr_token, fornecedor_id').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome, local, data_inicio, msg_pre_evento_instrucoes').eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+    const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
+
+    const dataLocal = `dia ${evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar'}${evento.local ? `, em ${evento.local}` : ''}`
+    const instrucoes = evento.msg_pre_evento_instrucoes?.trim() || 'Fique atento aos horários da sua escala.'
+
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome,
+        func.cargo?.trim() || 'não informada',
+        fornecedor?.nome ?? 'seu setor',
+        dataLocal,
+        instrucoes,
+        `${SITE_URL}/credential/${func.qr_token}`,
+      ],
+    }
+  }
+
+  return null
 }
 
 async function enviarUma(msg: MensagemClaimada): Promise<void> {
-  let mensagem = msg.mensagem
+  if (!(await devoEnviar(msg))) {
+    await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
+    return
+  }
 
-  if (msg.condicao === 'lista_sem_registro') {
-    const agregada = await montarMensagemAgregada(msg)
-    if (!agregada) {
-      await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
-      return
-    }
-    mensagem = agregada
-  } else if (!(await devoEnviar(msg))) {
+  const envio = await montarEnvioTemplate(msg)
+  if (!envio) {
     await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
     return
   }
@@ -476,7 +506,7 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
   const numero = formatarNumeroWhatsApp(msg.telefone)
 
   const resultado: ResultadoEnvio = numero
-    ? await enviarWhatsApp(numero, mensagem)
+    ? await enviarWhatsApp(numero, envio.template, envio.params)
     : { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
 
   await supabase.from('mensagens_log').insert({
@@ -484,7 +514,7 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
     tentativa,
     status: resultado.ok ? 'sucesso' : 'erro',
     status_http: resultado.statusHttp,
-    resposta_evolution: resultado.resposta,
+    resposta_evolution: resultado.resposta, // coluna legada de nome; agora guarda a resposta da Cloud API
     erro: resultado.ok ? null : JSON.stringify(resultado.resposta),
     destinatario_telefone: msg.telefone,
     tipo: msg.tipo,
@@ -494,7 +524,7 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
     await supabase.from('mensagens_agendadas').update({
       status: 'enviado',
       tentativas: tentativa,
-      evolution_message_id: resultado.messageId ?? null,
+      evolution_message_id: resultado.messageId ?? null, // coluna legada de nome; agora guarda o wamid da Cloud API
       enviado_em: new Date().toISOString(),
       erro: null,
     }).eq('id', msg.id)
