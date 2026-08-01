@@ -95,7 +95,7 @@ export default function AppShell({ perfil, children }: { perfil: Perfil; childre
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f7fb] flex">
+    <div className="min-h-screen bg-[#131320] flex">
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
         <Link href="/admin" className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-100 shrink-0">
@@ -110,7 +110,7 @@ export default function AppShell({ perfil, children }: { perfil: Perfil; childre
 
       {/* Coluna principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 bg-white/85 backdrop-blur-md border-b border-slate-200">
+        <header className="sticky top-0 z-30 bg-[#1b1a29]/85 backdrop-blur-md border-b border-slate-200">
           <div className="px-4 md:px-8 h-16 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
