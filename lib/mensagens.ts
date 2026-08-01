@@ -31,6 +31,9 @@ export type TipoMensagem =
   | 'reforco_entrada' | 'reforco_meio' | 'reforco_fim'
   | 'credenciais_supervisor'
   | 'confirmacao_escala'
+  | 'aviso_dia_evento'
+
+const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 
@@ -86,6 +89,7 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   alerta_supervisor_fim: 'alerta_supervisor_pendencia',
   confirmacao_escala: 'confirmacao_escala',
   credenciais_supervisor: 'credenciais_supervisor',
+  aviso_dia_evento: 'aviso_dia_evento',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -170,6 +174,23 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
           evento_id: eventoId,
           funcionario_id: func.id,
           tipo: 'confirmacao_escala',
+          agendado_para: agendadoPara.toISOString(),
+          telefone: func.telefone,
+          mensagem: PLACEHOLDER,
+        })
+      }
+    }
+
+    // Aviso do dia do evento: 2h antes do credenciamento abrir, resume
+    // horário de entrada e lembra do check-in do meio e do descredenciamento
+    // — mensagem fixa, independente da confirmação de escala configurável.
+    if (evento.janela_entrada_inicio && !travadosPorFuncionario.has(`${func.id}:aviso_dia_evento`)) {
+      const agendadoPara = new Date(new Date(evento.janela_entrada_inicio).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
+      if (agendadoPara.getTime() > agora) {
+        linhasFuncionario.push({
+          evento_id: eventoId,
+          funcionario_id: func.id,
+          tipo: 'aviso_dia_evento',
           agendado_para: agendadoPara.toISOString(),
           telefone: func.telefone,
           mensagem: PLACEHOLDER,
@@ -482,6 +503,28 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         fornecedor?.nome ?? 'seu setor',
         dataLocal,
         instrucoes,
+        `${SITE_URL}/credential/${func.qr_token}`,
+      ],
+    }
+  }
+
+  // Aviso do dia do evento: 2h antes do credenciamento, resume o horário de
+  // entrada e lembra do check-in do meio e do descredenciamento.
+  if (msg.tipo === 'aviso_dia_evento') {
+    if (!msg.funcionario_id) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome, janela_entrada_inicio, janela_entrada_fim').eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome,
+        evento.janela_entrada_inicio ? formatarBR(evento.janela_entrada_inicio, 'hora') : 'a definir',
+        evento.janela_entrada_fim ? formatarBR(evento.janela_entrada_fim, 'hora') : 'a definir',
         `${SITE_URL}/credential/${func.qr_token}`,
       ],
     }
