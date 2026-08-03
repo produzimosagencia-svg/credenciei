@@ -24,7 +24,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import { validarCpf } from './format'
 import { mensagemAmigavel } from './erros'
-import { sincronizarAgendamentos, agendarCredenciaisSupervisor } from './mensagens'
+import { sincronizarAgendamentos, agendarCredenciaisSupervisor, agendarBoasVindasFuncionario } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
@@ -687,6 +687,14 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   // resposta (não bloqueia; sobrevive ao serverless)
   after(() => sincronizarFuncionarioNaPlanilha(novo.id).catch(console.error))
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+  // Cadastrado pelo supervisor, não pelo formulário: a pessoa ainda não viu a
+  // credencial em tela nenhuma, então as boas-vindas no WhatsApp são o único
+  // caminho até o link dela.
+  after(() => agendarBoasVindasFuncionario({
+    eventoId,
+    funcionarioId: novo.id,
+    telefone: (formData.get('telefone') as string) ?? '',
+  }).catch(console.error))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
@@ -1076,6 +1084,11 @@ export async function cadastrarFuncionarioPublico(
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
+  after(() => agendarBoasVindasFuncionario({
+    eventoId: fornecedor.evento_id,
+    funcionarioId: data.id,
+    telefone: dados.telefone,
+  }).catch(console.error))
   return { qrToken: data.qr_token }
 }
 

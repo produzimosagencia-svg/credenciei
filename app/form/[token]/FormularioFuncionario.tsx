@@ -138,7 +138,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
-      <Field label="Foto (opcional)">
+      <Field label="Foto (opcional)" tutorial="form-foto">
         <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onFoto} />
         {foto ? (
           <div className="flex items-center gap-3">
@@ -164,7 +164,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       <Field label="Nome completo *">
         <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />
       </Field>
-      <Field label="CPF *">
+      <Field label="CPF *" tutorial="form-cpf">
         <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
         {erroCpf && <p className="text-red-500 text-xs mt-1">{erroCpf}</p>}
         {!erroCpf && autofill && (
@@ -173,7 +173,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
           </p>
         )}
       </Field>
-      <Field label="Telefone *">
+      <Field label="Telefone *" tutorial="form-telefone">
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
       </Field>
       <Field label="Empresa *">
@@ -182,12 +182,13 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       <Field label="Cargo *">
         <input required value={form.cargo} onChange={e => set('cargo', titleCaseNome(e.target.value))} placeholder="Ex: Segurança, Garçom..." className="input" />
       </Field>
-      <Field label="Chave PIX (opcional)">
+      <Field label="Chave PIX (opcional)" tutorial="form-pix">
         <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />
       </Field>
 
       <button
         type="submit"
+        data-tutorial="form-enviar"
         disabled={loading}
         className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
       >
@@ -197,9 +198,9 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, tutorial }: { label: string; children: React.ReactNode; tutorial?: string }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" data-tutorial={tutorial}>
       <label className="text-sm font-medium text-slate-700">{label}</label>
       {children}
     </div>

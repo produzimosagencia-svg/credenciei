@@ -6,9 +6,13 @@ import type { TutorialPasso } from './types'
 type Retangulo = { top: number; left: number; width: number; height: number }
 
 const MARGEM_ALVO = 8
-const LARGURA_BALAO = 320
 const ALTURA_ESTIMADA_BALAO = 170
 const ESPACO_BALAO = 14
+
+/** As telas do funcionário são de celular — o balão nunca pode passar da tela. */
+function larguraBalao(): number {
+  return Math.min(320, window.innerWidth - 32)
+}
 
 function medirAlvo(id: string): Retangulo | null {
   const el = document.querySelector(`[data-tutorial="${id}"]`)
@@ -23,16 +27,17 @@ function medirAlvo(id: string): Retangulo | null {
 }
 
 function calcularPosicaoBalao(rect: Retangulo, posicao: TutorialPasso['posicao'] = 'bottom') {
+  const largura = larguraBalao()
   let top: number
   let left: number
   switch (posicao) {
     case 'top':
       top = rect.top - ALTURA_ESTIMADA_BALAO - ESPACO_BALAO
-      left = rect.left + rect.width / 2 - LARGURA_BALAO / 2
+      left = rect.left + rect.width / 2 - largura / 2
       break
     case 'left':
       top = rect.top + rect.height / 2 - ALTURA_ESTIMADA_BALAO / 2
-      left = rect.left - LARGURA_BALAO - ESPACO_BALAO
+      left = rect.left - largura - ESPACO_BALAO
       break
     case 'right':
       top = rect.top + rect.height / 2 - ALTURA_ESTIMADA_BALAO / 2
@@ -40,11 +45,17 @@ function calcularPosicaoBalao(rect: Retangulo, posicao: TutorialPasso['posicao']
       break
     default:
       top = rect.top + rect.height + ESPACO_BALAO
-      left = rect.left + rect.width / 2 - LARGURA_BALAO / 2
+      left = rect.left + rect.width / 2 - largura / 2
   }
-  left = Math.min(Math.max(left, 16), window.innerWidth - LARGURA_BALAO - 16)
-  top = Math.min(Math.max(top, 16), window.innerHeight - ALTURA_ESTIMADA_BALAO - 16)
-  return { top, left }
+  // Em tela estreita não há espaço lateral: cai pra baixo do alvo, senão o
+  // balão cobriria justamente o elemento que está sendo explicado.
+  if ((posicao === 'left' || posicao === 'right') && window.innerWidth < 768) {
+    top = rect.top + rect.height + ESPACO_BALAO
+    left = rect.left + rect.width / 2 - largura / 2
+  }
+  left = Math.min(Math.max(left, 16), Math.max(16, window.innerWidth - largura - 16))
+  top = Math.min(Math.max(top, 16), Math.max(16, window.innerHeight - ALTURA_ESTIMADA_BALAO - 16))
+  return { top, left, largura }
 }
 
 export default function TutorialOverlay({
@@ -126,7 +137,7 @@ export default function TutorialOverlay({
       {/* Balão explicativo */}
       <div
         className="modal-pop-in fixed z-[51] bg-white border border-slate-200 rounded-2xl shadow-xl p-5 space-y-4"
-        style={{ top: balao.top, left: balao.left, width: LARGURA_BALAO }}
+        style={{ top: balao.top, left: balao.left, width: balao.largura }}
       >
         <div className="space-y-2">
           <div className="h-1 bg-slate-100 rounded-full overflow-hidden">

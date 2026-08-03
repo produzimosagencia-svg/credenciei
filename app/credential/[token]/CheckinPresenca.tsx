@@ -128,7 +128,9 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       )}
 
       {momentos.map(m => (
-        <Cartao key={m.momento} info={m} busy={busy} onFoto={abrirCamera} />
+        <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`}>
+          <Cartao info={m} busy={busy} onFoto={abrirCamera} />
+        </div>
       ))}
 
       <p className="text-center text-slate-400 text-[11px] pt-1 flex items-center justify-center gap-1">

@@ -32,6 +32,7 @@ export type TipoMensagem =
   | 'credenciais_supervisor'
   | 'confirmacao_escala'
   | 'aviso_dia_evento'
+  | 'boas_vindas_funcionario'
 
 const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
@@ -90,6 +91,7 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   confirmacao_escala: 'confirmacao_escala',
   credenciais_supervisor: 'credenciais_supervisor',
   aviso_dia_evento: 'aviso_dia_evento',
+  boas_vindas_funcionario: 'boas_vindas_funcionario',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -264,6 +266,33 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   if (linhasSupervisor.length) {
     await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo' })
   }
+}
+
+/**
+ * Agenda o envio imediato das boas-vindas ao funcionário que acabou de se
+ * cadastrar: link da credencial + explicação das três etapas. É o tutorial do
+ * sistema traduzido pro WhatsApp, pra quem não vai abrir o link na hora.
+ *
+ * Idempotente pelo mesmo índice único dos outros tipos
+ * (evento_id, funcionario_id, tipo) — cadastro repetido não gera duplicata.
+ */
+export async function agendarBoasVindasFuncionario(params: {
+  eventoId: string
+  funcionarioId: string
+  telefone: string
+}): Promise<void> {
+  const telefone = params.telefone.replace(/\D/g, '')
+  if (!telefone) return
+
+  const { error } = await supabase.from('mensagens_agendadas').insert([{
+    evento_id: params.eventoId,
+    funcionario_id: params.funcionarioId,
+    tipo: 'boas_vindas_funcionario',
+    agendado_para: new Date().toISOString(),
+    telefone,
+    mensagem: 'boas-vindas (montado no envio)',
+  }])
+  if (error && error.code !== '23505') throw error // 23505 = já agendado, ignora
 }
 
 /**
@@ -503,6 +532,30 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         fornecedor?.nome ?? 'seu setor',
         dataLocal,
         instrucoes,
+        `${SITE_URL}/credential/${func.qr_token}`,
+      ],
+    }
+  }
+
+  // Boas-vindas logo após o cadastro: link da credencial e o passo a passo
+  // das três etapas, pra pessoa já saber o que vai acontecer no dia.
+  if (msg.tipo === 'boas_vindas_funcionario') {
+    if (!msg.funcionario_id) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, qr_token, fornecedor_id').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome, local, data_inicio').eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+    const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
+
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome,
+        fornecedor?.nome ?? 'seu setor',
+        evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
+        evento.local?.trim() || 'a confirmar',
         `${SITE_URL}/credential/${func.qr_token}`,
       ],
     }

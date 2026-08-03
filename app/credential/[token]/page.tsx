@@ -3,8 +3,30 @@ import { notFound } from 'next/navigation'
 import { QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
 
 export const revalidate = 0
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'funcionario-credencial',
+  versao: 1,
+  passos: [
+    { alvo: 'cred-identidade', titulo: 'Esta é a sua credencial', posicao: 'bottom',
+      descricao: 'Guarde este link no celular — é ele que você vai usar durante todo o evento. Vale só para você e para este evento.' },
+    { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
+      descricao: 'Mostre esta tela para o supervisor quando chegar e quando for embora. Ele lê o código pelo celular dele e a sua presença fica registrada na hora.' },
+    { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
+      descricao: 'Na chegada, procure seu supervisor e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
+    { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
+      descricao: 'Durante o evento, no horário indicado aqui, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada.' },
+    { alvo: 'cred-etapa-fim', titulo: '3. Saída', posicao: 'top',
+      descricao: 'Na hora de ir embora, mostre o QR Code de novo para o supervisor. Isso fecha o seu ciclo no evento.' },
+    { alvo: 'cred-etapas', titulo: 'Fique de olho nos horários', posicao: 'top',
+      descricao: 'Cada etapa só funciona dentro do horário mostrado no cartão. Antes disso aparece "Abre às...", e depois do horário fecha e não dá mais para registrar. Você também recebe um lembrete no WhatsApp na hora de cada uma.' },
+  ],
+}
 
 const MOMENTOS: { momento: MomentoInfo['momento']; label: string; descricao: string }[] = [
   { momento: 'entrada', label: 'Entrada', descricao: 'QR code na chegada' },
@@ -62,42 +84,49 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const qrDataUrl = await QRCode.toDataURL(token, { width: 260, margin: 1 })
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-brand-500 to-brand-600 px-6 py-6 text-center">
-            <div className="inline-flex items-center justify-center w-10 h-10 bg-white/20 rounded-xl mb-3">
-              <QrCode className="w-5 h-5 text-white" />
+    <TutorialProvider tutorial={TUTORIAL}>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-brand-500 to-brand-600 px-6 py-6 text-center">
+              <div className="inline-flex items-center justify-center w-10 h-10 bg-white/20 rounded-xl mb-3">
+                <QrCode className="w-5 h-5 text-white" />
+              </div>
+              <p className="text-brand-100 text-xs uppercase tracking-widest font-semibold">Credencial oficial</p>
+              <h1 className="text-white font-bold text-xl mt-1">{evento?.nome ?? 'Evento'}</h1>
+              {evento?.local && <p className="text-brand-100 text-sm mt-0.5">{evento.local}</p>}
             </div>
-            <p className="text-brand-100 text-xs uppercase tracking-widest font-semibold">Credencial oficial</p>
-            <h1 className="text-white font-bold text-xl mt-1">{evento?.nome ?? 'Evento'}</h1>
-            {evento?.local && <p className="text-brand-100 text-sm mt-0.5">{evento.local}</p>}
+
+            <div className="px-6 py-6 space-y-5">
+              {/* Funcionário */}
+              <div className="text-center pb-4 border-b border-slate-100" data-tutorial="cred-identidade">
+                <p className="text-slate-800 font-bold text-lg leading-tight">{funcionario.nome}</p>
+                <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>
+                <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
+              </div>
+
+              {/* QR code (entrada e saída) */}
+              <div className="text-center" data-tutorial="cred-qr">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qrDataUrl} alt="QR code da credencial" className="mx-auto rounded-xl border border-slate-100" width={200} height={200} />
+                <p className="text-slate-400 text-xs mt-2">Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento</p>
+              </div>
+
+              <div data-tutorial="cred-etapas">
+                <CheckinPresenca token={token} momentos={momentos} />
+              </div>
+            </div>
           </div>
 
-          <div className="px-6 py-6 space-y-5">
-            {/* Funcionário */}
-            <div className="text-center pb-4 border-b border-slate-100">
-              <p className="text-slate-800 font-bold text-lg leading-tight">{funcionario.nome}</p>
-              <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>
-              <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
-            </div>
-
-            {/* QR code (entrada e saída) */}
-            <div className="text-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrDataUrl} alt="QR code da credencial" className="mx-auto rounded-xl border border-slate-100" width={200} height={200} />
-              <p className="text-slate-400 text-xs mt-2">Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento</p>
-            </div>
-
-            <CheckinPresenca token={token} momentos={momentos} />
+          <div className="flex flex-col items-center gap-3 mt-4">
+            <TutorialButton />
+            <p className="text-center text-slate-500 text-xs">
+              Salve esta página nos favoritos — você vai usá-la durante todo o evento
+            </p>
           </div>
         </div>
-
-        <p className="text-center text-slate-500 text-xs mt-4">
-          Salve esta página nos favoritos — você vai usá-la durante todo o evento
-        </p>
       </div>
-    </div>
+    </TutorialProvider>
   )
 }
