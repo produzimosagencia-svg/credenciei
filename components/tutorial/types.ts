@@ -7,6 +7,8 @@ export type TutorialPasso = {
   descricao: string
   /** Onde o balão aparece em relação ao elemento. Default: 'bottom'. */
   posicao?: TutorialPosicao
+  /** Ícone do lucide-react, quando ajudar a ilustrar o passo. Opcional. */
+  icone?: React.ElementType
 }
 
 export type TutorialConfig = {

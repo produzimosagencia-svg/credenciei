@@ -54,7 +54,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
         </p>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-tutorial="novo-usr-evento">
         <label className="text-sm font-medium text-slate-700">Evento *</label>
         <select
           value={eventoId}
@@ -67,7 +67,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
         </select>
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-tutorial="novo-usr-setor">
         <label className="text-sm font-medium text-slate-700">Setor *</label>
         {!setores.length ? (
           <p className="text-xs text-slate-400 bg-slate-50 rounded-xl p-3">
@@ -90,15 +90,15 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
         <label className="text-sm font-medium text-slate-700">E-mail *</label>
         <input name="email" type="email" required placeholder="email@exemplo.com" className="input" />
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-tutorial="novo-usr-telefone">
         <label className="text-sm font-medium text-slate-700">Telefone</label>
         <TelefoneInput name="telefone" placeholder="(11) 99999-9999" className="input" />
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-tutorial="novo-usr-senha">
         <label className="text-sm font-medium text-slate-700">Senha *</label>
         <input name="senha" type="password" required placeholder="Mínimo 6 caracteres" minLength={6} className="input" />
       </div>
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-tutorial="novo-usr-status">
         <label className="text-sm font-medium text-slate-700">Status</label>
         <select name="ativo" defaultValue="true" className="input">
           <option value="true">Ativo</option>

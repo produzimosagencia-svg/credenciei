@@ -7,10 +7,39 @@ import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
+import { getPerfil } from '@/lib/supabase-server'
+import { ehMaster } from '@/lib/permissions'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'evento-editar',
+  versao: 1,
+  passos: [
+    { alvo: 'edt-geral', titulo: 'Informações gerais', posicao: 'right', icone: MapPin,
+      descricao: 'Nome, descrição e local. Mudar o nome aqui muda em todo lugar: na lista, na credencial da equipe e nas mensagens de WhatsApp que ainda não foram enviadas.' },
+    { alvo: 'edt-duracao', titulo: 'Duração do evento', posicao: 'right', icone: CalendarDays,
+      descricao: 'Quando o evento começa e termina. É uma referência geral — quem controla o horário de bater ponto são as janelas, logo abaixo.' },
+    { alvo: 'edt-janelas', titulo: 'Janelas de presença', posicao: 'right', icone: LogIn,
+      descricao: 'O intervalo em que cada etapa aceita registro. Fora dele o sistema recusa o ponto. Mudar um horário aqui reagenda automaticamente os lembretes de WhatsApp da equipe inteira — inclusive de quem já foi avisado.' },
+    { alvo: 'edt-janela-meio', titulo: 'A do meio é diferente', posicao: 'right', icone: Camera,
+      descricao: 'Entrada e saída são o supervisor lendo o QR Code no portão. A do meio é o próprio funcionário tirando uma selfie com a localização ligada, sem precisar procurar ninguém.' },
+    { alvo: 'edt-msg-envio', titulo: 'Quando enviar a confirmação', posicao: 'right', icone: MessageCircle,
+      descricao: 'Data e hora em que a equipe recebe a confirmação de escala no WhatsApp. Deixe em branco para não enviar essa mensagem.' },
+    { alvo: 'edt-msg-texto', titulo: 'Instruções do evento', posicao: 'top', icone: MessageCircle,
+      descricao: 'Texto livre que entra na confirmação de escala, junto com função, setor, data e local. Use para o que é específico deste evento: uniforme, documento, ponto de encontro.' },
+    { alvo: 'edt-salvar', titulo: 'Salvar', posicao: 'top', icone: Save,
+      descricao: 'Ao salvar, as mudanças valem na hora para toda a equipe — inclusive para quem já está com a credencial aberta no celular.' },
+  ],
+}
 
 export default async function EditarEventoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: evento } = await supabase.from('eventos').select('*').eq('id', id).single()
+  const [perfil, { data: evento }] = await Promise.all([
+    getPerfil(),
+    supabase.from('eventos').select('*').eq('id', id).single(),
+  ])
   if (!evento) notFound()
 
   const action = editarEvento.bind(null, id)
@@ -23,20 +52,22 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   ] as const
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
         <Link href={`/admin/eventos/${id}`} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-slate-800">Editar evento</h1>
           <p className="text-slate-400 text-sm">{evento.nome}</p>
         </div>
+        <TutorialButton />
       </div>
 
       <form action={action} className="bg-white border border-slate-200 rounded-3xl shadow-xl shadow-slate-200/60 overflow-hidden">
         {/* Informações gerais */}
-        <div className="p-6 sm:p-8 space-y-5">
+        <div className="p-6 sm:p-8 space-y-5" data-tutorial="edt-geral">
           <SectionTitle title="Informações gerais" subtitle="Nome, descrição e local do evento" />
           <Field label="Nome do evento *">
             <NomeInput name="nome" required defaultValue={evento.nome} className="input" />
@@ -50,7 +81,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         </div>
 
         {/* Datas do evento */}
-        <div className="p-6 sm:p-8 pt-0 space-y-4">
+        <div className="p-6 sm:p-8 pt-0 space-y-4" data-tutorial="edt-duracao">
           <SectionTitle title="Duração" subtitle="Quando o evento começa e termina" icon={CalendarDays} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Data de início *">
@@ -63,14 +94,14 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         </div>
 
         {/* Janelas de presença */}
-        <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4">
+        <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-janelas">
           <SectionTitle
             title="Janelas de registro de presença"
             subtitle="Os funcionários tiram a foto de entrada, meio e fim dentro destes horários"
           />
           <div className="space-y-3">
             {janelas.map(j => (
-              <div key={j.key} className={`bg-white rounded-2xl border ${j.border} p-4 space-y-3`}>
+              <div key={j.key} data-tutorial={`edt-janela-${j.key}`} className={`bg-white rounded-2xl border ${j.border} p-4 space-y-3`}>
                 <div className="flex items-center gap-2">
                   <div className={`w-7 h-7 rounded-lg ${j.bg} flex items-center justify-center shrink-0`}>
                     <j.icon className={`w-3.5 h-3.5 ${j.color}`} />
@@ -98,11 +129,11 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             icon={MessageCircle}
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Enviar em">
+            <Field label="Enviar em" tutorial="edt-msg-envio">
               <DateTimePicker name="msg_pre_evento_envio" defaultValue={fmt(evento.msg_pre_evento_envio)} />
             </Field>
           </div>
-          <Field label="Instruções do evento (opcional)">
+          <Field label="Instruções do evento (opcional)" tutorial="edt-msg-texto">
             <textarea
               name="msg_pre_evento_instrucoes"
               rows={3}
@@ -120,6 +151,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         <div className="p-6 sm:p-8 pt-6 border-t border-slate-100">
           <button
             type="submit"
+            data-tutorial="edt-salvar"
             className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white py-3.5 rounded-2xl font-semibold transition-all shadow-lg shadow-brand-500/25 hover:shadow-brand-500/35 hover:-translate-y-0.5"
           >
             <Save className="w-4 h-4" />
@@ -129,6 +161,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         <FormLoadingOverlay mensagem="Salvando evento..." />
       </form>
     </div>
+    </TutorialProvider>
   )
 }
 
@@ -144,9 +177,9 @@ function SectionTitle({ title, subtitle, icon: Icon }: { title: string; subtitle
   )
 }
 
-function Field({ label, children, icon: Icon, compact }: { label: string; children: React.ReactNode; icon?: React.ElementType; compact?: boolean }) {
+function Field({ label, children, icon: Icon, compact, tutorial }: { label: string; children: React.ReactNode; icon?: React.ElementType; compact?: boolean; tutorial?: string }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" data-tutorial={tutorial}>
       <label className={`flex items-center gap-1.5 font-medium text-slate-700 ${compact ? 'text-xs' : 'text-sm'}`}>
         {Icon && <Icon className="w-3.5 h-3.5 text-slate-400" />}
         {label}

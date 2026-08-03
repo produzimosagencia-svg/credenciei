@@ -2,8 +2,30 @@ import { getPerfil, eventosEscaneaveis, meuSetor } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { podeEscanear, podeGerenciarEventos } from '@/lib/permissions'
 import ScannerView from './ScannerView'
-import { QrCode, Users } from 'lucide-react'
+import { QrCode, Users, ScanLine, LogIn, ListChecks } from 'lucide-react'
 import Link from 'next/link'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import { ehMaster } from '@/lib/permissions'
+import type { TutorialConfig } from '@/components/tutorial/types'
+
+// Esta tela vai mudar quando o leitor for reformulado. O roteiro fica isolado
+// aqui: pra atualizar depois, basta reescrever os passos e subir a `versao` —
+// quem já tinha visto o tutorial antigo vê o novo automaticamente.
+const TUTORIAL: TutorialConfig = {
+  tela: 'scan',
+  versao: 1,
+  passos: [
+    { alvo: 'scan-evento', titulo: 'Evento', posicao: 'bottom', icone: ListChecks,
+      descricao: 'Confirme que é o evento certo antes de começar. Se você é supervisor, só aparece o evento do seu setor — não tem como escanear no evento errado.' },
+    { alvo: 'scan-momento', titulo: 'Entrada ou saída — confira sempre', posicao: 'bottom', icone: LogIn,
+      descricao: 'Este botão decide o que é gravado em cada leitura. Deixe em Entrada quando a equipe está chegando e troque para Saída na hora de liberar. Se esquecer de trocar, os registros saem na etapa errada.' },
+    { alvo: 'scan-camera', titulo: 'A leitura', posicao: 'top', icone: ScanLine,
+      descricao: 'Aponte para o QR Code na tela do celular da pessoa e aguarde: assim que reconhece, o nome dela aparece confirmado. Não precisa apertar nada — é contínuo, pode ir passando a fila.' },
+    { alvo: 'scan-equipe', titulo: 'Sua equipe', posicao: 'bottom', icone: Users,
+      descricao: 'Atalho para o painel do seu setor, onde você vê quem já registrou cada etapa e quem ainda está pendente. Vale abrir de tempos em tempos durante o evento.' },
+  ],
+}
 
 export default async function ScanPage({
   searchParams,
@@ -19,6 +41,7 @@ export default async function ScanPage({
   const [eventos, setor] = await Promise.all([eventosEscaneaveis(perfil), meuSetor(perfil)])
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="min-h-screen bg-slate-900 flex flex-col">
       <div className="px-4 py-4 flex items-center justify-between border-b border-slate-800">
         <div className="flex items-center gap-2.5">
@@ -27,19 +50,23 @@ export default async function ScanPage({
           </div>
           <span className="font-bold text-white">Credenciei</span>
         </div>
-        {setor ? (
-          <Link
-            href={`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`}
-            className="flex items-center gap-1.5 text-slate-400 text-sm hover:text-white font-medium transition-colors"
-          >
-            <Users className="w-3.5 h-3.5" />
-            Minha equipe: {setor.nome}
-          </Link>
-        ) : podeGerenciarEventos(perfil.role) ? (
-          <Link href="/admin" className="text-slate-400 text-sm hover:text-white font-medium transition-colors">
-            Voltar ao painel
-          </Link>
-        ) : null}
+        <div className="flex items-center gap-3">
+          <TutorialButton />
+          {setor ? (
+            <Link
+              href={`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`}
+              data-tutorial="scan-equipe"
+              className="flex items-center gap-1.5 text-slate-400 text-sm hover:text-white font-medium transition-colors"
+            >
+              <Users className="w-3.5 h-3.5" />
+              Minha equipe: {setor.nome}
+            </Link>
+          ) : podeGerenciarEventos(perfil.role) ? (
+            <Link href="/admin" className="text-slate-400 text-sm hover:text-white font-medium transition-colors">
+              Voltar ao painel
+            </Link>
+          ) : null}
+        </div>
       </div>
       {!eventos?.length ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
@@ -50,5 +77,6 @@ export default async function ScanPage({
         <ScannerView eventos={eventos} initialEventoId={evento} />
       )}
     </div>
+    </TutorialProvider>
   )
 }

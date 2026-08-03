@@ -200,9 +200,16 @@ export default function TutorialOverlay({
           <p className="text-[11px] font-semibold text-slate-400">Passo {indice + 1} de {passos.length}</p>
         </div>
 
-        <div className="space-y-1">
-          <h3 className="text-sm font-bold text-slate-800">{passo.titulo}</h3>
-          <p className="text-xs text-slate-500 leading-relaxed">{passo.descricao}</p>
+        <div className="flex items-start gap-3">
+          {passo.icone && (
+            <div className="w-8 h-8 rounded-lg bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+              <passo.icone className="w-4 h-4" />
+            </div>
+          )}
+          <div className="space-y-1 min-w-0">
+            <h3 className="text-sm font-bold text-slate-800">{passo.titulo}</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">{passo.descricao}</p>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2 pt-1">

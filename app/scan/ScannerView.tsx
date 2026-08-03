@@ -85,7 +85,7 @@ export default function ScannerView({
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
       <div className="w-full max-w-sm space-y-3">
         <div>
-          <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
+          <label className="text-slate-400 text-sm block mb-1.5" data-tutorial="scan-evento">Evento</label>
           <select
             value={eventoId}
             onChange={e => setEventoId(e.target.value)}
@@ -98,7 +98,7 @@ export default function ScannerView({
         </div>
 
         {/* Momento: entrada ou saída */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2" data-tutorial="scan-momento">
           <button
             onClick={() => setMomento('entrada')}
             className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all border ${
@@ -127,7 +127,7 @@ export default function ScannerView({
         </p>
       </div>
 
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-sm" data-tutorial="scan-camera">
         <div id="qr-reader" className="rounded-xl overflow-hidden" />
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
           <div className={`w-64 h-64 border-2 rounded-2xl opacity-60 ${momento === 'entrada' ? 'border-green-400' : 'border-brand-400'}`} />

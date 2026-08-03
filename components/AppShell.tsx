@@ -7,6 +7,7 @@ import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine
 import {
   ROLE_LABELS, ehMaster, podeGerenciarEventos, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
+import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 
 type Perfil = { id: string; nome: string; email: string; role: Role }
 
@@ -170,7 +171,10 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
         </header>
 
         <main className="flex-1 p-4 md:p-8">
-          <div className="max-w-6xl mx-auto">{children}</div>
+          {/* Publica quem está logado pro tutorial saber de quem é o histórico */}
+          <TutorialUsuarioProvider id={perfil.id}>
+            <div className="max-w-6xl mx-auto">{children}</div>
+          </TutorialUsuarioProvider>
         </main>
       </div>
 
