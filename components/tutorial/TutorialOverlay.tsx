@@ -1,13 +1,15 @@
 'use client'
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { TutorialPasso } from './types'
 
 type Retangulo = { top: number; left: number; width: number; height: number }
 
 const MARGEM_ALVO = 8
-const ALTURA_ESTIMADA_BALAO = 170
 const ESPACO_BALAO = 14
+const MARGEM_TELA = 16
+/** Só o palpite do primeiro frame — logo em seguida medimos a altura real. */
+const ALTURA_INICIAL_BALAO = 200
 
 /** As telas do funcionário são de celular — o balão nunca pode passar da tela. */
 function larguraBalao(): number {
@@ -26,36 +28,67 @@ function medirAlvo(id: string): Retangulo | null {
   }
 }
 
-function calcularPosicaoBalao(rect: Retangulo, posicao: TutorialPasso['posicao'] = 'bottom') {
+/**
+ * Onde encaixar o balão. `altura` é a altura REAL medida depois do primeiro
+ * render — usar estimativa fixa aqui é o que fazia o balão passar da tela em
+ * passos com texto mais longo.
+ *
+ * A ordem de prioridade é: respeitar a posição pedida no roteiro → se não
+ * couber, tentar o lado oposto → se não couber em lado nenhum, ficar onde há
+ * mais espaço. Em qualquer caso o balão termina inteiro dentro da tela: pode
+ * encostar no alvo, mas nunca ser cortado.
+ */
+function calcularPosicaoBalao(
+  rect: Retangulo,
+  posicao: TutorialPasso['posicao'] = 'bottom',
+  altura: number
+) {
   const largura = larguraBalao()
+  const { innerWidth: vw, innerHeight: vh } = window
+  const telaEstreita = vw < 768
+
+  const espaco = {
+    abaixo: vh - (rect.top + rect.height) - ESPACO_BALAO - MARGEM_TELA,
+    acima: rect.top - ESPACO_BALAO - MARGEM_TELA,
+    direita: vw - (rect.left + rect.width) - ESPACO_BALAO - MARGEM_TELA,
+    esquerda: rect.left - ESPACO_BALAO - MARGEM_TELA,
+  }
+
+  // Em celular não existe espaço lateral útil: lateral vira vertical.
+  let alvo = posicao
+  if (telaEstreita && (alvo === 'left' || alvo === 'right')) alvo = 'bottom'
+  if (alvo === 'right' && espaco.direita < largura) alvo = espaco.esquerda >= largura ? 'left' : 'bottom'
+  if (alvo === 'left' && espaco.esquerda < largura) alvo = espaco.direita >= largura ? 'right' : 'bottom'
+  if (alvo === 'bottom' && espaco.abaixo < altura && espaco.acima >= altura) alvo = 'top'
+  if (alvo === 'top' && espaco.acima < altura && espaco.abaixo >= altura) alvo = 'bottom'
+  // Não cabe nem em cima nem embaixo (alvo alto demais): usa o lado mais folgado.
+  if ((alvo === 'bottom' || alvo === 'top') && espaco.abaixo < altura && espaco.acima < altura) {
+    alvo = espaco.abaixo >= espaco.acima ? 'bottom' : 'top'
+  }
+
+  const centroX = rect.left + rect.width / 2 - largura / 2
+  const centroY = rect.top + rect.height / 2 - altura / 2
+
   let top: number
   let left: number
-  switch (posicao) {
-    case 'top':
-      top = rect.top - ALTURA_ESTIMADA_BALAO - ESPACO_BALAO
-      left = rect.left + rect.width / 2 - largura / 2
-      break
-    case 'left':
-      top = rect.top + rect.height / 2 - ALTURA_ESTIMADA_BALAO / 2
-      left = rect.left - largura - ESPACO_BALAO
-      break
-    case 'right':
-      top = rect.top + rect.height / 2 - ALTURA_ESTIMADA_BALAO / 2
-      left = rect.left + rect.width + ESPACO_BALAO
-      break
-    default:
-      top = rect.top + rect.height + ESPACO_BALAO
-      left = rect.left + rect.width / 2 - largura / 2
+  switch (alvo) {
+    case 'top':    top = rect.top - altura - ESPACO_BALAO;      left = centroX; break
+    case 'left':   top = centroY; left = rect.left - largura - ESPACO_BALAO;    break
+    case 'right':  top = centroY; left = rect.left + rect.width + ESPACO_BALAO; break
+    default:       top = rect.top + rect.height + ESPACO_BALAO; left = centroX
   }
-  // Em tela estreita não há espaço lateral: cai pra baixo do alvo, senão o
-  // balão cobriria justamente o elemento que está sendo explicado.
-  if ((posicao === 'left' || posicao === 'right') && window.innerWidth < 768) {
-    top = rect.top + rect.height + ESPACO_BALAO
-    left = rect.left + rect.width / 2 - largura / 2
+
+  const limite = (v: number, tamanho: number, total: number) =>
+    Math.min(Math.max(v, MARGEM_TELA), Math.max(MARGEM_TELA, total - tamanho - MARGEM_TELA))
+
+  return {
+    top: limite(top, altura, vh),
+    left: limite(left, largura, vw),
+    largura,
+    // Texto absurdamente longo em tela baixa: rola dentro do balão em vez de
+    // vazar pra fora da tela.
+    alturaMaxima: vh - MARGEM_TELA * 2,
   }
-  left = Math.min(Math.max(left, 16), Math.max(16, window.innerWidth - largura - 16))
-  top = Math.min(Math.max(top, 16), Math.max(16, window.innerHeight - ALTURA_ESTIMADA_BALAO - 16))
-  return { top, left, largura }
 }
 
 export default function TutorialOverlay({
@@ -67,6 +100,8 @@ export default function TutorialOverlay({
   onFinalizar: () => void
 }) {
   const [rect, setRect] = useState<Retangulo | null>(null)
+  const [alturaBalao, setAlturaBalao] = useState(ALTURA_INICIAL_BALAO)
+  const balaoRef = useRef<HTMLDivElement>(null)
   const passo = passos[indice]
 
   useLayoutEffect(() => {
@@ -105,6 +140,21 @@ export default function TutorialOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indice, passo?.alvo])
 
+  // Mede a altura real do balão depois que o texto do passo renderizou. Sem
+  // isso, um passo com descrição longa era posicionado como se fosse curto e
+  // acabava cortado na base da tela.
+  useLayoutEffect(() => {
+    if (!balaoRef.current) return
+    const medir = () => {
+      const h = balaoRef.current?.offsetHeight
+      if (h) setAlturaBalao(a => (Math.abs(a - h) > 1 ? h : a))
+    }
+    medir()
+    const observer = new ResizeObserver(medir)
+    observer.observe(balaoRef.current)
+    return () => observer.disconnect()
+  }, [indice, rect])
+
   useLayoutEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onFinalizar()
@@ -117,7 +167,7 @@ export default function TutorialOverlay({
 
   const reduzido = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const transicaoSpotlight = reduzido ? 'none' : 'top 200ms ease-in-out, left 200ms ease-in-out, width 200ms ease-in-out, height 200ms ease-in-out'
-  const balao = calcularPosicaoBalao(rect, passo.posicao)
+  const balao = calcularPosicaoBalao(rect, passo.posicao, alturaBalao)
   const ultimoPasso = indice === passos.length - 1
 
   return (
@@ -136,8 +186,9 @@ export default function TutorialOverlay({
 
       {/* Balão explicativo */}
       <div
-        className="modal-pop-in fixed z-[51] bg-white border border-slate-200 rounded-2xl shadow-xl p-5 space-y-4"
-        style={{ top: balao.top, left: balao.left, width: balao.largura }}
+        ref={balaoRef}
+        className="modal-pop-in fixed z-[51] bg-white border border-slate-200 rounded-2xl shadow-xl p-5 space-y-4 overflow-y-auto"
+        style={{ top: balao.top, left: balao.left, width: balao.largura, maxHeight: balao.alturaMaxima }}
       >
         <div className="space-y-2">
           <div className="h-1 bg-slate-100 rounded-full overflow-hidden">

@@ -34,6 +34,32 @@ function iniciais(nome: string): string {
   return letras.toUpperCase()
 }
 
+/**
+ * Avatar do cabeçalho: foto da organização quando ela tem uma cadastrada,
+ * senão as iniciais do nome. O master não pertence a organização nenhuma,
+ * então pra ele fica sempre nas iniciais.
+ */
+function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
+  fotoUrl: string | null
+  nome: string
+  tamanho: number
+  className?: string
+}) {
+  const estilo = { width: tamanho, height: tamanho }
+  if (fotoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={fotoUrl} alt={nome} style={estilo} className={`rounded-full object-cover shrink-0 ${className}`} />
+  }
+  return (
+    <div
+      style={estilo}
+      className={`rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-bold shrink-0 ${className}`}
+    >
+      <span style={{ fontSize: Math.max(11, tamanho * 0.32) }}>{iniciais(nome)}</span>
+    </div>
+  )
+}
+
 function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: string; onNavigate?: () => void }) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
   return (
@@ -78,7 +104,11 @@ function BotaoSair({ onLogout }: { onLogout: () => void }) {
  * (mobile). Layout no padrão SaaS de referência do cliente — sidebar branca
  * à esquerda, conteúdo sobre fundo claro levemente azulado.
  */
-export default function AppShell({ perfil, children }: { perfil: Perfil; children: React.ReactNode }) {
+export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
+  perfil: Perfil
+  fotoOrgUrl?: string | null
+  children: React.ReactNode
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
@@ -134,9 +164,7 @@ export default function AppShell({ perfil, children }: { perfil: Perfil; childre
                 <p className="text-slate-700 text-xs font-semibold">{perfil.nome}</p>
                 <p className="text-slate-400 text-[11px]">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
               </div>
-              <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-[11px] font-bold shrink-0 ring-2 ring-white shadow-sm">
-                {iniciais(perfil.nome)}
-              </div>
+              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={36} className="ring-2 ring-white shadow-sm" />
             </div>
           </div>
         </header>
@@ -168,9 +196,7 @@ export default function AppShell({ perfil, children }: { perfil: Perfil; childre
             </div>
 
             <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
-              <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center text-sm font-bold shrink-0">
-                {iniciais(perfil.nome)}
-              </div>
+              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={40} />
               <div className="min-w-0">
                 <p className="text-slate-800 text-sm font-semibold truncate">{perfil.nome}</p>
                 <p className="text-slate-400 text-xs">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
