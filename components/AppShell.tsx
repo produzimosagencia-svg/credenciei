@@ -141,7 +141,9 @@ export default function AppShell({ perfil, children }: { perfil: Perfil; childre
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8">{children}</main>
+        <main className="flex-1 p-4 md:p-8">
+          <div className="max-w-6xl mx-auto">{children}</div>
+        </main>
       </div>
 
       {/* Gaveta (mobile) */}
