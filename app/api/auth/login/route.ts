@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { mensagemAmigavel } from '@/lib/erros'
 
 export async function POST(request: NextRequest) {
   const { email, senha } = await request.json()
@@ -28,11 +29,11 @@ export async function POST(request: NextRequest) {
   })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 401 })
+    return NextResponse.json({ error: mensagemAmigavel(error) }, { status: 401 })
   }
 
   if (!data.session) {
-    return NextResponse.json({ error: 'Sessão não criada.' }, { status: 401 })
+    return NextResponse.json({ error: 'Não foi possível iniciar sua sessão. Tente entrar de novo.' }, { status: 401 })
   }
 
   return NextResponse.json({ ok: true })

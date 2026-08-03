@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { QrCode, Eye, EyeOff } from 'lucide-react'
 import fotoLogin from './imgTela1.jpg'
+import { mensagemAmigavel } from '@/lib/erros'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -16,16 +17,17 @@ export default function LoginPage() {
     setLoading(true)
     setErro('')
 
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, senha }),
-    })
-
-    const json = await res.json()
-
-    if (!res.ok) {
-      setErro(`Erro: ${json.error}`)
+    let json: { error?: string }
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, senha }),
+      })
+      json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+    } catch (e) {
+      setErro(mensagemAmigavel(e))
       setLoading(false)
       return
     }

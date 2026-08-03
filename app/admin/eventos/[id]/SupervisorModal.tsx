@@ -5,6 +5,7 @@ import { UserPlus, Pencil, X, Trash2 } from 'lucide-react'
 import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
 import { NomeInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
+import { mensagemAmigavel } from '@/lib/erros'
 
 type Props =
   | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string }
@@ -31,7 +32,7 @@ export default function SupervisorModal(props: Props) {
         setOpen(false)
         router.refresh()
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao salvar supervisor')
+        setErro(mensagemAmigavel(e))
       }
     })
   }
@@ -50,7 +51,7 @@ export default function SupervisorModal(props: Props) {
         setOpen(false)
         router.refresh()
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao excluir supervisor')
+        setErro(mensagemAmigavel(e))
       }
     })
   }

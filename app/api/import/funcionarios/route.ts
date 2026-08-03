@@ -4,6 +4,7 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 import { sincronizarAgendamentos } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
+import { mensagemAmigavel } from '@/lib/erros'
 
 // Lotes grandes (100+): a resposta volta rápido (só o insert), mas o espelho
 // no Google Sheets roda depois dela (after) e precisa desta folga pra concluir.
@@ -23,13 +24,13 @@ export async function POST(request: NextRequest) {
   try {
     const perfil = await getPerfil()
     if (!perfil || !podeGerenciarEventos(perfil.role)) {
-      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+      return NextResponse.json({ error: 'Você não tem permissão para importar funcionários.' }, { status: 403 })
     }
 
     const { fornecedorId, funcionarios }: { fornecedorId: string; funcionarios: FuncionarioRow[] } = await request.json()
 
     if (!fornecedorId || !Array.isArray(funcionarios) || funcionarios.length === 0) {
-      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
+      return NextResponse.json({ error: 'A planilha enviada está em um formato que o sistema não reconhece. Confira o arquivo e tente de novo.' }, { status: 400 })
     }
 
     // Busca o fornecedor (setor) e o evento para pegar o spreadsheet_id
@@ -40,14 +41,14 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (!fornecedor) {
-      return NextResponse.json({ error: 'Fornecedor/Setor não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Este setor não existe mais. Recarregue a página e tente de novo.' }, { status: 404 })
     }
 
     const evento = fornecedor.eventos as any
 
     // Isolamento por organização: só master ou admin da mesma org do evento
     if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
-      return NextResponse.json({ error: 'Sem permissão sobre este fornecedor/setor' }, { status: 403 })
+      return NextResponse.json({ error: 'Você não tem permissão para importar funcionários neste setor.' }, { status: 403 })
     }
     const spreadsheetId = evento?.spreadsheet_id
     const eventoId = evento?.id ?? fornecedor.evento_id
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
       .select('id, nome, cpf, telefone, empresa, cargo, chave_pix, valor_receber, qr_token')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: mensagemAmigavel(error) }, { status: 500 })
     }
 
     // Google Sheets sincroniza DEPOIS da resposta (after → waitUntil): com
@@ -166,6 +167,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos, duplicados })
   } catch (err) {
     console.error('[import/funcionarios]', err)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+    return NextResponse.json({ error: 'Não foi possível concluir a importação. Tente de novo em alguns instantes.' }, { status: 500 })
   }
 }

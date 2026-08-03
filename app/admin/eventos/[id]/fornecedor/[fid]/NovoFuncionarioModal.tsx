@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { UserPlus, X } from 'lucide-react'
 import { criarFuncionario } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
+import { mensagemAmigavel } from '@/lib/erros'
 
 export default function NovoFuncionarioModal({
   fornecedorId,
@@ -24,7 +25,7 @@ export default function NovoFuncionarioModal({
         await criarFuncionario(fornecedorId, eventoId, formData)
         setOpen(false)
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao cadastrar funcionário')
+        setErro(mensagemAmigavel(e))
       }
     })
   }

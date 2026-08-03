@@ -5,11 +5,29 @@ import { ptBR } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Plus, CalendarDays, MapPin, Users } from 'lucide-react'
 import EventoActions from './EventoActions'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes } from '@/lib/supabase-server'
-import { veTodosEventos, podeExcluirEventos } from '@/lib/permissions'
+import { veTodosEventos, podeExcluirEventos, ehMaster } from '@/lib/permissions'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
 
 export const revalidate = 0
 
 const PAGE_SIZE = 12
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'eventos-lista',
+  versao: 1,
+  passos: [
+    { alvo: 'eventos-licencas', titulo: 'Licenças de evento', posicao: 'bottom',
+      descricao: 'Mostra quantos eventos você já usou do total contratado. Quando acabar, fale com o administrador da plataforma para liberar mais.' },
+    { alvo: 'eventos-novo', titulo: 'Criar um evento', posicao: 'left',
+      descricao: 'Aqui você cadastra um evento novo: nome, datas e as janelas de horário em que a equipe pode bater ponto.' },
+    { alvo: 'eventos-card', titulo: 'Abrir um evento', posicao: 'bottom',
+      descricao: 'Clique no nome do evento para gerenciar setores, equipe, presenças e acompanhar o credenciamento ao vivo.' },
+    { alvo: 'eventos-acoes', titulo: 'Ações do evento', posicao: 'left',
+      descricao: 'Encerre um evento quando ele acabar ou exclua se foi criado por engano. Evento encerrado para de aceitar novas presenças.' },
+  ],
+}
 
 export default async function EventosPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const perfil = await getPerfil()
@@ -49,9 +67,10 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
   const licencasDisponiveis = limiteEventos !== null ? Math.max(0, limiteEventos - total) : null
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-6 max-w-5xl">
       {limiteEventos !== null && (
-        <div className="flex items-center justify-between gap-4 bg-brand-50 border border-brand-200 rounded-2xl px-5 py-3.5">
+        <div data-tutorial="eventos-licencas" className="flex items-center justify-between gap-4 bg-brand-50 border border-brand-200 rounded-2xl px-5 py-3.5">
           <div>
             <p className="text-brand-700 font-semibold text-sm">Número de licenças compradas para evento</p>
             <p className="text-brand-500 text-xs mt-0.5">
@@ -62,20 +81,24 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Eventos</h1>
           <p className="text-slate-500 text-sm mt-0.5">{total} eventos • {ativos?.length ?? 0} ativo{ativos?.length !== 1 ? 's' : ''}</p>
         </div>
-        {podeCriarEvento && (
-          <Link
-            href="/admin/eventos/novo"
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Evento
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <TutorialButton />
+          {podeCriarEvento && (
+            <Link
+              href="/admin/eventos/novo"
+              data-tutorial="eventos-novo"
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Evento
+            </Link>
+          )}
+        </div>
       </div>
 
       {!total ? (
@@ -99,7 +122,7 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
             <section>
               <h2 className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-3">Ativos</h2>
               <div className="grid gap-3">
-                {ativos.map(e => <EventoCard key={e.id} evento={e} podeExcluir={podeExcluir} />)}
+                {ativos.map((e, i) => <EventoCard key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />)}
               </div>
             </section>
           )}
@@ -135,14 +158,15 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
         </div>
       )}
     </div>
+    </TutorialProvider>
   )
 }
 
-function EventoCard({ evento, podeExcluir }: { evento: any; podeExcluir: boolean }) {
+function EventoCard({ evento, podeExcluir, destacar }: { evento: any; podeExcluir: boolean; destacar?: boolean }) {
   const count = evento.fornecedores?.[0]?.count ?? 0
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between hover:border-brand-200 hover:shadow-md transition-all shadow-sm">
-      <Link href={`/admin/eventos/${evento.id}`} className="flex-1 min-w-0 group">
+      <Link href={`/admin/eventos/${evento.id}`} data-tutorial={destacar ? 'eventos-card' : undefined} className="flex-1 min-w-0 group">
         <div className="flex items-center gap-2.5 mb-1.5">
           <h3 className="text-slate-800 font-bold group-hover:text-brand-600 transition-colors">{evento.nome}</h3>
           <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${evento.ativo ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
@@ -166,7 +190,7 @@ function EventoCard({ evento, podeExcluir }: { evento: any; podeExcluir: boolean
           </span>
         </div>
       </Link>
-      <div className="ml-4 shrink-0">
+      <div className="ml-4 shrink-0" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
         <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
       </div>
     </div>

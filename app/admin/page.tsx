@@ -7,8 +7,28 @@ import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 import StatCard from '@/components/StatCard'
 import { BarrasMagnitude, DonutComposicao, COR_ETAPA } from '@/components/charts'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
 
 export const revalidate = 0
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'dashboard',
+  versao: 1,
+  passos: [
+    { alvo: 'dash-nav', titulo: 'Bem-vindo ao Credenciei', posicao: 'bottom',
+      descricao: 'Este é o seu painel. Comece por aqui: em "Eventos" você cadastra o evento, os setores e a equipe que vai trabalhar nele.' },
+    { alvo: 'dash-novo-evento', titulo: 'Criar um evento', posicao: 'left',
+      descricao: 'Atalho rápido para cadastrar um evento novo. Você pode criar até o limite de licenças contratadas.' },
+    { alvo: 'dash-stats', titulo: 'Números do momento', posicao: 'bottom',
+      descricao: 'Um resumo rápido: total de eventos, setores cadastrados, funcionários na base e quantas entradas foram registradas hoje.' },
+    { alvo: 'dash-graficos', titulo: 'Acompanhamento ao vivo', posicao: 'top',
+      descricao: 'Durante o evento, acompanhe aqui quantos já bateram entrada e como estão distribuídos os registros entre entrada, meio e saída.' },
+    { alvo: 'dash-atividade', titulo: 'Atividade recente', posicao: 'left',
+      descricao: 'Cada credenciamento aparece aqui em tempo real, com nome, empresa e horário — útil para conferir se o evento está fluindo.' },
+  ],
+}
 
 export default async function AdminPage() {
   const perfil = await getPerfil()
@@ -85,26 +105,31 @@ export default async function AdminPage() {
   ]
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-8 max-w-6xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
           <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">Visão geral dos seus eventos</p>
         </div>
-        {podeCriarEvento && (
-          <Link
-            href="/admin/eventos/novo"
-            className="btn-press bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold shadow-md shadow-brand-200 flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Novo Evento</span>
-            <span className="sm:hidden">Novo</span>
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <TutorialButton />
+          {podeCriarEvento && (
+            <Link
+              href="/admin/eventos/novo"
+              data-tutorial="dash-novo-evento"
+              className="btn-press bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold shadow-md shadow-brand-200 flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Novo Evento</span>
+              <span className="sm:hidden">Novo</span>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Atalhos de navegação (substituem o menu lateral) */}
-      <div className={`grid grid-cols-1 gap-4 ${ehMaster(perfil?.role) ? 'sm:grid-cols-2' : ''}`}>
+      <div data-tutorial="dash-nav" className={`grid grid-cols-1 gap-4 ${ehMaster(perfil?.role) ? 'sm:grid-cols-2' : ''}`}>
         {ehMaster(perfil?.role) && (
           <NavCard
             href="/admin/organizacoes"
@@ -122,12 +147,12 @@ export default async function AdminPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div data-tutorial="dash-stats" className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
       {/* Gráficos operacionais (eventos ativos) */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+      <div data-tutorial="dash-graficos" className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="mb-5">
             <h2 className="text-slate-800 font-bold text-base">Presença por evento</h2>
@@ -213,7 +238,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Feed */}
-        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div data-tutorial="dash-atividade" className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <h2 className="text-slate-800 font-bold text-base mb-5">Atividade recente</h2>
           {!ultimosRegistros?.length ? (
             <p className="text-slate-400 text-sm text-center py-10">Sem atividade ainda</p>
@@ -240,6 +265,7 @@ export default async function AdminPage() {
         </div>
       </div>
     </div>
+    </TutorialProvider>
   )
 }
 

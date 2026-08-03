@@ -100,6 +100,28 @@ p {
 .overlay-fade-in { animation: overlay-fade-in 150ms ease-out; }
 .modal-pop-in { animation: modal-pop-in 180ms ease-out; }
 
+/* Tutorial guiado — o box-shadow gigante escurece tudo menos o recorte do
+   elemento em destaque, que ganha um anel na cor da marca. O escurecimento fica
+   na regra base (não só na animação) pra continuar valendo com reduced-motion. */
+.tutorial-spotlight {
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.7),
+    0 0 0 3px #4940df,
+    0 0 0 8px rgba(73, 64, 223, 0.25);
+  animation: overlay-fade-in 150ms ease-out, tutorial-pulso 2.2s ease-in-out infinite;
+}
+@keyframes tutorial-pulso {
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.7),
+      0 0 0 3px #4940df,
+      0 0 0 14px rgba(73, 64, 223, 0.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-spotlight { animation: overlay-fade-in 150ms ease-out; }
+}
+
 /* ============================================================
    TEMA ESCURO — padrão único do sistema pra todos os papéis, no
    estilo do painel de referência do cliente (fundo grafite/roxo

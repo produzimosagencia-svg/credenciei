@@ -9,8 +9,31 @@ import FornecedorCard from './FornecedorCard'
 import EventoStatusToggle from './EventoStatusToggle'
 import StatCard from '@/components/StatCard'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
+import { ehMaster } from '@/lib/permissions'
 
 export const revalidate = 0
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'evento-detalhe',
+  versao: 1,
+  passos: [
+    { alvo: 'evt-editar', titulo: 'Configurar o evento', posicao: 'bottom',
+      descricao: 'Aqui você ajusta datas, local e principalmente as janelas de horário — os períodos em que a equipe pode bater entrada, meio e saída.' },
+    { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
+      descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
+    { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
+      descricao: 'Acompanhe quantos setores e funcionários existem e quantos já registraram cada etapa do credenciamento.' },
+    { alvo: 'evt-progresso', titulo: 'Progresso por etapa', posicao: 'top',
+      descricao: 'Mostra a porcentagem da equipe que já passou por cada etapa. Ideal para saber, durante o evento, quem ainda falta.' },
+    { alvo: 'evt-setores', titulo: 'Fornecedores e setores', posicao: 'right',
+      descricao: 'Cadastre aqui cada setor ou fornecedor do evento. Cada um gera um link próprio de cadastro para a equipe se inscrever sozinha.' },
+    { alvo: 'evt-atividade', titulo: 'Atividade ao vivo', posicao: 'left',
+      descricao: 'Cada leitura de QR ou check-in por foto aparece aqui na hora, com nome, setor e horário.' },
+  ],
+}
 
 export default async function EventoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -65,6 +88,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   const totFim = contarEtapa('fim')
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-6 max-w-6xl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
@@ -94,9 +118,11 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <TutorialButton />
           <EventoStatusToggle eventoId={id} ativo={evento.ativo} />
           <Link
             href={`/admin/eventos/${id}/editar`}
+            data-tutorial="evt-editar"
             className="flex items-center gap-1.5 text-sm px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-xl transition-all shadow-sm font-medium"
           >
             <Pencil className="w-3.5 h-3.5" /> Editar
@@ -114,6 +140,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           )}
           <Link
             href={`/scan?evento=${id}`}
+            data-tutorial="evt-scan"
             className="flex items-center gap-2 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
           >
             <ScanLine className="w-4 h-4" /> Escanear QR
@@ -122,7 +149,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div data-tutorial="evt-stats" className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Fornecedores/Setores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
         <StatCard label="Registraram entrada" value={totEntrada} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
@@ -131,7 +158,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Progresso de presença por etapa */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+      <div data-tutorial="evt-progresso" className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
         <div className="mb-4">
           <h2 className="text-slate-800 font-bold text-base">Progresso de presença</h2>
           <p className="text-slate-400 text-xs mt-0.5">Quantos dos {totalFuncionarios} funcionários já registraram cada etapa</p>
@@ -147,7 +174,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-start">
         {/* Fornecedores */}
-        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
+        <div data-tutorial="evt-setores" className="md:col-span-3 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
           <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-slate-100 shrink-0">
             <h2 className="text-slate-800 font-bold">Fornecedores/Setores</h2>
             <FornecedorModal eventoId={id} mode="criar" />
@@ -174,7 +201,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         </div>
 
         {/* Feed de atividade */}
-        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
+        <div data-tutorial="evt-atividade" className="md:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col" style={{ maxHeight: 520 }}>
           <div className="px-5 pt-5 pb-4 border-b border-slate-100 shrink-0">
             <h2 className="text-slate-800 font-bold">Atividade do evento</h2>
           </div>
@@ -206,5 +233,6 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
     </div>
+    </TutorialProvider>
   )
 }

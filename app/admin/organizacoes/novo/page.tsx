@@ -6,6 +6,7 @@ import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
 import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
+import ValorCobradoPicker from '@/components/ValorCobradoPicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 
 export default async function NovaOrganizacaoPage() {
@@ -46,11 +47,8 @@ export default async function NovaOrganizacaoPage() {
             <Field label="Responsável">
               <NomeInput name="responsavel_nome" placeholder="Nome do responsável pela empresa" className="input" />
             </Field>
-            <Field label="Valor cobrado (mensal)">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-                <input name="valor_cobrado" type="number" min="0" step="0.01" placeholder="0,00" className="input pl-9" />
-              </div>
+            <Field label="Valor cobrado">
+              <ValorCobradoPicker name="valor_cobrado" periodoName="valor_cobrado_periodo" />
             </Field>
           </div>
         </Section>

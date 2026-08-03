@@ -1,5 +1,5 @@
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos } from '@/lib/permissions'
+import { veTodosEventos, ehMaster } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ScanLine, Users, UserCheck, AlertTriangle, Wallet } from 'lucide-react'
@@ -10,8 +10,30 @@ import RegistroManualModal from './RegistroManualModal'
 import StatCard from '@/components/StatCard'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
+import TutorialProvider from '@/components/tutorial/TutorialProvider'
+import TutorialButton from '@/components/tutorial/TutorialButton'
+import type { TutorialConfig } from '@/components/tutorial/types'
 
 export const revalidate = 0
+
+const TUTORIAL: TutorialConfig = {
+  tela: 'setor-equipe',
+  versao: 1,
+  passos: [
+    { alvo: 'setor-link', titulo: 'Link de cadastro da equipe', posicao: 'bottom',
+      descricao: 'Copie e mande esse link no grupo do setor. Cada pessoa se cadastra sozinha pelo celular e já recebe o QR Code dela.' },
+    { alvo: 'setor-novo', titulo: 'Cadastrar manualmente', posicao: 'bottom',
+      descricao: 'Se alguém não conseguiu se cadastrar pelo link, você pode adicionar a pessoa aqui na mão.' },
+    { alvo: 'setor-scan', titulo: 'Escanear QR', posicao: 'bottom',
+      descricao: 'No dia do evento, use aqui para ler o QR Code da equipe na entrada e na saída.' },
+    { alvo: 'setor-manual', titulo: 'Registro manual', posicao: 'bottom',
+      descricao: 'Quando o QR não funcionar (celular sem bateria, código danificado), registre a presença manualmente por aqui.' },
+    { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
+      descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
+    { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
+      descricao: 'A lista completa com o status de cada etapa. Verde já registrou, amarelo está na hora e vermelho perdeu a janela. Clique numa pessoa para ver os detalhes.' },
+  ],
+}
 
 type MomentoTipo = 'entrada' | 'meio' | 'fim'
 
@@ -136,6 +158,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   ]
 
   return (
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="space-y-6 max-w-6xl">
       <AutoRefresh />
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -149,19 +172,21 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <TutorialButton />
           <Link
             href={`/scan?evento=${id}`}
+            data-tutorial="setor-scan"
             className="flex items-center gap-2 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
           >
             <ScanLine className="w-4 h-4" /> Escanear QR
           </Link>
-          <RegistroManualModal fornecedorId={fid} eventoId={id} />
-          <NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} />
-          <CopyLinkButton link={formLink} label="Copiar link do formulário" />
+          <div data-tutorial="setor-manual"><RegistroManualModal fornecedorId={fid} eventoId={id} /></div>
+          <div data-tutorial="setor-novo"><NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} /></div>
+          <div data-tutorial="setor-link"><CopyLinkButton link={formLink} label="Copiar link do formulário" /></div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div data-tutorial="setor-stats" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
@@ -180,12 +205,15 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         />
       </div>
 
-      <FuncionarioTable
-        funcionarios={funcionariosEnriquecidos}
-        fornecedorId={fid}
-        eventoId={id}
-        valorCombinado={fornecedor.valor_combinado ?? null}
-      />
+      <div data-tutorial="setor-tabela">
+        <FuncionarioTable
+          funcionarios={funcionariosEnriquecidos}
+          fornecedorId={fid}
+          eventoId={id}
+          valorCombinado={fornecedor.valor_combinado ?? null}
+        />
+      </div>
     </div>
+    </TutorialProvider>
   )
 }

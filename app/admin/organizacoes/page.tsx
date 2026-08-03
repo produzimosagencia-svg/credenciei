@@ -7,6 +7,7 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import OrganizacaoActions from './OrganizacaoActions'
 import OrganizacaoAvatar from './OrganizacaoAvatar'
+import { sufixoPeriodo } from '@/lib/cobranca'
 
 export const revalidate = 0
 
@@ -90,7 +91,8 @@ export default async function OrganizacoesPage() {
                         </span>
                         {org.valor_cobrado != null && (
                           <span className="tabular-nums">
-                            {org.valor_cobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês
+                            {org.valor_cobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            {sufixoPeriodo(org.valor_cobrado_periodo)}
                           </span>
                         )}
                         <span>desde {format(new Date(org.created_at), "dd/MM/yyyy", { locale: ptBR })}</span>
@@ -105,6 +107,7 @@ export default async function OrganizacoesPage() {
                       responsavel_nome: org.responsavel_nome,
                       limite_eventos: org.limite_eventos,
                       valor_cobrado: org.valor_cobrado,
+                      valor_cobrado_periodo: org.valor_cobrado_periodo,
                       ativo: org.ativo,
                       fotoUrl,
                     }}

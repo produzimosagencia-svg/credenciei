@@ -23,6 +23,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import { validarCpf } from './format'
+import { mensagemAmigavel } from './erros'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 
@@ -185,6 +186,7 @@ export async function criarOrganizacao(formData: FormData) {
   const responsavel = ((formData.get('responsavel_nome') as string) || '').trim() || null
   const limite = parseInt((formData.get('limite_eventos') as string) || '1') || 1
   const valorCobrado = parseValor(formData.get('valor_cobrado'))
+  const valorCobradoPeriodo = ((formData.get('valor_cobrado_periodo') as string) || 'mensal').trim()
 
   const adminNome = (formData.get('admin_nome') as string).trim()
   const email = (formData.get('email') as string).trim()
@@ -215,9 +217,10 @@ export async function criarOrganizacao(formData: FormData) {
     responsavel_nome: responsavel,
     limite_eventos: limite,
     valor_cobrado: valorCobrado,
+    valor_cobrado_periodo: valorCobradoPeriodo,
     drive_folder_id: driveFolderId,
   }]).select('id').single()
-  if (orgErr) throw new Error(`Erro ao criar organização: ${orgErr.message}`)
+  if (orgErr) throw new Error(mensagemAmigavel(orgErr))
 
   // 2.1) Foto de perfil (opcional) — só depois de ter o id da organização
   try {
@@ -287,6 +290,7 @@ export async function editarOrganizacao(id: string, formData: FormData) {
   const admin = getAdminSupabase()
   const limite = parseInt((formData.get('limite_eventos') as string) || '1') || 1
   const valorCobrado = parseValor(formData.get('valor_cobrado'))
+  const valorCobradoPeriodo = ((formData.get('valor_cobrado_periodo') as string) || 'mensal').trim()
 
   const dados: Record<string, unknown> = {
     nome: (formData.get('org_nome') as string).trim(),
@@ -294,6 +298,7 @@ export async function editarOrganizacao(id: string, formData: FormData) {
     responsavel_nome: ((formData.get('responsavel_nome') as string) || '').trim() || null,
     limite_eventos: limite,
     valor_cobrado: valorCobrado,
+    valor_cobrado_periodo: valorCobradoPeriodo,
   }
 
   // Remover foto tem prioridade sobre enviar uma nova (o usuário não faz as
@@ -676,7 +681,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
     ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id').single()
 
-  if (error) throw new Error(`Erro ao cadastrar funcionário: ${error.message}`)
+  if (error) throw new Error(mensagemAmigavel(error))
 
   // Sincroniza com a planilha e agenda os lembretes de WhatsApp depois da
   // resposta (não bloqueia; sobrevive ao serverless)
@@ -703,7 +708,7 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
   if (!Number.isFinite(valor) || valor < 0) throw new Error('Valor inválido')
   const db = supabaseAdmin
   const { error } = await db.from('funcionarios').update({ valor_receber: valor }).eq('id', funcionarioId)
-  if (error) throw new Error('Erro ao salvar o valor')
+  if (error) throw new Error('Não foi possível salvar o valor. Tente de novo.')
 
   // Reflete na planilha depois da resposta (não bloqueia; sobrevive ao serverless)
   after(() => sincronizarValorNaPlanilha(funcionarioId, valor).catch(console.error))
@@ -728,7 +733,7 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
     pago,
     pago_em: pago ? new Date().toISOString() : null,
   }).eq('id', funcionarioId)
-  if (error) throw new Error('Erro ao atualizar o pagamento')
+  if (error) throw new Error('Não foi possível atualizar o pagamento. Tente de novo.')
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
@@ -758,7 +763,7 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
   }
 
   const { error } = await db.from('funcionarios').update({ ativo }).eq('id', funcionarioId)
-  if (error) throw new Error('Erro ao atualizar a ativação')
+  if (error) throw new Error('Não foi possível alterar a ativação desta pessoa. Tente de novo.')
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 

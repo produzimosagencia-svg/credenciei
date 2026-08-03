@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { criarSupervisor } from '@/lib/actions'
 import { NomeInput, TelefoneInput } from '@/components/inputs'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
+import { mensagemAmigavel } from '@/lib/erros'
 
 type Fornecedor = { id: string; nome: string }
 type Evento = { id: string; nome: string; fornecedores: Fornecedor[] }
@@ -29,7 +30,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
         await criarSupervisor(fornecedorId, eventoId, formData)
         router.push('/admin/usuarios')
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao cadastrar supervisor')
+        setErro(mensagemAmigavel(e))
       }
     })
   }

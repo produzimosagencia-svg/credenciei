@@ -7,6 +7,8 @@ import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import OrganizacaoAvatar from './OrganizacaoAvatar'
+import ValorCobradoPicker from '@/components/ValorCobradoPicker'
+import type { PeriodoCobranca } from '@/lib/cobranca'
 
 type Org = {
   id: string
@@ -15,6 +17,7 @@ type Org = {
   responsavel_nome: string | null
   limite_eventos: number
   valor_cobrado: number | null
+  valor_cobrado_periodo: PeriodoCobranca | null
   ativo: boolean
   fotoUrl: string | null
 }
@@ -190,11 +193,13 @@ function ModalEditar({
             <Field label="Responsável">
               <NomeInput name="responsavel_nome" defaultValue={org.responsavel_nome ?? ''} placeholder="Responsável" className="input" />
             </Field>
-            <Field label="Valor cobrado (mensal)">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-                <input name="valor_cobrado" type="number" min="0" step="0.01" defaultValue={org.valor_cobrado ?? ''} placeholder="0,00" className="input pl-9" />
-              </div>
+            <Field label="Valor cobrado">
+              <ValorCobradoPicker
+                name="valor_cobrado"
+                periodoName="valor_cobrado_periodo"
+                defaultValor={org.valor_cobrado}
+                defaultPeriodo={org.valor_cobrado_periodo ?? 'mensal'}
+              />
             </Field>
           </div>
 

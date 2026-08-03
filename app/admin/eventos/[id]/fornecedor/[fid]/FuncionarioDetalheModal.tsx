@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check } from 'lucide-react'
 import { atualizarValorReceber, alternarPagamento } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
+import { mensagemAmigavel } from '@/lib/erros'
 import type { Presenca } from './FuncionarioTable'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -58,7 +59,7 @@ export default function FuncionarioDetalheModal({
         router.refresh()
         setOpen(false)
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao salvar o valor')
+        setErro(mensagemAmigavel(e))
       }
     })
   }
@@ -69,7 +70,7 @@ export default function FuncionarioDetalheModal({
         await alternarPagamento(f.id, fornecedorId, eventoId, !f.pago)
         router.refresh()
       } catch (e: any) {
-        setErro(e?.message ?? 'Erro ao atualizar o pagamento')
+        setErro(mensagemAmigavel(e))
       }
     })
   }

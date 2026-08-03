@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, Us
 import { deletarFuncionario, alternarAtivacao } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
+import { mensagemAmigavel } from '@/lib/erros'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -111,7 +112,7 @@ export default function FuncionarioTable({
         await alternarAtivacao(f.id, fornecedorId, eventoId, !f.ativo)
         router.refresh()
       } catch (e) {
-        setErroAtivacao(e instanceof Error ? e.message : 'Não foi possível atualizar a ativação.')
+        setErroAtivacao(mensagemAmigavel(e))
       }
     })
   }

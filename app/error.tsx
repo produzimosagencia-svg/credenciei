@@ -1,6 +1,7 @@
 'use client'
 import { useEffect } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { mensagemAmigavel } from '@/lib/erros'
 
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -15,9 +16,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </div>
         <div className="space-y-1">
           <h2 className="text-slate-800 font-bold text-lg">Algo deu errado</h2>
-          <p className="text-slate-500 text-sm">
-            {error.message || 'Não foi possível concluir a ação. Tente novamente.'}
-          </p>
+          <p className="text-slate-500 text-sm">{mensagemAmigavel(error)}</p>
         </div>
         <button
           onClick={reset}
