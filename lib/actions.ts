@@ -134,6 +134,31 @@ async function estaDentroDoTeto(fornecedorId: string): Promise<boolean> {
   return (count ?? 0) < teto
 }
 
+/** Formatos aceitos pra foto de perfil de organização. */
+const TIPOS_FOTO_ACEITOS = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
+
+/**
+ * Sobe a foto de perfil de uma organização pro bucket privado `presencas`
+ * (prefixo `organizacoes/`) e devolve o path salvo. Retorna null se nenhum
+ * arquivo foi enviado (campo de foto é opcional); lança erro se o arquivo
+ * enviado não for de um formato aceito.
+ */
+async function subirFotoOrganizacao(orgId: string, arquivo: FormDataEntryValue | null): Promise<string | null> {
+  if (!(arquivo instanceof File) || arquivo.size === 0) return null
+  if (!TIPOS_FOTO_ACEITOS.has(arquivo.type)) {
+    throw new Error('Formato de imagem não suportado. Use JPG, PNG ou WEBP.')
+  }
+  const ext = arquivo.type.split('/')[1] === 'jpeg' ? 'jpg' : arquivo.type.split('/')[1]
+  const path = `organizacoes/${orgId}.${ext}`
+  const buffer = Buffer.from(await arquivo.arrayBuffer())
+  const { error } = await supabaseAdmin.storage.from('presencas').upload(path, buffer, {
+    contentType: arquivo.type,
+    upsert: true,
+  })
+  if (error) throw new Error('Erro ao enviar a foto. Tente novamente.')
+  return path
+}
+
 /** Traduz erros comuns do Supabase Auth para mensagens amigáveis em PT-BR. */
 function mensagemAuth(msg: string): string {
   const m = msg.toLowerCase()
@@ -159,6 +184,7 @@ export async function criarOrganizacao(formData: FormData) {
   const documento = ((formData.get('documento') as string) || '').trim() || null
   const responsavel = ((formData.get('responsavel_nome') as string) || '').trim() || null
   const limite = parseInt((formData.get('limite_eventos') as string) || '1') || 1
+  const valorCobrado = parseValor(formData.get('valor_cobrado'))
 
   const adminNome = (formData.get('admin_nome') as string).trim()
   const email = (formData.get('email') as string).trim()
@@ -188,9 +214,18 @@ export async function criarOrganizacao(formData: FormData) {
     documento,
     responsavel_nome: responsavel,
     limite_eventos: limite,
+    valor_cobrado: valorCobrado,
     drive_folder_id: driveFolderId,
   }]).select('id').single()
   if (orgErr) throw new Error(`Erro ao criar organização: ${orgErr.message}`)
+
+  // 2.1) Foto de perfil (opcional) — só depois de ter o id da organização
+  try {
+    const fotoPath = await subirFotoOrganizacao(org.id, formData.get('foto'))
+    if (fotoPath) await admin.from('organizacoes').update({ foto_perfil_path: fotoPath }).eq('id', org.id)
+  } catch (e) {
+    console.error('Erro ao enviar foto da organização:', e)
+  }
 
   // 3) Usuário admin dono da organização
   const { data: user, error: userErr } = await admin.auth.admin.createUser({
@@ -251,12 +286,32 @@ export async function editarOrganizacao(id: string, formData: FormData) {
   if (!podeGerenciarOrganizacoes(perfil?.role)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
   const limite = parseInt((formData.get('limite_eventos') as string) || '1') || 1
-  await admin.from('organizacoes').update({
+  const valorCobrado = parseValor(formData.get('valor_cobrado'))
+
+  const dados: Record<string, unknown> = {
     nome: (formData.get('org_nome') as string).trim(),
     documento: ((formData.get('documento') as string) || '').trim() || null,
     responsavel_nome: ((formData.get('responsavel_nome') as string) || '').trim() || null,
     limite_eventos: limite,
-  }).eq('id', id)
+    valor_cobrado: valorCobrado,
+  }
+
+  // Remover foto tem prioridade sobre enviar uma nova (o usuário não faz as
+  // duas coisas ao mesmo tempo — a UI só mostra um dos dois controles).
+  if (formData.get('remover_foto') === 'true') {
+    const { data: atual } = await admin.from('organizacoes').select('foto_perfil_path').eq('id', id).single()
+    if (atual?.foto_perfil_path) await admin.storage.from('presencas').remove([atual.foto_perfil_path])
+    dados.foto_perfil_path = null
+  } else {
+    try {
+      const fotoPath = await subirFotoOrganizacao(id, formData.get('foto'))
+      if (fotoPath) dados.foto_perfil_path = fotoPath
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : 'Erro ao enviar a foto.')
+    }
+  }
+
+  await admin.from('organizacoes').update(dados).eq('id', id)
   revalidatePath('/admin/organizacoes')
 }
 

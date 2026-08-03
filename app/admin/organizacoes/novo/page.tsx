@@ -27,6 +27,10 @@ export default async function NovaOrganizacaoPage() {
       <form action={criarOrganizacao} className="space-y-5">
         {/* Organização */}
         <Section icon={Building2} title="Organização">
+          <Field label="Foto de perfil (opcional)">
+            <input name="foto" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="input py-2" />
+            <p className="text-[11px] text-slate-400 mt-1">JPG, PNG ou WEBP. Sem foto, mostra as iniciais da organização.</p>
+          </Field>
           <Field label="Nome da organização *">
             <NomeInput name="org_nome" required placeholder="Ex: Brilha Shows" className="input" />
           </Field>
@@ -38,9 +42,17 @@ export default async function NovaOrganizacaoPage() {
               <input name="limite_eventos" type="number" min={1} defaultValue={1} required className="input" />
             </Field>
           </div>
-          <Field label="Responsável">
-            <NomeInput name="responsavel_nome" placeholder="Nome do responsável pela empresa" className="input" />
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Responsável">
+              <NomeInput name="responsavel_nome" placeholder="Nome do responsável pela empresa" className="input" />
+            </Field>
+            <Field label="Valor cobrado (mensal)">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
+                <input name="valor_cobrado" type="number" min="0" step="0.01" placeholder="0,00" className="input pl-9" />
+              </div>
+            </Field>
+          </div>
         </Section>
 
         {/* Admin */}
