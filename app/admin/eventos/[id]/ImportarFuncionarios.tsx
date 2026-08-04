@@ -1,12 +1,12 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download } from 'lucide-react'
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 // xlsx é pesado e só é usado nestes dois handlers (importar/baixar modelo) —
 // carregado sob demanda para não engordar o bundle inicial da página do evento.
 
-type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; error?: string } | null
+type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; reaproveitados?: number; error?: string } | null
 
 export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: string }) {
   const [loading, setLoading] = useState(false)
@@ -60,7 +60,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
 
       const json = await res.json()
       if (res.ok) {
-        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados })
+        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados, reaproveitados: json.reaproveitados })
         router.refresh()
       } else {
         setStatus({ ok: false, error: json.error ?? 'Erro ao importar.' })
@@ -111,6 +111,12 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
             <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-amber-600">
               <AlertCircle className="w-3 h-3 shrink-0" />
               {status.invalidos} linha{status.invalidos !== 1 ? 's' : ''} com CPF inválido {status.invalidos !== 1 ? 'foram ignoradas' : 'foi ignorada'}. Corrija na planilha e importe de novo.
+            </div>
+          )}
+          {status.ok && !!status.reaproveitados && (
+            <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-brand-600">
+              <Sparkles className="w-3 h-3 shrink-0" />
+              {status.reaproveitados} já {status.reaproveitados !== 1 ? 'estavam' : 'estava'} na nossa base — completamos telefone, cargo e PIX que faltavam na planilha.
             </div>
           )}
           {status.ok && !!status.duplicados && (

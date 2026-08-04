@@ -1113,17 +1113,43 @@ export async function buscarCadastroPorCpf(
     .single()
   const eventoRel = fornecedor?.eventos as { organizacao_id: string | null } | { organizacao_id: string | null }[] | null
   const organizacaoId = Array.isArray(eventoRel) ? eventoRel[0]?.organizacao_id : eventoRel?.organizacao_id
-  if (!organizacaoId) return null
 
-  const { data } = await supabaseAdmin
-    .from('funcionarios')
-    .select('nome, telefone, empresa, cargo, chave_pix, created_at, fornecedores!inner(eventos!inner(organizacao_id))')
-    .eq('cpf', cpf)
-    .eq('fornecedores.eventos.organizacao_id', organizacaoId)
-    .order('created_at', { ascending: false })
-    .limit(1)
+  const colunas = 'nome, telefone, empresa, cargo, chave_pix, created_at'
 
-  const func = data?.[0]
+  // Primeiro procura na própria organização: é o dado mais confiável, porque
+  // veio de um evento do mesmo organizador.
+  type CadastroAnterior = {
+    nome: string
+    telefone: string
+    empresa: string | null
+    cargo: string | null
+    chave_pix: string | null
+  }
+  let func: CadastroAnterior | undefined
+  if (organizacaoId) {
+    const { data } = await supabaseAdmin
+      .from('funcionarios')
+      .select(`${colunas}, fornecedores!inner(eventos!inner(organizacao_id))`)
+      .eq('cpf', cpf)
+      .eq('fornecedores.eventos.organizacao_id', organizacaoId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    func = data?.[0]
+  }
+
+  // Não achou? Cai na base central do Credenciei — a pessoa pode já ter sido
+  // credenciada por outro cliente. É o que faz um cliente novo já "conhecer"
+  // a equipe dele no primeiro evento.
+  if (!func) {
+    const { data } = await supabaseAdmin
+      .from('funcionarios')
+      .select(colunas)
+      .eq('cpf', cpf)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    func = data?.[0]
+  }
+
   if (!func) return null
   return {
     nome: func.nome,

@@ -85,7 +85,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">
             {/* Header */}

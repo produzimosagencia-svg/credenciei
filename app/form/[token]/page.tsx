@@ -40,10 +40,10 @@ export default async function FormPage({ params }: { params: Promise<{ token: st
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[#131320] to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8" data-tutorial="form-titulo">
-            <div className="inline-flex items-center justify-center w-14 h-14 bg-brand-500 rounded-2xl mb-4 shadow-lg shadow-brand-200">
+            <div className="logo-marca inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 shadow-lg">
               <QrCode className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Credenciamento</h1>

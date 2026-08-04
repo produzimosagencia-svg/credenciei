@@ -124,6 +124,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: motivo }, { status: 400 })
     }
 
+    // Base central do Credenciei: quem já foi credenciado antes — por este ou
+    // por qualquer outro cliente — entra com telefone, cargo e PIX que a
+    // planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
+    // equipe dele no primeiro evento.
+    let reaproveitados = 0
+    const { data: conhecidos } = await supabaseAdmin
+      .from('funcionarios')
+      .select('cpf, telefone, cargo, chave_pix')
+      .in('cpf', payload.map(f => f.cpf))
+      .order('created_at', { ascending: false })
+
+    const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null }>()
+    for (const c of conhecidos ?? []) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
+
+    for (const f of payload) {
+      const anterior = base.get(f.cpf)
+      if (!anterior) continue
+      const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}`
+      if (!f.telefone) f.telefone = anterior.telefone ?? ''
+      if (!f.cargo) f.cargo = anterior.cargo ?? ''
+      if (!f.chave_pix) f.chave_pix = anterior.chave_pix
+      if (`${f.telefone}|${f.cargo}|${f.chave_pix}` !== antes) reaproveitados++
+    }
+
     // Insere em lote no Supabase
     const { data: inseridos, error } = await supabaseAdmin
       .from('funcionarios')
@@ -164,7 +188,7 @@ export async function POST(request: NextRequest) {
       after(() => sincronizarAgendamentos(eventoId).catch(console.error))
     }
 
-    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos, duplicados })
+    return NextResponse.json({ ok: true, total: inseridos?.length ?? 0, invalidos, duplicados, reaproveitados })
   } catch (err) {
     console.error('[import/funcionarios]', err)
     return NextResponse.json({ error: 'Não foi possível concluir a importação. Tente de novo em alguns instantes.' }, { status: 500 })

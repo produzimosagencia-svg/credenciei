@@ -3,7 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch, Sparkles } from 'lucide-react'
+import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch, Sparkles, IdCard } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarEventos, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
@@ -22,7 +22,10 @@ type NavItem = { href: string; label: string; icon: React.ElementType }
 
 function navItemsPara(role: string): NavItem[] {
   const itens: NavItem[] = [{ href: '/admin', label: 'Início', icon: Home }]
-  if (ehMaster(role)) itens.push({ href: '/admin/organizacoes', label: 'Organizações', icon: Building2 })
+  if (ehMaster(role)) {
+    itens.push({ href: '/admin/organizacoes', label: 'Organizações', icon: Building2 })
+    itens.push({ href: '/admin/base-funcionarios', label: 'Base de Funcionários', icon: IdCard })
+  }
   if (podeGerenciarEventos(role)) itens.push({ href: '/admin/eventos', label: 'Eventos', icon: CalendarDays })
   if (podeGerenciarUsuarios(role)) itens.push({ href: '/admin/usuarios', label: 'Usuários', icon: Users })
   if (podeEscanear(role)) {

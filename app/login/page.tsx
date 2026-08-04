@@ -50,7 +50,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 bg-black/35" />
         <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
         <div className="absolute left-10 bottom-9 flex items-center gap-3">
-          <div className="w-11 h-11 bg-brand-500 rounded-xl flex items-center justify-center shadow-lg shadow-brand-500/40">
+          <div className="logo-marca w-11 h-11 rounded-xl flex items-center justify-center shadow-lg">
             <QrCode className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -64,7 +64,7 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm">
           <div className="md:hidden flex items-center gap-2.5 mb-10">
-            <div className="w-9 h-9 bg-brand-500 rounded-lg flex items-center justify-center">
+            <div className="logo-marca w-9 h-9 rounded-lg flex items-center justify-center">
               <QrCode className="w-4 h-4 text-white" />
             </div>
             <span className="font-bold text-white text-lg">Credenciei</span>
