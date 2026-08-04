@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #131320;
-  --foreground: #f1f0f7;
+  --background: #f4f5f8;
+  --foreground: #16151f;
 }
 
 @theme inline {
@@ -88,13 +88,13 @@ button, [role='button'], a.btn-press {
 
 .input {
   width: 100%;
-  background: #1b1a29;
-  border: 1.5px solid #322f45;
+  background: #ffffff;
+  border: 1.5px solid #dfe1ea;
   border-radius: 12px;
   /* 12px em cima/embaixo -> 44px de altura, o alvo de toque confortável no
      celular (era 40px). Vale pra todo campo do sistema de uma vez. */
   padding: 12px 14px;
-  color: #f1f0f7;
+  color: #16151f;
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -103,7 +103,15 @@ button, [role='button'], a.btn-press {
   border-color: #6f66e9;
   box-shadow: 0 0 0 3px rgba(111,102,233,0.25);
 }
-.input::placeholder { color: #716d87; }
+.input::placeholder { color: #9aa0b0; }
+
+/* Campo dentro do menu escuro segue o menu. */
+.tema-escuro .input {
+  background: #211f30;
+  border-color: #322f45;
+  color: #f1f0f7;
+}
+.tema-escuro .input::placeholder { color: #716d87; }
 
 @keyframes drawer-slide-in {
   from { transform: translateX(-100%); }
@@ -145,81 +153,94 @@ button, [role='button'], a.btn-press {
 }
 
 /* ============================================================
-   TEMA ESCURO — padrão único do sistema pra todos os papéis, no
-   estilo do painel de referência do cliente (fundo grafite/roxo
-   escuro, cards levemente mais claros, acento roxo da marca).
-   As telas usam classes utilitárias "claras" (bg-white, text-slate-*,
-   bg-green-50...) — aqui elas são remapeadas globalmente pra paleta
-   escura, sem precisar reescrever cada componente.
+   TEMA — painel claro com menu lateral escuro.
+
+   O conteúdo usa as cores naturais do Tailwind (bg-white é branco de
+   verdade, text-slate-800 é escuro). Nada de override global aqui: é o
+   comportamento padrão, e é o que faz o conteúdo respirar.
+
+   O escuro vale SÓ dentro de `.tema-escuro`, que fica no menu lateral, na
+   barra superior e na gaveta do celular. Assim as mesmas classes utilitárias
+   (bg-white, text-slate-*) rendem claro no conteúdo e escuro no menu, sem
+   nenhum componente precisar saber onde está.
    ============================================================ */
+
+.tema-escuro {
+  /* Superfícies */
+  --sup-1: #1b1a29;
+  --sup-2: #211f30;
+  --sup-3: #262436;
+}
 
 /* Superfícies */
-.bg-white { background-color: #1b1a29; }
-.bg-slate-50 { background-color: #211f30; }
-.bg-slate-100 { background-color: #262436; }
-.bg-slate-200 { background-color: #322f45; }
-.hover\:bg-slate-50:hover { background-color: #262436; }
-.hover\:bg-slate-100:hover { background-color: #2d2a40; }
-.hover\:bg-slate-200:hover { background-color: #38354c; }
+.tema-escuro .bg-white,
+.tema-escuro.bg-white { background-color: var(--sup-1); }
+.tema-escuro .bg-slate-50 { background-color: var(--sup-2); }
+.tema-escuro .bg-slate-100 { background-color: var(--sup-3); }
+.tema-escuro .bg-slate-200 { background-color: #322f45; }
+.tema-escuro .hover\:bg-slate-50:hover { background-color: var(--sup-3); }
+.tema-escuro .hover\:bg-slate-100:hover { background-color: #2d2a40; }
+.tema-escuro .hover\:bg-slate-200:hover { background-color: #38354c; }
 
 /* Bordas */
-.border-slate-100 { border-color: #262436; }
-.border-slate-200 { border-color: #322f45; }
-.hover\:border-slate-200:hover { border-color: #3d3a54; }
-.hover\:border-brand-200:hover,
-.hover\:border-brand-300:hover { border-color: #6f66e9; }
+.tema-escuro .border-slate-100,
+.tema-escuro.border-slate-200 { border-color: #262436; }
+.tema-escuro .border-slate-200 { border-color: #322f45; }
+.tema-escuro .hover\:border-slate-200:hover { border-color: #3d3a54; }
 
 /* Textos */
-.text-slate-800, .text-slate-900 { color: #f1f0f7; }
-.text-slate-700 { color: #d7d5e3; }
-.text-slate-600 { color: #b3b0c4; }
-.text-slate-500 { color: #8f8ba3; }
-.text-slate-400 { color: #716d87; }
-.text-slate-300 { color: #56526b; }
-.text-slate-200 { color: #3d3a54; }
-.hover\:text-slate-600:hover { color: #d7d5e3; }
-.hover\:text-slate-700:hover,
-.hover\:text-slate-800:hover { color: #f1f0f7; }
+.tema-escuro .text-slate-800, .tema-escuro .text-slate-900 { color: #f1f0f7; }
+.tema-escuro .text-slate-700 { color: #d7d5e3; }
+.tema-escuro .text-slate-600 { color: #b3b0c4; }
+.tema-escuro .text-slate-500 { color: #8f8ba3; }
+.tema-escuro .text-slate-400 { color: #716d87; }
+.tema-escuro .text-slate-300 { color: #56526b; }
+.tema-escuro .hover\:text-slate-600:hover { color: #d7d5e3; }
+.tema-escuro .hover\:text-slate-700:hover,
+.tema-escuro .hover\:text-slate-800:hover { color: #f1f0f7; }
+
+/* Acento roxo dentro do menu escuro precisa de tom mais claro pra ler */
+.tema-escuro .bg-brand-50 { background-color: #221f45; }
+.tema-escuro .bg-brand-100 { background-color: #2b2758; }
+.tema-escuro .text-brand-500 { color: #8b83f0; }
+.tema-escuro .text-brand-600 { color: #a89af8; }
+.tema-escuro .hover\:bg-brand-100:hover { background-color: #322d63; }
 
 /* ============================================================
-   AÇÃO PRIMÁRIA — grafite/claro, não mais roxo cheio.
+   AÇÃO PRIMÁRIA — grafite.
 
-   No claro, "primário grafite" seria um botão quase preto. Aqui o fundo já
-   é grafite, então botão escuro sumiria dentro do card: no escuro o
-   equivalente é o inverso — superfície clara com texto escuro, que é o
-   contraste mais forte que existe nesta tela.
-
-   O roxo continua no sistema, mas como ACENTO: item ativo do menu, foco de
-   campo, barra de progresso, ícones e links. Nunca mais preenchendo botão.
+   Agora que o conteúdo é claro, dá pra fazer literalmente o que foi pedido:
+   botão quase preto, texto branco. É o contraste mais forte sobre branco e
+   não disputa atenção com verde/âmbar/vermelho, que são status.
    ============================================================ */
-.bg-brand-500 { background-color: #ededf5; }
-.hover\:bg-brand-600:hover { background-color: #ffffff; }
-.active\:bg-brand-700:active { background-color: #dcdce8; }
+.bg-brand-500 { background-color: #1c1b26; }
+.hover\:bg-brand-600:hover { background-color: #2b2a38; }
+.active\:bg-brand-700:active { background-color: #111019; }
 
-/* Especificidade dupla pra vencer o .text-white que os botões já carregam —
-   sem isso o rótulo fica branco no branco. */
-.bg-brand-500.text-white,
-.bg-brand-500 .text-white { color: #16151f; }
-.bg-brand-500 { color: #16151f; }
+/* Dentro do menu escuro o mesmo botão inverte: grafite sobre grafite sumiria. */
+.tema-escuro .bg-brand-500 { background-color: #ededf5; color: #16151f; }
+.tema-escuro .bg-brand-500.text-white,
+.tema-escuro .bg-brand-500 .text-white { color: #16151f; }
+.tema-escuro .hover\:bg-brand-600:hover { background-color: #ffffff; }
 
-/* Tons de marca (roxo) — agora só acento */
-.bg-brand-50 { background-color: #221f45; }
-.bg-brand-100 { background-color: #2b2758; }
-.border-brand-100, .border-brand-200 { border-color: #3a3568; }
-.text-brand-500 { color: #8b83f0; }
-.text-brand-600 { color: #a89af8; }
-.text-brand-700 { color: #c6c2f5; }
-.hover\:text-brand-500:hover { color: #a89af8; }
-.hover\:text-brand-600:hover { color: #c6c2f5; }
+/* ============================================================
+   ROXO — identidade e sinalização.
 
-/* A barrinha do item ativo e o preenchimento das barras de progresso seguem
-   roxos: é onde o acento sinaliza, não decora.
-   Os seletores são estreitos de propósito — um `.bg-brand-500.rounded-full`
-   solto pegaria também o botão de trocar foto e o botão flutuante da IA, que
-   são ação e devem seguir a cor primária. */
+   A logo é a marca: fica roxa em qualquer contexto. A barrinha do item ativo
+   e o preenchimento das barras de progresso também, porque ali o roxo tem
+   função de apontar. Seletores estreitos de propósito: um
+   `.bg-brand-500.rounded-full` solto pegaria botão de foto e outros.
+   ============================================================ */
+.logo-marca,
+.tema-escuro .logo-marca { background-color: #4940df; color: #ffffff; }
+.logo-marca .text-white { color: #ffffff; }
+
 .bg-brand-500.rounded-r-full,   /* indicador do menu lateral */
-.bg-brand-500.h-full            /* preenchimento de barra de progresso */
+.bg-brand-500.h-full,           /* preenchimento de barra de progresso */
+.tema-escuro .bg-brand-500.rounded-r-full,
+.tema-escuro .bg-brand-500.h-full
 { background-color: #6f66e9; }
+
 
 /*
  * Anatomia completa de sombra (skill UI wiki, "Full Shadow Anatomy on
@@ -259,40 +280,47 @@ button, [role='button'], a.btn-press {
     0 6px 14px rgba(34, 197, 94, 0.2);
 }
 
-/* Badges/tintas coloridas */
-.bg-green-50 { background-color: #10241a; }
-.bg-green-100 { background-color: #133420; }
-.border-green-200 { border-color: #1f4d31; }
-.text-green-600 { color: #3fcf72; }
-.text-green-700 { color: #4ade80; }
-.text-green-800 { color: #56d391; }
-.hover\:bg-green-50:hover { background-color: #133420; }
-.hover\:bg-green-100:hover { background-color: #17422a; }
+/* Badges e sombras DENTRO do menu escuro. No conteúdo claro as cores
+   naturais do Tailwind já são as certas — não precisam de override. */
+.tema-escuro .bg-green-50 { background-color: #10241a; }
+.tema-escuro .bg-green-100 { background-color: #133420; }
+.tema-escuro .border-green-200 { border-color: #1f4d31; }
+.tema-escuro .text-green-600 { color: #3fcf72; }
+.tema-escuro .text-green-700 { color: #4ade80; }
+.tema-escuro .text-green-800 { color: #56d391; }
+.tema-escuro .hover\:bg-green-50:hover { background-color: #133420; }
+.tema-escuro .hover\:bg-green-100:hover { background-color: #17422a; }
 
-.bg-blue-50 { background-color: #11213f; }
-.bg-blue-100 { background-color: #132749; }
-.border-blue-200 { border-color: #1f3d70; }
-.text-blue-600 { color: #6ba8ff; }
-.text-blue-700, .text-blue-800 { color: #8ec1ff; }
+.tema-escuro .bg-blue-50 { background-color: #11213f; }
+.tema-escuro .bg-blue-100 { background-color: #132749; }
+.tema-escuro .border-blue-200 { border-color: #1f3d70; }
+.tema-escuro .text-blue-600 { color: #6ba8ff; }
+.tema-escuro .text-blue-700,
+.tema-escuro .text-blue-800 { color: #8ec1ff; }
 
-.bg-purple-100 { background-color: #2a2149; }
-.border-purple-200 { border-color: #3d3268; }
-.text-purple-600 { color: #c4a7ff; }
+.tema-escuro .bg-purple-100 { background-color: #2a2149; }
+.tema-escuro .border-purple-200 { border-color: #3d3268; }
+.tema-escuro .text-purple-600 { color: #c4a7ff; }
 
-.bg-amber-50 { background-color: #2e2408; }
-.bg-amber-100 { background-color: #3a2d10; }
-.border-amber-200 { border-color: #5c4512; }
-.text-amber-600 { color: #f0bb4d; }
+.tema-escuro .bg-amber-50 { background-color: #2e2408; }
+.tema-escuro .bg-amber-100 { background-color: #3a2d10; }
+.tema-escuro .border-amber-200 { border-color: #5c4512; }
+.tema-escuro .text-amber-600 { color: #f0bb4d; }
 
-.bg-red-50 { background-color: #2d1417; }
-.border-red-200 { border-color: #58151c; }
-.text-red-600 { color: #fb6a61; }
-.text-red-400 { color: #f0916b; }
-.hover\:bg-red-50:hover { background-color: #2d1417; }
-.hover\:text-red-500:hover, .hover\:text-red-600:hover { color: #fb6a61; }
+.tema-escuro .bg-red-50 { background-color: #2d1417; }
+.tema-escuro .border-red-200 { border-color: #58151c; }
+.tema-escuro .text-red-600 { color: #fb6a61; }
+.tema-escuro .text-red-400 { color: #f0916b; }
+.tema-escuro .hover\:bg-red-50:hover { background-color: #2d1417; }
+.tema-escuro .hover\:text-red-500:hover,
+.tema-escuro .hover\:text-red-600:hover { color: #fb6a61; }
 
-/* Sombras — mais escuras/fortes pra terem contraste sobre fundo escuro */
-.shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+
+.tema-escuro .shadow-sm,
+.tema-escuro .shadow-md,
+.tema-escuro .shadow-lg,
+.tema-escuro .shadow-xl,
+.tema-escuro .shadow-2xl {
   --tw-shadow-color: rgba(0, 0, 0, 0.5);
 }
 

@@ -148,11 +148,11 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
   return (
     <AssistenteIAProvider usuarioId={perfil.id}>
-    <div className="min-h-screen bg-[#131320] flex">
+    <div className="min-h-screen bg-[#f4f5f8] flex">
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
+      <aside className="tema-escuro hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
         <Link href="/admin" className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-100 shrink-0">
-          <div className="w-9 h-9 bg-brand-500 rounded-xl flex items-center justify-center shadow-md shadow-brand-500/25">
+          <div className="logo-marca w-9 h-9 rounded-xl flex items-center justify-center shadow-md shadow-brand-500/25">
             <QrCode className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-slate-800 tracking-tight">Credenciei</span>
@@ -164,7 +164,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
       {/* Coluna principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 bg-[#1b1a29]/85 backdrop-blur-md border-b border-slate-200">
+        <header className="tema-escuro sticky top-0 z-30 bg-[#1b1a29]/85 backdrop-blur-md border-b border-slate-200">
           <div className="px-4 md:px-8 h-16 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
@@ -175,7 +175,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
                 <Menu className="w-5 h-5" />
               </button>
               <Link href="/admin" className="md:hidden flex items-center gap-2 shrink-0">
-                <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
+                <div className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center">
                   <QrCode className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-bold text-slate-800">Credenciei</span>
@@ -205,10 +205,10 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
       {menuAberto && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="overlay-fade-in absolute inset-0 bg-black/45" onClick={() => setMenuAberto(false)} />
-          <div className="absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-white shadow-2xl flex flex-col drawer-slide-in">
+          <div className="tema-escuro absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-white shadow-2xl flex flex-col drawer-slide-in">
             <div className="flex items-center justify-between px-5 h-16 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
+                <div className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center">
                   <QrCode className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-bold text-slate-800">Credenciei</span>

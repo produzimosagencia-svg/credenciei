@@ -33,6 +33,17 @@ function chaveStorage(tutorial: TutorialConfig, usuarioId: string): string {
 }
 
 /**
+ * Marca "esta pessoa já foi apresentada ao sistema". É UMA por usuário, não
+ * uma por tela: com marca por tela, o tutorial reaparecia a cada navegação e
+ * virava obstáculo em vez de ajuda.
+ *
+ * Depois que essa marca existe, tutorial só abre por clique em "Ver tutorial".
+ */
+function chaveApresentado(usuarioId: string): string {
+  return `credenciei:tutorial:${usuarioId}:apresentado`
+}
+
+/**
  * Motor reutilizável de tutorial guiado. Cada tela envolve seu conteúdo com
  * <TutorialProvider tutorial={{...}}> e ganha: abertura automática na primeira
  * visita, botão "Ver tutorial" pra reabrir manualmente (useTutorial()), e
@@ -59,8 +70,11 @@ export default function TutorialProvider({
 
   useEffect(() => {
     if (!ativo) return
-    const visto = localStorage.getItem(chaveStorage(tutorial, dono))
-    if (visto) return
+    // Se a pessoa já foi apresentada ao sistema uma vez, nada mais abre
+    // sozinho — daqui pra frente é só pelo botão Ver tutorial. Sem isso, cada
+    // tela nova disparava o próprio tutorial e virava obstáculo na navegação.
+    if (localStorage.getItem(chaveApresentado(dono))) return
+    if (localStorage.getItem(chaveStorage(tutorial, dono))) return
     // dá tempo da tela terminar de renderizar antes de medir os alvos
     const t = setTimeout(() => setPassoAtivo(0), 500)
     return () => clearTimeout(t)
@@ -71,6 +85,8 @@ export default function TutorialProvider({
 
   const finalizar = useCallback(() => {
     localStorage.setItem(chaveStorage(tutorial, dono), '1')
+    // Terminou ou pulou uma vez: está apresentado, não abre mais sozinho.
+    localStorage.setItem(chaveApresentado(dono), '1')
     setPassoAtivo(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tutorial.tela, tutorial.versao, dono])
