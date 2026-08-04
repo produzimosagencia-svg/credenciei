@@ -18,8 +18,6 @@ const TUTORIAL: TutorialConfig = {
   tela: 'eventos-lista',
   versao: 1,
   passos: [
-    { alvo: 'eventos-licencas', titulo: 'Licenças de evento', posicao: 'bottom',
-      descricao: 'Mostra quantos eventos você já usou do total contratado. Quando acabar, fale com o administrador da plataforma para liberar mais.' },
     { alvo: 'eventos-novo', titulo: 'Criar um evento', posicao: 'left',
       descricao: 'Aqui você cadastra um evento novo: nome, datas e as janelas de horário em que a equipe pode bater ponto.' },
     { alvo: 'eventos-card', titulo: 'Abrir um evento', posicao: 'bottom',
@@ -58,29 +56,9 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
   const totalPages = Math.max(1, Math.ceil(totalEncerradosCount / PAGE_SIZE))
   const total = (ativos?.length ?? 0) + totalEncerradosCount
 
-  // Licenças de evento da organização (não se aplica ao master, que não tem limite)
-  let limiteEventos: number | null = null
-  if (!isAdmin && perfil?.organizacao_id) {
-    const { data: org } = await db.from('organizacoes').select('limite_eventos').eq('id', perfil.organizacao_id).single()
-    limiteEventos = org?.limite_eventos ?? 0
-  }
-  const licencasDisponiveis = limiteEventos !== null ? Math.max(0, limiteEventos - total) : null
-
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-6 max-w-5xl">
-      {limiteEventos !== null && (
-        <div data-tutorial="eventos-licencas" className="flex items-center justify-between gap-4 bg-brand-50 border border-brand-200 rounded-2xl px-5 py-3.5">
-          <div>
-            <p className="text-brand-700 font-semibold text-sm">Número de licenças compradas para evento</p>
-            <p className="text-brand-500 text-xs mt-0.5">
-              {total} de {limiteEventos} usada{total !== 1 ? 's' : ''} • {licencasDisponiveis} disponíve{licencasDisponiveis !== 1 ? 'is' : 'l'}
-            </p>
-          </div>
-          <span className="text-3xl font-bold text-brand-600 shrink-0">{limiteEventos}</span>
-        </div>
-      )}
-
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Eventos</h1>
