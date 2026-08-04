@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { ArrowLeft, Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
-import EventoStatusToggle from './EventoStatusToggle'
 import StatCard from '@/components/StatCard'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -25,7 +24,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
-      descricao: 'Acompanhe quantos setores e funcionários existem e quantos já registraram cada etapa do credenciamento.' },
+      descricao: 'A situação agora: quantos setores e pessoas o evento tem, quantas estão presentes neste momento e quantas ainda não chegaram. O detalhe por etapa fica logo abaixo.' },
     { alvo: 'evt-progresso', titulo: 'Progresso por etapa', posicao: 'top',
       descricao: 'Mostra a porcentagem da equipe que já passou por cada etapa. Ideal para saber, durante o evento, quem ainda falta.' },
     { alvo: 'evt-setores', titulo: 'Fornecedores e setores', posicao: 'right',
@@ -82,10 +81,18 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   // Presença por foto: quantos funcionários já registraram cada etapa
   const regs = todosRegistros.data ?? []
-  const contarEtapa = (t: string) => new Set(regs.filter(r => r.tipo === t).map(r => r.funcionario_id)).size
-  const totEntrada = contarEtapa('entrada')
-  const totMeio = contarEtapa('meio')
-  const totFim = contarEtapa('fim')
+  const quemFez = (t: string) => new Set(regs.filter(r => r.tipo === t).map(r => r.funcionario_id))
+  const entraram = quemFez('entrada')
+  const sairam = quemFez('fim')
+  const totEntrada = entraram.size
+  const totMeio = quemFez('meio').size
+  const totFim = sairam.size
+
+  // Os indicadores do topo respondem "como está agora"; o detalhe por etapa
+  // fica no Progresso de presença, logo abaixo — repetir os dois seria dizer
+  // a mesma coisa duas vezes na mesma tela.
+  const presentesAgora = [...entraram].filter(fid => !sairam.has(fid)).length
+  const naoChegaram = Math.max(0, totalFuncionarios - totEntrada)
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
@@ -117,15 +124,17 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
         </div>
+        {/* Encerrar saiu daqui: é ação de fim de ciclo, não de operação do dia,
+            e continua no menu "..." da lista de eventos. No celular ela ficava
+            lado a lado com Escanear QR, que é o que se usa o tempo todo. */}
         <div className="flex items-center gap-2 flex-wrap">
           <TutorialButton />
-          <EventoStatusToggle eventoId={id} ativo={evento.ativo} />
           <Link
             href={`/admin/eventos/${id}/editar`}
             data-tutorial="evt-editar"
-            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-xl transition-all shadow-sm font-medium"
+            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-xl transition-all shadow-sm font-medium whitespace-nowrap"
           >
-            <Pencil className="w-3.5 h-3.5" /> Editar
+            <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
           </Link>
           {evento.spreadsheet_id && (
             <a
@@ -149,12 +158,11 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
-      <div data-tutorial="evt-stats" className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Fornecedores/Setores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
+      <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <StatCard label="Setores" value={fornecedores?.length ?? 0} icon={Users} color="text-purple-600" bg="bg-purple-100" border="border-purple-200" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} color="text-blue-600" bg="bg-blue-100" border="border-blue-200" />
-        <StatCard label="Registraram entrada" value={totEntrada} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
-        <StatCard label="Registraram meio" value={totMeio} icon={Clock} color="text-amber-600" bg="bg-amber-100" border="border-amber-200" />
-        <StatCard label="Registraram fim" value={totFim} icon={UserCheck} color="text-brand-600" bg="bg-brand-100" border="border-brand-200" />
+        <StatCard label="Presentes agora" value={presentesAgora} icon={Clock} color="text-green-600" bg="bg-green-100" border="border-green-200" />
+        <StatCard label="Ainda não chegaram" value={naoChegaram} icon={Clock} color="text-amber-600" bg="bg-amber-100" border="border-amber-200" />
       </div>
 
       {/* Progresso de presença por etapa */}
