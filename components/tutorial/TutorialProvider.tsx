@@ -1,7 +1,7 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import TutorialOverlay from './TutorialOverlay'
-import type { TutorialConfig } from './types'
+import type { TutorialConfig, TutorialPasso } from './types'
 
 type TutorialContextValue = {
   iniciar: () => void
@@ -65,8 +65,28 @@ export default function TutorialProvider({
   children: React.ReactNode
 }) {
   const [passoAtivo, setPassoAtivo] = useState<number | null>(null)
+  const [passos, setPassos] = useState<TutorialPasso[]>([])
   const usuarioDoContexto = useContext(TutorialUsuarioContext)
   const dono = usuarioId ?? usuarioDoContexto ?? 'anon'
+
+  /**
+   * Abre contando SÓ os passos cujo alvo existe na tela agora.
+   *
+   * Vários roteiros falam de campos que só aparecem depois de uma ação — a
+   * ficha da pessoa só existe depois da busca, por exemplo. Contando todos, o
+   * balão dizia "passo 1 de 4" e fechava no primeiro clique, porque os outros
+   * três não tinham onde se fixar. Contar o que está na tela faz o número
+   * bater com o que a pessoa vê.
+   */
+  const abrir = useCallback(() => {
+    const presentes = tutorial.passos.filter(p =>
+      document.querySelector(`[data-tutorial="${p.alvo}"]`)
+    )
+    if (!presentes.length) return
+    setPassos(presentes)
+    setPassoAtivo(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorial.passos])
 
   useEffect(() => {
     if (!ativo) return
@@ -76,12 +96,12 @@ export default function TutorialProvider({
     if (localStorage.getItem(chaveApresentado(dono))) return
     if (localStorage.getItem(chaveStorage(tutorial, dono))) return
     // dá tempo da tela terminar de renderizar antes de medir os alvos
-    const t = setTimeout(() => setPassoAtivo(0), 500)
+    const t = setTimeout(abrir, 500)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tutorial.tela, tutorial.versao, ativo, dono])
+  }, [tutorial.tela, tutorial.versao, ativo, dono, abrir])
 
-  const iniciar = useCallback(() => setPassoAtivo(0), [])
+  const iniciar = abrir
 
   const finalizar = useCallback(() => {
     localStorage.setItem(chaveStorage(tutorial, dono), '1')
@@ -96,7 +116,7 @@ export default function TutorialProvider({
       {children}
       {ativo && passoAtivo !== null && (
         <TutorialOverlay
-          passos={tutorial.passos}
+          passos={passos}
           indice={passoAtivo}
           onMudarIndice={setPassoAtivo}
           onFinalizar={finalizar}

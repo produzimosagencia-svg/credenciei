@@ -81,12 +81,12 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Eventos</h1>
           <p className="text-slate-500 text-sm mt-0.5">{total} eventos • {ativos?.length ?? 0} ativo{ativos?.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <TutorialButton />
           {podeCriarEvento && (
             <Link

@@ -107,12 +107,12 @@ export default async function AdminPage() {
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-8 max-w-6xl">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
           <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">Visão geral dos seus eventos</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <TutorialButton />
           {podeCriarEvento && (
             <Link

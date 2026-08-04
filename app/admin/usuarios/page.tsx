@@ -62,35 +62,99 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
   const total = count ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  // Achata uma vez só: celular e desktop desenham a MESMA lista de formas
+  // diferentes. Mapear em cada view duplicaria a leitura dos relacionamentos
+  // e abriria espaço pra as duas divergirem com o tempo.
+  const linhas = (usuarios ?? []).map(u => ({
+    id: u.id as string,
+    nome: u.nome as string,
+    email: u.email as string,
+    role: (u.role ?? 'cliente') as Role,
+    ativo: u.ativo !== false,
+    criadoEm: u.created_at as string,
+    setorNome: (u.fornecedores as { nome?: string } | null)?.nome,
+    eventoCount: (u.eventos as { count: number }[] | null)?.[0]?.count ?? 0,
+  }))
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div data-tutorial="usr-resumo">
           <h1 className="text-2xl font-bold text-slate-800">Usuários</h1>
           <p className="text-slate-500 text-sm mt-0.5">{total} usuário{total !== 1 ? 's' : ''} com acesso ao sistema</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <TutorialButton />
           <Link
             href="/admin/usuarios/novo"
             data-tutorial="usr-novo"
-            className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+            className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200 whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             Novo Usuário
           </Link>
         </div>
       </div>
 
-      {!usuarios?.length ? (
+      {!linhas.length ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
           <Users className="w-12 h-12 text-slate-200 mx-auto mb-4" />
           <p className="text-slate-500 font-semibold">Nenhum usuário cadastrado</p>
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-          <table className="w-full">
+          {/* Celular: cartão por pessoa. A tabela tem 7 colunas — no celular
+              ela seria cortada ou exigiria arrastar de lado, que é pior de
+              usar do que ler um cartão de cima pra baixo. */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {linhas.map((u, i) => {
+              const { role, ativo, setorNome, eventoCount } = u
+              return (
+                <div key={u.id} className="p-4 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-slate-800 text-sm font-semibold truncate">{u.nome}</p>
+                      <p className="text-slate-500 text-xs truncate">{u.email}</p>
+                    </div>
+                    <div className="shrink-0 -mr-1" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
+                      {u.id !== perfil!.id && <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      data-tutorial={i === 0 ? 'usr-papel' : undefined}
+                      className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${ROLE_BADGES[role] ?? ROLE_BADGES.cliente}`}
+                    >
+                      {ROLE_LABELS[role] ?? role}
+                    </span>
+                    <span
+                      data-tutorial={i === 0 ? 'usr-status' : undefined}
+                      className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${ativo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}
+                    >
+                      {ativo ? 'Ativo' : 'Inativo'}
+                    </span>
+                    <span
+                      data-tutorial={i === 0 ? 'usr-setor' : undefined}
+                      className="inline-flex items-center gap-1.5 text-slate-500 text-xs bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full"
+                    >
+                      {role === 'supervisor' ? (
+                        setorNome ?? 'sem setor'
+                      ) : (
+                        <><CalendarDays className="w-3 h-3" /> {eventoCount} evento{eventoCount !== 1 ? 's' : ''}</>
+                      )}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-[11px]">
+                    desde {format(new Date(u.criadoEm), 'dd/MM/yyyy', { locale: ptBR })}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop: tabela */}
+          <table className="hidden md:table w-full">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 {['Usuário', 'E-mail', 'Papel', 'Setor / Eventos', 'Status', 'Criado em', ''].map(h => (
@@ -99,23 +163,20 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
               </tr>
             </thead>
             <tbody>
-              {usuarios.map((u, i) => {
-                const eventoCount = (u.eventos as any)?.[0]?.count ?? 0
-                const role = (u.role ?? 'cliente') as Role
-                const setorNome = (u.fornecedores as any)?.nome as string | undefined
-                const ativo = u.ativo !== false
+              {linhas.map((u, i) => {
+                const { role, ativo, setorNome, eventoCount } = u
                 return (
                   <tr key={u.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <p className="text-slate-800 text-sm font-semibold">{u.nome}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-500 text-sm">{u.email}</td>
-                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-papel' : undefined}>
+                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-papel-d' : undefined}>
                       <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${ROLE_BADGES[role] ?? ROLE_BADGES.cliente}`}>
                         {ROLE_LABELS[role] ?? role}
                       </span>
                     </td>
-                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-setor' : undefined}>
+                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-setor-d' : undefined}>
                       {role === 'supervisor' ? (
                         <span className="text-slate-500 text-sm">{setorNome ?? '—'}</span>
                       ) : (
@@ -125,15 +186,15 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-status' : undefined}>
+                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-status-d' : undefined}>
                       <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${ativo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
                         {ativo ? 'Ativo' : 'Inativo'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
-                      {format(new Date(u.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                      {format(new Date(u.criadoEm), "dd/MM/yyyy", { locale: ptBR })}
                     </td>
-                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
+                    <td className="px-4 py-3" data-tutorial={i === 0 ? 'usr-acoes-d' : undefined}>
                       {u.id !== perfil!.id && <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />}
                     </td>
                   </tr>
