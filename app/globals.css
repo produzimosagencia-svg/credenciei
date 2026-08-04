@@ -22,6 +22,15 @@
   --color-brand-700: #2f27a0;
 
   /*
+   * Acabamento de aplicativo: cantos um pouco mais macios que o padrão do
+   * Tailwind. Vale pra todo rounded-xl/2xl/3xl do sistema de uma vez.
+   */
+  --radius-lg: 0.625rem;   /* 10px */
+  --radius-xl: 0.875rem;   /* 14px */
+  --radius-2xl: 1.125rem;  /* 18px */
+  --radius-3xl: 1.5rem;    /* 24px */
+
+  /*
    * Escala de sombra do sistema inteiro: troca o padrão do Tailwind
    * (cinza puro, uma camada) por sombras em camadas (contato + ambiente),
    * em neutro frio (slate-900) e sempre na mesma direção (luz vindo de
@@ -66,12 +75,25 @@ p {
   transform: scale(0.98);
 }
 
+/* Acabamento de app: tira o flash cinza do toque no mobile e o atraso de
+   300ms do clique.
+   Nada de forçar altura mínima por classe de cor: bg-green-500 e bg-red-500
+   também pintam bolinha de status de 2px, selo "PAGO" e o botão de trocar
+   foto de 24px — um min-height global deformaria todos eles. Os botões de
+   ação já têm py-2.5/py-3, que dá o alvo de toque adequado. */
+button, [role='button'], a.btn-press {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 .input {
   width: 100%;
   background: #1b1a29;
   border: 1.5px solid #322f45;
-  border-radius: 10px;
-  padding: 10px 14px;
+  border-radius: 12px;
+  /* 12px em cima/embaixo -> 44px de altura, o alvo de toque confortável no
+     celular (era 40px). Vale pra todo campo do sistema de uma vez. */
+  padding: 12px 14px;
   color: #f1f0f7;
   font-size: 14px;
   outline: none;
@@ -159,7 +181,28 @@ p {
 .hover\:text-slate-700:hover,
 .hover\:text-slate-800:hover { color: #f1f0f7; }
 
-/* Tons de marca (roxo) sobre fundo escuro */
+/* ============================================================
+   AÇÃO PRIMÁRIA — grafite/claro, não mais roxo cheio.
+
+   No claro, "primário grafite" seria um botão quase preto. Aqui o fundo já
+   é grafite, então botão escuro sumiria dentro do card: no escuro o
+   equivalente é o inverso — superfície clara com texto escuro, que é o
+   contraste mais forte que existe nesta tela.
+
+   O roxo continua no sistema, mas como ACENTO: item ativo do menu, foco de
+   campo, barra de progresso, ícones e links. Nunca mais preenchendo botão.
+   ============================================================ */
+.bg-brand-500 { background-color: #ededf5; }
+.hover\:bg-brand-600:hover { background-color: #ffffff; }
+.active\:bg-brand-700:active { background-color: #dcdce8; }
+
+/* Especificidade dupla pra vencer o .text-white que os botões já carregam —
+   sem isso o rótulo fica branco no branco. */
+.bg-brand-500.text-white,
+.bg-brand-500 .text-white { color: #16151f; }
+.bg-brand-500 { color: #16151f; }
+
+/* Tons de marca (roxo) — agora só acento */
 .bg-brand-50 { background-color: #221f45; }
 .bg-brand-100 { background-color: #2b2758; }
 .border-brand-100, .border-brand-200 { border-color: #3a3568; }
@@ -169,6 +212,15 @@ p {
 .hover\:text-brand-500:hover { color: #a89af8; }
 .hover\:text-brand-600:hover { color: #c6c2f5; }
 
+/* A barrinha do item ativo e o preenchimento das barras de progresso seguem
+   roxos: é onde o acento sinaliza, não decora.
+   Os seletores são estreitos de propósito — um `.bg-brand-500.rounded-full`
+   solto pegaria também o botão de trocar foto e o botão flutuante da IA, que
+   são ação e devem seguir a cor primária. */
+.bg-brand-500.rounded-r-full,   /* indicador do menu lateral */
+.bg-brand-500.h-full            /* preenchimento de barra de progresso */
+{ background-color: #6f66e9; }
+
 /*
  * Anatomia completa de sombra (skill UI wiki, "Full Shadow Anatomy on
  * Buttons"): aro escuro que "corta" o botão da superfície + realce interno
@@ -176,26 +228,19 @@ p {
  * opacidade crescentes. Aplicado direto nas classes de sombra que os
  * botões primários/destrutivos já usam — sem precisar mexer em cada botão.
  */
-.shadow-brand-200 {
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 2px 4px rgba(111, 102, 233, 0.28),
-    0 6px 14px rgba(111, 102, 233, 0.22),
-    0 14px 28px rgba(111, 102, 233, 0.16);
-}
+/* Botão claro pede sombra neutra: brilho roxo embaixo de superfície branca
+   suja a cor e denuncia a paleta antiga. Fica só a profundidade. */
+.shadow-brand-200,
 .shadow-brand-500\/25,
 .shadow-brand-500\/30,
 .shadow-brand-500\/35,
 .shadow-brand-500\/40 {
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.35),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 2px 4px rgba(111, 102, 233, 0.3),
-    0 6px 14px rgba(111, 102, 233, 0.24),
-    0 14px 28px rgba(111, 102, 233, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 4px 10px rgba(0, 0, 0, 0.24),
+    0 10px 24px rgba(0, 0, 0, 0.18);
 }
 .shadow-red-500\/20 {
   box-shadow:
