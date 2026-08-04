@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   if (!perfil) {
     return Response.json({ error: 'Faça login para usar o assistente.' }, { status: 401 })
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return Response.json(
       { error: 'O assistente ainda não foi configurado neste ambiente. Fale com o administrador da plataforma.' },
       { status: 503 }
@@ -78,24 +78,11 @@ export async function POST(request: NextRequest) {
         }
       }
       try {
-        for await (const streamDaVez of runner) {
-          for await (const evento of streamDaVez) {
-            if (evento.type === 'content_block_start' && evento.content_block.type === 'tool_use') {
-              enviar({ t: 'ferramenta', v: evento.content_block.name })
-            } else if (evento.type === 'content_block_delta' && evento.delta.type === 'text_delta') {
-              enviar({ t: 'texto', v: evento.delta.text })
-            }
-          }
-
-          // As ferramentas desta volta já rodaram: se alguma exclusão parou
-          // esperando aval, manda pra interface desenhar o botão.
+        for await (const evento of runner) {
+          enviar(evento)
+          // Uma exclusão pode ter parado esperando aval durante a volta: manda
+          // pra interface desenhar o botão assim que acontecer.
           escoarConfirmacoes()
-
-          const msg = await streamDaVez.finalMessage()
-          if (msg.stop_reason === 'refusal') {
-            enviar({ t: 'erro', v: 'Não consigo ajudar com esse pedido.' })
-            break
-          }
         }
       } catch (e) {
         console.error('Erro no assistente de IA:', e)

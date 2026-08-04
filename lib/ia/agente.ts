@@ -1,16 +1,16 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenAI, type Content, type FunctionDeclaration } from '@google/genai'
 import { CONHECIMENTO_DO_SISTEMA } from './conhecimento'
 import { ferramentasPara, type ContextoIA, type PedidoConfirmacao, type PerfilIA } from './ferramentas'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
 
-const MODELO = 'claude-opus-5'
+const MODELO = 'gemini-3.6-flash'
 
-const cliente = new Anthropic()
+/** Teto de idas e voltas de ferramenta numa pergunta. Evita laço infinito. */
+const MAX_VOLTAS = 8
 
 /**
- * Comportamento do assistente. Junto com o conhecimento do sistema, forma o
- * prefixo estável do prompt — o que muda a cada mensagem (quem está falando,
- * data, tela atual) entra depois, como mensagem, pra não invalidar o cache.
+ * Comportamento do assistente. Vai como systemInstruction — separado do
+ * conhecimento só por legibilidade; os dois são concatenados no envio.
  */
 const COMPORTAMENTO = `
 Você é o **Credenciei IA**, o assistente do sistema Credenciei. Fala português
@@ -29,6 +29,8 @@ não esteja na base de conhecimento: se não souber, diga que não sabe.
 Ao citar uma tela, escreva o caminho entre colchetes com o link, assim:
 [Painel do setor](/admin/eventos/ID/fornecedor/ID). A interface transforma isso
 num link clicável.
+
+Não use tabelas nem títulos com #. Texto corrido e listas curtas com "-".
 
 ## Consultar antes de responder
 
@@ -54,7 +56,7 @@ Produção", cadastre.
 Ferramentas de exclusão devolvem "precisa_confirmar" na primeira chamada. Quando
 isso acontecer:
 
-1. NÃO chame a ferramenta de novo.
+1. NÃO chame a ferramenta de novo, de jeito nenhum.
 2. Diga em português claro o que exatamente será apagado, com os números do
    impacto que a ferramenta devolveu.
 3. Encerre sua vez. A interface mostra o botão de confirmação, e você só é
@@ -73,7 +75,42 @@ que fazer agora. Nunca repasse mensagem técnica crua nem diga só "deu erro".
 
 export type MensagemChat = { role: 'user' | 'assistant'; content: string }
 
-/** Fatos voláteis da conversa. Ficam DEPOIS do prefixo cacheado, de propósito. */
+export type EventoDaConversa =
+  | { t: 'texto'; v: string }
+  | { t: 'ferramenta'; v: string }
+
+/**
+ * Duas falhas transitórias acontecem de verdade em produção: 503 (modelo
+ * congestionado) e 429 (cota por minuto estourada, comum quando várias pessoas
+ * perguntam ao mesmo tempo). Nas duas o certo é esperar, não estourar a
+ * conversa na cara do usuário.
+ *
+ * Quando o Google diz em quanto tempo tentar de novo (retryDelay), respeitamos
+ * — chutar backoff curto contra cota de minuto só queima tentativa à toa.
+ */
+function esperaSugerida(erro: unknown): number | null {
+  const texto = String((erro as Error)?.message ?? erro)
+  const m = texto.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/)
+  return m ? Math.ceil(parseFloat(m[1]) * 1000) : null
+}
+
+async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const texto = String((e as Error)?.message ?? e)
+      const transitorio = /UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|high demand/i.test(texto)
+      if (!transitorio || i >= tentativas - 1) throw e
+      // Teto de 30s: acima disso é melhor devolver o erro do que deixar a
+      // pessoa olhando pro "pensando..." sem fim.
+      const espera = Math.min(esperaSugerida(e) ?? 2000 * 2 ** i, 30_000)
+      await new Promise(r => setTimeout(r, espera))
+    }
+  }
+}
+
+/** Fatos voláteis da conversa — vão na instrução de sistema, que é por chamada. */
 function contextoDaVez(perfil: PerfilIA, telaAtual?: string): string {
   const agora = new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo',
@@ -86,42 +123,106 @@ function contextoDaVez(perfil: PerfilIA, telaAtual?: string): string {
 }
 
 /**
- * Roda uma volta da conversa e devolve o stream de texto para a interface.
+ * Roda uma volta da conversa, transmitindo o texto conforme o modelo escreve.
  *
- * Usa o tool runner do SDK: ele cuida do laço de chamar ferramenta → devolver
- * resultado → chamar de novo, até o modelo parar de pedir ferramenta. As travas
- * de permissão e de confirmação vivem dentro de cada ferramenta, então o laço
- * automático não abre brecha — o que a ferramenta recusa, fica recusado.
+ * O laço de ferramentas é escrito à mão: pede ao modelo, executa o que ele
+ * chamou, devolve o resultado e repete até ele parar de chamar ferramenta. As
+ * travas de permissão e de confirmação vivem DENTRO de cada ferramenta, então
+ * nada aqui pode afrouxá-las — o laço só transporta pedido e resposta.
  */
-export function conversar(params: {
+export async function* conversar(params: {
   perfil: PerfilIA
   mensagens: MensagemChat[]
   confirmacoes: string[]
   telaAtual?: string
   aoPedirConfirmacao?: (pedido: PedidoConfirmacao) => void
-}) {
+}): AsyncGenerator<EventoDaConversa> {
   const ctx: ContextoIA = {
     perfil: params.perfil,
     confirmacoes: new Set(params.confirmacoes),
     aoPedirConfirmacao: params.aoPedirConfirmacao,
   }
 
-  return cliente.beta.messages.toolRunner({
-    model: MODELO,
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'medium' },
-    // Prefixo estável primeiro (cacheado), volátil depois — ver conhecimento.ts
-    system: [
-      { type: 'text', text: COMPORTAMENTO },
-      { type: 'text', text: CONHECIMENTO_DO_SISTEMA, cache_control: { type: 'ephemeral' } },
-    ],
-    tools: ferramentasPara(ctx),
-    messages: [
-      { role: 'user', content: contextoDaVez(params.perfil, params.telaAtual) },
-      { role: 'assistant', content: 'Entendido. Pode perguntar.' },
-      ...params.mensagens,
-    ],
-    stream: true,
-  })
+  const ferramentas = ferramentasPara(ctx)
+  const porNome = new Map(ferramentas.map(f => [f.nome, f]))
+  const declaracoes: FunctionDeclaration[] = ferramentas.map(f => ({
+    name: f.nome,
+    description: f.descricao,
+    parameters: f.parametros as FunctionDeclaration['parameters'],
+  }))
+
+  const ia = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+
+  const contents: Content[] = params.mensagens.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }))
+
+  const config = {
+    systemInstruction: [
+      COMPORTAMENTO,
+      CONHECIMENTO_DO_SISTEMA,
+      contextoDaVez(params.perfil, params.telaAtual),
+    ].join('\n\n'),
+    tools: [{ functionDeclarations: declaracoes }],
+  }
+
+  for (let volta = 0; volta < MAX_VOLTAS; volta++) {
+    const stream = await comRetentativa(() =>
+      ia.models.generateContentStream({ model: MODELO, contents, config })
+    )
+
+    let respondeu = false
+    const partesDoModelo: NonNullable<Content['parts']> = []
+    const chamadas: { name: string; args: Record<string, never> }[] = []
+
+    for await (const pedaco of stream) {
+      const partes = pedaco.candidates?.[0]?.content?.parts ?? []
+      for (const parte of partes) {
+        // Guarda a parte INTEIRA no histórico. O Gemini 3 exige receber de
+        // volta o thoughtSignature junto da chamada de ferramenta, e ele fica
+        // na parte, ao lado do functionCall — remontar a parte à mão perde o
+        // campo e a próxima chamada é recusada com 400.
+        partesDoModelo.push(parte)
+
+        if (parte.thought) continue // raciocínio interno, não é resposta ao usuário
+        if (parte.text) {
+          respondeu = true
+          yield { t: 'texto', v: parte.text }
+        } else if (parte.functionCall?.name) {
+          yield { t: 'ferramenta', v: parte.functionCall.name }
+          chamadas.push({
+            name: parte.functionCall.name,
+            args: (parte.functionCall.args ?? {}) as Record<string, never>,
+          })
+        }
+      }
+    }
+
+    // Sem ferramenta pedida: o modelo terminou a resposta.
+    if (!chamadas.length) {
+      if (!respondeu) yield { t: 'texto', v: 'Não consegui montar uma resposta. Reformule a pergunta, por favor.' }
+      return
+    }
+
+    contents.push({ role: 'model', parts: partesDoModelo })
+
+    const respostas = await Promise.all(chamadas.map(async c => {
+      const f = porNome.get(c.name)
+      if (!f) return { name: c.name, response: { erro: 'Ferramenta desconhecida.' } }
+      try {
+        return { name: c.name, response: { resultado: await f.executar(c.args) } }
+      } catch (e) {
+        console.error(`Ferramenta ${c.name} falhou:`, e)
+        return { name: c.name, response: { erro: 'A operação falhou no sistema. Avise o usuário e sugira tentar pela tela.' } }
+      }
+    }))
+
+    contents.push({ role: 'user', parts: respostas.map(r => ({ functionResponse: r })) })
+  }
+
+  yield {
+    t: 'texto',
+    v: '\n\nParei por aqui: precisei consultar o sistema vezes demais para uma pergunta só. Tente perguntar de forma mais específica.',
+  }
 }

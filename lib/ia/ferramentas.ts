@@ -1,4 +1,3 @@
-import { betaTool } from '@anthropic-ai/sdk/helpers/beta/json-schema'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
@@ -79,6 +78,30 @@ function exigirSetor(perfil: PerfilIA, fornecedorId: string): string | null {
 const ORDEM_ETAPAS = ['entrada', 'meio', 'fim'] as const
 const ROTULO_ETAPA: Record<string, string> = { entrada: 'Entrada', meio: 'Meio do evento', fim: 'Saída' }
 
+/**
+ * Uma ferramenta, sem amarra com provedor de IA nenhum: nome, descrição, schema
+ * JSON dos parâmetros e a função que executa. Quem traduz isso pro formato do
+ * Gemini é o agente — se um dia trocar de provedor de novo, este arquivo (que é
+ * onde vivem as regras de permissão e a trava de confirmação) não muda.
+ */
+export type Ferramenta = {
+  nome: string
+  descricao: string
+  parametros: Record<string, unknown>
+  executar: (args: Record<string, never>) => Promise<string>
+}
+
+/** Só dá forma ao objeto — existe pra manter a inferência dos argumentos. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ferramenta<T extends Record<string, any>>(f: {
+  nome: string
+  descricao: string
+  parametros: Record<string, unknown>
+  executar: (args: T) => Promise<string>
+}): Ferramenta {
+  return f as unknown as Ferramenta
+}
+
 // ─── Ferramentas ─────────────────────────────────────────────────────────────
 
 export function ferramentasPara(ctx: ContextoIA) {
@@ -101,17 +124,17 @@ export function ferramentasPara(ctx: ContextoIA) {
   const podeGerenciarUsuarios = perfil.role === 'master' || perfil.role === 'admin' || perfil.role === 'gerente'
 
   const consultar = [
-    betaTool({
-      name: 'listar_eventos',
-      description:
+    ferramenta({
+      nome: 'listar_eventos',
+      descricao:
         'Lista os eventos que este usuário pode ver, com datas, local, quantos setores e se está ativo. Use quando perguntarem sobre eventos, ou quando precisar descobrir o id de um evento citado pelo nome.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: {
           apenas_ativos: { type: 'boolean', description: 'true para trazer só os eventos em andamento' },
         },
       },
-      run: async ({ apenas_ativos }) => {
+      executar: async ({ apenas_ativos }) => {
         const ids = await eventosVisiveis(perfil)
         if (!ids.length) return 'Nenhum evento visível para este usuário.'
         const q = supabaseAdmin
@@ -135,16 +158,16 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'detalhar_evento',
-      description:
+    ferramenta({
+      nome: 'detalhar_evento',
+      descricao:
         'Números completos de um evento: setores, total de pessoas, quantas registraram cada etapa, e as janelas de horário configuradas. Use para "como está o evento X" ou para conferir se as janelas estão preenchidas.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { evento_id: { type: 'string', description: 'id do evento' } },
         required: ['evento_id'],
       },
-      run: async ({ evento_id }) => {
+      executar: async ({ evento_id }) => {
         const erro = await exigirEvento(perfil, evento_id)
         if (erro) return erro
 
@@ -180,11 +203,11 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'pendencias_de_presenca',
-      description:
+    ferramenta({
+      nome: 'pendencias_de_presenca',
+      descricao:
         'Quem NÃO registrou uma etapa. Responde perguntas como "quem não bateu ponto", "quantos faltaram hoje", "quem está pendente na entrada". Traz nome, CPF, telefone e setor de cada pendente.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: {
           evento_id: { type: 'string' },
@@ -193,7 +216,7 @@ export function ferramentasPara(ctx: ContextoIA) {
         },
         required: ['evento_id', 'etapa'],
       },
-      run: async ({ evento_id, etapa, fornecedor_id }) => {
+      executar: async ({ evento_id, etapa, fornecedor_id }) => {
         const erro = await exigirEvento(perfil, evento_id)
         if (erro) return erro
         const setorAlvo = perfil.role === 'supervisor' ? perfil.fornecedor_id : fornecedor_id
@@ -228,18 +251,18 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'buscar_funcionario',
-      description:
+    ferramenta({
+      nome: 'buscar_funcionario',
+      descricao:
         'Localiza uma pessoa da equipe por CPF ou parte do nome e mostra a ficha completa: setor, cargo, situação e o que ela já registrou. Use antes de qualquer ação sobre uma pessoa, para confirmar que é ela.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: {
           busca: { type: 'string', description: 'CPF (com ou sem pontuação) ou parte do nome' },
         },
         required: ['busca'],
       },
-      run: async ({ busca }) => {
+      executar: async ({ busca }) => {
         const ids = await eventosVisiveis(perfil)
         if (!ids.length) return 'Nenhum evento visível para este usuário.'
         const digitos = busca.replace(/\D/g, '')
@@ -289,16 +312,16 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'diagnosticar_whatsapp',
-      description:
+    ferramenta({
+      nome: 'diagnosticar_whatsapp',
+      descricao:
         'Investiga por que uma pessoa não recebeu mensagem no WhatsApp: mostra o que foi agendado pra ela, o status de cada envio e o erro quando falhou. Use para "fulano não recebeu o WhatsApp".',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { funcionario_id: { type: 'string' } },
         required: ['funcionario_id'],
       },
-      run: async ({ funcionario_id }) => {
+      executar: async ({ funcionario_id }) => {
         const { data: func } = await supabaseAdmin
           .from('funcionarios')
           .select('nome, telefone, fornecedor_id, fornecedores!inner(evento_id)')
@@ -335,12 +358,12 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'listar_usuarios',
-      description:
+    ferramenta({
+      nome: 'listar_usuarios',
+      descricao:
         'Usuários com acesso ao sistema na organização (admins e supervisores), com papel, setor vinculado e situação. Não confunda com a equipe do evento.',
-      inputSchema: { type: 'object', properties: {} },
-      run: async () => {
+      parametros: { type: 'object', properties: {} },
+      executar: async () => {
         if (!podeGerenciarUsuarios) return 'Seu papel não tem acesso à lista de usuários do sistema.'
         const q = supabaseAdmin.from('perfis').select('id, nome, email, role, ativo, fornecedores(nome)')
         if (!ehMaster(perfil.role)) q.eq('organizacao_id', perfil.organizacao_id)
@@ -360,11 +383,11 @@ export function ferramentasPara(ctx: ContextoIA) {
   ]
 
   const acoes = [
-    betaTool({
-      name: 'cadastrar_funcionario',
-      description:
+    ferramenta({
+      nome: 'cadastrar_funcionario',
+      descricao:
         'Cadastra uma pessoa na equipe de um setor. Confirme os dados com o usuário antes de chamar. Se o setor já bateu o teto, a pessoa entra inativa e precisa ser ativada depois.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: {
           fornecedor_id: { type: 'string' },
@@ -376,7 +399,7 @@ export function ferramentasPara(ctx: ContextoIA) {
         },
         required: ['fornecedor_id', 'nome', 'cpf'],
       },
-      run: async ({ fornecedor_id, nome, cpf, telefone, empresa, cargo }) => {
+      executar: async ({ fornecedor_id, nome, cpf, telefone, empresa, cargo }) => {
         const barrado = exigirSetor(perfil, fornecedor_id)
         if (barrado) return barrado
         const digitos = String(cpf).replace(/\D/g, '')
@@ -427,11 +450,11 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'alternar_ativacao_funcionario',
-      description:
+    ferramenta({
+      nome: 'alternar_ativacao_funcionario',
+      descricao:
         'Ativa ou desativa uma pessoa da equipe. Desativada, ela não consegue registrar presença. É reversível.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: {
           funcionario_id: { type: 'string' },
@@ -439,7 +462,7 @@ export function ferramentasPara(ctx: ContextoIA) {
         },
         required: ['funcionario_id', 'ativo'],
       },
-      run: async ({ funcionario_id, ativo }) => {
+      executar: async ({ funcionario_id, ativo }) => {
         const { data: func } = await supabaseAdmin
           .from('funcionarios')
           .select('id, nome, fornecedor_id, fornecedores!inner(evento_id)')
@@ -457,10 +480,10 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'criar_setor',
-      description: 'Cria um setor (fornecedor) dentro de um evento. Gera o link de cadastro da equipe.',
-      inputSchema: {
+    ferramenta({
+      nome: 'criar_setor',
+      descricao: 'Cria um setor (fornecedor) dentro de um evento. Gera o link de cadastro da equipe.',
+      parametros: {
         type: 'object',
         properties: {
           evento_id: { type: 'string' },
@@ -469,7 +492,7 @@ export function ferramentasPara(ctx: ContextoIA) {
         },
         required: ['evento_id', 'nome'],
       },
-      run: async ({ evento_id, nome, quantidade_estimada }) => {
+      executar: async ({ evento_id, nome, quantidade_estimada }) => {
         if (perfil.role === 'supervisor') return 'Supervisor não cria setores. Fale com o administrador da organização.'
         const erro = await exigirEvento(perfil, evento_id)
         if (erro) return erro
@@ -491,16 +514,16 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'reenviar_mensagem_whatsapp',
-      description:
+    ferramenta({
+      nome: 'reenviar_mensagem_whatsapp',
+      descricao:
         'Reagenda uma mensagem de WhatsApp que falhou, para sair de novo agora. Use depois de diagnosticar e corrigir a causa (telefone errado, por exemplo).',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { mensagem_id: { type: 'string', description: 'id da mensagem em mensagens_agendadas' } },
         required: ['mensagem_id'],
       },
-      run: async ({ mensagem_id }) => {
+      executar: async ({ mensagem_id }) => {
         const { data: msg } = await supabaseAdmin
           .from('mensagens_agendadas')
           .select('id, evento_id, tipo, status, telefone')
@@ -530,16 +553,16 @@ export function ferramentasPara(ctx: ContextoIA) {
   // ─── Destrutivas: só rodam com o id da operação liberado pelo usuário ───────
 
   const destrutivas = [
-    betaTool({
-      name: 'excluir_funcionario',
-      description:
+    ferramenta({
+      nome: 'excluir_funcionario',
+      descricao:
         'Remove uma pessoa da equipe, junto com os registros de presença dela. Não tem desfazer. Sempre chame primeiro sem confirmação para mostrar o impacto ao usuário.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { funcionario_id: { type: 'string' } },
         required: ['funcionario_id'],
       },
-      run: async ({ funcionario_id }) => {
+      executar: async ({ funcionario_id }) => {
         const { data: func } = await supabaseAdmin
           .from('funcionarios')
           .select('id, nome, cpf, fornecedor_id, fornecedores!inner(nome, evento_id)')
@@ -574,16 +597,16 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'excluir_setor',
-      description:
+    ferramenta({
+      nome: 'excluir_setor',
+      descricao:
         'Remove um setor e TODA a equipe dele. Não tem desfazer. Sempre chame primeiro sem confirmação para mostrar o impacto.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { fornecedor_id: { type: 'string' } },
         required: ['fornecedor_id'],
       },
-      run: async ({ fornecedor_id }) => {
+      executar: async ({ fornecedor_id }) => {
         if (perfil.role === 'supervisor') return 'Supervisor não exclui setores.'
         const { data: setor } = await supabaseAdmin
           .from('fornecedores')
@@ -610,16 +633,16 @@ export function ferramentasPara(ctx: ContextoIA) {
       },
     }),
 
-    betaTool({
-      name: 'excluir_evento',
-      description:
+    ferramenta({
+      nome: 'excluir_evento',
+      descricao:
         'Remove um evento inteiro: setores, equipe e presenças. Só o master pode. Não tem desfazer. Sempre chame primeiro sem confirmação para mostrar o impacto.',
-      inputSchema: {
+      parametros: {
         type: 'object',
         properties: { evento_id: { type: 'string' } },
         required: ['evento_id'],
       },
-      run: async ({ evento_id }) => {
+      executar: async ({ evento_id }) => {
         if (!podeExcluirEvento) {
           return 'Só o master exclui eventos. Se o evento acabou, o caminho certo é encerrá-lo (reversível), não excluir.'
         }
