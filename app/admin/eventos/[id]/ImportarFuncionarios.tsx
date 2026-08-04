@@ -3,8 +3,9 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
-// xlsx é pesado e só é usado nestes dois handlers (importar/baixar modelo) —
-// carregado sob demanda para não engordar o bundle inicial da página do evento.
+import { lerPlanilhaDeEquipe } from '@/lib/planilha'
+// xlsx é pesado e só é usado no download do modelo aqui (a leitura mora em
+// lib/planilha) — carregado sob demanda pra não engordar o bundle da página.
 
 type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; reaproveitados?: number; error?: string } | null
 
@@ -22,29 +23,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
     setStatus(null)
 
     try {
-      const XLSX = await import('xlsx')
-      const buffer = await file.arrayBuffer()
-      const wb = XLSX.read(buffer, { type: 'array' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
-
-      const get = (row: Record<string, any>, keys: string[]) => {
-        for (const k of keys) {
-          const found = Object.keys(row).find(rk => rk.toLowerCase().trim() === k.toLowerCase())
-          if (found) return String(row[found]).trim()
-        }
-        return ''
-      }
-
-      const funcionarios = rows.map(row => ({
-        nome: get(row, ['nome', 'name', 'nome completo']),
-        cpf: get(row, ['cpf']),
-        telefone: get(row, ['telefone', 'phone', 'celular', 'tel']),
-        chavePix: get(row, ['chave pix', 'chave_pix', 'pix']),
-        empresa: get(row, ['empresa/setor', 'empresa', 'setor', 'company', 'equipe']),
-        cargo: get(row, ['cargo', 'função', 'funcao', 'role']),
-        valor: get(row, ['valor', 'valor a receber', 'valor_receber']),
-      })).filter(f => f.nome)
+      const funcionarios = await lerPlanilhaDeEquipe(file)
 
       if (funcionarios.length === 0) {
         setStatus({ ok: false, error: 'Nenhum funcionário encontrado. Verifique se a planilha tem as colunas corretas.' })

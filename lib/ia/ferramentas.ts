@@ -3,6 +3,8 @@ import { ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf, validarCpf } from '@/lib/format'
 import { registrarAuditoriaIA } from './auditoria'
+import { importarFuncionarios } from '@/lib/importacao'
+import { resumirPlanilha, type LinhaPlanilha } from '@/lib/planilha'
 
 export type PerfilIA = {
   id: string
@@ -26,6 +28,8 @@ export type PedidoConfirmacao = {
   operacao: string
   resumo: string
   impacto: Record<string, unknown>
+  /** Só define a cara do cartão na interface. A trava é igual nos dois. */
+  tipo: 'excluir' | 'criar'
 }
 
 export type ContextoIA = {
@@ -37,6 +41,15 @@ export type ContextoIA = {
    * confirmar nunca aparece por causa de algo que a IA escreveu.
    */
   aoPedirConfirmacao?: (pedido: PedidoConfirmacao) => void
+  /**
+   * Linhas da planilha que o usuário anexou ao chat, já lidas pelo navegador.
+   *
+   * Elas NÃO entram na conversa com o modelo — a IA recebe só um resumo
+   * (quantas linhas, quais cargos) e o nome da ferramenta que as usa. Assim
+   * nenhum CPF passa pelo modelo pra ser transcrito de volta com um dígito
+   * trocado, e os dados das pessoas não viram texto de prompt.
+   */
+  planilha?: LinhaPlanilha[]
 }
 
 // ─── Escopo: o que este usuário pode enxergar ────────────────────────────────
@@ -108,15 +121,21 @@ export function ferramentasPara(ctx: ContextoIA) {
   const { perfil, confirmacoes } = ctx
 
   /** Resposta padronizada quando falta o aval humano — e avisa a interface. */
-  const pedirConfirmacao = (operacao: string, resumo: string, impacto: Record<string, unknown>) => {
-    ctx.aoPedirConfirmacao?.({ operacao, resumo, impacto })
+  const pedirConfirmacao = (
+    operacao: string,
+    resumo: string,
+    impacto: Record<string, unknown>,
+    oQueVaiAcontecer = 'exatamente o que será apagado',
+    tipo: 'excluir' | 'criar' = 'excluir'
+  ) => {
+    ctx.aoPedirConfirmacao?.({ operacao, resumo, impacto, tipo })
     return {
       precisa_confirmar: true,
       operacao,
       resumo,
       impacto,
       instrucao_para_a_ia:
-        'NÃO execute e NÃO chame esta ferramenta de novo. Explique ao usuário exatamente o que será apagado, com os números do impacto, e encerre sua vez. A interface mostrará o botão de confirmação.',
+        `NÃO execute e NÃO chame esta ferramenta de novo. Explique ao usuário ${oQueVaiAcontecer}, com os números do impacto, e encerre sua vez. A interface mostrará o botão de confirmação.`,
     }
   }
 
@@ -446,6 +465,75 @@ export function ferramentasPara(ctx: ContextoIA) {
           observacao: novo.ativo === false
             ? 'Entrou INATIVA porque o setor passou do teto. Precisa ser ativada no painel do setor para registrar presença.'
             : null,
+        })
+      },
+    }),
+
+    ferramenta({
+      nome: 'importar_planilha',
+      descricao:
+        'Cadastra de uma vez toda a equipe da planilha que o usuário anexou nesta conversa. Use SEMPRE que houver planilha anexada — nunca cadastre as pessoas uma a uma com cadastrar_funcionario. ' +
+        'Você não vê o conteúdo do arquivo, e não precisa: o sistema lê as linhas direto e valida os CPFs. ' +
+        'Antes de chamar, descubra em qual setor a equipe entra: se o evento tiver mais de um setor e o usuário não disse qual, PERGUNTE — não escolha por conta própria e não crie setor novo sem ele pedir. Precisa de confirmação do usuário.',
+      parametros: {
+        type: 'object',
+        properties: {
+          fornecedor_id: { type: 'string', description: 'setor que vai receber a equipe' },
+        },
+        required: ['fornecedor_id'],
+      },
+      executar: async ({ fornecedor_id }) => {
+        const linhas = ctx.planilha
+        if (!linhas?.length) {
+          return 'Não há planilha anexada nesta conversa. Peça para a pessoa anexar o arquivo no clipe ao lado do campo de mensagem e mandar de novo.'
+        }
+        const barrado = exigirSetor(perfil, fornecedor_id)
+        if (barrado) return barrado
+        if (perfil.role === 'supervisor') return 'Supervisor não importa planilha. Fale com o administrador da organização.'
+
+        const { data: setor } = await supabaseAdmin
+          .from('fornecedores')
+          .select('id, nome, evento_id, eventos(nome)')
+          .eq('id', fornecedor_id)
+          .single()
+        if (!setor) return 'Setor não encontrado.'
+        const erro = await exigirEvento(perfil, setor.evento_id)
+        if (erro) return erro
+
+        const resumo = resumirPlanilha(linhas)
+        const nomeEvento = (setor.eventos as unknown as { nome: string } | null)?.nome ?? ''
+
+        // A operação carrega a contagem: se a pessoa trocar o arquivo depois de
+        // confirmar, a confirmação antiga não vale pro anexo novo.
+        const operacao = `importar_planilha:${fornecedor_id}:${linhas.length}`
+        if (!confirmacoes.has(operacao)) {
+          return JSON.stringify(pedirConfirmacao(
+            operacao,
+            `Cadastrar ${linhas.length} pessoa${linhas.length !== 1 ? 's' : ''} da planilha no setor "${setor.nome}"${nomeEvento ? ` do evento ${nomeEvento}` : ''}`,
+            { ...resumo, setor: setor.nome, evento: nomeEvento },
+            'quantas pessoas vão entrar e em qual setor, avisando sobre linhas incompletas se houver',
+            'criar'
+          ))
+        }
+
+        const res = await importarFuncionarios(
+          { role: perfil.role, organizacao_id: perfil.organizacao_id },
+          fornecedor_id,
+          linhas
+        )
+        if (!res.ok) return res.error
+
+        await registrarAuditoriaIA(perfil, 'importar_planilha', {
+          fornecedor_id, setor: setor.nome, evento_id: setor.evento_id, ...res,
+        })
+        return JSON.stringify({
+          ...res,
+          setor: setor.nome,
+          observacao: [
+            res.duplicados ? `${res.duplicados} já estavam neste evento e foram ignorados, sem duplicar ninguém.` : null,
+            res.invalidos ? `${res.invalidos} linha(s) tinham CPF inválido e ficaram de fora — precisam ser corrigidas na planilha.` : null,
+            res.reaproveitados ? `${res.reaproveitados} já estavam na base do Credenciei: telefone, cargo e PIX que faltavam foram preenchidos sozinhos.` : null,
+          ].filter(Boolean).join(' ') || null,
         })
       },
     }),

@@ -3,6 +3,14 @@ import { getPerfil } from '@/lib/supabase-server'
 import { conversar, type MensagemChat } from '@/lib/ia/agente'
 import type { PedidoConfirmacao } from '@/lib/ia/ferramentas'
 import { mensagemAmigavel } from '@/lib/erros'
+import type { LinhaPlanilha } from '@/lib/planilha'
+
+/**
+ * Teto de linhas por anexo. Segura tanto o tempo da função quanto uma planilha
+ * enorme mandada por engano; acima disso a importação pela tela do evento é o
+ * caminho certo, porque não depende de uma volta do modelo.
+ */
+const MAX_LINHAS_PLANILHA = 1000
 
 // A conversa pode levar dezenas de segundos quando o modelo encadeia várias
 // ferramentas antes de responder.
@@ -33,7 +41,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let corpo: { mensagens?: MensagemChat[]; confirmacoes?: string[]; telaAtual?: string }
+  let corpo: {
+    mensagens?: MensagemChat[]
+    confirmacoes?: string[]
+    telaAtual?: string
+    planilha?: LinhaPlanilha[]
+  }
   try {
     corpo = await request.json()
   } catch {
@@ -45,6 +58,25 @@ export async function POST(request: NextRequest) {
   )
   if (!mensagens.length) {
     return Response.json({ error: 'Escreva uma pergunta.' }, { status: 400 })
+  }
+
+  // As linhas vêm do navegador: normaliza tudo pra texto antes de circular.
+  // Sem isso, um campo numérico faria .trim() estourar lá dentro e o usuário
+  // veria um erro genérico no meio da conversa.
+  const texto = (v: unknown) => (v == null ? '' : String(v))
+  const planilha: LinhaPlanilha[] | undefined = Array.isArray(corpo.planilha)
+    ? corpo.planilha.map(l => ({
+        nome: texto(l?.nome), cpf: texto(l?.cpf), telefone: texto(l?.telefone),
+        chavePix: texto(l?.chavePix), empresa: texto(l?.empresa),
+        cargo: texto(l?.cargo), valor: texto(l?.valor),
+      }))
+    : undefined
+
+  if (planilha && planilha.length > MAX_LINHAS_PLANILHA) {
+    return Response.json(
+      { error: `Esta planilha tem ${planilha.length} linhas — muita coisa para o chat. Importe pela tela do setor, dentro do evento.` },
+      { status: 413 }
+    )
   }
 
   const encoder = new TextEncoder()
@@ -65,6 +97,7 @@ export async function POST(request: NextRequest) {
     mensagens,
     confirmacoes: Array.isArray(corpo.confirmacoes) ? corpo.confirmacoes : [],
     telaAtual: typeof corpo.telaAtual === 'string' ? corpo.telaAtual : undefined,
+    planilha,
     aoPedirConfirmacao: pedido => pedidosDeConfirmacao.push(pedido),
   })
 

@@ -1,5 +1,14 @@
 export type Papel = 'user' | 'assistant'
-export type Confirmacao = { operacao: string; resumo: string; impacto: Record<string, unknown> }
+/**
+ * `tipo` só muda a cara do cartão: exclusão pede vermelho e alarme, criação em
+ * lote pede um aviso sóbrio. A trava é a mesma nos dois casos.
+ */
+export type Confirmacao = {
+  operacao: string
+  resumo: string
+  impacto: Record<string, unknown>
+  tipo?: 'excluir' | 'criar'
+}
 export type Mensagem = {
   papel: Papel
   texto: string

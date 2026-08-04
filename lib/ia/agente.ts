@@ -2,6 +2,7 @@ import { GoogleGenAI, ThinkingLevel, type Content, type FunctionDeclaration } fr
 import { CONHECIMENTO_DO_SISTEMA } from './conhecimento'
 import { ferramentasPara, type ContextoIA, type PedidoConfirmacao, type PerfilIA } from './ferramentas'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
+import { resumirPlanilha, type LinhaPlanilha } from '@/lib/planilha'
 
 const MODELO = 'gemini-3.6-flash'
 
@@ -111,7 +112,7 @@ async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<
 }
 
 /** Fatos voláteis da conversa — vão na instrução de sistema, que é por chamada. */
-function contextoDaVez(perfil: PerfilIA, telaAtual?: string): string {
+function contextoDaVez(perfil: PerfilIA, telaAtual?: string, planilha?: LinhaPlanilha[]): string {
   const agora = new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo',
   }).format(new Date())
@@ -119,6 +120,13 @@ function contextoDaVez(perfil: PerfilIA, telaAtual?: string): string {
     `Quem está falando com você: ${perfil.nome} (${ROLE_LABELS[perfil.role as Role] ?? perfil.role}).`,
     `Agora: ${agora} (horário de Brasília).`,
     telaAtual ? `Tela em que a pessoa está: ${telaAtual}` : null,
+    // O conteúdo da planilha não entra na conversa: o modelo recebe só a
+    // contagem e os cargos citados. Nenhum CPF passa por ele.
+    planilha?.length
+      ? 'A pessoa ANEXOU uma planilha de equipe nesta conversa. Resumo do que veio nela (os dados das pessoas você não vê, e não precisa): '
+        + JSON.stringify(resumirPlanilha(planilha))
+        + '. Para cadastrar essa equipe use a ferramenta importar_planilha — nunca cadastre linha por linha.'
+      : null,
   ].filter(Boolean).join('\n')
 }
 
@@ -135,12 +143,14 @@ export async function* conversar(params: {
   mensagens: MensagemChat[]
   confirmacoes: string[]
   telaAtual?: string
+  planilha?: LinhaPlanilha[]
   aoPedirConfirmacao?: (pedido: PedidoConfirmacao) => void
 }): AsyncGenerator<EventoDaConversa> {
   const ctx: ContextoIA = {
     perfil: params.perfil,
     confirmacoes: new Set(params.confirmacoes),
     aoPedirConfirmacao: params.aoPedirConfirmacao,
+    planilha: params.planilha,
   }
 
   const ferramentas = ferramentasPara(ctx)
@@ -162,7 +172,7 @@ export async function* conversar(params: {
     systemInstruction: [
       COMPORTAMENTO,
       CONHECIMENTO_DO_SISTEMA,
-      contextoDaVez(params.perfil, params.telaAtual),
+      contextoDaVez(params.perfil, params.telaAtual, params.planilha),
     ].join('\n\n'),
     tools: [{ functionDeclarations: declaracoes }],
     /*

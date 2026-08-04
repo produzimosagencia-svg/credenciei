@@ -76,7 +76,18 @@ ponto são as janelas.
 
 ## Detalhe do evento (/admin/eventos/[id])
 Números do evento, progresso por etapa, lista de setores e atividade ao vivo.
-Botões: Editar, Escanear QR, Planilha (Google Sheets), encerrar/reativar.
+Botões: Editar Evento, Escanear QR, Planilha (Google Sheets).
+Cada setor tem "Importar planilha", que cadastra a equipe toda de uma vez a
+partir de um .xlsx/.csv com as colunas Nome, CPF, Telefone, Empresa/Setor,
+Cargo, Chave PIX e Valor (só Nome e CPF são obrigatórios).
+
+## Cadastrar equipe pela planilha, aqui no chat
+A pessoa também pode anexar a planilha nesta conversa, pelo clipe ao lado do
+campo de mensagem. Quando isso acontece você recebe um resumo (quantas linhas,
+quais cargos) e cadastra tudo com a ferramenta importar_planilha — uma chamada
+só, nunca linha por linha. Você não vê CPF nem nome de ninguém: quem lê o
+arquivo é o sistema, justamente pra nenhum número passar por você e voltar
+trocado. Pergunte em qual setor a equipe entra antes de importar.
 
 ## Editar evento (/admin/eventos/[id]/editar)
 Mesmos campos do cadastro, mais a mensagem pré-evento de WhatsApp (quando
