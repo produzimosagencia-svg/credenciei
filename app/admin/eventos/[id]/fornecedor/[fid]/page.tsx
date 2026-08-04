@@ -6,7 +6,7 @@ import { ArrowLeft, ScanLine, Users, UserCheck, AlertTriangle, Wallet } from 'lu
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import CopyLinkButton from '../../CopyLinkButton'
 import NovoFuncionarioModal from './NovoFuncionarioModal'
-import RegistroManualModal from './RegistroManualModal'
+import { UserSearch } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -26,8 +26,8 @@ const TUTORIAL: TutorialConfig = {
       descricao: 'Se alguém não conseguiu se cadastrar pelo link, você pode adicionar a pessoa aqui na mão.' },
     { alvo: 'setor-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'No dia do evento, use aqui para ler o QR Code da equipe na entrada e na saída.' },
-    { alvo: 'setor-manual', titulo: 'Registro manual', posicao: 'bottom',
-      descricao: 'Quando o QR não funcionar (celular sem bateria, código danificado), registre a presença manualmente por aqui.' },
+    { alvo: 'setor-manual', titulo: 'Quem perdeu o horário', posicao: 'bottom',
+      descricao: 'Se alguém não bateu o ponto na hora (sem bateria, esqueceu, QR danificado), abra aqui: você localiza a pessoa pelo CPF, tira uma foto dela e o sistema registra sozinho a batida que está faltando.' },
     { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
       descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
     { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
@@ -57,7 +57,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo').eq('fornecedor_id', fid).order('nome'),
     supabase
       .from('registros')
-      .select('funcionario_id, tipo, created_at, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, funcionarios!inner(fornecedor_id)')
+      .select('funcionario_id, tipo, created_at, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
       .eq('evento_id', id)
       .eq('funcionarios.fornecedor_id', fid)
       .in('tipo', ['entrada', 'meio', 'fim']),
@@ -108,6 +108,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       lng: r.longitude ?? null,
       enderecoAproximado: r.endereco_aproximado ?? null,
       registradoPor: r.criado_por_perfil_id ? nomePorPerfil[r.criado_por_perfil_id] ?? null : null,
+      assistido: r.registro_manual === true,
+      justificativa: r.justificativa ?? null,
     }
   }
 
@@ -180,7 +182,14 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           >
             <ScanLine className="w-4 h-4" /> Escanear QR
           </Link>
-          <div data-tutorial="setor-manual"><RegistroManualModal fornecedorId={fid} eventoId={id} /></div>
+          <Link
+            href="/admin/localizar"
+            data-tutorial="setor-manual"
+            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-white border border-slate-200 hover:border-brand-300 hover:text-brand-600 text-slate-600 rounded-xl transition-all shadow-sm font-semibold"
+          >
+            <UserSearch className="w-3.5 h-3.5" />
+            Localizar funcionário
+          </Link>
           <div data-tutorial="setor-novo"><NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} /></div>
           <div data-tutorial="setor-link"><CopyLinkButton link={formLink} label="Copiar link do formulário" /></div>
         </div>

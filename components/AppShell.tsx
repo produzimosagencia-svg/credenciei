@@ -3,11 +3,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine } from 'lucide-react'
+import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarEventos, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
+import AssistenteIA from '@/components/ia/AssistenteIA'
 
 type Perfil = { id: string; nome: string; email: string; role: Role }
 
@@ -24,7 +25,10 @@ function navItemsPara(role: string): NavItem[] {
   if (ehMaster(role)) itens.push({ href: '/admin/organizacoes', label: 'Organizações', icon: Building2 })
   if (podeGerenciarEventos(role)) itens.push({ href: '/admin/eventos', label: 'Eventos', icon: CalendarDays })
   if (podeGerenciarUsuarios(role)) itens.push({ href: '/admin/usuarios', label: 'Usuários', icon: Users })
-  if (podeEscanear(role)) itens.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })
+  if (podeEscanear(role)) {
+    itens.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })
+    itens.push({ href: '/admin/localizar', label: 'Localizar funcionário', icon: UserSearch })
+  }
   return itens
 }
 
@@ -212,6 +216,9 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
           </div>
         </div>
       )}
+
+      {/* Assistente: disponível em qualquer tela do painel */}
+      <AssistenteIA />
     </div>
   )
 }

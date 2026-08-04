@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User, UserCheck, UserX } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User, UserCheck, UserX, ClipboardCheck } from 'lucide-react'
 import { deletarFuncionario, alternarAtivacao } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
@@ -19,6 +19,9 @@ export type Presenca = {
   lng: number | null
   enderecoAproximado: string | null
   registradoPor: string | null
+  /** Batida regularizada pelo supervisor, não pela própria pessoa. */
+  assistido: boolean
+  justificativa: string | null
 } | null
 
 export type StatusEtapa = 'feito' | 'aberto' | 'fechado' | 'indefinido'
@@ -359,6 +362,14 @@ function CelulaPresenca({ p, status }: { p: Presenca; status: StatusEtapa }) {
       <div className="flex items-center gap-1.5">
         <span className={`w-2 h-2 rounded-full shrink-0 ${sem.dot}`} title={sem.title} />
         <span className="text-green-600 text-xs font-semibold">{formatarBR(p.feitoEm, 'curto')}</span>
+        {p.assistido && (
+          <span
+            className="shrink-0 text-amber-500"
+            title={`Batida registrada por supervisor${p.registradoPor ? ` (${p.registradoPor})` : ''}`}
+          >
+            <ClipboardCheck className="w-3.5 h-3.5" />
+          </span>
+        )}
         {p.fotoUrl && (
           <a href={p.fotoUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-brand-500" title="Ver foto">
             <Camera className="w-3.5 h-3.5" />

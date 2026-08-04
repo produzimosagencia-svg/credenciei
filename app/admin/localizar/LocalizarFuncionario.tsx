@@ -1,0 +1,260 @@
+'use client'
+import { useRef, useState, useTransition } from 'react'
+import {
+  Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
+  MapPin, Clock, Building2, IdCard, ShieldCheck,
+} from 'lucide-react'
+import { localizarFuncionarioPorCpf, registrarPresencaAssistida, type FuncionarioLocalizado } from '@/lib/actions'
+import { formatCpf } from '@/lib/format'
+import { formatarBR } from '@/lib/tz'
+
+// Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
+function comprimir(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const max = 640
+      let { width, height } = img
+      if (width > height && width > max) { height = Math.round((height * max) / width); width = max }
+      else if (height >= width && height > max) { width = Math.round((width * max) / height); height = max }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return reject(new Error('canvas'))
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas.toDataURL('image/jpeg', 0.7))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')) }
+    img.src = url
+  })
+}
+
+/** GPS é prova de auditoria, não requisito: se o aparelho negar, o registro segue. */
+function pegarLocalizacao(): Promise<{ latitude: number; longitude: number } | null> {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null)
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  })
+}
+
+export default function LocalizarFuncionario() {
+  const [cpf, setCpf] = useState('')
+  const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
+  const [foto, setFoto] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [sucesso, setSucesso] = useState<{ nome: string; etapa: string } | null>(null)
+  const [buscando, startBusca] = useTransition()
+  const [registrando, startRegistro] = useTransition()
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const recomecar = () => {
+    setCpf(''); setFunc(null); setFoto(null); setErro(null); setSucesso(null)
+  }
+
+  const buscar = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErro(null); setFunc(null); setFoto(null)
+    startBusca(async () => {
+      const res = await localizarFuncionarioPorCpf(cpf)
+      if (res.error) return setErro(res.error)
+      setFunc(res.funcionario!)
+    })
+  }
+
+  const onFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      setFoto(await comprimir(file))
+      setErro(null)
+    } catch {
+      setErro('Não foi possível processar essa foto. Tente tirar de novo.')
+    }
+  }
+
+  const registrar = () => {
+    if (!func || !foto) return
+    setErro(null)
+    startRegistro(async () => {
+      const gps = await pegarLocalizacao()
+      const res = await registrarPresencaAssistida(func.id, {
+        fotoBase64: foto,
+        latitude: gps?.latitude,
+        longitude: gps?.longitude,
+        dispositivo: navigator.userAgent,
+      })
+      if (res.error) return setErro(res.error)
+      setSucesso({ nome: res.nome ?? func.nome, etapa: res.etapa ?? '' })
+    })
+  }
+
+  if (sucesso) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-3 shadow-sm">
+        <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />
+        <div>
+          <p className="text-slate-800 font-bold text-lg">Presença registrada</p>
+          <p className="text-slate-500 text-sm mt-1">
+            <strong>{sucesso.nome}</strong> — {sucesso.etapa.toLowerCase()}
+          </p>
+        </div>
+        <p className="text-slate-400 text-xs">
+          O registro ficou marcado como feito por você, com a foto, o horário e a localização.
+        </p>
+        <button onClick={recomecar} className="btn-press w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold text-sm shadow-md shadow-brand-200">
+          Localizar outra pessoa
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Busca por CPF */}
+      <form onSubmit={buscar} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-busca">
+        <label className="text-sm font-medium text-slate-700 block">CPF do funcionário</label>
+        <div className="flex gap-2">
+          <input
+            required
+            autoFocus
+            value={cpf}
+            onChange={e => { setCpf(formatCpf(e.target.value)); setErro(null) }}
+            placeholder="000.000.000-00"
+            className="input flex-1"
+            inputMode="numeric"
+          />
+          <button
+            type="submit"
+            disabled={buscando}
+            className="btn-press shrink-0 flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white px-4 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+          >
+            <Search className="w-4 h-4" />
+            {buscando ? '...' : 'Buscar'}
+          </button>
+        </div>
+        <p className="text-slate-400 text-[11px]">Você só localiza pessoas dos setores sob sua responsabilidade.</p>
+      </form>
+
+      {erro && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+          <p className="text-red-600 text-xs font-medium">{erro}</p>
+        </div>
+      )}
+
+      {func && (
+        <>
+          {/* Ficha da pessoa */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4" data-tutorial="loc-ficha">
+            <div className="flex items-start gap-3">
+              {func.fotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={func.fotoUrl} alt={func.nome} className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shrink-0" />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0">
+                  <User className="w-7 h-7 text-slate-300" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-800 font-bold leading-tight">{func.nome}</p>
+                <p className="text-slate-400 text-xs mt-0.5 tabular-nums">{formatCpf(func.cpf)}</p>
+                <span className={`inline-block mt-1.5 text-[11px] px-2 py-0.5 rounded-full font-semibold ${func.ativo ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                  {func.ativo ? 'Ativo' : 'Não ativado'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs border-t border-slate-100 pt-3">
+              <Dado icone={IdCard} rotulo="Cargo" valor={func.cargo || '—'} />
+              <Dado icone={Building2} rotulo="Empresa" valor={func.empresa || '—'} />
+              <Dado icone={Building2} rotulo="Setor" valor={func.setorNome} />
+              <Dado icone={ShieldCheck} rotulo="Supervisor" valor={func.supervisorNome || '—'} />
+              <Dado
+                icone={Clock}
+                rotulo="Última batida"
+                valor={func.ultimaBatida ? `${func.ultimaBatida.rotulo} • ${formatarBR(func.ultimaBatida.quandoISO, 'curto')}` : 'Nenhuma ainda'}
+              />
+              <Dado icone={MapPin} rotulo="Evento" valor={func.eventoNome} />
+            </div>
+
+            <div className={`rounded-xl p-3 border ${func.proximaPendente ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-wide ${func.proximaPendente ? 'text-amber-600' : 'text-green-600'}`}>
+                Batida pendente
+              </p>
+              <p className={`text-sm font-bold mt-0.5 ${func.proximaPendente ? 'text-amber-800' : 'text-green-800'}`}>
+                {func.proximaPendente ? func.proximaPendente.rotulo : 'Nenhuma — tudo registrado'}
+              </p>
+            </div>
+          </div>
+
+          {func.proximaPendente && func.ativo && (
+            <>
+              {/* Foto de validação */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-foto">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Validar funcionário</p>
+                  <p className="text-slate-400 text-[11px] mt-0.5">
+                    Tire uma foto do rosto da pessoa agora. É ela que comprova que o colaborador estava na sua frente.
+                  </p>
+                </div>
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFoto} />
+                {foto ? (
+                  <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={foto} alt="Foto tirada agora" className="w-20 h-20 rounded-xl object-cover border border-slate-200" />
+                    <button type="button" onClick={() => setFoto(null)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                      <X className="w-3 h-3" /> Tirar de novo
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="btn-press w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-4 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                  >
+                    <CameraIcon className="w-4 h-4" /> Abrir câmera
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={registrar}
+                disabled={!foto || registrando}
+                data-tutorial="loc-registrar"
+                className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:active:scale-100 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg shadow-brand-500/25"
+              >
+                {registrando ? 'Registrando...' : `Registrar batida — ${func.proximaPendente.rotulo}`}
+              </button>
+              {!foto && <p className="text-slate-400 text-[11px] text-center">Tire a foto para liberar o registro.</p>}
+            </>
+          )}
+
+          {!func.ativo && (
+            <p className="text-xs text-red-500 text-center">
+              Esta pessoa ainda não foi ativada no evento. Ative no painel do setor antes de registrar a presença.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function Dado({ icone: Icone, rotulo, valor }: { icone: React.ElementType; rotulo: string; valor: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-slate-400 flex items-center gap-1 text-[11px]">
+        <Icone className="w-3 h-3 shrink-0" /> {rotulo}
+      </p>
+      <p className="text-slate-700 font-medium truncate">{valor}</p>
+    </div>
+  )
+}

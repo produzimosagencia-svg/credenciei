@@ -1135,60 +1135,213 @@ export async function buscarCadastroPorCpf(
 }
 
 /**
- * Registro manual de presença pelo supervisor — plano B para funcionário sem
- * celular/bateria. O supervisor digita o CPF e tira uma foto DA PESSOA na hora
- * (obrigatória, para o próprio supervisor não conseguir burlar); o sistema
- * vincula ao cadastro pelo CPF. Fica marcado como registro manual, com o
- * supervisor responsável, para auditoria. Não valida a janela de horário: o
- * caso de uso típico é o supervisor resolvendo a pendência DEPOIS do alerta
- * de quem não bateu (janela já fechada).
+ * Ordem canônica das etapas. "Próxima pendente" é a primeira desta lista sem
+ * registro — é o que o supervisor regulariza, sem escolher nada.
  */
-export async function registrarPresencaManual(
-  fornecedorId: string,
-  eventoId: string,
-  dados: { cpf: string; momento: MomentoPresenca; fotoBase64: string }
-): Promise<{ ok?: boolean; error?: string; nome?: string }> {
-  let perfil
-  try {
-    perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
-  } catch {
-    return { error: 'Sem permissão para registrar neste setor.' }
-  }
-  if (!['entrada', 'meio', 'fim'].includes(dados.momento)) return { error: 'Etapa inválida' }
+const ORDEM_ETAPAS: { momento: MomentoPresenca; rotulo: string }[] = [
+  { momento: 'entrada', rotulo: 'Entrada' },
+  { momento: 'meio', rotulo: 'Meio do evento' },
+  { momento: 'fim', rotulo: 'Saída' },
+]
 
-  const cpf = dados.cpf.replace(/\D/g, '')
-  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números.' }
+/** Forma do join funcionário → fornecedor → evento usado no registro assistido. */
+type FornecedorComEvento = {
+  nome: string
+  evento_id: string
+  eventos: { id: string; nome: string; ativo: boolean; organizacao_id: string | null }
+}
+const comEvento = (v: unknown) => v as FornecedorComEvento | null
+
+export type FuncionarioLocalizado = {
+  id: string
+  nome: string
+  cpf: string
+  cargo: string | null
+  empresa: string | null
+  ativo: boolean
+  fotoUrl: string | null
+  setorId: string
+  setorNome: string
+  supervisorNome: string | null
+  eventoId: string
+  eventoNome: string
+  ultimaBatida: { rotulo: string; quandoISO: string } | null
+  proximaPendente: { momento: MomentoPresenca; rotulo: string } | null
+}
+
+/**
+ * Localiza um funcionário pelo CPF para o registro assistido, já com o que o
+ * supervisor precisa ver antes de confirmar: quem é a pessoa, de qual setor, o
+ * que ela já bateu e o que está faltando.
+ *
+ * O escopo é o mesmo do resto do sistema: supervisor só enxerga o próprio
+ * setor; admin, a própria organização; master, todo mundo. A busca é feita
+ * apenas em eventos ATIVOS — regularizar ponto de evento encerrado não é o
+ * caso de uso e só abriria espaço pra erro.
+ */
+export async function localizarFuncionarioPorCpf(
+  cpfBruto: string
+): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+
+  const cpf = cpfBruto.replace(/\D/g, '')
+  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números digitados.' }
+
+  const { data: candidatos } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, ativo, organizacao_id))')
+    .eq('cpf', cpf)
+    .eq('fornecedores.eventos.ativo', true)
+
+  // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
+  // "não encontrado" também protege quem está fora do escopo dele.
+  const visiveis = (candidatos ?? []).filter(f => {
+    if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
+    if (ehMaster(perfil.role)) return true
+    return comEvento(f.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
+  })
+
+  if (!visiveis.length) {
+    return {
+      error: perfil.role === 'supervisor'
+        ? 'Nenhuma pessoa com este CPF no seu setor. Confira o número ou fale com o organizador.'
+        : 'Nenhuma pessoa com este CPF nos eventos ativos.',
+    }
+  }
+  // Mesmo CPF em mais de um evento ativo: usa o cadastro mais recente.
+  const func = visiveis[visiveis.length - 1]
+  const fornecedor = comEvento(func.fornecedores)
+  const evento = fornecedor?.eventos
+  if (!evento) return { error: 'Não foi possível identificar o evento desta pessoa.' }
+
+  const [{ data: registros }, { data: supervisores }] = await Promise.all([
+    supabaseAdmin
+      .from('registros')
+      .select('tipo, created_at')
+      .eq('funcionario_id', func.id)
+      .eq('evento_id', evento.id),
+    supabaseAdmin
+      .from('perfis')
+      .select('nome')
+      .eq('fornecedor_id', func.fornecedor_id)
+      .eq('role', 'supervisor')
+      .limit(1),
+  ])
+
+  const feitos = new Map((registros ?? []).map(r => [r.tipo as MomentoPresenca, r.created_at as string]))
+  const proxima = ORDEM_ETAPAS.find(e => !feitos.has(e.momento)) ?? null
+
+  // Última batida = a mais recente no relógio, não a última da ordem: alguém
+  // pode ter batido o meio sem ter batido a entrada.
+  const ultima = [...feitos.entries()]
+    .map(([momento, quando]) => ({
+      rotulo: ORDEM_ETAPAS.find(e => e.momento === momento)?.rotulo ?? momento,
+      quandoISO: quando,
+    }))
+    .sort((a, b) => b.quandoISO.localeCompare(a.quandoISO))[0] ?? null
+
+  let fotoUrl: string | null = null
+  if (func.foto_perfil_path) {
+    const { data } = await supabaseAdmin.storage.from('presencas').createSignedUrl(func.foto_perfil_path, 60 * 30)
+    fotoUrl = data?.signedUrl ?? null
+  }
+
+  return {
+    funcionario: {
+      id: func.id,
+      nome: func.nome,
+      cpf: func.cpf,
+      cargo: func.cargo,
+      empresa: func.empresa,
+      ativo: func.ativo !== false,
+      fotoUrl,
+      setorId: func.fornecedor_id,
+      setorNome: fornecedor?.nome ?? '—',
+      supervisorNome: supervisores?.[0]?.nome ?? null,
+      eventoId: evento.id,
+      eventoNome: evento.nome,
+      ultimaBatida: ultima,
+      proximaPendente: proxima ? { momento: proxima.momento, rotulo: proxima.rotulo } : null,
+    },
+  }
+}
+
+const JUSTIFICATIVA_ASSISTIDO =
+  'Batida registrada por supervisor devido à ausência de registro pelo colaborador.'
+
+/**
+ * Registro assistido: o supervisor localizou a pessoa, tirou a foto do rosto
+ * dela e confirma. O sistema decide sozinho QUAL etapa gravar (a primeira
+ * pendente) — o supervisor nunca escolhe, o que evita registrar a etapa errada
+ * e tira dele a chance de escolher a que lhe convém.
+ *
+ * Não valida janela de horário de propósito: existe justamente para o caso em
+ * que a janela já fechou. O que sustenta a confiança no registro é a trilha de
+ * auditoria — autor, foto da pessoa na hora, GPS, aparelho e motivo.
+ */
+export async function registrarPresencaAssistida(
+  funcionarioId: string,
+  dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string }
+): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
 
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
-  if (!match) return { error: 'A foto é obrigatória no registro manual.' }
+  if (!match) return { error: 'A foto da pessoa é obrigatória — é ela que comprova que o colaborador estava presente.' }
 
-  const { data: funcs } = await supabaseAdmin
+  const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, ativo, fornecedor_id, fornecedores!inner(evento_id)')
-    .eq('cpf', cpf)
-    .eq('fornecedores.evento_id', eventoId)
-    .limit(1)
-  const func = funcs?.[0]
-  if (!func) return { error: 'Nenhum funcionário com este CPF neste evento.' }
-  if (func.fornecedor_id !== fornecedorId) return { error: 'Este funcionário pertence a outro setor.' }
-  if (func.ativo === false) return { error: 'Funcionário não está ativado. Ative-o no painel antes de registrar.' }
+    .select('id, nome, ativo, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func) return { error: 'Funcionário não encontrado.' }
+
+  const evento = comEvento(func.fornecedores)?.eventos
+
+  if (perfil.role === 'supervisor') {
+    if (func.fornecedor_id !== perfil.fornecedor_id) return { error: 'Esta pessoa é de outro setor. Você só registra a sua equipe.' }
+  } else if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
+    return { error: 'Esta pessoa é de outra organização.' }
+  }
+
+  if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
+  if (func.ativo === false) return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de registrar.' }
+
+  // Recalcula a etapa pendente no servidor: o que a tela mostrou pode ter
+  // mudado (o próprio colaborador pode ter batido nesse meio tempo).
+  const { data: registros } = await supabaseAdmin
+    .from('registros')
+    .select('tipo')
+    .eq('funcionario_id', func.id)
+    .eq('evento_id', evento.id)
+  const feitos = new Set((registros ?? []).map(r => r.tipo))
+  const pendente = ORDEM_ETAPAS.find(e => !feitos.has(e.momento))
+  if (!pendente) return { error: 'Esta pessoa já registrou todas as etapas — não há nada pendente.' }
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'
   const buffer = Buffer.from(match[2], 'base64')
-  const path = `${eventoId}/${func.id}/manual-${dados.momento}.${ext}`
+  const path = `${evento.id}/${func.id}/assistido-${pendente.momento}.${ext}`
   const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
   if (up.error) return { error: 'Não foi possível salvar a foto. Tente de novo.' }
 
-  const { error } = await upsertRegistro(func.id, eventoId, dados.momento, {
+  const temGps = typeof dados.latitude === 'number' && typeof dados.longitude === 'number'
+  const { data: registro, error } = await upsertRegistro(func.id, evento.id, pendente.momento, {
     foto_url: path,
     criado_por_perfil_id: perfil.id,
     registro_manual: true,
+    justificativa: JUSTIFICATIVA_ASSISTIDO,
+    dispositivo: dados.dispositivo?.slice(0, 300) ?? null,
+    ...(temGps ? { latitude: dados.latitude, longitude: dados.longitude } : {}),
   })
-  if (error) return { error: 'Erro ao registrar. Tente de novo.' }
+  if (error) return { error: mensagemAmigavel(error) }
 
-  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
-  return { ok: true, nome: func.nome }
+  if (registro && temGps) {
+    after(() => sincronizarEndereco(registro.id, dados.latitude!, dados.longitude!).catch(console.error))
+  }
+  revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+  return { ok: true, nome: func.nome, etapa: pendente.rotulo }
 }
 
 /** Gera URLs assinadas (temporárias) para o admin ver as fotos de presença. */

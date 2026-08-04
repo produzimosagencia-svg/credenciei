@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check } from 'lucide-react'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck } from 'lucide-react'
 import { atualizarValorReceber, alternarPagamento } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -219,11 +219,21 @@ function LinhaPresenca({ label, p }: { label: string; p: Presenca }) {
           <MapPin className="w-2.5 h-2.5 shrink-0" /> {p.enderecoAproximado}
         </p>
       )}
-      {p?.registradoPor && (
+      {/* Batida regularizada pelo supervisor: destaca em laranja e mostra a
+          trilha de auditoria (quem, por quê), porque não foi a própria pessoa. */}
+      {p?.assistido ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 space-y-0.5">
+          <p className="text-amber-700 text-[11px] font-semibold flex items-center gap-1">
+            <ClipboardCheck className="w-3 h-3 shrink-0" /> Batida registrada por supervisor
+          </p>
+          {p.registradoPor && <p className="text-amber-600 text-[11px]">Responsável: {p.registradoPor}</p>}
+          {p.justificativa && <p className="text-amber-600/80 text-[11px] leading-snug">{p.justificativa}</p>}
+        </div>
+      ) : p?.registradoPor ? (
         <p className="text-slate-400 text-[11px] flex items-center gap-1">
           <ScanLine className="w-2.5 h-2.5 shrink-0" /> Registrado por {p.registradoPor}
         </p>
-      )}
+      ) : null}
     </div>
   )
 }
