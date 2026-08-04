@@ -1,7 +1,7 @@
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { podeGerenciarUsuarios, ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
@@ -16,17 +16,17 @@ const TUTORIAL: TutorialConfig = {
   tela: 'usuarios-lista',
   versao: 1,
   passos: [
-    { alvo: 'usr-resumo', titulo: 'Quem tem acesso ao sistema', posicao: 'bottom', icone: Users,
+    { alvo: 'usr-resumo', titulo: 'Quem tem acesso ao sistema', posicao: 'bottom', icone: 'Users',
       descricao: 'Esta lista mostra todas as pessoas da sua organização que conseguem entrar no sistema. Não confunda com a equipe do evento: quem só trabalha no dia aparece dentro do setor, não aqui.' },
-    { alvo: 'usr-novo', titulo: 'Criar um acesso', posicao: 'left', icone: Plus,
+    { alvo: 'usr-novo', titulo: 'Criar um acesso', posicao: 'left', icone: 'Plus',
       descricao: 'Use para dar acesso a um supervisor. Ele recebe e-mail e senha por WhatsApp e passa a enxergar apenas o setor que você escolher.' },
-    { alvo: 'usr-papel', titulo: 'Papel', posicao: 'bottom', icone: ShieldCheck,
+    { alvo: 'usr-papel', titulo: 'Papel', posicao: 'bottom', icone: 'ShieldCheck',
       descricao: 'O papel define o que a pessoa enxerga. Administrador gerencia toda a organização — eventos, setores e equipe. Supervisor enxerga só o próprio setor: a equipe dele, o scanner e as presenças daquele setor.' },
-    { alvo: 'usr-setor', titulo: 'Setor / Eventos', posicao: 'bottom', icone: CalendarDays,
+    { alvo: 'usr-setor', titulo: 'Setor / Eventos', posicao: 'bottom', icone: 'CalendarDays',
       descricao: 'Para supervisor, mostra a qual setor ele está preso. Para administrador, mostra quantos eventos ele já criou.' },
-    { alvo: 'usr-status', titulo: 'Status', posicao: 'bottom', icone: Users,
+    { alvo: 'usr-status', titulo: 'Status', posicao: 'bottom', icone: 'Users',
       descricao: 'Ativo entra normalmente. Inativo é bloqueado no login sem perder o histórico — use quando alguém sai da equipe mas você quer manter os registros antigos.' },
-    { alvo: 'usr-acoes', titulo: 'Ações', posicao: 'left', icone: Plus,
+    { alvo: 'usr-acoes', titulo: 'Ações', posicao: 'left', icone: 'Plus',
       descricao: 'Aqui você edita os dados, bloqueia o acesso ou exclui de vez. Você nunca vê essas ações na sua própria linha — ninguém remove o próprio acesso por engano.' },
   ],
 }

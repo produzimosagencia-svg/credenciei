@@ -3,12 +3,12 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch } from 'lucide-react'
+import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch, Sparkles } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarEventos, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
-import AssistenteIA from '@/components/ia/AssistenteIA'
+import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
 
 type Perfil = { id: string; nome: string; email: string; role: Role }
 
@@ -90,6 +90,23 @@ function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: str
   )
 }
 
+/** Abre o assistente. Fica no menu, junto das outras seções — não é um
+ *  flutuante no canto: no menu ele é uma parte do sistema, não um adereço. */
+function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
+  const { abrir } = useAssistente()
+  return (
+    <div className="px-3 pb-1 shrink-0">
+      <button
+        onClick={() => { abrir(); onNavigate?.() }}
+        className="btn-press w-full flex items-center gap-3 text-sm px-3.5 py-2.5 rounded-xl font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors"
+      >
+        <Sparkles className="w-4 h-4 shrink-0" />
+        Credenciei IA
+      </button>
+    </div>
+  )
+}
+
 function BotaoSair({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="p-3 border-t border-slate-100 shrink-0">
@@ -130,6 +147,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
   }
 
   return (
+    <AssistenteIAProvider usuarioId={perfil.id}>
     <div className="min-h-screen bg-[#131320] flex">
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
@@ -140,6 +158,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
           <span className="font-bold text-slate-800 tracking-tight">Credenciei</span>
         </Link>
         <NavLinks nav={nav} pathname={pathname} />
+        <BotaoAssistente />
         <BotaoSair onLogout={handleLogout} />
       </aside>
 
@@ -212,13 +231,13 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
             </div>
 
             <NavLinks nav={nav} pathname={pathname} onNavigate={() => setMenuAberto(false)} />
+            <BotaoAssistente onNavigate={() => setMenuAberto(false)} />
             <BotaoSair onLogout={handleLogout} />
           </div>
         </div>
       )}
 
-      {/* Assistente: disponível em qualquer tela do painel */}
-      <AssistenteIA />
     </div>
+    </AssistenteIAProvider>
   )
 }

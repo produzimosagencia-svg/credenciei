@@ -7,9 +7,21 @@ export type TutorialPasso = {
   descricao: string
   /** Onde o balão aparece em relação ao elemento. Default: 'bottom'. */
   posicao?: TutorialPosicao
-  /** Ícone do lucide-react, quando ajudar a ilustrar o passo. Opcional. */
-  icone?: React.ElementType
+  /**
+   * Nome do ícone que ilustra o passo. É NOME, não o componente: o roteiro é
+   * montado em server component e entregue ao provider, que é client — e o
+   * Next não deixa atravessar função nessa fronteira. Quem resolve o nome pro
+   * componente é o TutorialOverlay, já do lado do cliente.
+   */
+  icone?: NomeIcone
 }
+
+/** Ícones disponíveis para os passos. Nome igual ao do lucide-react. */
+export type NomeIcone =
+  | 'Search' | 'IdCard' | 'Camera' | 'ClipboardCheck' | 'ListChecks'
+  | 'LogIn' | 'ScanLine' | 'Users' | 'Plus' | 'ShieldCheck'
+  | 'CalendarDays' | 'Building2' | 'MessageCircle' | 'KeyRound'
+  | 'MapPin' | 'Save'
 
 export type TutorialConfig = {
   /** Id único da tela — vira parte da chave salva no navegador. */

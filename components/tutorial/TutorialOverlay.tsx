@@ -1,7 +1,17 @@
 'use client'
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { TutorialPasso } from './types'
+import {
+  ChevronLeft, ChevronRight,
+  Search, IdCard, Camera, ClipboardCheck, ListChecks, LogIn, ScanLine, Users,
+  Plus, ShieldCheck, CalendarDays, Building2, MessageCircle, KeyRound, MapPin, Save,
+} from 'lucide-react'
+import type { NomeIcone, TutorialPasso } from './types'
+
+/** Nome do ícone → componente. A tradução acontece aqui, do lado do cliente. */
+const ICONES: Record<NomeIcone, React.ElementType> = {
+  Search, IdCard, Camera, ClipboardCheck, ListChecks, LogIn, ScanLine, Users,
+  Plus, ShieldCheck, CalendarDays, Building2, MessageCircle, KeyRound, MapPin, Save,
+}
 
 type Retangulo = { top: number; left: number; width: number; height: number }
 
@@ -201,9 +211,9 @@ export default function TutorialOverlay({
         </div>
 
         <div className="flex items-start gap-3">
-          {passo.icone && (
+          {passo.icone && ICONES[passo.icone] && (
             <div className="w-8 h-8 rounded-lg bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
-              <passo.icone className="w-4 h-4" />
+              {(() => { const Icone = ICONES[passo.icone!]; return <Icone className="w-4 h-4" /> })()}
             </div>
           )}
           <div className="space-y-1 min-w-0">

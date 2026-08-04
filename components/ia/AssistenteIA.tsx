@@ -1,18 +1,14 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Sparkles, X, ArrowUp, AlertTriangle, Loader2, Trash2 } from 'lucide-react'
-
-type Papel = 'user' | 'assistant'
-type Confirmacao = { operacao: string; resumo: string; impacto: Record<string, unknown> }
-type Mensagem = {
-  papel: Papel
-  texto: string
-  ferramenta?: string | null
-  confirmacoes?: Confirmacao[]
-  erro?: string
-}
+import {
+  Sparkles, X, ArrowUp, AlertTriangle, Loader2, Trash2, History, SquarePen, ArrowLeft,
+} from 'lucide-react'
+import {
+  apagarConversa, carregarConversas, novaConversa, quandoRelativo, salvarConversa, tituloDe,
+  type Confirmacao, type Conversa, type Mensagem,
+} from './historico'
 
 const SUGESTOES = [
   'Quem ainda não bateu o ponto?',
@@ -20,6 +16,30 @@ const SUGESTOES = [
   'Quais eventos estão ativos?',
   'Como funcionam as janelas de horário?',
 ]
+
+// ─── Abertura pela sidebar ───────────────────────────────────────────────────
+
+type AssistenteCtx = { abrir: () => void; aberto: boolean }
+const Ctx = createContext<AssistenteCtx | null>(null)
+
+/** Usado pelo item "Credenciei IA" do menu lateral. */
+export function useAssistente() {
+  const c = useContext(Ctx)
+  if (!c) throw new Error('useAssistente precisa estar dentro de <AssistenteIAProvider>')
+  return c
+}
+
+export function AssistenteIAProvider({ usuarioId, children }: { usuarioId: string; children: React.ReactNode }) {
+  const [aberto, setAberto] = useState(false)
+  return (
+    <Ctx.Provider value={{ abrir: () => setAberto(true), aberto }}>
+      {children}
+      {aberto && <ModalAssistente usuarioId={usuarioId} onFechar={() => setAberto(false)} />}
+    </Ctx.Provider>
+  )
+}
+
+// ─── Apresentação ────────────────────────────────────────────────────────────
 
 /** Converte [texto](/caminho) em link e **negrito** em <strong>, só isso. */
 function Formatado({ texto }: { texto: string }) {
@@ -29,11 +49,7 @@ function Formatado({ texto }: { texto: string }) {
       {partes.map((parte, i) => {
         const link = parte.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
         if (link) {
-          return (
-            <Link key={i} href={link[2]} className="text-brand-500 hover:underline font-medium">
-              {link[1]}
-            </Link>
-          )
+          return <Link key={i} href={link[2]} className="text-brand-500 hover:underline font-medium">{link[1]}</Link>
         }
         const negrito = parte.match(/^\*\*([^*]+)\*\*$/)
         if (negrito) return <strong key={i} className="text-slate-800 font-semibold">{negrito[1]}</strong>
@@ -56,9 +72,7 @@ export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
       </p>
       <ul className="text-red-600 text-[11px] space-y-0.5 pl-5">
         {Object.entries(c.impacto).map(([chave, valor]) => (
-          <li key={chave} className="list-disc">
-            {chave.replace(/_/g, ' ')}: <strong>{String(valor)}</strong>
-          </li>
+          <li key={chave} className="list-disc">{chave.replace(/_/g, ' ')}: <strong>{String(valor)}</strong></li>
         ))}
       </ul>
       <p className="text-red-500 text-[11px]">Não tem como desfazer.</p>
@@ -78,43 +92,53 @@ export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
 }
 
 /**
- * Credenciei IA — assistente disponível em todas as telas do painel.
+ * Modal central do Credenciei IA.
  *
- * A confirmação de exclusão só existe quando o SERVIDOR manda um evento
- * 'confirmar'; clicar reenvia a conversa com o id da operação liberado. Nada
- * que o modelo escreva no texto faz um botão desses aparecer.
+ * A confirmação de exclusão só aparece quando o SERVIDOR manda um evento
+ * 'confirmar'; clicar reenvia a conversa com o id liberado. Nada que o modelo
+ * escreva no texto faz um botão desses surgir.
  */
-export default function AssistenteIA() {
-  const [aberto, setAberto] = useState(false)
-  const [mensagens, setMensagens] = useState<Mensagem[]>([])
+function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar: () => void }) {
+  const [conversa, setConversa] = useState<Conversa>(() => novaConversa())
+  const [conversas, setConversas] = useState<Conversa[]>([])
+  const [verHistorico, setVerHistorico] = useState(false)
   const [entrada, setEntrada] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const confirmadas = useRef<string[]>([])
   const fimDaLista = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
 
-  useEffect(() => {
-    if (aberto) fimDaLista.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [mensagens, aberto])
+  const mensagens = conversa.mensagens
 
-  const enviar = async (texto: string, historicoBase?: Mensagem[]) => {
-    const historico = historicoBase ?? mensagens
-    const comUsuario: Mensagem[] = texto
-      ? [...historico, { papel: 'user', texto }]
-      : historico
-    setMensagens([...comUsuario, { papel: 'assistant', texto: '' }])
+  useEffect(() => { setConversas(carregarConversas(usuarioId)) }, [usuarioId])
+  useEffect(() => { fimDaLista.current?.scrollIntoView({ behavior: 'smooth' }) }, [mensagens])
+
+  // Fecha no Esc — comportamento esperado de modal.
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar() }
+    window.addEventListener('keydown', aoTeclar)
+    return () => window.removeEventListener('keydown', aoTeclar)
+  }, [onFechar])
+
+  const trocarMensagens = (fn: (m: Mensagem[]) => Mensagem[]) =>
+    setConversa(c => ({ ...c, mensagens: fn(c.mensagens) }))
+
+  const enviar = async (texto: string, base?: Mensagem[]) => {
+    const historico = base ?? mensagens
+    const comUsuario: Mensagem[] = texto ? [...historico, { papel: 'user', texto }] : historico
+    trocarMensagens(() => [...comUsuario, { papel: 'assistant', texto: '' }])
     setEntrada('')
     setOcupado(true)
+
+    const atualizarUltima = (fn: (a: Mensagem) => Mensagem) =>
+      trocarMensagens(m => { const c = [...m]; c[c.length - 1] = fn(c[c.length - 1]); return c })
 
     try {
       const res = await fetch('/api/ia/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mensagens: comUsuario.map(m => ({
-            role: m.papel,
-            content: m.texto,
-          })).filter(m => m.content.trim()),
+          mensagens: comUsuario.map(m => ({ role: m.papel, content: m.texto })).filter(m => m.content.trim()),
           confirmacoes: confirmadas.current,
           telaAtual: pathname,
         }),
@@ -122,25 +146,13 @@ export default function AssistenteIA() {
 
       if (!res.ok || !res.body) {
         const json = await res.json().catch(() => ({ error: 'Não consegui falar com o assistente.' }))
-        setMensagens(m => {
-          const copia = [...m]
-          copia[copia.length - 1] = { papel: 'assistant', texto: '', erro: json.error }
-          return copia
-        })
+        atualizarUltima(() => ({ papel: 'assistant', texto: '', erro: json.error }))
         return
       }
 
       const leitor = res.body.getReader()
       const decoder = new TextDecoder()
       let sobra = ''
-
-      const atualizar = (fn: (atual: Mensagem) => Mensagem) =>
-        setMensagens(m => {
-          const copia = [...m]
-          copia[copia.length - 1] = fn(copia[copia.length - 1])
-          return copia
-        })
-
       for (;;) {
         const { done, value } = await leitor.read()
         if (done) break
@@ -149,93 +161,132 @@ export default function AssistenteIA() {
         sobra = linhas.pop() ?? ''
         for (const linha of linhas) {
           if (!linha.trim()) continue
-          let evento: { t: string; v?: string } & Partial<Confirmacao>
-          try { evento = JSON.parse(linha) } catch { continue }
-          if (evento.t === 'texto') {
-            atualizar(a => ({ ...a, texto: a.texto + (evento.v ?? ''), ferramenta: null }))
-          } else if (evento.t === 'ferramenta') {
-            atualizar(a => ({ ...a, ferramenta: evento.v ?? null }))
-          } else if (evento.t === 'confirmar' && evento.operacao) {
-            const c: Confirmacao = {
-              operacao: evento.operacao,
-              resumo: evento.resumo ?? 'Confirmar exclusão',
-              impacto: evento.impacto ?? {},
-            }
-            atualizar(a => ({ ...a, confirmacoes: [...(a.confirmacoes ?? []), c] }))
-          } else if (evento.t === 'erro') {
-            atualizar(a => ({ ...a, erro: evento.v, ferramenta: null }))
-          }
+          let ev: { t: string; v?: string } & Partial<Confirmacao>
+          try { ev = JSON.parse(linha) } catch { continue }
+          if (ev.t === 'texto') atualizarUltima(a => ({ ...a, texto: a.texto + (ev.v ?? ''), ferramenta: null }))
+          else if (ev.t === 'ferramenta') atualizarUltima(a => ({ ...a, ferramenta: ev.v ?? null }))
+          else if (ev.t === 'confirmar' && ev.operacao) {
+            const c: Confirmacao = { operacao: ev.operacao, resumo: ev.resumo ?? 'Confirmar exclusão', impacto: ev.impacto ?? {} }
+            atualizarUltima(a => ({ ...a, confirmacoes: [...(a.confirmacoes ?? []), c] }))
+          } else if (ev.t === 'erro') atualizarUltima(a => ({ ...a, erro: ev.v, ferramenta: null }))
         }
       }
-      atualizar(a => ({ ...a, ferramenta: null }))
+      atualizarUltima(a => ({ ...a, ferramenta: null }))
     } catch {
-      setMensagens(m => {
-        const copia = [...m]
-        copia[copia.length - 1] = {
-          papel: 'assistant', texto: '',
-          erro: 'A conexão caiu no meio da resposta. Tente de novo.',
-        }
-        return copia
-      })
+      atualizarUltima(() => ({
+        papel: 'assistant', texto: '',
+        erro: 'A conexão caiu no meio da resposta. Tente de novo.',
+      }))
     } finally {
       setOcupado(false)
     }
   }
 
-  // Reenvia a conversa com a operação liberada: agora a ferramenta executa.
+  // Guarda no histórico sempre que a conversa para de ser escrita.
+  useEffect(() => {
+    if (ocupado || !mensagens.length) return
+    setConversas(salvarConversa(usuarioId, { ...conversa, mensagens }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocupado, mensagens.length, usuarioId])
+
   const confirmar = (operacao: string) => {
     confirmadas.current = [...confirmadas.current, operacao]
-    const semVazias = mensagens.filter(m => m.texto.trim())
-    enviar('Confirmado, pode executar.', semVazias)
+    enviar('Confirmado, pode executar.', mensagens.filter(m => m.texto.trim()))
+  }
+
+  const comecarNova = () => {
+    confirmadas.current = []
+    setConversa(novaConversa())
+    setVerHistorico(false)
+  }
+
+  const abrirConversa = (c: Conversa) => {
+    confirmadas.current = []
+    setConversa(c)
+    setVerHistorico(false)
   }
 
   return (
-    <>
-      {!aberto && (
-        <button
-          onClick={() => setAberto(true)}
-          className="btn-press fixed bottom-5 right-5 z-40 flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white pl-4 pr-5 py-3 rounded-full font-semibold text-sm shadow-lg shadow-brand-500/30"
-        >
-          <Sparkles className="w-4 h-4" />
-          Credenciei IA
-        </button>
-      )}
-
-      {aberto && (
-        <div className="fixed inset-0 z-40 flex items-end justify-end p-0 sm:p-5 pointer-events-none">
-          <div className="modal-pop-in pointer-events-auto flex flex-col w-full sm:w-[26rem] h-full sm:h-[38rem] sm:max-h-[85vh] bg-white sm:rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 h-14 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center">
-                  <Sparkles className="w-3.5 h-3.5 text-brand-600" />
-                </div>
-                <div className="leading-tight">
-                  <p className="text-slate-800 font-bold text-sm">Credenciei IA</p>
-                  <p className="text-slate-400 text-[11px]">Pergunte ou peça pra fazer</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setAberto(false)}
-                className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                aria-label="Fechar assistente"
-              >
-                <X className="w-4 h-4" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6" onClick={onFechar}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/55 backdrop-blur-sm" />
+      <div
+        onClick={e => e.stopPropagation()}
+        className="modal-pop-in relative flex flex-col w-full h-full sm:w-[44rem] sm:h-[80vh] sm:max-h-[46rem] bg-white sm:rounded-3xl border border-slate-200 shadow-2xl overflow-hidden"
+      >
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 h-16 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {verHistorico ? (
+              <button onClick={() => setVerHistorico(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                <ArrowLeft className="w-4 h-4" />
               </button>
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-brand-100 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4 text-brand-600" />
+              </div>
+            )}
+            <div className="leading-tight min-w-0">
+              <p className="text-slate-800 font-bold text-sm truncate">
+                {verHistorico ? 'Conversas anteriores' : 'Credenciei IA'}
+              </p>
+              <p className="text-slate-400 text-[11px] truncate">
+                {verHistorico ? `${conversas.length} guardada(s) neste aparelho` : 'Pergunte ou peça pra fazer'}
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {!verHistorico && (
+              <>
+                <button onClick={comecarNova} title="Nova conversa" className="btn-press w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                  <SquarePen className="w-4 h-4" />
+                </button>
+                <button onClick={() => setVerHistorico(true)} title="Conversas anteriores" className="btn-press w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                  <History className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            <button onClick={onFechar} title="Fechar" className="btn-press w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {verHistorico ? (
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {!conversas.length && (
+              <p className="text-slate-400 text-sm text-center py-10">Nenhuma conversa guardada ainda.</p>
+            )}
+            {conversas.map(c => (
+              <div key={c.id} className="group flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 transition-colors">
+                <button onClick={() => abrirConversa(c)} className="flex-1 text-left min-w-0">
+                  <p className="text-slate-700 text-sm font-medium truncate">{c.titulo || tituloDe(c.mensagens)}</p>
+                  <p className="text-slate-400 text-[11px]">{quandoRelativo(c.atualizadaEm)} • {c.mensagens.filter(m => m.papel === 'user').length} pergunta(s)</p>
+                </button>
+                <button
+                  onClick={() => setConversas(apagarConversa(usuarioId, c.id))}
+                  title="Apagar conversa"
+                  className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-3">
               {!mensagens.length && (
-                <div className="space-y-3">
+                <div className="space-y-3 max-w-lg">
                   <p className="text-slate-500 text-sm">
-                    Eu conheço todas as telas e regras do sistema. Posso ensinar, consultar e executar o que você
-                    já poderia fazer sozinho.
+                    Eu conheço todas as telas e regras do sistema. Posso ensinar, consultar e executar o que você já
+                    poderia fazer sozinho.
                   </p>
-                  <div className="space-y-1.5">
+                  <div className="grid sm:grid-cols-2 gap-1.5">
                     {SUGESTOES.map(s => (
                       <button
                         key={s}
                         onClick={() => enviar(s)}
-                        className="btn-press w-full text-left text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5"
+                        className="btn-press text-left text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5"
                       >
                         {s}
                       </button>
@@ -247,7 +298,7 @@ export default function AssistenteIA() {
               {mensagens.map((m, i) => (
                 <div key={i} className={m.papel === 'user' ? 'flex justify-end' : ''}>
                   {m.papel === 'user' ? (
-                    <p className="bg-brand-500 text-white text-sm rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[85%] whitespace-pre-wrap">
+                    <p className="bg-brand-100 text-slate-800 text-sm rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[80%] whitespace-pre-wrap">
                       {m.texto}
                     </p>
                   ) : (
@@ -272,9 +323,7 @@ export default function AssistenteIA() {
                         <CartaoConfirmacao key={c.operacao} c={c} onConfirmar={confirmar} ocupado={ocupado} />
                       ))}
                       {m.erro && (
-                        <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                          {m.erro}
-                        </p>
+                        <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{m.erro}</p>
                       )}
                     </div>
                   )}
@@ -285,10 +334,11 @@ export default function AssistenteIA() {
 
             <form
               onSubmit={e => { e.preventDefault(); if (entrada.trim() && !ocupado) enviar(entrada.trim()) }}
-              className="border-t border-slate-100 p-3 shrink-0"
+              className="border-t border-slate-100 p-3 sm:px-5 sm:pb-4 shrink-0"
             >
               <div className="flex items-end gap-2">
                 <textarea
+                  autoFocus
                   value={entrada}
                   onChange={e => setEntrada(e.target.value)}
                   onKeyDown={e => {
@@ -299,21 +349,21 @@ export default function AssistenteIA() {
                   }}
                   rows={1}
                   placeholder="Pergunte ou peça algo..."
-                  className="input resize-none max-h-28 text-sm"
+                  className="input resize-none max-h-32 text-sm"
                 />
                 <button
                   type="submit"
                   disabled={!entrada.trim() || ocupado}
-                  className="btn-press shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white"
+                  className="btn-press shrink-0 w-11 h-11 flex items-center justify-center rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white"
                   aria-label="Enviar"
                 >
                   <ArrowUp className="w-4 h-4" />
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-    </>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Content, type FunctionDeclaration } from '@google/genai'
+import { GoogleGenAI, ThinkingLevel, type Content, type FunctionDeclaration } from '@google/genai'
 import { CONHECIMENTO_DO_SISTEMA } from './conhecimento'
 import { ferramentasPara, type ContextoIA, type PedidoConfirmacao, type PerfilIA } from './ferramentas'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
@@ -165,6 +165,13 @@ export async function* conversar(params: {
       contextoDaVez(params.perfil, params.telaAtual),
     ].join('\n\n'),
     tools: [{ functionDeclarations: declaracoes }],
+    /*
+     * Assistente de suporte não precisa raciocinar fundo: as respostas saem de
+     * uma base de conhecimento fechada e de ferramentas que já devolvem o dado
+     * pronto. Raciocínio longo aqui só adiciona espera antes da primeira
+     * palavra aparecer — e numa conversa a espera é o que mais incomoda.
+     */
+    thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
   }
 
   for (let volta = 0; volta < MAX_VOLTAS; volta++) {
