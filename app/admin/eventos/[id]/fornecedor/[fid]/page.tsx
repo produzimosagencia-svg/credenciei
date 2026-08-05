@@ -176,13 +176,6 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         <div className="flex items-center gap-2 flex-wrap">
           <TutorialButton />
           <Link
-            href={`/scan?evento=${id}`}
-            data-tutorial="setor-scan"
-            className="flex items-center gap-2 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
-          >
-            <ScanLine className="w-4 h-4" /> Escanear QR
-          </Link>
-          <Link
             href="/admin/localizar"
             data-tutorial="setor-manual"
             className="flex items-center gap-1.5 btn btn-secundario btn-sm"
@@ -194,6 +187,16 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           <div data-tutorial="setor-link"><CopyLinkButton link={formLink} label="Copiar link do formulário" /></div>
         </div>
       </div>
+
+      {/* Ação mais usada no dia do evento — grande de propósito, não mais
+          um pill igual aos outros. */}
+      <Link
+        href={`/scan?evento=${id}`}
+        data-tutorial="setor-scan"
+        className="btn w-full bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-base py-3.5 rounded-2xl shadow-lg shadow-green-500/25 gap-2.5"
+      >
+        <ScanLine className="w-5 h-5" /> Escanear QR Code
+      </Link>
 
       <div data-tutorial="setor-stats" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}

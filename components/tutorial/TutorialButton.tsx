@@ -2,7 +2,11 @@
 import { HelpCircle } from 'lucide-react'
 import { useTutorial } from './TutorialProvider'
 
-/** Botão "Ver tutorial" — reabre o roteiro da tela a qualquer momento. */
+/**
+ * Reabre o roteiro da tela a qualquer momento. Só o ícone, sem "Ver
+ * tutorial" escrito ao lado — ao lado de título e outros botões da mesma
+ * fileira, o texto engordava a linha e desalinhava o conjunto.
+ */
 export default function TutorialButton() {
   const { iniciar, ativo } = useTutorial()
   if (!ativo) return null
@@ -10,10 +14,11 @@ export default function TutorialButton() {
     <button
       type="button"
       onClick={iniciar}
-      className="btn-press flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-brand-600 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm transition-colors shrink-0"
+      aria-label="Ver tutorial desta tela"
+      title="Ver tutorial"
+      className="btn btn-secundario btn-icone"
     >
-      <HelpCircle className="w-3.5 h-3.5" />
-      Ver tutorial
+      <HelpCircle className="w-4 h-4" />
     </button>
   )
 }
