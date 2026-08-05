@@ -6,7 +6,8 @@ import { CalendarDays, ArrowRight, Circle, Plus, LayoutGrid, UserCheck, Clock, T
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 import StatCard from '@/components/StatCard'
-import { BarrasMagnitude, DistribuicaoEtapas, COR_ETAPA } from '@/components/charts'
+import { DistribuicaoEtapas, COR_ETAPA } from '@/components/charts'
+import { FluxoDoDia, PresencaPorSetor } from '@/components/charts-cliente'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -56,6 +57,11 @@ export default async function AdminPage() {
       ? db.from('registros').select('id', { count: 'exact', head: true }).in('evento_id', ativosIds).eq('tipo', tipo)
       : Promise.resolve({ count: 0 })
 
+  // Uma leitura só do relógio pra toda a página: o corte das 24h e as casas
+  // do gráfico precisam concordar, senão a última hora fica meio vazia.
+  const agora = new Date()
+  const desde24h = new Date(agora.getTime() - 24 * 60 * 60 * 1000).toISOString()
+
   // Todas as queries abaixo dependem só de eventoIds → uma única wave em paralelo
   const [
     [
@@ -63,8 +69,10 @@ export default async function AdminPage() {
       { count: regEntrada },
       { count: regMeio },
       { count: regFim },
+      { data: registros24h },
     ],
     presencaData,
+    setoresData,
   ] = await Promise.all([
     Promise.all([
       eventoIds.length
@@ -73,6 +81,11 @@ export default async function AdminPage() {
       contarEtapaAtivos('entrada'),
       contarEtapaAtivos('meio'),
       contarEtapaAtivos('fim'),
+      // Só created_at e tipo: é tudo que a curva precisa, e mantém a
+      // resposta leve mesmo com muitos registros.
+      ativosIds.length
+        ? db.from('registros').select('created_at, tipo').in('evento_id', ativosIds).gte('created_at', desde24h)
+        : Promise.resolve({ data: [] }),
     ]),
     Promise.all(
       eventosAtivos.map(async (e) => {
@@ -83,7 +96,59 @@ export default async function AdminPage() {
         return { evento: e, dentro: dentro ?? 0, total: total ?? 0 }
       })
     ),
+    // Presença por setor dos eventos ativos
+    ativosIds.length
+      ? (async () => {
+          const { data: setores } = await db
+            .from('fornecedores')
+            .select('id, nome, funcionarios(id)')
+            .in('evento_id', ativosIds)
+          const { data: entradas } = await db
+            .from('registros')
+            .select('funcionario_id, funcionarios!inner(fornecedor_id)')
+            .in('evento_id', ativosIds)
+            .eq('tipo', 'entrada')
+
+          const presentesPorSetor = new Map<string, Set<string>>()
+          for (const r of entradas ?? []) {
+            const fid = (r.funcionarios as unknown as { fornecedor_id: string })?.fornecedor_id
+            if (!fid) continue
+            if (!presentesPorSetor.has(fid)) presentesPorSetor.set(fid, new Set())
+            presentesPorSetor.get(fid)!.add(r.funcionario_id as string)
+          }
+          return (setores ?? []).map(s => {
+            const total = (s.funcionarios as { id: string }[] | null)?.length ?? 0
+            const presentes = presentesPorSetor.get(s.id as string)?.size ?? 0
+            return { setor: s.nome as string, presentes, faltam: Math.max(0, total - presentes), total }
+          })
+        })()
+      : Promise.resolve([]),
   ])
+
+  /**
+   * Agrupa os registros das últimas 24h por hora cheia. Monta as 24 casas
+   * primeiro e depois preenche — assim as horas sem movimento aparecem como
+   * vale no gráfico, em vez de sumirem e distorcerem a curva.
+   */
+  const fluxo = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(agora.getTime() - (23 - i) * 60 * 60 * 1000)
+    return { chave: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`, hora: String(d.getHours()).padStart(2, '0'), entrada: 0, meio: 0, fim: 0 }
+  })
+  const porChave = new Map(fluxo.map(f => [f.chave, f]))
+  for (const r of registros24h ?? []) {
+    const d = new Date(r.created_at as string)
+    const alvo = porChave.get(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`)
+    if (!alvo) continue
+    const t = r.tipo as 'entrada' | 'meio' | 'fim'
+    if (t === 'entrada' || t === 'meio' || t === 'fim') alvo[t]++
+  }
+  const dadosFluxo = fluxo.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
+
+  // Quem está mais atrasado sobe: é a leitura útil durante o evento.
+  const dadosSetores = [...setoresData]
+    .filter(s => s.total > 0)
+    .sort((a, b) => b.faltam - a.faltam)
+    .slice(0, 8)
 
   const entradasHoje = ultimosRegistros?.filter(r =>
     r.tipo === 'entrada' && new Date(r.created_at).toDateString() === new Date().toDateString()
@@ -136,27 +201,46 @@ export default async function AdminPage() {
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
-      <div data-tutorial="dash-graficos" className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Presença por evento */}
+      {/* Fluxo do dia — o gráfico principal. Durante um evento a pergunta é
+          "o pico de chegada já passou?", e isso só se responde com eixo do
+          tempo; barra de proporção não diz. */}
+      <div data-tutorial="dash-graficos" className="bg-white border border-slate-200 rounded-2xl">
+        <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-slate-100">
+          <div>
+            <h2 className="text-slate-800 font-semibold text-lg">Fluxo de credenciamento</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Registros por hora nas últimas 24 horas, nos eventos ativos</p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 pt-1">
+            {[
+              ['Entrada', COR_ETAPA.entrada],
+              ['Meio', COR_ETAPA.meio],
+              ['Saída', COR_ETAPA.fim],
+            ].map(([rotulo, cor]) => (
+              <span key={rotulo} className="flex items-center gap-1.5 text-slate-500 text-xs">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: cor }} />
+                {rotulo}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="p-5 pl-2">
+          <FluxoDoDia dados={dadosFluxo} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Presença por setor — onde a equipe está furada agora */}
         <div className="bg-white border border-slate-200 rounded-2xl">
           <div className="px-5 py-3.5 border-b border-slate-100">
-            <h2 className="text-slate-800 font-semibold text-lg">Presença por evento</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Quem já registrou entrada, nos eventos ativos</p>
+            <h2 className="text-slate-800 font-semibold text-lg">Presença por setor</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Quem já chegou e quanto falta, do mais atrasado ao menos</p>
           </div>
-          <div className="p-5">
-            {!presencaData.length ? (
-              <p className="text-slate-500 text-sm text-center py-6">Nenhum evento ativo no momento</p>
-            ) : (
-              <BarrasMagnitude
-                itens={presencaData.map(p => ({ label: p.evento.nome, valor: p.dentro, total: p.total }))}
-              />
-            )}
+          <div className="p-5 pl-2">
+            <PresencaPorSetor dados={dadosSetores} />
           </div>
         </div>
 
-        {/* Distribuição por etapa — barras, não donut. Comparar três valores
-            é leitura de comprimento; donut obriga a comparar ângulo, que é
-            mais difícil e não cabe num painel operacional. */}
+        {/* Distribuição por etapa */}
         <div className="bg-white border border-slate-200 rounded-2xl">
           <div className="px-5 py-3.5 border-b border-slate-100">
             <h2 className="text-slate-800 font-semibold text-lg">Registros por etapa</h2>
