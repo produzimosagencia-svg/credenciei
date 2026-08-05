@@ -1,7 +1,10 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Search, Trash2, X, Camera, MapPin, Minus, User, UserCheck, UserX, ClipboardCheck } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, ChevronDown, Search, SlidersHorizontal, Trash2, X,
+  Camera, MapPin, Minus, User, UserCheck, UserX, ClipboardCheck,
+} from 'lucide-react'
 import { deletarFuncionario, alternarAtivacao } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
@@ -74,8 +77,14 @@ export default function FuncionarioTable({
   const [statusEntrada, setStatusEntrada] = useState<StatusEtapa | 'todos'>('todos')
   const [statusMeio, setStatusMeio] = useState<StatusEtapa | 'todos'>('todos')
   const [statusFim, setStatusFim] = useState<StatusEtapa | 'todos'>('todos')
+  // Os três seletores por etapa são o filtro fino, usado bem menos que a
+  // busca e os atalhos — ficam escondidos atrás de "Mais filtros" pra não
+  // competir visualmente com o que a maioria usa o tempo todo.
+  const [maisFiltros, setMaisFiltros] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  const filtrosAvancadosAtivos = [statusEntrada, statusMeio, statusFim].filter(v => v !== 'todos').length
 
   const filtered = useMemo(() => funcionarios.filter(f => {
     const s = search.toLowerCase()
@@ -142,22 +151,22 @@ export default function FuncionarioTable({
       )}
       {/* Filtros */}
       <div className="p-4 border-b border-slate-100 space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-48">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               value={search}
               onChange={e => updateSearch(e.target.value)}
               placeholder="Buscar por nome, CPF, empresa, cargo..."
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-slate-700 text-sm outline-none focus:border-brand-400 placeholder:text-slate-400"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-2 text-slate-700 text-sm outline-none focus:border-brand-400 placeholder:text-slate-400"
             />
             {search && (
-              <button onClick={() => updateSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <button onClick={() => updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Limpar busca">
                 <X className="w-3 h-3" />
               </button>
             )}
           </div>
-          <p className="text-slate-400 text-xs ml-auto">{filtered.length} de {funcionarios.length}</p>
+          <p className="text-slate-400 text-xs shrink-0 hidden sm:block">{filtered.length} de {funcionarios.length}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -179,32 +188,129 @@ export default function FuncionarioTable({
             </button>
           ))}
 
-          <div className="w-px h-5 bg-slate-200 mx-1" />
-
-          <SelectStatus label="Entrada" value={statusEntrada} onChange={v => { setStatusEntrada(v); setPage(1) }} />
-          <SelectStatus label="Meio" value={statusMeio} onChange={v => { setStatusMeio(v); setPage(1) }} />
-          <SelectStatus label="Saída" value={statusFim} onChange={v => { setStatusFim(v); setPage(1) }} />
+          <button
+            onClick={() => setMaisFiltros(v => !v)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ml-auto ${
+              maisFiltros || filtrosAvancadosAtivos ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+            aria-expanded={maisFiltros}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Por etapa
+            {filtrosAvancadosAtivos > 0 && (
+              <span className="w-4 h-4 flex items-center justify-center rounded-full bg-brand-500 text-white text-[10px] font-bold">
+                {filtrosAvancadosAtivos}
+              </span>
+            )}
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${maisFiltros ? 'rotate-180' : ''}`} />
+          </button>
         </div>
+
+        {/* Filtro fino por etapa: separado dos atalhos de cima porque é usado
+            bem menos e três selects de largura variável ao lado dos pills
+            deixava a barra pesada em qualquer tela. */}
+        {maisFiltros && (
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100">
+            <SelectStatus label="Entrada" value={statusEntrada} onChange={v => { setStatusEntrada(v); setPage(1) }} />
+            <SelectStatus label="Meio" value={statusMeio} onChange={v => { setStatusMeio(v); setPage(1) }} />
+            <SelectStatus label="Saída" value={statusFim} onChange={v => { setStatusFim(v); setPage(1) }} />
+            {filtrosAvancadosAtivos > 0 && (
+              <button
+                onClick={() => { setStatusEntrada('todos'); setStatusMeio('todos'); setStatusFim('todos'); setPage(1) }}
+                className="text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+        )}
+
+        <p className="text-slate-400 text-xs sm:hidden">{filtered.length} de {funcionarios.length}</p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50">
-              {['Nome', 'CPF', 'Telefone', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
-                <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {!filtered.length ? (
-              <tr>
-                <td colSpan={8} className="text-center py-12 text-slate-400 text-sm">
-                  {search || filtroRapido !== 'todos' ? 'Nenhum resultado para o filtro' : 'Nenhum funcionário cadastrado ainda'}
-                </td>
-              </tr>
-            ) : (
-              paginated.map(f => (
+      {!filtered.length ? (
+        <p className="text-center py-12 text-slate-400 text-sm">
+          {search || filtroRapido !== 'todos' ? 'Nenhum resultado para o filtro' : 'Nenhum funcionário cadastrado ainda'}
+        </p>
+      ) : (
+        <>
+          {/* Celular: cartão por pessoa. A tabela tem 8 colunas — arrastar de
+              lado pra ler é pior do que ler um cartão de cima pra baixo. */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {paginated.map(f => (
+              <div key={f.id} className="p-4 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <FuncionarioDetalheModal
+                    funcionario={f}
+                    fornecedorId={fornecedorId}
+                    eventoId={eventoId}
+                    valorCombinado={valorCombinado}
+                    trigger={
+                      <div className="flex items-center gap-2.5 min-w-0 text-left">
+                        <Avatar url={f.fotoUrl} nome={f.nome} />
+                        <div className="min-w-0">
+                          <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
+                          <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                        </div>
+                      </div>
+                    }
+                  />
+                  <div className="shrink-0 flex items-center gap-1 -mr-1">
+                    <button
+                      onClick={() => handleAtivacao(f)}
+                      disabled={isPending}
+                      className={`btn-press w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-50 disabled:active:scale-100 ${f.ativo ? 'text-green-500 hover:text-amber-600 hover:bg-amber-50' : 'text-amber-500 hover:text-green-600 hover:bg-green-50'}`}
+                      aria-label={f.ativo ? 'Ativado — toque para desativar' : 'Não ativado — toque para ativar'}
+                    >
+                      {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(f)}
+                      disabled={isPending}
+                      className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
+                      aria-label="Remover"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {!f.ativo && (
+                    <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
+                  )}
+                  <EtapaChip label="Entrada" p={f.entrada} status={f.statusEntrada} />
+                  <EtapaChip label="Meio" p={f.meio} status={f.statusMeio} />
+                  <EtapaChip label="Saída" p={f.fim} status={f.statusFim} />
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span className="tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</span>
+                  {f.valorReceber > 0 && (
+                    <span className="font-semibold tabular-nums text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-lg">
+                      {brl(f.valorReceber)}
+                    </span>
+                  )}
+                  {f.pago && (
+                    <span className="text-2xs font-bold text-white bg-green-500 px-1.5 py-0.5 rounded-full shrink-0">PAGO</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop: tabela */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  {['Nome', 'CPF', 'Telefone', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map(f => (
                 <tr key={f.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
                     <FuncionarioDetalheModal
@@ -213,16 +319,16 @@ export default function FuncionarioTable({
                       eventoId={eventoId}
                       valorCombinado={valorCombinado}
                       trigger={
-                        <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors">
+                        <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />
                           <div className="min-w-0">
-                            <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>
-                              {f.nome}
+                            <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
+                            <div className="flex items-center gap-1 min-w-0">
                               {!f.ativo && (
-                                <span className="ml-1.5 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full align-middle">NÃO ATIVADO</span>
+                                <span className="shrink-0 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
                               )}
-                            </p>
-                            <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                              <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                            </div>
                           </div>
                         </div>
                       }
@@ -272,11 +378,12 @@ export default function FuncionarioTable({
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
@@ -343,6 +450,23 @@ const SEMAFORO: Record<StatusEtapa, { dot: string; title: string }> = {
   aberto: { dot: 'bg-yellow-400', title: 'Dentro do prazo' },
   fechado: { dot: 'bg-red-500', title: 'Não registrado — prazo encerrado' },
   indefinido: { dot: 'bg-slate-300', title: 'Horário não definido' },
+}
+
+/** Versão em pílula do semáforo, pro cartão mobile — mesma informação da
+    célula da tabela, sem foto/mapa (isso mora dentro do modal de detalhe). */
+function EtapaChip({ label, p, status }: { label: string; p: Presenca; status: StatusEtapa }) {
+  const sem = SEMAFORO[status]
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-2xs bg-slate-50 border border-slate-200 px-2 py-1 rounded-full"
+      title={sem.title}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sem.dot}`} />
+      <span className="text-slate-500 font-medium">{label}</span>
+      {p && <span className="text-green-600 font-semibold">{formatarBR(p.feitoEm, 'curto')}</span>}
+      {p?.assistido && <ClipboardCheck className="w-3 h-3 text-amber-500 shrink-0" />}
+    </span>
+  )
 }
 
 function CelulaPresenca({ p, status }: { p: Presenca; status: StatusEtapa }) {

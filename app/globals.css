@@ -68,11 +68,21 @@ body {
   box-sizing: border-box;
 }
 
-h1, h2, h3 {
-  text-wrap: balance;
-}
-p {
-  text-wrap: pretty;
+/*
+ * Em @layer base: sem camada, esta regra vencia SEMPRE de .truncate do
+ * Tailwind (que vive em @layer utilities) — não por especificidade, mas
+ * porque regra fora de camada nomeada bate qualquer coisa dentro de uma,
+ * na cascata do CSS. Resultado real: <p className="truncate"> quebrava em
+ * várias linhas em vez de reticências, sempre que o texto era mais comprido
+ * que a coluna (nome de funcionário numa tabela estreita, por exemplo).
+ */
+@layer base {
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
 }
 
 /*
