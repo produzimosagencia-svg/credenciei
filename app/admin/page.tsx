@@ -6,8 +6,8 @@ import { CalendarDays, ArrowRight, Circle, Plus, LayoutGrid, UserCheck, Clock, T
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 import StatCard from '@/components/StatCard'
-import { DistribuicaoEtapas, COR_ETAPA } from '@/components/charts'
-import { FluxoDoDia, PresencaPorSetor } from '@/components/charts-cliente'
+import { COR_ETAPA } from '@/components/charts'
+import { FluxoDoDia } from '@/components/charts-cliente'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -52,11 +52,6 @@ export default async function AdminPage() {
   const eventosAtivos = eventos?.filter(e => e.ativo) ?? []
 
   const ativosIds = eventosAtivos.map(e => e.id)
-  const contarEtapaAtivos = (tipo: 'entrada' | 'meio' | 'fim') =>
-    ativosIds.length
-      ? db.from('registros').select('id', { count: 'exact', head: true }).in('evento_id', ativosIds).eq('tipo', tipo)
-      : Promise.resolve({ count: 0 })
-
   // Uma leitura só do relógio pra toda a página: o corte das 24h e as casas
   // do gráfico precisam concordar, senão a última hora fica meio vazia.
   const agora = new Date()
@@ -66,21 +61,14 @@ export default async function AdminPage() {
   const [
     [
       { data: ultimosRegistros },
-      { count: regEntrada },
-      { count: regMeio },
-      { count: regFim },
       { data: registros24h },
     ],
     presencaData,
-    setoresData,
   ] = await Promise.all([
     Promise.all([
       eventoIds.length
         ? db.from('registros').select('*, funcionarios(nome, cargo, empresa), eventos(nome)').in('evento_id', eventoIds).order('created_at', { ascending: false }).limit(12)
         : Promise.resolve({ data: [] }),
-      contarEtapaAtivos('entrada'),
-      contarEtapaAtivos('meio'),
-      contarEtapaAtivos('fim'),
       // Só created_at e tipo: é tudo que a curva precisa, e mantém a
       // resposta leve mesmo com muitos registros.
       ativosIds.length
@@ -96,33 +84,6 @@ export default async function AdminPage() {
         return { evento: e, dentro: dentro ?? 0, total: total ?? 0 }
       })
     ),
-    // Presença por setor dos eventos ativos
-    ativosIds.length
-      ? (async () => {
-          const { data: setores } = await db
-            .from('fornecedores')
-            .select('id, nome, funcionarios(id)')
-            .in('evento_id', ativosIds)
-          const { data: entradas } = await db
-            .from('registros')
-            .select('funcionario_id, funcionarios!inner(fornecedor_id)')
-            .in('evento_id', ativosIds)
-            .eq('tipo', 'entrada')
-
-          const presentesPorSetor = new Map<string, Set<string>>()
-          for (const r of entradas ?? []) {
-            const fid = (r.funcionarios as unknown as { fornecedor_id: string })?.fornecedor_id
-            if (!fid) continue
-            if (!presentesPorSetor.has(fid)) presentesPorSetor.set(fid, new Set())
-            presentesPorSetor.get(fid)!.add(r.funcionario_id as string)
-          }
-          return (setores ?? []).map(s => {
-            const total = (s.funcionarios as { id: string }[] | null)?.length ?? 0
-            const presentes = presentesPorSetor.get(s.id as string)?.size ?? 0
-            return { setor: s.nome as string, presentes, faltam: Math.max(0, total - presentes), total }
-          })
-        })()
-      : Promise.resolve([]),
   ])
 
   /**
@@ -143,12 +104,6 @@ export default async function AdminPage() {
     if (t === 'entrada' || t === 'meio' || t === 'fim') alvo[t]++
   }
   const dadosFluxo = fluxo.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
-
-  // Quem está mais atrasado sobe: é a leitura útil durante o evento.
-  const dadosSetores = [...setoresData]
-    .filter(s => s.total > 0)
-    .sort((a, b) => b.faltam - a.faltam)
-    .slice(0, 8)
 
   const entradasHoje = ultimosRegistros?.filter(r =>
     r.tipo === 'entrada' && new Date(r.created_at).toDateString() === new Date().toDateString()
@@ -228,35 +183,12 @@ export default async function AdminPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Presença por setor — onde a equipe está furada agora */}
-        <div className="bg-white border border-slate-200 rounded-2xl">
-          <div className="px-5 py-3.5 border-b border-slate-100">
-            <h2 className="text-slate-800 font-semibold text-lg">Presença por setor</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Quem já chegou e quanto falta, do mais atrasado ao menos</p>
-          </div>
-          <div className="p-5 pl-2">
-            <PresencaPorSetor dados={dadosSetores} />
-          </div>
-        </div>
-
-        {/* Distribuição por etapa */}
-        <div className="bg-white border border-slate-200 rounded-2xl">
-          <div className="px-5 py-3.5 border-b border-slate-100">
-            <h2 className="text-slate-800 font-semibold text-lg">Registros por etapa</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Somando todos os eventos ativos</p>
-          </div>
-          <div className="p-5">
-            <DistribuicaoEtapas
-              itens={[
-                { label: 'Entrada', valor: regEntrada ?? 0, cor: COR_ETAPA.entrada },
-                { label: 'Meio', valor: regMeio ?? 0, cor: COR_ETAPA.meio },
-                { label: 'Saída', valor: regFim ?? 0, cor: COR_ETAPA.fim },
-              ]}
-            />
-          </div>
-        </div>
-      </div>
+      {/* Saíram daqui dois painéis:
+          - "Registros por etapa": eram os mesmos três números que o Fluxo
+            acima já desenha ao longo do tempo, só que parados.
+          - "Presença por setor": misturava setores de eventos diferentes sem
+            dizer de qual era cada um, e a tela do evento já mostra o progresso
+            de cada setor no próprio cartão. */}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Eventos */}
