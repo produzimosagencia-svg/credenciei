@@ -13,8 +13,8 @@ const TUTORIAL: TutorialConfig = {
   tela: 'localizar-funcionario',
   versao: 1,
   passos: [
-    { alvo: 'loc-busca', titulo: 'Comece pelo CPF', posicao: 'bottom', icone: 'Search',
-      descricao: 'Quando alguém da sua equipe perder o horário de uma batida, você recebe o aviso no WhatsApp, encontra a pessoa e digita o CPF dela aqui. Só aparecem pessoas dos setores sob sua responsabilidade.' },
+    { alvo: 'loc-busca', titulo: 'Ache a pessoa', posicao: 'bottom', icone: 'Search',
+      descricao: 'Quando alguém da sua equipe perder o horário de uma batida, você recebe o aviso no WhatsApp, encontra a pessoa e busca por ela aqui — pelo CPF, se tiver o documento em mãos, ou pelo nome. Se aparecer mais de uma pessoa, escolha na lista. Só aparecem pessoas dos setores sob sua responsabilidade.' },
     { alvo: 'loc-ficha', titulo: 'Confira quem é', posicao: 'bottom', icone: 'IdCard',
       descricao: 'Confirme pela foto e pelo nome que é a pessoa certa antes de seguir. O quadro colorido no fim mostra qual batida está faltando — é essa que vai ser registrada.' },
     { alvo: 'loc-foto', titulo: 'Tire a foto do rosto', posicao: 'bottom', icone: 'Camera',

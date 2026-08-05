@@ -1195,48 +1195,148 @@ export type FuncionarioLocalizado = {
   proximaPendente: { momento: MomentoPresenca; rotulo: string } | null
 }
 
+/** Resultado resumido, pra escolher quando a busca por nome dá em várias pessoas. */
+export type CandidatoLocalizado = {
+  id: string
+  nome: string
+  cpf: string
+  cargo: string | null
+  setorNome: string
+  eventoNome: string
+}
+
 /**
- * Localiza um funcionário pelo CPF para o registro assistido, já com o que o
- * supervisor precisa ver antes de confirmar: quem é a pessoa, de qual setor, o
- * que ela já bateu e o que está faltando.
+ * Localiza alguém para o registro assistido, por CPF **ou** por nome.
+ *
+ * Nome quase nunca é único num evento grande ("Silva" pega vinte), então a
+ * função pode devolver uma lista pra escolher em vez de uma pessoa só. CPF
+ * completo e válido cai direto na ficha, que é o caminho rápido de quem já
+ * tem o documento na mão.
  *
  * O escopo é o mesmo do resto do sistema: supervisor só enxerga o próprio
  * setor; admin, a própria organização; master, todo mundo. A busca é feita
  * apenas em eventos ATIVOS — regularizar ponto de evento encerrado não é o
  * caso de uso e só abriria espaço pra erro.
  */
-export async function localizarFuncionarioPorCpf(
-  cpfBruto: string
-): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
+const SELECT_LOCALIZAR =
+  'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, ativo, organizacao_id))'
+
+/** Teto de resultados por busca — lista maior que isso não se escolhe, se refina. */
+const MAX_CANDIDATOS = 25
+
+export async function localizarFuncionario(
+  termo: string
+): Promise<{ funcionario?: FuncionarioLocalizado; candidatos?: CandidatoLocalizado[]; error?: string }> {
   const perfil = await getPerfil()
   if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
 
-  const cpf = cpfBruto.replace(/\D/g, '')
-  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números digitados.' }
+  const busca = termo.trim()
+  const digitos = busca.replace(/\D/g, '')
+  // Só tratamos como CPF quando o que veio é essencialmente número: um nome
+  // com um dígito no meio continua sendo nome.
+  const pareceCpf = digitos.length >= 3 && digitos.length >= busca.replace(/\s/g, '').length - 3
 
-  const { data: candidatos } = await supabaseAdmin
+  if (!busca) return { error: 'Digite o CPF ou o nome da pessoa.' }
+  if (!pareceCpf && busca.length < 3) return { error: 'Digite pelo menos 3 letras do nome.' }
+  if (pareceCpf && digitos.length === 11 && !validarCpf(digitos)) {
+    return { error: 'CPF inválido. Confira os números digitados.' }
+  }
+
+  const consulta = supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, ativo, organizacao_id))')
-    .eq('cpf', cpf)
+    .select(SELECT_LOCALIZAR)
     .eq('fornecedores.eventos.ativo', true)
+    .limit(200)
+
+  if (pareceCpf) {
+    if (digitos.length === 11) consulta.eq('cpf', digitos)
+    else consulta.like('cpf', `%${digitos}%`)
+  } else {
+    consulta.ilike('nome', `%${busca}%`)
+  }
+
+  const { data: achados } = await consulta
 
   // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
   // "não encontrado" também protege quem está fora do escopo dele.
-  const visiveis = (candidatos ?? []).filter(f => {
+  const visiveis = (achados ?? []).filter(f => {
     if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
     if (ehMaster(perfil.role)) return true
     return comEvento(f.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
   })
 
   if (!visiveis.length) {
+    const onde = perfil.role === 'supervisor' ? 'no seu setor' : 'nos eventos ativos'
     return {
-      error: perfil.role === 'supervisor'
-        ? 'Nenhuma pessoa com este CPF no seu setor. Confira o número ou fale com o organizador.'
-        : 'Nenhuma pessoa com este CPF nos eventos ativos.',
+      error: pareceCpf
+        ? `Nenhuma pessoa com este CPF ${onde}. Confira o número ou tente pelo nome.`
+        : `Ninguém com esse nome ${onde}. Tente parte do nome ou busque pelo CPF.`,
     }
   }
-  // Mesmo CPF em mais de um evento ativo: usa o cadastro mais recente.
-  const func = visiveis[visiveis.length - 1]
+
+  // Mais de uma pessoa: quem escolhe é o supervisor, não o sistema. Com nome
+  // isso é o normal; com CPF acontece quando a pessoa está em dois eventos
+  // ativos ao mesmo tempo.
+  if (visiveis.length > 1) {
+    return {
+      candidatos: visiveis.slice(0, MAX_CANDIDATOS).map(f => {
+        const forn = comEvento(f.fornecedores)
+        return {
+          id: f.id,
+          nome: f.nome,
+          cpf: f.cpf,
+          cargo: f.cargo,
+          setorNome: forn?.nome ?? '—',
+          eventoNome: forn?.eventos?.nome ?? '—',
+        }
+      }),
+    }
+  }
+
+  return fichaDoFuncionario(visiveis[0])
+}
+
+/** Carrega a ficha completa depois que o supervisor escolhe alguém da lista. */
+export async function abrirFuncionarioLocalizado(
+  funcionarioId: string
+): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select(SELECT_LOCALIZAR)
+    .eq('id', funcionarioId)
+    .eq('fornecedores.eventos.ativo', true)
+    .single()
+
+  // O escopo é conferido de novo aqui: o id chega do navegador, então não dá
+  // pra confiar que veio de uma lista que já tinha sido filtrada.
+  if (!func) return { error: 'Esta pessoa não está em nenhum evento ativo.' }
+  const dentroDoEscopo = perfil.role === 'supervisor'
+    ? func.fornecedor_id === perfil.fornecedor_id
+    : ehMaster(perfil.role) || comEvento(func.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
+  if (!dentroDoEscopo) return { error: 'Esta pessoa está fora do seu acesso.' }
+
+  return fichaDoFuncionario(func)
+}
+
+type LinhaLocalizada = {
+  id: string
+  nome: string
+  cpf: string
+  cargo: string | null
+  empresa: string | null
+  ativo: boolean | null
+  foto_perfil_path: string | null
+  fornecedor_id: string
+  fornecedores: unknown
+}
+
+/** Monta a ficha completa — o que o supervisor precisa ver antes de confirmar. */
+async function fichaDoFuncionario(
+  func: LinhaLocalizada
+): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
   const fornecedor = comEvento(func.fornecedores)
   const evento = fornecedor?.eventos
   if (!evento) return { error: 'Não foi possível identificar o evento desta pessoa.' }
