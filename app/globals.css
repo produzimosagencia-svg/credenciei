@@ -281,9 +281,13 @@ button, [role='button'], a.btn-press {
 
   /* No menu escuro inverte: preto sobre preto sumiria. */
   .tema-escuro .btn-primario {
-    background-color: #ffffff; border-color: #ffffff; color: #111827;
+    background-color: var(--color-acento-600);
+    border-color: var(--color-acento-600);
+    color: #ffffff;
   }
-  .tema-escuro .btn-primario:hover:not(:disabled) { background-color: #e5e7eb; border-color: #e5e7eb; }
+  .tema-escuro .btn-primario:hover:not(:disabled) {
+    background-color: var(--color-acento-500); border-color: var(--color-acento-500);
+  }
 
   .btn-secundario {
     background-color: #ffffff;
@@ -391,17 +395,25 @@ button, [role='button'], a.btn-press {
    nenhum componente precisar saber onde está.
    ============================================================ */
 
+/* ============================================================
+   TEMA ESCURO — vale para o painel INTEIRO, não só o menu.
+
+   A classe fica na raiz do AppShell, então todo `bg-white`,
+   `text-slate-*` e `border-slate-*` do sistema (40+ arquivos) escurece
+   de uma vez, sem reescrever componente nenhum.
+   ============================================================ */
 .tema-escuro {
-  /*
-   * Superfícies do menu. Antes eram roxo-escuras (#1b1a29); agora é o
-   * mesmo neutro-900 da paleta, com degraus discretos entre eles — o
-   * contraste interno do menu foi reduzido de propósito, porque menu
-   * não é conteúdo: ele deve recuar, não competir.
-   */
-  --sup-1: #111827;
-  --sup-2: #171f2e;
-  --sup-3: #1f2937;
+  --sup-0: #0b0f17;   /* fundo da aplicação */
+  --sup-1: #121824;   /* card */
+  --sup-2: #171e2b;   /* card elevado, cabeçalho de tabela */
+  --sup-3: #1e2634;   /* hover */
+  --linha: #212a3a;   /* borda */
+  background-color: var(--sup-0);
+  color: #e5e7eb;
 }
+
+/* O menu recua um degrau em relação ao conteúdo. */
+.tema-escuro aside { background-color: var(--sup-0); }
 
 /* Superfícies */
 .tema-escuro .bg-white,

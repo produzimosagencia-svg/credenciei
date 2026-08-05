@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { CalendarDays, ArrowRight, Circle, Plus, LayoutGrid } from 'lucide-react'
+import { CalendarDays, ArrowRight, Circle, Plus, LayoutGrid, UserCheck, Clock, TrendingUp } from 'lucide-react'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 import StatCard from '@/components/StatCard'
@@ -97,10 +97,10 @@ export default async function AdminPage() {
   const faltamChegar = Math.max(0, esperadosAtivos - presentesAtivos)
 
   const stats = [
-    { label: 'Eventos ativos', value: eventosAtivos.length, sub: `de ${eventos?.length ?? 0}` },
-    { label: 'Presentes agora', value: presentesAtivos, sub: `de ${esperadosAtivos}`, tom: 'sucesso' as const },
-    { label: 'Ainda não chegaram', value: faltamChegar, tom: faltamChegar > 0 ? ('aviso' as const) : undefined },
-    { label: 'Entradas hoje', value: entradasHoje },
+    { label: 'Eventos ativos', value: eventosAtivos.length, sub: `de ${eventos?.length ?? 0}`, icon: CalendarDays, tom: 'acento' as const },
+    { label: 'Presentes agora', value: presentesAtivos, sub: `de ${esperadosAtivos}`, icon: UserCheck, tom: 'sucesso' as const },
+    { label: 'Ainda não chegaram', value: faltamChegar, icon: Clock, tom: faltamChegar > 0 ? ('aviso' as const) : ('neutro' as const) },
+    { label: 'Entradas hoje', value: entradasHoje, icon: TrendingUp, tom: 'neutro' as const },
   ]
 
   return (
@@ -109,8 +109,8 @@ export default async function AdminPage() {
       {/* Cabeçalho: bloco de ícone + título + data, ações à direita */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-            <LayoutGrid className="w-4 h-4 text-slate-600" />
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.18)' }}>
+            <LayoutGrid className="w-5 h-5 text-brand-400" />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Painel</h1>

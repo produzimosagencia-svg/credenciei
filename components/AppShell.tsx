@@ -159,9 +159,9 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
   return (
     <AssistenteIAProvider usuarioId={perfil.id}>
-    <div className="min-h-screen bg-neutro-50 flex">
+    <div className="tema-escuro min-h-screen flex">
       {/* Sidebar (desktop) */}
-      <aside className="tema-escuro hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
+      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
         <Link href="/admin" className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0">
           <div className="logo-marca w-6 h-6 rounded-md flex items-center justify-center">
             <QrCode className="w-3.5 h-3.5 text-white" />
@@ -175,7 +175,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
       {/* Coluna principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="tema-escuro sticky top-0 z-30 bg-white border-b border-slate-200">
+        <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
           <div className="px-4 md:px-6 h-14 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <button

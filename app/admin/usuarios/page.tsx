@@ -129,8 +129,8 @@ export default async function UsuariosPage({
       {/* Cabeçalho: bloco de ícone + título + contagem, ações à direita */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3" data-tutorial="usr-resumo">
-          <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-            <Users className="w-4 h-4 text-slate-600" />
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.18)' }}>
+            <Users className="w-5 h-5 text-brand-400" />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Usuários</h1>
@@ -211,8 +211,11 @@ export default async function UsuariosPage({
               key={u.id}
               className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-start gap-3 hover:border-slate-300 transition-colors"
             >
-              <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 mt-0.5">
-                <span className="text-slate-600 text-xs font-semibold">{iniciais(u.nome)}</span>
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                style={{ background: 'rgba(59,130,246,0.16)' }}
+              >
+                <span className="text-brand-400 text-xs font-semibold">{iniciais(u.nome)}</span>
               </div>
 
               <div className="min-w-0 flex-1 space-y-1.5">
