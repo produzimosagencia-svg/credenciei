@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, Building2, User, CalendarDays } from 'lucide-react'
+import { Building2, User, CalendarDays } from 'lucide-react'
+import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
@@ -15,22 +15,18 @@ export default async function NovaOrganizacaoPage() {
 
   return (
     <div className="max-w-xl space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/admin/organizacoes" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Nova Organização</h1>
-          <p className="text-slate-400 text-sm">Cria a organização, o admin dono dela e o primeiro evento</p>
-        </div>
-      </div>
+      <PageHeader
+        voltarPara="/admin/organizacoes"
+        titulo="Nova Organização"
+        descricao="Cria a organização, o admin dono dela e o primeiro evento"
+      />
 
       <form action={criarOrganizacao} className="space-y-5">
         {/* Organização */}
         <Section icon={Building2} title="Organização">
           <Field label="Foto de perfil (opcional)">
             <input name="foto" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="input py-2" />
-            <p className="text-[11px] text-slate-400 mt-1">JPG, PNG ou WEBP. Sem foto, mostra as iniciais da organização.</p>
+            <p className="text-2xs text-slate-400 mt-1">JPG, PNG ou WEBP. Sem foto, mostra as iniciais da organização.</p>
           </Field>
           <Field label="Nome da organização *">
             <NomeInput name="org_nome" required placeholder="Ex: Brilha Shows" className="input" />
@@ -92,7 +88,7 @@ export default async function NovaOrganizacaoPage() {
 
         <button
           type="submit"
-          className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+          className="w-full btn btn-primario btn-lg"
         >
           Criar organização
         </button>

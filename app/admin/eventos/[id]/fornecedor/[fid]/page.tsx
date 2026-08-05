@@ -165,7 +165,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       <AutoRefresh />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <Link href={`/admin/eventos/${id}`} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
+          <Link href={`/admin/eventos/${id}`} className="btn btn-secundario btn-icone" aria-label="Voltar para o evento">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
@@ -185,7 +185,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           <Link
             href="/admin/localizar"
             data-tutorial="setor-manual"
-            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-white border border-slate-200 hover:border-brand-300 hover:text-brand-600 text-slate-600 rounded-xl transition-all shadow-sm font-semibold"
+            className="flex items-center gap-1.5 btn btn-secundario btn-sm"
           >
             <UserSearch className="w-3.5 h-3.5" />
             Localizar funcionário

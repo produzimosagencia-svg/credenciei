@@ -5,8 +5,8 @@ import { isoParaInput } from '@/lib/tz'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import Link from 'next/link'
-import { ArrowLeft, CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
+import { CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
+import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -54,16 +54,12 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="max-w-2xl space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href={`/admin/eventos/${id}`} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-slate-800">Editar evento</h1>
-          <p className="text-slate-400 text-sm">{evento.nome}</p>
-        </div>
-        <TutorialButton />
-      </div>
+      <PageHeader
+        voltarPara={`/admin/eventos/${id}`}
+        titulo="Editar evento"
+        descricao={evento.nome}
+        acoes={<TutorialButton />}
+      />
 
       <form action={action} className="bg-white border border-slate-200 rounded-3xl shadow-xl shadow-slate-200/60 overflow-hidden">
         {/* Informações gerais */}
@@ -141,7 +137,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               placeholder="Ex: Leve seu documento com foto e esteja com o uniforme da sua empresa."
               className="input resize-none"
             />
-            <p className="text-[11px] text-slate-400 mt-1">
+            <p className="text-2xs text-slate-400 mt-1">
               Este texto entra na mensagem de confirmação de escala, junto com função, setor, data e local. Deixe o horário em branco para não enviar.
             </p>
           </Field>
@@ -152,7 +148,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           <button
             type="submit"
             data-tutorial="edt-salvar"
-            className="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white py-3.5 rounded-2xl font-semibold transition-all shadow-lg shadow-brand-500/25 hover:shadow-brand-500/35 hover:-translate-y-0.5"
+            className="btn btn-primario btn-lg w-full"
           >
             <Save className="w-4 h-4" />
             Salvar alterações

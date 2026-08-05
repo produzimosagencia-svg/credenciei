@@ -206,7 +206,7 @@ function ModalEditar({
           <button
             type="submit"
             disabled={isPending}
-            className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-2.5 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+            className="btn btn-primario w-full"
           >
             Salvar alterações
           </button>

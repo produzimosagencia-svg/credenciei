@@ -189,7 +189,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
             <div className="flex items-center gap-2.5 shrink-0">
               <div className="text-right leading-tight hidden sm:block">
                 <p className="text-slate-700 text-xs font-semibold">{perfil.nome}</p>
-                <p className="text-slate-400 text-[11px]">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
+                <p className="text-slate-400 text-2xs">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
               </div>
               <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={36} className="ring-2 ring-white shadow-sm" />
             </div>

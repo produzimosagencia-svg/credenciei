@@ -39,7 +39,7 @@ export default function FornecedorModal(props: Props) {
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="btn-press flex items-center gap-1.5 text-xs sm:text-sm bg-brand-500 hover:bg-brand-600 text-white px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl font-semibold shadow-sm shadow-brand-200">
+        <button onClick={() => setOpen(true)} className="btn btn-primario btn-sm">
           <Plus className="w-3.5 h-3.5 shrink-0" />
           <span className="hidden sm:inline">Novo Fornecedor/Setor</span>
           <span className="sm:hidden">Novo</span>
@@ -80,9 +80,9 @@ export default function FornecedorModal(props: Props) {
                   placeholder={'Um CPF por linha. Se preenchido, SÓ estes CPFs\nconseguem se cadastrar pelo link do formulário.'}
                   className="input resize-none font-mono text-xs"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">Deixe em branco para permitir qualquer pessoa com o link.</p>
+                <p className="text-2xs text-slate-400 mt-1">Deixe em branco para permitir qualquer pessoa com o link.</p>
               </div>
-              <button type="submit" disabled={isPending} className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-brand-200">
+              <button type="submit" disabled={isPending} className="btn btn-primario w-full">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
               </button>
             </form>

@@ -14,7 +14,7 @@ export default function NotFound() {
         </div>
         <Link
           href="/admin"
-          className="block w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
+          className="block w-full btn btn-primario btn-lg"
         >
           Voltar ao início
         </Link>

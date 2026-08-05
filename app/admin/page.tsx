@@ -118,7 +118,7 @@ export default async function AdminPage() {
             <Link
               href="/admin/eventos/novo"
               data-tutorial="dash-novo-evento"
-              className="btn-press bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold shadow-md shadow-brand-200 flex items-center gap-2"
+              className="btn btn-primario"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Novo Evento</span>

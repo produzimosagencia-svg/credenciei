@@ -100,7 +100,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start gap-4 justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/admin/eventos" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm shrink-0">
+          <Link href="/admin/eventos" className="btn btn-secundario btn-icone shrink-0" aria-label="Voltar para a lista de eventos">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>

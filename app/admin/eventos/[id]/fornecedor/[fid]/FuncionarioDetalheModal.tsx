@@ -176,7 +176,7 @@ export default function FuncionarioDetalheModal({
                   <button
                     onClick={handleSalvar}
                     disabled={isPending}
-                    className="btn-press flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shrink-0"
+                    className="btn btn-primario shrink-0"
                   >
                     {isPending ? 'Salvando...' : 'Salvar'}
                   </button>
@@ -215,7 +215,7 @@ function LinhaPresenca({ label, p }: { label: string; p: Presenca }) {
         )}
       </div>
       {p?.enderecoAproximado && (
-        <p className="text-slate-400 text-[11px] flex items-center gap-1">
+        <p className="text-slate-400 text-2xs flex items-center gap-1">
           <MapPin className="w-2.5 h-2.5 shrink-0" /> {p.enderecoAproximado}
         </p>
       )}
@@ -223,14 +223,14 @@ function LinhaPresenca({ label, p }: { label: string; p: Presenca }) {
           trilha de auditoria (quem, por quê), porque não foi a própria pessoa. */}
       {p?.assistido ? (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 space-y-0.5">
-          <p className="text-amber-700 text-[11px] font-semibold flex items-center gap-1">
+          <p className="text-amber-700 text-2xs font-semibold flex items-center gap-1">
             <ClipboardCheck className="w-3 h-3 shrink-0" /> Batida registrada por supervisor
           </p>
-          {p.registradoPor && <p className="text-amber-600 text-[11px]">Responsável: {p.registradoPor}</p>}
-          {p.justificativa && <p className="text-amber-600/80 text-[11px] leading-snug">{p.justificativa}</p>}
+          {p.registradoPor && <p className="text-amber-600 text-2xs">Responsável: {p.registradoPor}</p>}
+          {p.justificativa && <p className="text-amber-600/80 text-2xs leading-snug">{p.justificativa}</p>}
         </div>
       ) : p?.registradoPor ? (
-        <p className="text-slate-400 text-[11px] flex items-center gap-1">
+        <p className="text-slate-400 text-2xs flex items-center gap-1">
           <ScanLine className="w-2.5 h-2.5 shrink-0" /> Registrado por {p.registradoPor}
         </p>
       ) : null}

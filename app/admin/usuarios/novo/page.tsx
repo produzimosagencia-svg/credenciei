@@ -1,7 +1,6 @@
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { PageHeader } from '@/components/ui/Superficie'
 import { podeGerenciarUsuarios, ehMaster } from '@/lib/permissions'
 import NovoUsuarioForm from './NovoUsuarioForm'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -43,16 +42,12 @@ export default async function NovoUsuarioPage() {
   return (
     <TutorialProvider tutorial={TUTORIAL}>
       <div className="max-w-md space-y-6">
-        <div className="flex items-center gap-3">
-          <Link href="/admin/usuarios" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-slate-800">Novo Usuário</h1>
-            <p className="text-slate-400 text-sm">Crie o acesso e defina o papel no sistema</p>
-          </div>
-          <TutorialButton />
-        </div>
+        <PageHeader
+          voltarPara="/admin/usuarios"
+          titulo="Novo Usuário"
+          descricao="Crie o acesso e defina o papel no sistema"
+          acoes={<TutorialButton />}
+        />
 
         <NovoUsuarioForm eventos={eventos ?? []} />
       </div>

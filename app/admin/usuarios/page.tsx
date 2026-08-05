@@ -89,7 +89,7 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
           <Link
             href="/admin/usuarios/novo"
             data-tutorial="usr-novo"
-            className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200 whitespace-nowrap"
+            className="flex flex-1 sm:flex-none items-center justify-center gap-2 btn btn-primario whitespace-nowrap"
           >
             <Plus className="w-4 h-4 shrink-0" />
             Novo Usuário
@@ -145,7 +145,7 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
                       )}
                     </span>
                   </div>
-                  <p className="text-slate-400 text-[11px]">
+                  <p className="text-slate-400 text-2xs">
                     desde {format(new Date(u.criadoEm), 'dd/MM/yyyy', { locale: ptBR })}
                   </p>
                 </div>

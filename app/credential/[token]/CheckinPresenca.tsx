@@ -133,7 +133,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         </div>
       ))}
 
-      <p className="text-center text-slate-400 text-[11px] pt-1 flex items-center justify-center gap-1">
+      <p className="text-center text-slate-400 text-2xs pt-1 flex items-center justify-center gap-1">
         <MapPin className="w-3 h-3" /> Na etapa do meio, a localização é registrada junto com a foto.
       </p>
     </div>
