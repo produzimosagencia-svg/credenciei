@@ -207,7 +207,7 @@ export default function TutorialOverlay({
               style={{ width: `${((indice + 1) / passos.length) * 100}%` }}
             />
           </div>
-          <p className="text-[11px] font-semibold text-slate-400">Passo {indice + 1} de {passos.length}</p>
+          <p className="text-2xs font-semibold text-slate-400">Passo {indice + 1} de {passos.length}</p>
         </div>
 
         <div className="flex items-start gap-3">
@@ -240,7 +240,7 @@ export default function TutorialOverlay({
             <button
               type="button"
               onClick={() => ultimoPasso ? onFinalizar() : onMudarIndice(indice + 1)}
-              className="btn-press flex items-center gap-1 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg shadow-sm shadow-brand-200 transition-colors"
+              className="btn btn-primario btn-sm text-xs"
             >
               {ultimoPasso ? 'Finalizar' : 'Próximo'}
               {!ultimoPasso && <ChevronRight className="w-3.5 h-3.5" />}

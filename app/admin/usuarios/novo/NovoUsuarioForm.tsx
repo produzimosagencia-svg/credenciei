@@ -111,7 +111,7 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
       <button
         type="submit"
         disabled={isPending || !setores.length}
-        className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+        className="w-full btn btn-primario btn-lg"
       >
         {isPending ? 'Criando...' : 'Criar acesso'}
       </button>

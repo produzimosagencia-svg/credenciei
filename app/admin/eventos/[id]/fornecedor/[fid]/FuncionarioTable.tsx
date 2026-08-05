@@ -219,7 +219,7 @@ export default function FuncionarioTable({
                             <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>
                               {f.nome}
                               {!f.ativo && (
-                                <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full align-middle">NÃO ATIVADO</span>
+                                <span className="ml-1.5 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full align-middle">NÃO ATIVADO</span>
                               )}
                             </p>
                             <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
@@ -244,7 +244,7 @@ export default function FuncionarioTable({
                         <span className="text-slate-300 text-xs">—</span>
                       )}
                       {f.pago && (
-                        <span className="text-[10px] font-bold text-white bg-green-500 px-1.5 py-0.5 rounded-full">PAGO</span>
+                        <span className="text-2xs font-bold text-white bg-green-500 px-1.5 py-0.5 rounded-full">PAGO</span>
                       )}
                     </div>
                   </td>

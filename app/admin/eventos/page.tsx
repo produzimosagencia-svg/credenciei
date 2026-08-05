@@ -70,7 +70,7 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
             <Link
               href="/admin/eventos/novo"
               data-tutorial="eventos-novo"
-              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+              className="flex items-center gap-2 btn btn-primario"
             >
               <Plus className="w-4 h-4" />
               Novo Evento
@@ -86,7 +86,7 @@ export default async function EventosPage({ searchParams }: { searchParams: Prom
           {podeCriarEvento ? (
             <>
               <p className="text-slate-400 text-sm mt-1">Crie seu primeiro evento para começar</p>
-              <Link href="/admin/eventos/novo" className="inline-block mt-4 bg-brand-500 hover:bg-brand-600 text-white text-sm px-5 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
+              <Link href="/admin/eventos/novo" className="inline-block mt-4 btn btn-primario">
                 Criar evento
               </Link>
             </>

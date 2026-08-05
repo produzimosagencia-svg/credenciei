@@ -31,6 +31,15 @@
   --radius-3xl: 1.5rem;    /* 24px */
 
   /*
+   * Degrau que faltava na escala de texto. Metadado (CPF sob o nome, "desde
+   * 10/03", contagem em selo) estava escrito como text-[11px] em 26 lugares e
+   * text-[10px] em outros 4 — dois tamanhos improvisados pro mesmo papel.
+   * Agora tem nome e um valor só.
+   */
+  --text-2xs: 0.6875rem;          /* 11px */
+  --text-2xs--line-height: 1rem;
+
+  /*
    * Escala de sombra do sistema inteiro: troca o padrão do Tailwind
    * (cinza puro, uma camada) por sombras em camadas (contato + ambiente),
    * em neutro frio (slate-900) e sempre na mesma direção (luz vindo de
@@ -66,6 +75,26 @@ p {
   text-wrap: pretty;
 }
 
+/*
+ * Foco por teclado visível no sistema inteiro.
+ *
+ * Antes existia anel em dois lugares (o .input e mais nada), então quem navega
+ * por Tab não enxergava onde estava em nenhum botão ou link do painel. Como é
+ * :focus-visible e não :focus, o anel não aparece em clique de mouse — só na
+ * navegação por teclado, que é justamente quem precisa dele.
+ *
+ * Campos ficam de fora porque o .input já tem o próprio anel logo abaixo;
+ * somar os dois deixaria a borda dobrada.
+ */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:not([tabindex='-1']):focus-visible {
+  outline: 2px solid #6f66e9;
+  outline-offset: 2px;
+}
+
 /* Feedback de toque consistente pra botões primários (aplicado via classe,
    não em todo `button` — nem todo botão do app deve "afundar" ao clicar). */
 .btn-press {
@@ -84,6 +113,88 @@ p {
 button, [role='button'], a.btn-press {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+/*
+ * Botões do sistema.
+ *
+ * Mesma escolha do .input logo abaixo, e pelo mesmo motivo: a aparência estava
+ * escrita à mão em 22 arquivos, com doze grafias que só diferiam em coisa
+ * acidental (py-3 num, py-2.5 noutro; shadow-md aqui, shadow-lg ali). Trocar a
+ * cor do primário virava caçada e sempre escapava um.
+ *
+ * Fica em @layer components pra que utilitário do Tailwind no call site
+ * continue vencendo — quem escrever `className="btn btn-primario bg-red-500"`
+ * ainda tem o vermelho aplicado.
+ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-xl);
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.625rem 1rem;    /* 40px de altura */
+    white-space: nowrap;
+    transition: transform 150ms ease, background-color 150ms ease,
+                box-shadow 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; pointer-events: none; }
+
+  /* Tamanhos */
+  .btn-sm { padding: 0.5rem 0.75rem; }
+  .btn-lg { padding: 0.75rem 1.25rem; }
+  /* Quadrado, pra botão que só tem ícone. Sempre com aria-label no JSX. */
+  .btn-icone { width: 2.25rem; height: 2.25rem; padding: 0; }
+  .btn-icone-lg { width: 2.75rem; height: 2.75rem; padding: 0; }
+
+  /*
+   * Variantes.
+   *
+   * O primário é GRAFITE, não roxo: o roxo virou secundário e ficou reservado
+   * à marca (logo, indicador do menu, barra de progresso) — ver o bloco
+   * "GRAFITE" mais abaixo. Aqui a cor é escrita direto, e não via
+   * var(--color-brand-500), justamente pra não voltar a ser roxa por engano.
+   */
+  .btn-primario {
+    background-color: #1c1b26;
+    color: #ffffff;
+    /* --shadow-lg e não --md: o botão antigo somava shadow-md a um
+       shadow-brand-200, que é roxo claro e dava um halo forte. Trocar pelo
+       neutro na mesma intensidade teria achatado o botão — este projeto já
+       pediu explicitamente mais profundidade nos botões. */
+    box-shadow: var(--shadow-lg);
+  }
+  .btn-primario:hover:not(:disabled) { background-color: #2b2a38; }
+  .btn-primario:active:not(:disabled) { background-color: #111019; }
+
+  /* Dentro do menu escuro inverte: grafite sobre grafite sumiria. */
+  .tema-escuro .btn-primario { background-color: #ededf5; color: #16151f; }
+  .tema-escuro .btn-primario:hover:not(:disabled) { background-color: #ffffff; }
+
+  .btn-secundario {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-secundario:hover:not(:disabled) {
+    color: var(--color-brand-600);
+    border-color: var(--color-brand-300);
+  }
+
+  .btn-perigo {
+    background-color: #ef4444;
+    color: #ffffff;
+    box-shadow: var(--shadow-lg);
+  }
+  .btn-perigo:hover:not(:disabled) { background-color: #dc2626; }
+
+  .btn-fantasma { color: #64748b; }
+  .btn-fantasma:hover:not(:disabled) { color: #1e293b; background-color: #f1f5f9; }
 }
 
 .input {

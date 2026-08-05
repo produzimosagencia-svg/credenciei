@@ -141,7 +141,7 @@ export function DonutComposicao({
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <p className="text-slate-800 text-xl font-bold tabular-nums leading-none">{total}</p>
-          <p className="text-slate-400 text-[10px] mt-0.5">{rotuloCentro}</p>
+          <p className="text-slate-400 text-2xs mt-0.5">{rotuloCentro}</p>
         </div>
       </div>
 

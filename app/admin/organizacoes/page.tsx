@@ -42,7 +42,7 @@ export default async function OrganizacoesPage() {
         </div>
         <Link
           href="/admin/organizacoes/novo"
-          className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200"
+          className="flex items-center gap-2 btn btn-primario"
         >
           <Plus className="w-4 h-4" />
           Nova Organização
@@ -54,7 +54,7 @@ export default async function OrganizacoesPage() {
           <Building2 className="w-12 h-12 text-slate-200 mx-auto mb-4" />
           <p className="text-slate-500 font-semibold">Nenhuma organização cadastrada</p>
           <p className="text-slate-400 text-sm mt-1">Crie a primeira organização e o admin dela</p>
-          <Link href="/admin/organizacoes/novo" className="inline-block mt-4 bg-brand-500 hover:bg-brand-600 text-white text-sm px-5 py-2.5 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
+          <Link href="/admin/organizacoes/novo" className="inline-block mt-4 btn btn-primario">
             Criar organização
           </Link>
         </div>

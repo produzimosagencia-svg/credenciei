@@ -65,7 +65,7 @@ export default function SupervisorModal(props: Props) {
         >
           <span className="truncate flex-1">{props.supervisor.nome}</span>
           {!props.supervisor.ativo && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>
+            <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>
           )}
           <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
         </button>
@@ -133,7 +133,7 @@ export default function SupervisorModal(props: Props) {
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="btn-press flex-1 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-3 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+                  className="btn btn-primario btn-lg flex-1"
                 >
                   {isPending ? 'Salvando...' : isEditar ? 'Salvar alterações' : 'Criar supervisor'}
                 </button>

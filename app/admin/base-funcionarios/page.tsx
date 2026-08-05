@@ -125,7 +125,7 @@ export default async function BaseFuncionariosPage({
         </div>
         <button
           type="submit"
-          className="btn-press shrink-0 bg-brand-500 hover:bg-brand-600 text-white px-5 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+          className="btn-press shrink-0 btn btn-primario"
         >
           Buscar
         </button>
@@ -174,7 +174,7 @@ export default async function BaseFuncionariosPage({
                   <Etiqueta>{p.organizacoes.size} organizaç{p.organizacoes.size !== 1 ? 'ões' : 'ão'}</Etiqueta>
                   {p.cargo && <Etiqueta>{p.cargo}</Etiqueta>}
                 </div>
-                <p className="text-slate-400 text-[11px]">
+                <p className="text-slate-400 text-2xs">
                   {p.telefone ? `${p.telefone} • ` : ''}último cadastro em {formatarBR(p.ultimo, 'curto')}
                 </p>
               </div>

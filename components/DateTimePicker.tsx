@@ -123,7 +123,7 @@ export default function DateTimePicker({
                 </div>
                 <div className="grid grid-cols-7 gap-1 mb-1">
                   {DIAS_SEMANA.map(d => (
-                    <div key={d} className="text-center text-[11px] font-semibold text-slate-400 py-1">{d}</div>
+                    <div key={d} className="text-center text-2xs font-semibold text-slate-400 py-1">{d}</div>
                   ))}
                 </div>
                 <div className="grid grid-cols-7 gap-1">
@@ -188,7 +188,7 @@ export default function DateTimePicker({
                   type="button"
                   onClick={aplicar}
                   disabled={!dataSelecionada || !horaSelecionada}
-                  className="btn-press bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-xl"
+                  className="btn btn-primario"
                 >
                   Aplicar
                 </button>

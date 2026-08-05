@@ -4,7 +4,10 @@ import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
   MapPin, Clock, Building2, IdCard, ShieldCheck,
 } from 'lucide-react'
-import { localizarFuncionarioPorCpf, registrarPresencaAssistida, type FuncionarioLocalizado } from '@/lib/actions'
+import {
+  localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida,
+  type FuncionarioLocalizado, type CandidatoLocalizado,
+} from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 
@@ -44,9 +47,18 @@ function pegarLocalizacao(): Promise<{ latitude: number; longitude: number } | n
   })
 }
 
+/**
+ * Máscara só quando o que a pessoa digita é número. Aplicar formatCpf sempre
+ * destruiria um nome enquanto ele é digitado.
+ */
+function mascarar(valor: string): string {
+  return /^[\d.\-\s]*$/.test(valor) ? formatCpf(valor) : valor
+}
+
 export default function LocalizarFuncionario() {
-  const [cpf, setCpf] = useState('')
+  const [termo, setTermo] = useState('')
   const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
+  const [candidatos, setCandidatos] = useState<CandidatoLocalizado[] | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<{ nome: string; etapa: string } | null>(null)
@@ -55,15 +67,27 @@ export default function LocalizarFuncionario() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const recomecar = () => {
-    setCpf(''); setFunc(null); setFoto(null); setErro(null); setSucesso(null)
+    setTermo(''); setFunc(null); setCandidatos(null); setFoto(null); setErro(null); setSucesso(null)
   }
 
   const buscar = (e: React.FormEvent) => {
     e.preventDefault()
-    setErro(null); setFunc(null); setFoto(null)
+    setErro(null); setFunc(null); setCandidatos(null); setFoto(null)
     startBusca(async () => {
-      const res = await localizarFuncionarioPorCpf(cpf)
+      const res = await localizarFuncionario(termo)
       if (res.error) return setErro(res.error)
+      if (res.candidatos) return setCandidatos(res.candidatos)
+      setFunc(res.funcionario!)
+    })
+  }
+
+  /** Escolheu alguém da lista: busca a ficha completa dessa pessoa. */
+  const escolher = (id: string) => {
+    setErro(null)
+    startBusca(async () => {
+      const res = await abrirFuncionarioLocalizado(id)
+      if (res.error) return setErro(res.error)
+      setCandidatos(null)
       setFunc(res.funcionario!)
     })
   }
@@ -109,7 +133,7 @@ export default function LocalizarFuncionario() {
         <p className="text-slate-400 text-xs">
           O registro ficou marcado como feito por você, com a foto, o horário e a localização.
         </p>
-        <button onClick={recomecar} className="btn-press w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold text-sm shadow-md shadow-brand-200">
+        <button onClick={recomecar} className="btn-press w-full btn btn-primario btn-lg">
           Localizar outra pessoa
         </button>
       </div>
@@ -118,30 +142,60 @@ export default function LocalizarFuncionario() {
 
   return (
     <div className="space-y-4">
-      {/* Busca por CPF */}
+      {/* Busca por CPF ou nome */}
       <form onSubmit={buscar} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-busca">
-        <label className="text-sm font-medium text-slate-700 block">CPF do funcionário</label>
+        <label className="text-sm font-medium text-slate-700 block">CPF ou nome do funcionário</label>
         <div className="flex gap-2">
           <input
             required
             autoFocus
-            value={cpf}
-            onChange={e => { setCpf(formatCpf(e.target.value)); setErro(null) }}
-            placeholder="000.000.000-00"
+            value={termo}
+            onChange={e => { setTermo(mascarar(e.target.value)); setErro(null) }}
+            placeholder="000.000.000-00 ou Maria Silva"
             className="input flex-1"
-            inputMode="numeric"
+            autoComplete="off"
           />
           <button
             type="submit"
             disabled={buscando}
-            className="btn-press shrink-0 flex items-center gap-1.5 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white px-4 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+            className="btn-press shrink-0 flex items-center gap-1.5 btn btn-primario"
           >
             <Search className="w-4 h-4" />
             {buscando ? '...' : 'Buscar'}
           </button>
         </div>
-        <p className="text-slate-400 text-[11px]">Você só localiza pessoas dos setores sob sua responsabilidade.</p>
+        <p className="text-slate-400 text-2xs">Você só localiza pessoas dos setores sob sua responsabilidade.</p>
       </form>
+
+      {/* Nome quase nunca é único: quem escolhe a pessoa certa é o supervisor. */}
+      {candidatos && (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <p className="text-slate-500 text-xs font-semibold px-4 py-3 border-b border-slate-100 bg-slate-50">
+            {candidatos.length} pessoas encontradas — toque em quem você está atendendo
+          </p>
+          <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+            {candidatos.map(c => (
+              <button
+                key={c.id}
+                onClick={() => escolher(c.id)}
+                disabled={buscando}
+                className="btn-press w-full text-left px-4 py-3 hover:bg-slate-50 disabled:opacity-50 flex items-center gap-3"
+              >
+                <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-slate-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-slate-800 text-sm font-semibold truncate">{c.nome}</p>
+                  <p className="text-slate-400 text-2xs tabular-nums">
+                    {formatCpf(c.cpf)}{c.cargo ? ` • ${c.cargo}` : ''}
+                  </p>
+                  <p className="text-slate-400 text-2xs truncate">{c.setorNome} • {c.eventoNome}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {erro && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
@@ -166,7 +220,7 @@ export default function LocalizarFuncionario() {
               <div className="min-w-0 flex-1">
                 <p className="text-slate-800 font-bold leading-tight">{func.nome}</p>
                 <p className="text-slate-400 text-xs mt-0.5 tabular-nums">{formatCpf(func.cpf)}</p>
-                <span className={`inline-block mt-1.5 text-[11px] px-2 py-0.5 rounded-full font-semibold ${func.ativo ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                <span className={`inline-block mt-1.5 text-2xs px-2 py-0.5 rounded-full font-semibold ${func.ativo ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-600'}`}>
                   {func.ativo ? 'Ativo' : 'Não ativado'}
                 </span>
               </div>
@@ -186,7 +240,7 @@ export default function LocalizarFuncionario() {
             </div>
 
             <div className={`rounded-xl p-3 border ${func.proximaPendente ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-              <p className={`text-[11px] font-semibold uppercase tracking-wide ${func.proximaPendente ? 'text-amber-600' : 'text-green-600'}`}>
+              <p className={`text-2xs font-semibold uppercase tracking-wide ${func.proximaPendente ? 'text-amber-600' : 'text-green-600'}`}>
                 Batida pendente
               </p>
               <p className={`text-sm font-bold mt-0.5 ${func.proximaPendente ? 'text-amber-800' : 'text-green-800'}`}>
@@ -201,7 +255,7 @@ export default function LocalizarFuncionario() {
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-foto">
                 <div>
                   <p className="text-sm font-medium text-slate-700">Validar funcionário</p>
-                  <p className="text-slate-400 text-[11px] mt-0.5">
+                  <p className="text-slate-400 text-2xs mt-0.5">
                     Tire uma foto do rosto da pessoa agora. É ela que comprova que o colaborador estava na sua frente.
                   </p>
                 </div>
@@ -229,11 +283,11 @@ export default function LocalizarFuncionario() {
                 onClick={registrar}
                 disabled={!foto || registrando}
                 data-tutorial="loc-registrar"
-                className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:active:scale-100 text-white py-3.5 rounded-2xl font-bold text-sm shadow-lg shadow-brand-500/25"
+                className="btn btn-primario btn-lg w-full"
               >
                 {registrando ? 'Registrando...' : `Registrar batida — ${func.proximaPendente.rotulo}`}
               </button>
-              {!foto && <p className="text-slate-400 text-[11px] text-center">Tire a foto para liberar o registro.</p>}
+              {!foto && <p className="text-slate-400 text-2xs text-center">Tire a foto para liberar o registro.</p>}
             </>
           )}
 
@@ -251,7 +305,7 @@ export default function LocalizarFuncionario() {
 function Dado({ icone: Icone, rotulo, valor }: { icone: React.ElementType; rotulo: string; valor: string }) {
   return (
     <div className="min-w-0">
-      <p className="text-slate-400 flex items-center gap-1 text-[11px]">
+      <p className="text-slate-400 flex items-center gap-1 text-2xs">
         <Icone className="w-3 h-3 shrink-0" /> {rotulo}
       </p>
       <p className="text-slate-700 font-medium truncate">{valor}</p>

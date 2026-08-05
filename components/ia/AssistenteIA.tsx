@@ -88,14 +88,14 @@ export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
       <p className={`flex items-start gap-1.5 ${t.titulo} text-xs font-bold`}>
         <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {c.resumo}
       </p>
-      <ul className={`${t.item} text-[11px] space-y-0.5 pl-5`}>
+      <ul className={`${t.item} text-2xs space-y-0.5 pl-5`}>
         {Object.entries(c.impacto).map(([chave, valor]) => (
           <li key={chave} className="list-disc">
             {chave.replace(/_/g, ' ')}: <strong>{Array.isArray(valor) ? valor.join(', ') || '—' : String(valor)}</strong>
           </li>
         ))}
       </ul>
-      <p className={`${t.nota} text-[11px]`}>{t.aviso}</p>
+      <p className={`${t.nota} text-2xs`}>{t.aviso}</p>
       {feito ? (
         <p className={`${t.titulo} text-xs font-semibold`}>Confirmado — executando.</p>
       ) : (
@@ -292,7 +292,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
               <p className="text-slate-800 font-bold text-sm truncate">
                 {verHistorico ? 'Conversas anteriores' : 'Credenciei IA'}
               </p>
-              <p className="text-slate-400 text-[11px] truncate">
+              <p className="text-slate-400 text-2xs truncate">
                 {verHistorico ? `${conversas.length} guardada(s) neste aparelho` : 'Pergunte ou peça pra fazer'}
               </p>
             </div>
@@ -323,7 +323,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
               <div key={c.id} className="group flex items-center gap-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 transition-colors">
                 <button onClick={() => abrirConversa(c)} className="flex-1 text-left min-w-0">
                   <p className="text-slate-700 text-sm font-medium truncate">{c.titulo || tituloDe(c.mensagens)}</p>
-                  <p className="text-slate-400 text-[11px]">{quandoRelativo(c.atualizadaEm)} • {c.mensagens.filter(m => m.papel === 'user').length} pergunta(s)</p>
+                  <p className="text-slate-400 text-2xs">{quandoRelativo(c.atualizadaEm)} • {c.mensagens.filter(m => m.papel === 'user').length} pergunta(s)</p>
                 </button>
                 <button
                   onClick={() => setConversas(apagarConversa(usuarioId, c.id))}
@@ -404,7 +404,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   <FileSpreadsheet className="w-4 h-4 text-brand-600 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-brand-700 text-xs font-semibold truncate">{anexo.nome}</p>
-                    <p className="text-brand-500 text-[11px]">
+                    <p className="text-brand-500 text-2xs">
                       {anexo.linhas.length} pessoa{anexo.linhas.length !== 1 ? 's' : ''} — diga em qual setor entram
                     </p>
                   </div>
@@ -457,7 +457,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                 <button
                   type="submit"
                   disabled={(!entrada.trim() && !anexo) || ocupado}
-                  className="btn-press shrink-0 w-11 h-11 flex items-center justify-center rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white"
+                  className="btn btn-primario btn-icone-lg shrink-0"
                   aria-label="Enviar"
                 >
                   <ArrowUp className="w-4 h-4" />

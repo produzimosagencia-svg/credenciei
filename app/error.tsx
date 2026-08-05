@@ -20,7 +20,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </div>
         <button
           onClick={reset}
-          className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
+          className="w-full btn btn-primario btn-lg"
         >
           Tentar de novo
         </button>

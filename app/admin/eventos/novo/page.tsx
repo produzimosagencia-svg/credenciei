@@ -1,7 +1,6 @@
 import { criarEvento } from '@/lib/actions'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -42,16 +41,12 @@ export default async function NovoEventoPage() {
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
       <div className="max-w-xl space-y-6">
-        <div className="flex items-center gap-3">
-          <Link href="/admin/eventos" className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 transition-all shadow-sm">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-slate-800">Novo Evento</h1>
-            <p className="text-slate-400 text-sm">Preencha os dados do evento</p>
-          </div>
-          <TutorialButton />
-        </div>
+        <PageHeader
+          voltarPara="/admin/eventos"
+          titulo="Novo Evento"
+          descricao="Preencha os dados do evento"
+          acoes={<TutorialButton />}
+        />
         <EventoForm action={criarEvento} submitLabel="Criar Evento" />
       </div>
     </TutorialProvider>
@@ -92,7 +87,7 @@ function EventoForm({ action, submitLabel, defaults }: {
 
       <JanelasHorario defaults={defaults} />
 
-      <button type="submit" data-tutorial="evt-novo-submit" className="w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all shadow-md shadow-brand-200">
+      <button type="submit" data-tutorial="evt-novo-submit" className="w-full btn btn-primario btn-lg">
         {submitLabel}
       </button>
       <FormLoadingOverlay mensagem="Criando evento..." />

@@ -55,7 +55,7 @@ export default function LoginPage() {
           </div>
           <div>
             <p className="text-white font-bold text-xl leading-tight tracking-tight">Credenciei</p>
-            <p className="text-slate-300 text-[11px] tracking-[0.2em] uppercase">Credenciamento para eventos</p>
+            <p className="text-slate-300 text-2xs tracking-[0.2em] uppercase">Credenciamento para eventos</p>
           </div>
         </div>
       </div>

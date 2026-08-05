@@ -117,7 +117,7 @@ export default function ValorCobradoPicker({
                 <button
                   type="button"
                   onClick={aplicar}
-                  className="btn-press bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold px-5 py-2 rounded-xl"
+                  className="btn btn-primario"
                 >
                   Aplicar
                 </button>

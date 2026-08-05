@@ -108,9 +108,12 @@ Leitor de QR. O botão Entrada/Saída decide o que é gravado — esquecer de tr
 grava na etapa errada.
 
 ## Localizar funcionário (/admin/localizar)
-Registro assistido. Busca por CPF, mostra a ficha, exige foto do rosto tirada na
-hora e grava sozinho a etapa pendente. O supervisor nunca escolhe qual etapa.
-Grava auditoria: autor, horário, GPS, aparelho e justificativa.
+Registro assistido. Busca por CPF **ou por nome** — nome costuma achar várias
+pessoas, então a tela lista os resultados (nome, CPF, cargo, setor e evento) pro
+supervisor escolher quem está na frente dele. Depois mostra a ficha, exige foto
+do rosto tirada na hora e grava sozinho a etapa pendente. O supervisor nunca
+escolhe qual etapa. Grava auditoria: autor, horário, GPS, aparelho e
+justificativa.
 
 ## Organizações (/admin/organizacoes) — só master
 Clientes da plataforma. Foto de perfil, documento, responsável, limite de

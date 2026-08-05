@@ -128,7 +128,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         </p>
         <a
           href={`/credential/${qrToken}`}
-          className="block w-full bg-brand-500 hover:bg-brand-600 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
+          className="block w-full btn btn-primario btn-lg"
         >
           Abrir minha credencial →
         </a>
@@ -190,7 +190,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         type="submit"
         data-tutorial="form-enviar"
         disabled={loading}
-        className="w-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 disabled:opacity-50 text-white py-3 rounded-xl font-semibold transition-all text-sm shadow-md shadow-brand-200"
+        className="w-full btn btn-primario btn-lg"
       >
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}
       </button>

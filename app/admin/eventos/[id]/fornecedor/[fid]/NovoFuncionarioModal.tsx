@@ -34,7 +34,7 @@ export default function NovoFuncionarioModal({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-sm px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl transition-all shadow-sm font-semibold"
+        className="flex items-center gap-1.5 btn btn-primario btn-sm"
       >
         <UserPlus className="w-3.5 h-3.5" />
         Cadastrar funcionário
@@ -80,7 +80,7 @@ export default function NovoFuncionarioModal({
               <button
                 type="submit"
                 disabled={isPending}
-                className="btn-press w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:active:scale-100 text-white py-3 rounded-xl font-semibold text-sm shadow-md shadow-brand-200"
+                className="btn btn-primario btn-lg w-full"
               >
                 {isPending ? 'Cadastrando...' : 'Cadastrar funcionário'}
               </button>
