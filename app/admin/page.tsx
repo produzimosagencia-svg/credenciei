@@ -2,11 +2,11 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { CalendarDays, Users, UserCheck, TrendingUp, ArrowRight, Circle, Plus, Building2 } from 'lucide-react'
+import { CalendarDays, ArrowRight, Circle, Plus, LayoutGrid } from 'lucide-react'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear } from '@/lib/permissions'
 import StatCard from '@/components/StatCard'
-import { BarrasMagnitude, DonutComposicao, COR_ETAPA } from '@/components/charts'
+import { BarrasMagnitude, DistribuicaoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -59,8 +59,6 @@ export default async function AdminPage() {
   // Todas as queries abaixo dependem só de eventoIds → uma única wave em paralelo
   const [
     [
-      { count: totalFornecedores },
-      { count: totalFuncionarios },
       { data: ultimosRegistros },
       { count: regEntrada },
       { count: regMeio },
@@ -69,12 +67,6 @@ export default async function AdminPage() {
     presencaData,
   ] = await Promise.all([
     Promise.all([
-      eventoIds.length
-        ? db.from('fornecedores').select('*', { count: 'exact', head: true }).in('evento_id', eventoIds)
-        : Promise.resolve({ count: 0 }),
-      eventoIds.length
-        ? db.from('funcionarios').select('fornecedores!inner(evento_id)', { count: 'exact', head: true }).in('fornecedores.evento_id', eventoIds)
-        : Promise.resolve({ count: 0 }),
       eventoIds.length
         ? db.from('registros').select('*, funcionarios(nome, cargo, empresa), eventos(nome)').in('evento_id', eventoIds).order('created_at', { ascending: false }).limit(12)
         : Promise.resolve({ data: [] }),
@@ -97,192 +89,193 @@ export default async function AdminPage() {
     r.tipo === 'entrada' && new Date(r.created_at).toDateString() === new Date().toDateString()
   ).length ?? 0
 
+  // Total de gente esperada nos eventos ATIVOS — é a base de "quantos
+  // faltam chegar", que é a pergunta do dia. Somar a base inteira aqui
+  // misturaria evento encerrado com evento acontecendo agora.
+  const esperadosAtivos = presencaData.reduce((acc, p) => acc + p.total, 0)
+  const presentesAtivos = presencaData.reduce((acc, p) => acc + p.dentro, 0)
+  const faltamChegar = Math.max(0, esperadosAtivos - presentesAtivos)
+
   const stats = [
-    { label: 'Total de eventos', value: eventos?.length ?? 0, sub: `${eventosAtivos.length} ativo${eventosAtivos.length !== 1 ? 's' : ''}`, icon: CalendarDays, color: 'text-brand-600', bg: 'bg-brand-100', border: 'border-brand-200' },
-    { label: 'Fornecedores/Setores', value: totalFornecedores ?? 0, sub: 'cadastrados', icon: Users, color: 'text-purple-600', bg: 'bg-purple-100', border: 'border-purple-200' },
-    { label: 'Funcionários', value: totalFuncionarios ?? 0, sub: 'no total', icon: UserCheck, color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-200' },
-    { label: 'Entradas hoje', value: entradasHoje, sub: 'registros', icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', border: 'border-blue-200' },
+    { label: 'Eventos ativos', value: eventosAtivos.length, sub: `de ${eventos?.length ?? 0}` },
+    { label: 'Presentes agora', value: presentesAtivos, sub: `de ${esperadosAtivos}`, tom: 'sucesso' as const },
+    { label: 'Ainda não chegaram', value: faltamChegar, tom: faltamChegar > 0 ? ('aviso' as const) : undefined },
+    { label: 'Entradas hoje', value: entradasHoje },
   ]
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
-    <div className="space-y-8 max-w-6xl">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5 hidden sm:block">Visão geral dos seus eventos</p>
+    <div className="space-y-5">
+      {/* Cabeçalho: bloco de ícone + título + data, ações à direita */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+            <LayoutGrid className="w-4 h-4 text-slate-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Painel</h1>
+            <p className="text-slate-500 text-sm" suppressHydrationWarning>
+              {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <TutorialButton />
           {podeCriarEvento && (
-            <Link
-              href="/admin/eventos/novo"
-              data-tutorial="dash-novo-evento"
-              className="btn btn-primario"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Novo Evento</span>
+            <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario">
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Novo evento</span>
               <span className="sm:hidden">Novo</span>
             </Link>
           )}
         </div>
       </div>
 
-      {/* Atalhos de navegação (substituem o menu lateral) */}
-      <div data-tutorial="dash-nav" className={`grid grid-cols-1 gap-4 ${ehMaster(perfil?.role) ? 'sm:grid-cols-2' : ''}`}>
-        {ehMaster(perfil?.role) && (
-          <NavCard
-            href="/admin/organizacoes"
-            icon={Building2}
-            title="Organizações"
-            descricao="Clientes, licenças e acessos"
-          />
-        )}
-        <NavCard
-          href="/admin/eventos"
-          icon={CalendarDays}
-          title="Eventos"
-          descricao="Gerenciar eventos, fornecedores/setores e presença"
-        />
-      </div>
-
-      {/* Stats */}
-      <div data-tutorial="dash-stats" className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Os quatro números que respondem "como está agora" */}
+      <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
-      {/* Gráficos operacionais (eventos ativos) */}
-      <div data-tutorial="dash-graficos" className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <div className="mb-5">
-            <h2 className="text-slate-800 font-bold text-base">Presença por evento</h2>
-            <p className="text-slate-400 text-xs mt-0.5">Quem já registrou entrada, nos eventos ativos</p>
+      <div data-tutorial="dash-graficos" className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Presença por evento */}
+        <div className="bg-white border border-slate-200 rounded-2xl">
+          <div className="px-5 py-3.5 border-b border-slate-100">
+            <h2 className="text-slate-800 font-semibold text-lg">Presença por evento</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Quem já registrou entrada, nos eventos ativos</p>
           </div>
-          {!presencaData.length ? (
-            <p className="text-slate-400 text-sm text-center py-8">Nenhum evento ativo no momento</p>
-          ) : (
-            <BarrasMagnitude
-              itens={presencaData.map(p => ({ label: p.evento.nome, valor: p.dentro, total: p.total }))}
-            />
-          )}
+          <div className="p-5">
+            {!presencaData.length ? (
+              <p className="text-slate-500 text-sm text-center py-6">Nenhum evento ativo no momento</p>
+            ) : (
+              <BarrasMagnitude
+                itens={presencaData.map(p => ({ label: p.evento.nome, valor: p.dentro, total: p.total }))}
+              />
+            )}
+          </div>
         </div>
 
-        <div className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <div className="mb-5">
-            <h2 className="text-slate-800 font-bold text-base">Registros por etapa</h2>
-            <p className="text-slate-400 text-xs mt-0.5">Somando todos os eventos ativos</p>
+        {/* Distribuição por etapa — barras, não donut. Comparar três valores
+            é leitura de comprimento; donut obriga a comparar ângulo, que é
+            mais difícil e não cabe num painel operacional. */}
+        <div className="bg-white border border-slate-200 rounded-2xl">
+          <div className="px-5 py-3.5 border-b border-slate-100">
+            <h2 className="text-slate-800 font-semibold text-lg">Registros por etapa</h2>
+            <p className="text-slate-500 text-xs mt-0.5">Somando todos os eventos ativos</p>
           </div>
-          <DonutComposicao
-            rotuloCentro="registros"
-            dados={[
-              { label: 'Entrada', valor: regEntrada ?? 0, cor: COR_ETAPA.entrada },
-              { label: 'Meio', valor: regMeio ?? 0, cor: COR_ETAPA.meio },
-              { label: 'Saída', valor: regFim ?? 0, cor: COR_ETAPA.fim },
-            ]}
-          />
+          <div className="p-5">
+            <DistribuicaoEtapas
+              itens={[
+                { label: 'Entrada', valor: regEntrada ?? 0, cor: COR_ETAPA.entrada },
+                { label: 'Meio', valor: regMeio ?? 0, cor: COR_ETAPA.meio },
+                { label: 'Saída', valor: regFim ?? 0, cor: COR_ETAPA.fim },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Eventos */}
-        <div className="md:col-span-3 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-slate-800 font-bold text-base">Eventos</h2>
-            <Link href="/admin/eventos" className="text-brand-500 text-xs hover:underline font-medium flex items-center gap-1">
+        <div className="lg:col-span-3 bg-white border border-slate-200 rounded-2xl">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+            <h2 className="text-slate-800 font-semibold text-lg">Eventos</h2>
+            <Link href="/admin/eventos" className="text-slate-500 hover:text-slate-800 text-xs font-medium flex items-center gap-1 transition-colors">
               Ver todos <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          {!eventos?.length ? (
-            <div className="text-center py-10">
-              <CalendarDays className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-400 font-medium text-sm">Nenhum evento criado</p>
-              {podeCriarEvento && (
-                <Link href="/admin/eventos/novo" className="text-brand-500 text-xs hover:underline mt-1 inline-block font-medium">Criar primeiro evento →</Link>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {eventos.slice(0, 6).map((e) => {
-                const p = presencaData.find(p => p.evento.id === e.id)
-                const pct = p && p.total > 0 ? Math.round((p.dentro / p.total) * 100) : 0
-                return (
-                  <Link
-                    key={e.id}
-                    href={`/admin/eventos/${e.id}`}
-                    className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors group border border-transparent hover:border-slate-200"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Circle className={`w-2 h-2 shrink-0 ${e.ativo ? 'text-green-500 fill-green-500' : 'text-slate-300 fill-slate-300'}`} />
-                      <div className="min-w-0">
-                        <p className="text-slate-700 text-sm font-semibold truncate group-hover:text-brand-600 transition-colors">{e.nome}</p>
-                        <p className="text-slate-400 text-xs">
-                          {format(new Date(e.data_inicio), "dd/MM/yyyy", { locale: ptBR })}
-                          {e.local && ` • ${e.local}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 ml-4">
-                      {e.ativo && p && (
-                        <div className="text-right">
-                          <p className="text-slate-700 text-xs font-bold tabular-nums">{p.dentro}/{p.total}</p>
-                          <p className="text-slate-400 text-xs">presentes</p>
-                        </div>
-                      )}
-                      <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
-                    </div>
+          <div className="p-2">
+            {!eventos?.length ? (
+              <div className="text-center py-10">
+                <CalendarDays className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-700 font-medium text-sm">Nenhum evento criado</p>
+                {podeCriarEvento && (
+                  <Link href="/admin/eventos/novo" className="text-slate-500 hover:text-slate-800 text-xs mt-1 inline-block font-medium">
+                    Criar primeiro evento →
                   </Link>
-                )
-              })}
-            </div>
-          )}
+                )}
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {eventos.slice(0, 6).map((e) => {
+                  const p = presencaData.find(p => p.evento.id === e.id)
+                  return (
+                    <Link
+                      key={e.id}
+                      href={`/admin/eventos/${e.id}`}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors group"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Circle
+                          className={`w-1.5 h-1.5 shrink-0 ${
+                            e.ativo ? 'text-sucesso-600 fill-sucesso-600' : 'text-slate-300 fill-slate-300'
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-slate-800 text-sm font-medium truncate">{e.nome}</p>
+                          <p className="text-slate-500 text-xs">
+                            {format(new Date(e.data_inicio), 'dd/MM/yyyy', { locale: ptBR })}
+                            {e.local && ` · ${e.local}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {e.ativo && p && (
+                          <span className="text-slate-500 text-xs tabular-nums">
+                            <span className="text-slate-800 font-medium">{p.dentro}</span>/{p.total}
+                          </span>
+                        )}
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Feed */}
-        <div data-tutorial="dash-atividade" className="md:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <h2 className="text-slate-800 font-bold text-base mb-5">Atividade recente</h2>
-          {!ultimosRegistros?.length ? (
-            <p className="text-slate-400 text-sm text-center py-10">Sem atividade ainda</p>
-          ) : (
-            <div className="space-y-3 overflow-y-auto max-h-80">
-              {ultimosRegistros.map((r) => {
-                const func = r.funcionarios as any
-                return (
-                  <div key={r.id} className="flex items-start gap-3">
-                    <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${r.tipo === 'entrada' ? 'bg-green-500' : r.tipo === 'meio' ? 'bg-blue-500' : 'bg-brand-400'}`} />
-                    <div className="min-w-0">
-                      <p className="text-slate-700 text-xs font-semibold truncate">{func?.nome}</p>
-                      <p className="text-slate-400 text-xs truncate">{func?.empresa}{func?.cargo ? ` • ${func.cargo}` : ''}</p>
-                      <p className="text-slate-300 text-xs mt-0.5 tabular-nums">
-                        {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Fim'} •{' '}
-                        {format(new Date(r.created_at), "HH:mm", { locale: ptBR })}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+        {/* Atividade ao vivo — timeline, não lista solta: a linha vertical
+            liga os eventos no tempo e é o que dá sensação de "acontecendo". */}
+        <div data-tutorial="dash-atividade" className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl">
+          <div className="px-5 py-3.5 border-b border-slate-100">
+            <h2 className="text-slate-800 font-semibold text-lg">Atividade recente</h2>
+          </div>
+          <div className="p-5">
+            {!ultimosRegistros?.length ? (
+              <p className="text-slate-500 text-sm text-center py-8">Sem atividade ainda</p>
+            ) : (
+              <div className="relative overflow-y-auto max-h-80 pl-4">
+                <span className="absolute left-[3px] top-1.5 bottom-1.5 w-px bg-slate-200" aria-hidden="true" />
+                <div className="space-y-3.5">
+                  {ultimosRegistros.map((r) => {
+                    const func = r.funcionarios as any
+                    const cor =
+                      r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
+                    return (
+                      <div key={r.id} className="relative">
+                        <span
+                          className="absolute -left-4 top-1.5 w-[7px] h-[7px] rounded-full ring-2 ring-white"
+                          style={{ background: cor }}
+                          aria-hidden="true"
+                        />
+                        <p className="text-slate-800 text-xs font-medium truncate">{func?.nome}</p>
+                        <p className="text-slate-500 text-xs truncate">
+                          {func?.empresa}{func?.cargo ? ` · ${func.cargo}` : ''}
+                        </p>
+                        <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
+                          {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'} ·{' '}
+                          {format(new Date(r.created_at), 'HH:mm', { locale: ptBR })}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
     </TutorialProvider>
-  )
-}
-
-function NavCard({ href, icon: Icon, title, descricao }: { href: string; icon: React.ElementType; title: string; descricao: string }) {
-  return (
-    <Link
-      href={href}
-      className="group bg-white border border-slate-200 rounded-2xl p-5 flex items-center gap-4 hover:border-brand-300 hover:shadow-md transition-all"
-    >
-      <div className="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center shrink-0">
-        <Icon className="w-6 h-6 text-brand-600" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-bold text-slate-800 group-hover:text-brand-600 transition-colors">{title}</p>
-        <p className="text-slate-400 text-sm">{descricao}</p>
-      </div>
-      <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-brand-500 transition-colors shrink-0" />
-    </Link>
   )
 }

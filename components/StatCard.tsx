@@ -16,9 +16,9 @@
 
 const TONS = {
   neutro: 'text-slate-800',
-  sucesso: 'text-[--color-sucesso-700]',
-  aviso: 'text-[--color-aviso-700]',
-  erro: 'text-[--color-erro-600]',
+  sucesso: 'text-sucesso-700',
+  aviso: 'text-aviso-700',
+  erro: 'text-erro-600',
 } as const
 
 export default function StatCard({
@@ -48,7 +48,7 @@ export default function StatCard({
     <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3">
       <p className="text-slate-500 text-xs font-medium">{label}</p>
       <div className="flex items-baseline gap-1.5 mt-1">
-        <span className={`${small ? 'text-xl' : 'text-[length:--text-metrica] leading-[--text-metrica--line-height]'} font-semibold tabular-nums tracking-tight ${TONS[tom]}`}>
+        <span className={`${small ? 'text-xl' : 'text-metrica'} font-semibold tabular-nums tracking-tight ${TONS[tom]}`}>
           {value}
         </span>
         {sub && <span className="text-slate-400 text-xs">{sub}</span>}

@@ -61,17 +61,25 @@ function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
   return (
     <div
       style={estilo}
-      className={`rounded-full bg-brand-100 text-brand-600 flex items-center justify-center font-bold shrink-0 ${className}`}
+      className={`rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center font-semibold shrink-0 ${className}`}
     >
       <span style={{ fontSize: Math.max(11, tamanho * 0.32) }}>{iniciais(nome)}</span>
     </div>
   )
 }
 
+/**
+ * Itens do menu.
+ *
+ * Item ativo é fundo sutil + texto forte, sem barrinha colorida na lateral e
+ * sem pintar o texto de azul: dentro de um menu escuro, contraste já basta
+ * pra dizer "você está aqui". Ícone a 16px, hover discreto — menu não é
+ * conteúdo, ele deve recuar.
+ */
 function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: string; onNavigate?: () => void }) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
   return (
-    <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+    <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
       {nav.map(item => {
         const isAtivo = ativo(item.href)
         return (
@@ -79,11 +87,11 @@ function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: str
             key={item.href}
             href={item.href}
             onClick={onNavigate}
-            className={`relative flex items-center gap-3 text-sm px-3.5 py-2.5 rounded-xl font-medium transition-colors ${
-              isAtivo ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            aria-current={isAtivo ? 'page' : undefined}
+            className={`flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+              isAtivo ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
             }`}
           >
-            {isAtivo && <span className="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-brand-500" />}
             <item.icon className="w-4 h-4 shrink-0" />
             {item.label}
           </Link>
@@ -98,10 +106,10 @@ function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: str
 function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
   const { abrir } = useAssistente()
   return (
-    <div className="px-3 pb-1 shrink-0">
+    <div className="px-2 pb-1 shrink-0">
       <button
         onClick={() => { abrir(); onNavigate?.() }}
-        className="btn-press w-full flex items-center gap-3 text-sm px-3.5 py-2.5 rounded-xl font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 transition-colors"
+        className="w-full flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors"
       >
         <Sparkles className="w-4 h-4 shrink-0" />
         Credenciei IA
@@ -112,10 +120,10 @@ function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
 
 function BotaoSair({ onLogout }: { onLogout: () => void }) {
   return (
-    <div className="p-3 border-t border-slate-100 shrink-0">
+    <div className="p-2 border-t border-slate-100 shrink-0">
       <button
         onClick={onLogout}
-        className="btn-press w-full flex items-center gap-3 text-sm px-3.5 py-2.5 rounded-xl font-medium text-slate-500 hover:text-red-600 hover:bg-red-50"
+        className="w-full flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors"
       >
         <LogOut className="w-4 h-4" />
         Sair
@@ -151,14 +159,14 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
   return (
     <AssistenteIAProvider usuarioId={perfil.id}>
-    <div className="min-h-screen bg-[#f4f5f8] flex">
+    <div className="min-h-screen bg-neutro-50 flex">
       {/* Sidebar (desktop) */}
-      <aside className="tema-escuro hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
-        <Link href="/admin" className="flex items-center gap-2.5 px-5 h-16 border-b border-slate-100 shrink-0">
-          <div className="logo-marca w-9 h-9 rounded-xl flex items-center justify-center shadow-md shadow-brand-500/25">
-            <QrCode className="w-4 h-4 text-white" />
+      <aside className="tema-escuro hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
+        <Link href="/admin" className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0">
+          <div className="logo-marca w-6 h-6 rounded-md flex items-center justify-center">
+            <QrCode className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="font-bold text-slate-800 tracking-tight">Credenciei</span>
+          <span className="font-semibold text-slate-800 text-sm">Credenciei</span>
         </Link>
         <NavLinks nav={nav} pathname={pathname} />
         <BotaoAssistente />
@@ -167,8 +175,8 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
       {/* Coluna principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="tema-escuro sticky top-0 z-30 bg-[#1b1a29]/85 backdrop-blur-md border-b border-slate-200">
-          <div className="px-4 md:px-8 h-16 flex items-center justify-between gap-3">
+        <header className="tema-escuro sticky top-0 z-30 bg-white border-b border-slate-200">
+          <div className="px-4 md:px-6 h-14 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => setMenuAberto(true)}
@@ -191,12 +199,12 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
                 <p className="text-slate-700 text-xs font-semibold">{perfil.nome}</p>
                 <p className="text-slate-400 text-2xs">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
               </div>
-              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={36} className="ring-2 ring-white shadow-sm" />
+              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={28} />
             </div>
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8">
+        <main className="flex-1 p-4 md:p-6">
           {/* Publica quem está logado pro tutorial saber de quem é o histórico */}
           <TutorialUsuarioProvider id={perfil.id}>
             <div className="max-w-6xl mx-auto">{children}</div>

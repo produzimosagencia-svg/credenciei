@@ -88,9 +88,57 @@ export function ProgressoEtapas({ itens }: { itens: { label: string; valor: numb
 }
 
 /**
- * Donut de composição (estilo "sales by category" da referência) com total no
- * centro e legenda com rótulo + valor ao lado. Fatias com gap de 2px, ponta
- * arredondada e brilho suave por trás pra dar profundidade.
+ * Distribuição em barras horizontais, com o total em cima.
+ *
+ * Substitui o donut que havia aqui. Comparar três valores num donut é
+ * comparar ÂNGULO, que o olho faz mal; em barra é comparar comprimento a
+ * partir de uma linha de base comum, que é a comparação mais fácil que
+ * existe. Donut também obriga a legenda ao lado — dois lugares pra ler o
+ * mesmo dado.
+ */
+export function DistribuicaoEtapas({ itens }: { itens: { label: string; valor: number; cor: string }[] }) {
+  const total = itens.reduce((acc, i) => acc + i.valor, 0)
+  return (
+    <div className="space-y-3.5">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-slate-800 text-metrica font-semibold tabular-nums tracking-tight">
+          {total}
+        </span>
+        <span className="text-slate-500 text-xs">registros no total</span>
+      </div>
+      <div className="space-y-2.5">
+        {itens.map((item, i) => (
+          <div key={item.label}>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <p className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.cor }} />
+                {item.label}
+              </p>
+              <p className="text-slate-500 text-xs tabular-nums shrink-0">
+                <span className="text-slate-800 font-medium">{item.valor}</span>
+                <span className="text-slate-400"> · {pct(item.valor, total)}%</span>
+              </p>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="barra-entrada h-full rounded-full"
+                style={{
+                  width: `${pct(item.valor, total)}%`,
+                  background: item.cor,
+                  animationDelay: `${Math.min(i, 8) * 45}ms`,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Donut de composição — mantido porque outras telas podem usar, mas o
+ * painel passou a usar DistribuicaoEtapas acima.
  */
 export function DonutComposicao({
   dados,
