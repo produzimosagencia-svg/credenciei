@@ -11,6 +11,7 @@ import {
   type Confirmacao, type Conversa, type Mensagem,
 } from './historico'
 import { lerPlanilhaDeEquipe, type LinhaPlanilha } from '@/lib/planilha'
+import { Aviso } from '@/components/ui/Superficie'
 
 /** Planilha anexada à conversa: fica no cliente e vai junto de cada mensagem. */
 type Anexo = { nome: string; linhas: LinhaPlanilha[] }
@@ -355,6 +356,12 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                       </button>
                     ))}
                   </div>
+                  <Aviso tom="marca" icone={<Paperclip className="w-3.5 h-3.5" />}>
+                    <span className="text-xs">
+                      Também dá pra anexar a planilha da equipe no clipe abaixo — o sistema lê e confere os CPFs, e
+                      eu cadastro todo mundo de uma vez, no setor certo.
+                    </span>
+                  </Aviso>
                 </div>
               )}
 

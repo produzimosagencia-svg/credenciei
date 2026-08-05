@@ -147,15 +147,18 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               Planilha
             </a>
           )}
-          <Link
-            href={`/scan?evento=${id}`}
-            data-tutorial="evt-scan"
-            className="flex items-center gap-2 text-sm px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl transition-all shadow-md shadow-green-200 font-bold"
-          >
-            <ScanLine className="w-4 h-4" /> Escanear QR
-          </Link>
         </div>
       </div>
+
+      {/* Ação mais usada no dia do evento — grande de propósito, não mais
+          um pill igual aos outros. Mesmo formato em toda tela que tem scan. */}
+      <Link
+        href={`/scan?evento=${id}`}
+        data-tutorial="evt-scan"
+        className="btn w-full bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-base py-3.5 rounded-2xl shadow-lg shadow-green-500/25 gap-2.5"
+      >
+        <ScanLine className="w-5 h-5" /> Escanear QR Code
+      </Link>
 
       {/* Stats */}
       <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
