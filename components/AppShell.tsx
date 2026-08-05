@@ -3,9 +3,9 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { QrCode, LogOut, Menu, X, Home, Building2, CalendarDays, Users, ScanLine, UserSearch, Sparkles, IdCard } from 'lucide-react'
+import { QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles, IdCard } from 'lucide-react'
 import {
-  ROLE_LABELS, ehMaster, podeGerenciarEventos, podeGerenciarUsuarios, podeEscanear, type Role,
+  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -26,7 +26,8 @@ function navItemsPara(role: string): NavItem[] {
     itens.push({ href: '/admin/organizacoes', label: 'Organizações', icon: Building2 })
     itens.push({ href: '/admin/base-funcionarios', label: 'Base de Funcionários', icon: IdCard })
   }
-  if (podeGerenciarEventos(role)) itens.push({ href: '/admin/eventos', label: 'Eventos', icon: CalendarDays })
+  // "Eventos" saiu do menu: a lista foi para dentro do Início, então o item
+  // levaria pra mesma tela em que a pessoa já está.
   if (podeGerenciarUsuarios(role)) itens.push({ href: '/admin/usuarios', label: 'Usuários', icon: Users })
   if (podeEscanear(role)) {
     itens.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })

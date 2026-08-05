@@ -271,14 +271,20 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6" onClick={onFechar}>
-      <div className="overlay-fade-in absolute inset-0 bg-black/55 backdrop-blur-sm" />
+    /*
+     * `tema-escuro` precisa estar AQUI: o provider do assistente envolve o
+     * AppShell inteiro, então o modal é irmão do `<div className="tema-escuro">`
+     * e não descendente dele. Sem esta classe o modal renderizava claro —
+     * branco, texto escuro — no meio de um painel escuro.
+     */
+    <div className="tema-escuro fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6" onClick={onFechar}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/60" />
       <div
         onClick={e => e.stopPropagation()}
         className="modal-pop-in relative flex flex-col w-full h-full sm:w-[44rem] sm:h-[80vh] sm:max-h-[46rem] bg-white sm:rounded-3xl border border-slate-200 shadow-2xl overflow-hidden"
       >
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 h-16 border-b border-slate-100 shrink-0">
+        {/* Cabeçalho — 56px, a mesma altura da barra superior do painel */}
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 h-14 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             {verHistorico ? (
               <button onClick={() => setVerHistorico(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">

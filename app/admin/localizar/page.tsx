@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { UserSearch } from 'lucide-react'
 
 import { getPerfil } from '@/lib/supabase-server'
 import { podeEscanear, ehMaster } from '@/lib/permissions'
@@ -31,18 +32,29 @@ export default async function LocalizarPage() {
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
-      <div className="max-w-md space-y-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Localizar funcionário</h1>
-            <p className="text-slate-500 text-sm mt-0.5">
-              Regularize a batida de quem perdeu o horário
-            </p>
+      {/*
+        Centralizado de propósito: esta tela tem UMA tarefa (achar a pessoa e
+        regularizar a batida) e é usada em pé, no meio do evento, muitas vezes
+        no celular. Encostada à esquerda numa tela larga, o campo de busca —
+        que é o começo de tudo — ficava num canto, longe do olhar.
+      */}
+      <div className="min-h-[70vh] flex flex-col items-center justify-center py-8">
+        <div className="w-full max-w-md space-y-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.18)' }}>
+                <UserSearch className="w-5 h-5 text-brand-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Localizar funcionário</h1>
+                <p className="text-slate-500 text-sm">Regularize a batida de quem perdeu o horário</p>
+              </div>
+            </div>
+            <TutorialButton />
           </div>
-          <TutorialButton />
-        </div>
 
-        <LocalizarFuncionario />
+          <LocalizarFuncionario />
+        </div>
       </div>
     </TutorialProvider>
   )

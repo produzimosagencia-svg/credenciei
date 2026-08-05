@@ -2,12 +2,13 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ScanLine, Users, UserCheck, AlertTriangle, Wallet } from 'lucide-react'
+import { ArrowLeft, ScanLine, Users, AlertTriangle, Wallet } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import CopyLinkButton from '../../CopyLinkButton'
 import NovoFuncionarioModal from './NovoFuncionarioModal'
 import { UserSearch } from 'lucide-react'
 import StatCard from '@/components/StatCard'
+import { urlDoSite } from '@/lib/url'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -141,18 +142,15 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   })
 
   const total = funcionariosEnriquecidos.length
-  const ativados = funcionariosEnriquecidos.filter(f => f.ativo).length
-  const teto = fornecedor.quantidade_estimada as number | null
   const contar = (t: MomentoTipo) => funcionariosEnriquecidos.filter(f => f[t]).length
   const comPendencia = funcionariosEnriquecidos.filter(f => f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado').length
   const totalReceber = funcionariosEnriquecidos.reduce((acc, f) => acc + f.valorReceber, 0)
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-  const formLink = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/form/${fornecedor.token_formulario}`
+  const formLink = `${await urlDoSite()}/form/${fornecedor.token_formulario}`
 
   const stats = [
     { label: 'Total', value: total, icon: Users, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200' },
-    { label: teto ? `Ativados (teto ${teto})` : 'Ativados', value: ativados, icon: UserCheck, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
     { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
     { label: 'A receber (equipe)', value: brl(totalReceber), icon: Wallet, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', small: true },
   ]
