@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeEscanear, ehMaster } from '@/lib/permissions'
 import LocalizarFuncionario from './LocalizarFuncionario'
+import { PageHeader } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -31,17 +32,18 @@ export default async function LocalizarPage() {
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
-      <div className="max-w-md space-y-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Localizar funcionário</h1>
-            <p className="text-slate-500 text-sm mt-0.5">
-              Regularize a batida de quem perdeu o horário
-            </p>
-          </div>
-          <TutorialButton />
-        </div>
-
+      {/*
+        Coluna estreita, mas ancorada no topo à esquerda como todas as outras
+        telas. Centralizar no meio da tela deixava o conteúdo boiando num vazio
+        enorme em monitor grande — o campo de busca é o começo da tarefa e tem
+        que estar onde o olho já está, que é no canto superior esquerdo.
+      */}
+      <div className="max-w-xl space-y-5">
+        <PageHeader
+          titulo="Localizar funcionário"
+          descricao="Regularize a batida de quem perdeu o horário"
+          acoes={<TutorialButton />}
+        />
         <LocalizarFuncionario />
       </div>
     </TutorialProvider>

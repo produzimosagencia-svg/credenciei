@@ -1,39 +1,63 @@
-// Card de indicador reutilizável — mesmo visual usado em app/admin/page.tsx,
-// app/admin/eventos/[id]/page.tsx e a página do fornecedor.
-// Anatomia no padrão de referência do cliente: ícone + rótulo na linha de
-// cima, número grande embaixo. A cor fica SÓ no ícone — texto usa tons
-// neutros, e a borda do card é neutra (a prop `border` é aceita por
-// compatibilidade com os call sites, mas não pinta mais a borda).
+/**
+ * Cartão de indicador (KPI).
+ *
+ * Cartão claro com um fio da cor no topo, um bloco colorido no ícone e um
+ * fundo levemente tingido. A cor vem do SIGNIFICADO do número — o que precisa
+ * de atenção é âmbar, o que está bem é verde, o que só conta coisa é azul —
+ * nunca de uma cor por posição na fileira.
+ *
+ * O número continua quase preto de propósito: número colorido lê pior, e ele
+ * é o conteúdo do cartão. A cor emoldura, não substitui.
+ *
+ * A aparência mora nas classes `.indicador*` do globals.css.
+ */
+
+const TONS = {
+  neutro: '',
+  acento: 'indicador-acento',
+  info: 'indicador-info',
+  sucesso: 'indicador-sucesso',
+  aviso: 'indicador-aviso',
+  erro: 'indicador-erro',
+} as const
+
+export type TomStat = keyof typeof TONS
+
 export default function StatCard({
   label,
   value,
   sub,
   icon: Icon,
-  color,
-  bg,
+  tom = 'neutro',
   small,
 }: {
   label: string
   value: string | number
   sub?: string
   icon?: React.ElementType
-  color: string
-  bg: string
-  border?: string
+  tom?: TomStat
+  /** Valor em texto longo (dinheiro, por exemplo) pede um degrau a menos. */
   small?: boolean
 }) {
   return (
-    <div className="group bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center gap-2 mb-2.5">
+    <div className={`indicador ${TONS[tom]}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="indicador-rotulo truncate">{label}</p>
+          <p
+            className="indicador-valor"
+            style={small ? { fontSize: '1.25rem', lineHeight: '1.75rem' } : undefined}
+          >
+            {value}
+          </p>
+          {sub && <p className="indicador-sub">{sub}</p>}
+        </div>
         {Icon && (
-          <div className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${bg} shrink-0 transition-transform group-hover:scale-105`}>
-            <Icon className={`w-3.5 h-3.5 ${color}`} />
-          </div>
+          <span className="indicador-icone" aria-hidden="true">
+            <Icon className="w-4 h-4" />
+          </span>
         )}
-        <p className="text-slate-500 text-xs font-medium leading-tight">{label}</p>
       </div>
-      <p className={`${small ? 'text-lg' : 'text-2xl'} font-bold tracking-tight tabular-nums text-slate-800`}>{value}</p>
-      {sub && <p className="text-slate-400 text-xs mt-0.5">{sub}</p>}
     </div>
   )
 }

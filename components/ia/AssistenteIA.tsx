@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   Sparkles, X, ArrowUp, AlertTriangle, Loader2, Trash2, History, SquarePen, ArrowLeft,
-  Paperclip, FileSpreadsheet,
+  Paperclip, FileSpreadsheet, Check, CalendarPlus, UserPlus, Send, BellOff, RefreshCw,
 } from 'lucide-react'
 import {
   apagarConversa, carregarConversas, novaConversa, quandoRelativo, salvarConversa, tituloDe,
@@ -65,24 +65,50 @@ function Formatado({ texto }: { texto: string }) {
   )
 }
 
+/**
+ * Rótulo e ícone do botão, por ferramenta. O que não estiver aqui cai no
+ * genérico — um nome novo de ferramenta não pode quebrar o cartão.
+ */
+const ACOES: Record<string, { rotulo: string; Icone: React.ElementType }> = {
+  importar_planilha: { rotulo: 'Confirmar cadastro', Icone: FileSpreadsheet },
+  criar_evento: { rotulo: 'Criar evento', Icone: CalendarPlus },
+  criar_supervisor: { rotulo: 'Criar acesso', Icone: UserPlus },
+  reenviar_whatsapp: { rotulo: 'Reenviar mensagens', Icone: Send },
+  cancelar_mensagens: { rotulo: 'Cancelar envios', Icone: BellOff },
+  regenerar_qr: { rotulo: 'Gerar QR novo', Icone: RefreshCw },
+  regenerar_link_setor: { rotulo: 'Trocar o link', Icone: RefreshCw },
+  excluir_evento: { rotulo: 'Excluir evento', Icone: Trash2 },
+  excluir_setor: { rotulo: 'Excluir setor', Icone: Trash2 },
+  excluir_funcionario: { rotulo: 'Excluir pessoa', Icone: Trash2 },
+  excluir_usuario: { rotulo: 'Excluir acesso', Icone: Trash2 },
+}
+
 export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
   c: Confirmacao
   onConfirmar: (operacao: string) => void
   ocupado: boolean
 }) {
   const [feito, setFeito] = useState(false)
-  // Cadastrar em lote também pede aval, mas não é perda de dado: vermelho e
-  // lixeira ali fariam a pessoa achar que vai apagar alguma coisa.
+
+  /*
+   * O `tipo` decide só a COR: vermelho quando some dado, roxo quando não some.
+   * O rótulo e o ícone vêm da operação, porque "Confirmar cadastro" com ícone
+   * de planilha embaixo de um reenvio de WhatsApp faz a pessoa clicar achando
+   * que vai cadastrar alguém. O prefixo antes do ":" é o nome da ferramenta.
+   */
   const criando = c.tipo === 'criar'
+  const acao = c.operacao.split(':')[0]
+  const { rotulo, Icone } = ACOES[acao] ?? (criando
+    ? { rotulo: 'Confirmar', Icone: Check }
+    : { rotulo: 'Confirmar exclusão', Icone: Trash2 })
+
   const t = criando
     ? { borda: 'border-brand-200', fundo: 'bg-brand-50', titulo: 'text-brand-700', item: 'text-brand-600',
         nota: 'text-brand-500', botao: 'bg-brand-500 hover:bg-brand-600',
-        aviso: 'Ninguém é apagado. Se algo sair errado, dá pra desativar ou excluir depois.',
-        rotulo: 'Confirmar cadastro', Icone: FileSpreadsheet }
+        aviso: 'Nada é apagado aqui. Se sair errado, dá pra desfazer depois.' }
     : { borda: 'border-red-200', fundo: 'bg-red-50', titulo: 'text-red-700', item: 'text-red-600',
         nota: 'text-red-500', botao: 'bg-red-500 hover:bg-red-600',
-        aviso: 'Não tem como desfazer.',
-        rotulo: 'Confirmar exclusão', Icone: Trash2 }
+        aviso: 'Não tem como desfazer.' }
 
   return (
     <div className={`mt-2.5 rounded-xl border ${t.borda} ${t.fundo} p-3 space-y-2`}>
@@ -105,7 +131,7 @@ export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
           disabled={ocupado}
           className={`btn-press w-full flex items-center justify-center gap-1.5 ${t.botao} disabled:opacity-50 text-white text-xs font-bold py-2 rounded-lg`}
         >
-          <t.Icone className="w-3.5 h-3.5" /> {t.rotulo}
+          <Icone className="w-3.5 h-3.5" /> {rotulo}
         </button>
       )}
     </div>
@@ -272,13 +298,13 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6" onClick={onFechar}>
-      <div className="overlay-fade-in absolute inset-0 bg-black/55 backdrop-blur-sm" />
+      <div className="overlay-fade-in absolute inset-0 bg-black/60" />
       <div
         onClick={e => e.stopPropagation()}
         className="modal-pop-in relative flex flex-col w-full h-full sm:w-[44rem] sm:h-[80vh] sm:max-h-[46rem] bg-white sm:rounded-3xl border border-slate-200 shadow-2xl overflow-hidden"
       >
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 h-16 border-b border-slate-100 shrink-0">
+        {/* Cabeçalho — 56px, a mesma altura da barra superior do painel */}
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-5 h-14 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             {verHistorico ? (
               <button onClick={() => setVerHistorico(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
@@ -358,8 +384,8 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   </div>
                   <Aviso tom="marca" icone={<Paperclip className="w-3.5 h-3.5" />}>
                     <span className="text-xs">
-                      Também dá pra anexar a planilha da equipe no clipe abaixo — o sistema lê e confere os CPFs, e
-                      eu cadastro todo mundo de uma vez, no setor certo.
+                      Anexe a planilha da equipe no clipe abaixo, o sistema lê e confere os dados.
+                      Eu cadastro todo mundo de uma vez, no setor certo.
                     </span>
                   </Aviso>
                 </div>
@@ -404,7 +430,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
 
             <form
               onSubmit={e => { e.preventDefault(); mandar() }}
-              className="border-t border-slate-100 p-3 sm:px-5 sm:pb-4 shrink-0 space-y-2"
+              className="border-t border-slate-100 p-3 sm:p-4 shrink-0 space-y-2"
             >
               {anexo && (
                 <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-xl px-3 py-2">
@@ -441,7 +467,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   type="button"
                   onClick={() => arquivoRef.current?.click()}
                   disabled={ocupado}
-                  className="btn-press shrink-0 w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-brand-600 hover:border-brand-300 disabled:opacity-40"
+                  className="btn btn-secundario btn-icone-campo shrink-0"
                   aria-label="Anexar planilha da equipe"
                   title="Anexar planilha da equipe"
                 >
@@ -464,7 +490,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                 <button
                   type="submit"
                   disabled={(!entrada.trim() && !anexo) || ocupado}
-                  className="btn btn-primario btn-icone-lg shrink-0"
+                  className="btn btn-primario btn-icone-campo shrink-0"
                   aria-label="Enviar"
                 >
                   <ArrowUp className="w-4 h-4" />

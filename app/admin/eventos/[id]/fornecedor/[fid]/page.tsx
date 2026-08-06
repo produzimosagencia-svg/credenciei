@@ -2,12 +2,10 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ScanLine, Users, UserCheck, AlertTriangle, Wallet } from 'lucide-react'
+import { ScanLine, Users, AlertTriangle, Wallet } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
-import CopyLinkButton from '../../CopyLinkButton'
-import NovoFuncionarioModal from './NovoFuncionarioModal'
-import { UserSearch } from 'lucide-react'
 import StatCard from '@/components/StatCard'
+import { Secao, PageHeader } from '@/components/ui/Superficie'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -20,14 +18,8 @@ const TUTORIAL: TutorialConfig = {
   tela: 'setor-equipe',
   versao: 1,
   passos: [
-    { alvo: 'setor-link', titulo: 'Link de cadastro da equipe', posicao: 'bottom',
-      descricao: 'Copie e mande esse link no grupo do setor. Cada pessoa se cadastra sozinha pelo celular e já recebe o QR Code dela.' },
-    { alvo: 'setor-novo', titulo: 'Cadastrar manualmente', posicao: 'bottom',
-      descricao: 'Se alguém não conseguiu se cadastrar pelo link, você pode adicionar a pessoa aqui na mão.' },
     { alvo: 'setor-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'No dia do evento, use aqui para ler o QR Code da equipe na entrada e na saída.' },
-    { alvo: 'setor-manual', titulo: 'Quem perdeu o horário', posicao: 'bottom',
-      descricao: 'Se alguém não bateu o ponto na hora (sem bateria, esqueceu, QR danificado), abra aqui: você localiza a pessoa pelo CPF, tira uma foto dela e o sistema registra sozinho a batida que está faltando.' },
     { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
       descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
     { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
@@ -141,73 +133,69 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   })
 
   const total = funcionariosEnriquecidos.length
-  const ativados = funcionariosEnriquecidos.filter(f => f.ativo).length
-  const teto = fornecedor.quantidade_estimada as number | null
   const contar = (t: MomentoTipo) => funcionariosEnriquecidos.filter(f => f[t]).length
   const comPendencia = funcionariosEnriquecidos.filter(f => f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado').length
   const totalReceber = funcionariosEnriquecidos.reduce((acc, f) => acc + f.valorReceber, 0)
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-  const formLink = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/form/${fornecedor.token_formulario}`
 
+  /*
+   * Uma cor por cartão, todas diferentes entre si — nenhum fica cinza.
+   *
+   * Só "Com pendências" troca de cor, e por um motivo: vermelho fixo faria
+   * "0 pendências" aparecer como alarme, dizendo o contrário do que o número
+   * diz. Zerado ele é verde, acima de zero vermelho — nos dois casos colorido,
+   * e nos dois casos a cor concorda com o número.
+   */
   const stats = [
-    { label: 'Total', value: total, icon: Users, color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200' },
-    { label: teto ? `Ativados (teto ${teto})` : 'Ativados', value: ativados, icon: UserCheck, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
-    { label: 'Bateram meio', value: contar('meio'), icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-    { label: 'Bateram saída', value: contar('fim'), icon: UserCheck, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-200' },
-    { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
-    { label: 'A receber (equipe)', value: brl(totalReceber), icon: Wallet, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', small: true },
+    { label: 'Total', value: total, icon: Users, tom: 'info' as const },
+    {
+      label: 'Com pendências',
+      value: comPendencia,
+      icon: AlertTriangle,
+      tom: comPendencia > 0 ? ('erro' as const) : ('sucesso' as const),
+    },
+    {
+      label: 'A receber (equipe)',
+      value: brl(totalReceber),
+      icon: Wallet,
+      small: true,
+      tom: 'acento' as const,
+    },
   ]
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-5">
       <AutoRefresh />
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <Link href={`/admin/eventos/${id}`} className="btn btn-secundario btn-icone" aria-label="Voltar para o evento">
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">{fornecedor.nome}</h1>
-            <p className="text-slate-400 text-sm">{(fornecedor.eventos as any)?.nome}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <TutorialButton />
-          <Link
-            href="/admin/localizar"
-            data-tutorial="setor-manual"
-            className="flex items-center gap-1.5 btn btn-secundario btn-sm"
-          >
-            <UserSearch className="w-3.5 h-3.5" />
-            Localizar funcionário
-          </Link>
-          <div data-tutorial="setor-novo"><NovoFuncionarioModal fornecedorId={fid} eventoId={id} empresaPadrao={fornecedor.nome} /></div>
-          <div data-tutorial="setor-link"><CopyLinkButton link={formLink} label="Copiar link do formulário" /></div>
-        </div>
-      </div>
+      <PageHeader
+        titulo={fornecedor.nome}
+        descricao={(fornecedor.eventos as any)?.nome}
+        voltarPara={`/admin/eventos/${id}`}
+        /* Só o que se usa no dia do evento. Localizar funcionário, cadastro
+           manual e cópia do link saíram daqui a pedido: cinco botões na mesma
+           fileira quebravam a linha e escondiam o Escanear QR, que é a ação
+           do momento. */
+        acoes={
+          <>
+            <TutorialButton />
+            <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
+              <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
+            </Link>
+          </>
+        }
+      />
 
-      {/* Ação mais usada no dia do evento — grande de propósito, não mais
-          um pill igual aos outros. */}
-      <Link
-        href={`/scan?evento=${id}`}
-        data-tutorial="setor-scan"
-        className="btn w-full bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-base py-3.5 rounded-2xl shadow-lg shadow-green-500/25 gap-2.5"
-      >
-        <ScanLine className="w-5 h-5" /> Escanear QR Code
-      </Link>
-
-      <div data-tutorial="setor-stats" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div data-tutorial="setor-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
       {/* Progresso da equipe por etapa */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-        <div className="mb-4">
-          <h2 className="text-slate-800 font-bold text-base">Progresso da equipe</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Quantos dos {total} funcionários já registraram cada etapa</p>
-        </div>
+      <Secao
+        titulo="Progresso da equipe"
+        descricao={`Quantos dos ${total} funcionários já registraram cada etapa`}
+        corpoClassName="p-5"
+      >
         <ProgressoEtapas
           itens={[
             { label: 'Entrada', valor: contar('entrada'), total, cor: COR_ETAPA.entrada },
@@ -215,7 +203,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             { label: 'Saída', valor: contar('fim'), total, cor: COR_ETAPA.fim },
           ]}
         />
-      </div>
+      </Secao>
 
       <div data-tutorial="setor-tabela">
         <FuncionarioTable

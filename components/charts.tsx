@@ -9,7 +9,11 @@
 // (skill UI wiki: stagger < 50ms/item, gradiente que "não dá pra perceber
 // que é gradiente", sombra colorida pra profundidade).
 
-/** Paleta de etapas validada (CVD-safe sobre fundo claro). */
+/**
+ * Cor de etapa. São as MESMAS três cores de status do sistema (sucesso,
+ * acento, aviso) — não uma paleta paralela só pra gráfico. Continua
+ * CVD-safe sobre fundo claro.
+ */
 export const COR_ETAPA = {
   entrada: '#16a34a',
   meio: '#2563eb',
@@ -33,13 +37,12 @@ export function BarrasMagnitude({ itens }: { itens: { label: string; valor: numb
               {item.valor}/{item.total} <span className="text-slate-400">· {pct(item.valor, item.total)}%</span>
             </p>
           </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
             <div
               className="barra-entrada h-full rounded-full"
               style={{
                 width: `${pct(item.valor, item.total)}%`,
-                background: 'linear-gradient(90deg, #8b7cf6, #4940df)',
-                boxShadow: '0 0 10px rgba(111, 102, 233, 0.55)',
+                background: 'var(--color-acento-600)',
                 animationDelay: `${Math.min(i, 8) * 45}ms`,
               }}
             />
@@ -61,20 +64,19 @@ export function ProgressoEtapas({ itens }: { itens: { label: string; valor: numb
         <div key={item.label}>
           <div className="flex items-baseline justify-between gap-2 mb-1.5">
             <p className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: item.cor, boxShadow: `0 0 6px ${item.cor}` }} />
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: item.cor }} />
               {item.label}
             </p>
             <p className="text-slate-500 text-xs tabular-nums shrink-0">
               {item.valor}/{item.total} <span className="text-slate-400">· {pct(item.valor, item.total)}%</span>
             </p>
           </div>
-          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
             <div
               className="barra-entrada h-full rounded-full"
               style={{
                 width: `${pct(item.valor, item.total)}%`,
                 background: item.cor,
-                boxShadow: `0 0 10px ${item.cor}`,
                 animationDelay: `${Math.min(i, 8) * 45}ms`,
               }}
             />
@@ -86,9 +88,57 @@ export function ProgressoEtapas({ itens }: { itens: { label: string; valor: numb
 }
 
 /**
- * Donut de composição (estilo "sales by category" da referência) com total no
- * centro e legenda com rótulo + valor ao lado. Fatias com gap de 2px, ponta
- * arredondada e brilho suave por trás pra dar profundidade.
+ * Distribuição em barras horizontais, com o total em cima.
+ *
+ * Substitui o donut que havia aqui. Comparar três valores num donut é
+ * comparar ÂNGULO, que o olho faz mal; em barra é comparar comprimento a
+ * partir de uma linha de base comum, que é a comparação mais fácil que
+ * existe. Donut também obriga a legenda ao lado — dois lugares pra ler o
+ * mesmo dado.
+ */
+export function DistribuicaoEtapas({ itens }: { itens: { label: string; valor: number; cor: string }[] }) {
+  const total = itens.reduce((acc, i) => acc + i.valor, 0)
+  return (
+    <div className="space-y-3.5">
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-slate-800 text-metrica font-semibold tabular-nums tracking-tight">
+          {total}
+        </span>
+        <span className="text-slate-500 text-xs">registros no total</span>
+      </div>
+      <div className="space-y-2.5">
+        {itens.map((item, i) => (
+          <div key={item.label}>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <p className="flex items-center gap-1.5 text-slate-700 text-xs font-medium">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.cor }} />
+                {item.label}
+              </p>
+              <p className="text-slate-500 text-xs tabular-nums shrink-0">
+                <span className="text-slate-800 font-medium">{item.valor}</span>
+                <span className="text-slate-400"> · {pct(item.valor, total)}%</span>
+              </p>
+            </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="barra-entrada h-full rounded-full"
+                style={{
+                  width: `${pct(item.valor, total)}%`,
+                  background: item.cor,
+                  animationDelay: `${Math.min(i, 8) * 45}ms`,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Donut de composição — mantido porque outras telas podem usar, mas o
+ * painel passou a usar DistribuicaoEtapas acima.
  */
 export function DonutComposicao({
   dados,
@@ -119,8 +169,8 @@ export function DonutComposicao({
   return (
     <div className="flex items-center gap-6 flex-wrap">
       <div className="relative shrink-0">
-        <svg width="128" height="128" viewBox="0 0 100 100" aria-hidden="true" style={{ filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.35))' }}>
-          <circle cx="50" cy="50" r={R} fill="none" stroke="#211f30" strokeWidth="12" />
+        <svg width="128" height="128" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r={R} fill="none" stroke="var(--color-neutro-100)" strokeWidth="12" />
           {total > 0 && fatias.map((f, i) => (
             <circle
               key={i}
@@ -149,7 +199,7 @@ export function DonutComposicao({
         {dados.map(d => (
           <div key={d.label} className="flex items-center justify-between gap-3 px-2 py-1 -mx-2 rounded-lg hover:bg-slate-50 transition-colors">
             <p className="flex items-center gap-2 text-slate-600 text-sm">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.cor, boxShadow: `0 0 6px ${d.cor}` }} />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.cor }} />
               {d.label}
             </p>
             <p className="text-slate-700 text-sm font-semibold tabular-nums">

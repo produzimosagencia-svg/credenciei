@@ -16,7 +16,7 @@ export default function TutorialButton() {
       onClick={iniciar}
       aria-label="Ver tutorial desta tela"
       title="Ver tutorial"
-      className="btn btn-secundario btn-icone"
+      className="btn btn-acento btn-icone"
     >
       <HelpCircle className="w-4 h-4" />
     </button>
