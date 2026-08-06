@@ -1,75 +1,45 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { MoreHorizontal, Pencil, Trash2, Power } from 'lucide-react'
+import { Pencil, Trash2, Power } from 'lucide-react'
 import { toggleAtivoEvento, deletarEvento } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
-import Link from 'next/link'
+import { MenuAcoes, ItemMenu } from '@/components/ui/MenuAcoes'
 
 export default function EventoActions({ eventoId, ativo, podeExcluir = false }: { eventoId: string; ativo: boolean; podeExcluir?: boolean }) {
-  const [open, setOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
-
-  const handleToggle = () => {
-    setOpen(false)
-    startTransition(() => toggleAtivoEvento(eventoId, ativo))
-  }
-
-  const handleDelete = () => {
-    setOpen(false)
-    setConfirmOpen(true)
-  }
-
-  const confirmarExclusao = () => {
-    startTransition(() => deletarEvento(eventoId))
-  }
+  const router = useRouter()
 
   return (
     <div className="relative">
-      <button
-        onClick={e => { e.preventDefault(); setOpen(o => !o) }}
-        disabled={isPending}
-        className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
-      >
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-9 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 w-44 py-1.5 overflow-hidden">
-            <Link
-              href={`/admin/eventos/${eventoId}/editar`}
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+      <MenuAcoes disabled={isPending} rotulo="Ações do evento">
+        {fechar => (
+          <>
+            <ItemMenu
+              onClick={() => { fechar(); router.push(`/admin/eventos/${eventoId}/editar`) }}
             >
               <Pencil className="w-3.5 h-3.5" /> Editar
-            </Link>
-            <button
-              onClick={handleToggle}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+            </ItemMenu>
+            <ItemMenu
+              onClick={() => { fechar(); startTransition(() => toggleAtivoEvento(eventoId, ativo)) }}
             >
               <Power className="w-3.5 h-3.5" />
               {ativo ? 'Encerrar' : 'Reativar'}
-            </button>
+            </ItemMenu>
             {podeExcluir && (
-              <>
-                <div className="border-t border-slate-100 my-1" />
-                <button
-                  onClick={handleDelete}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Excluir
-                </button>
-              </>
+              <ItemMenu tom="perigo" onClick={() => { fechar(); setConfirmOpen(true) }}>
+                <Trash2 className="w-3.5 h-3.5" /> Excluir
+              </ItemMenu>
             )}
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </MenuAcoes>
+
       <ConfirmModal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        onConfirm={confirmarExclusao}
+        onConfirm={() => startTransition(() => deletarEvento(eventoId))}
         isPending={isPending}
         mensagem="Tem certeza? Isso vai apagar o evento e todos os dados relacionados."
       />

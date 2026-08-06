@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { lerPlanilhaDeEquipe } from '@/lib/planilha'
 // xlsx é pesado e só é usado no download do modelo aqui (a leitura mora em
@@ -59,21 +59,21 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
         <button
           onClick={() => fileRef.current?.click()}
           disabled={loading}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-lg transition-colors font-medium disabled:opacity-50"
+          className="btn btn-secundario btn-sm"
         >
           {loading
-            ? <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            : <Upload className="w-3 h-3" />
+            ? <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            : <Upload className="w-3.5 h-3.5 shrink-0" />
           }
           {loading ? 'Importando...' : 'Importar planilha'}
         </button>
         <a
           href="/modelo-importacao.xlsx"
           download="modelo-importacao.xlsx"
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200 rounded-lg transition-colors font-medium"
+          className="btn btn-secundario btn-sm"
         >
-          <Download className="w-3 h-3" />
-          Modelo
+          <Download className="w-3.5 h-3.5 shrink-0" />
+          Baixar modelo
         </a>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
       </div>

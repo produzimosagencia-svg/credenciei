@@ -40,8 +40,8 @@ export default async function LocalizarPage() {
       */}
       <div className="max-w-xl space-y-5">
         <PageHeader
-          titulo="Localizar funcionário"
-          descricao="Regularize a batida de quem perdeu o horário"
+          titulo="Registrar ponto"
+          descricao="Registre a batida de quem perdeu o horário — busca por CPF ou nome, com foto na hora"
           acoes={<TutorialButton />}
         />
         <LocalizarFuncionario />

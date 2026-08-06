@@ -365,18 +365,21 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4 space-y-3">
+              {/* Ocupa a largura toda do modal: com `max-w-lg` sobrava um vão
+                  branco de 200px à direita, e o conteúdo de abertura ficava
+                  espremido num canto de um painel de 44rem. */}
               {!mensagens.length && (
-                <div className="space-y-3 max-w-lg">
+                <div className="space-y-3">
                   <p className="text-slate-500 text-sm">
                     Eu conheço todas as telas e regras do sistema. Posso ensinar, consultar e executar o que você já
                     poderia fazer sozinho.
                   </p>
-                  <div className="grid sm:grid-cols-2 gap-1.5">
+                  <div className="grid sm:grid-cols-2 gap-2">
                     {SUGESTOES.map(s => (
                       <button
                         key={s}
                         onClick={() => enviar(s)}
-                        className="btn-press text-left text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5"
+                        className="btn-press text-left text-xs text-slate-600 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 border border-slate-200 rounded-xl px-3.5 py-3 transition-colors"
                       >
                         {s}
                       </button>

@@ -2,7 +2,7 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, Users, AlertTriangle, Wallet } from 'lucide-react'
+import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
@@ -139,22 +139,10 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 
-  /*
-   * Uma cor por cartão, todas diferentes entre si — nenhum fica cinza.
-   *
-   * Só "Com pendências" troca de cor, e por um motivo: vermelho fixo faria
-   * "0 pendências" aparecer como alarme, dizendo o contrário do que o número
-   * diz. Zerado ele é verde, acima de zero vermelho — nos dois casos colorido,
-   * e nos dois casos a cor concorda com o número.
-   */
+  /* Uma cor por cartão, fixa e diferente entre si: azul, laranja e roxo. */
   const stats = [
     { label: 'Total', value: total, icon: Users, tom: 'info' as const },
-    {
-      label: 'Com pendências',
-      value: comPendencia,
-      icon: AlertTriangle,
-      tom: comPendencia > 0 ? ('erro' as const) : ('sucesso' as const),
-    },
+    { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, tom: 'aviso' as const },
     {
       label: 'A receber (equipe)',
       value: brl(totalReceber),
@@ -186,12 +174,17 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         }
       />
 
-      <div data-tutorial="setor-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Três colunas porque são três indicadores. Numa grade de quatro, a
+          quarta coluna ficava vazia e sobrava um vão à direita do último
+          cartão — parecia que faltava alguma coisa ali. */}
+      <div data-tutorial="setor-stats" className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
       {/* Progresso da equipe por etapa */}
       <Secao
+        tom="sucesso"
+        icone={<TrendingUp className="w-3.5 h-3.5" />}
         titulo="Progresso da equipe"
         descricao={`Quantos dos ${total} funcionários já registraram cada etapa`}
         corpoClassName="p-5"

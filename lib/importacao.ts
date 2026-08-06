@@ -78,6 +78,7 @@ export async function importarFuncionarios(
       chave_pix: f.chavePix?.trim() || null,
       empresa: f.empresa?.trim() || fornecedor.nome,
       cargo: f.cargo?.trim() ?? '',
+      cidade: f.cidade?.trim() || null,
       valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
       fornecedor_id: fornecedorId,
     }
@@ -124,27 +125,28 @@ export async function importarFuncionarios(
   }
 
   // Base central do Credenciei: quem já foi credenciado antes — por este ou
-  // por qualquer outro cliente — entra com telefone, cargo e PIX que a
-  // planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
+  // por qualquer outro cliente — entra com telefone, cargo, PIX e cidade que
+  // a planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
   // equipe dele no primeiro evento.
   let reaproveitados = 0
   const { data: conhecidos } = await supabaseAdmin
     .from('funcionarios')
-    .select('cpf, telefone, cargo, chave_pix')
+    .select('cpf, telefone, cargo, chave_pix, cidade')
     .in('cpf', payload.map(f => f.cpf))
     .order('created_at', { ascending: false })
 
-  const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null }>()
+  const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>()
   for (const c of conhecidos ?? []) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
 
   for (const f of payload) {
     const anterior = base.get(f.cpf)
     if (!anterior) continue
-    const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}`
+    const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}`
     if (!f.telefone) f.telefone = anterior.telefone ?? ''
     if (!f.cargo) f.cargo = anterior.cargo ?? ''
     if (!f.chave_pix) f.chave_pix = anterior.chave_pix
-    if (`${f.telefone}|${f.cargo}|${f.chave_pix}` !== antes) reaproveitados++
+    if (!f.cidade) f.cidade = anterior.cidade
+    if (`${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}` !== antes) reaproveitados++
   }
 
   const { data: inseridos, error } = await supabaseAdmin

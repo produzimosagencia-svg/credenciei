@@ -8,6 +8,8 @@ import { formatCpf } from '@/lib/format'
 import { COR_ETAPA } from '@/components/charts'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
+// APRESENTACAO — temporário. Ver lib/apresentacao.ts para desligar/remover.
+import { APRESENTACAO, cenarioDeExemplo } from '@/lib/apresentacao'
 
 export const revalidate = 0
 
@@ -43,6 +45,24 @@ type Linha = {
   justificativa: string | null
 }
 
+/**
+ * Rótulo de uma opção do seletor. Inclui a data porque um produtor repete o
+ * nome do evento todo ano ("Bloco do Bero"), e a organização porque o master
+ * vê eventos de clientes diferentes na mesma lista.
+ */
+function rotuloEvento(e: { nome: string; ativo: boolean; data_inicio: string; organizacoes?: unknown }) {
+  // O join do Supabase tipa a relação como array; em runtime vem objeto quando
+  // é 1:1. Aceita os dois em vez de confiar num só.
+  const rel = e.organizacoes as { nome: string } | { nome: string }[] | null
+  const org = Array.isArray(rel) ? rel[0]?.nome : rel?.nome
+  return [
+    e.nome,
+    e.data_inicio ? `· ${formatarBR(e.data_inicio, 'data')}` : null,
+    org ? `· ${org}` : null,
+    e.ativo ? null : '· encerrado',
+  ].filter(Boolean).join(' ')
+}
+
 export default async function AtividadesPage({
   searchParams,
 }: {
@@ -61,7 +81,7 @@ export default async function AtividadesPage({
   let setorDoSupervisor: string | null = null
   const listaQuery = supabaseAdmin
     .from('eventos')
-    .select('id, nome, ativo, data_inicio')
+    .select('id, nome, ativo, data_inicio, organizacoes(nome)')
     .order('data_inicio', { ascending: false })
 
   if (perfil.role === 'supervisor') {
@@ -163,8 +183,6 @@ export default async function AtividadesPage({
       }
     })
 
-  const doFiltro = filtroEtapa ? linhas.filter(l => l.etapa === filtroEtapa) : linhas
-
   // ─── Números ──────────────────────────────────────────────────────────────
   // Contam sobre TODOS os registros do evento (não só os do log, que é
   // limitado), então vêm de uma consulta própria de contagem.
@@ -181,12 +199,43 @@ export default async function AtividadesPage({
   const sairam = quemFez('fim')
 
   const ativos = (equipe ?? []).filter(f => f.ativo !== false)
-  const naoChegaram = ativos.filter(f => !entraram.has(f.id))
+  const hojeStr = new Date().toDateString()
+
+  /*
+   * APRESENTACAO — temporário: cenário completo de evento em andamento.
+   * Só entra quando NÃO existe nenhuma batida real neste evento; um único
+   * registro de verdade devolve a tela ao dado real.
+   */
+  const exemplo = APRESENTACAO && !meus.length ? cenarioDeExemplo(new Date()) : null
+
+  const linhasNaTela = exemplo ? exemplo.linhas : linhas
+  const doFiltro = filtroEtapa ? linhasNaTela.filter(l => l.etapa === filtroEtapa) : linhasNaTela
+
+  const naoChegaram = exemplo
+    ? exemplo.naoChegaram
+    : ativos.filter(f => !entraram.has(f.id)).map(f => ({
+        id: f.id as string,
+        nome: f.nome as string,
+        setor: nomeSetor.get(f.fornecedor_id as string) ?? '—',
+        telefone: (f.telefone as string | null) ?? '',
+      }))
+
   // "Presente agora" é quem entrou e ainda não bateu saída — é o número que o
   // produtor pergunta no rádio.
-  const presentes = ativos.filter(f => entraram.has(f.id) && !sairam.has(f.id))
-  const hoje = new Date().toDateString()
-  const batidasHoje = meus.filter(r => new Date(r.created_at as string).toDateString() === hoje).length
+  const presentes = exemplo
+    ? exemplo.presentes
+    : ativos.filter(f => entraram.has(f.id) && !sairam.has(f.id)).map(f => ({
+        id: f.id as string,
+        nome: f.nome as string,
+        setor: nomeSetor.get(f.fornecedor_id as string) ?? '—',
+        telefone: (f.telefone as string | null) ?? '',
+      }))
+
+  const totalEquipe = exemplo ? exemplo.totalEquipe : ativos.length
+  const jaSairam = exemplo ? exemplo.jaSairam : sairam.size
+  const batidasHoje = exemplo
+    ? exemplo.batidasHoje
+    : meus.filter(r => new Date(r.created_at as string).toDateString() === hojeStr).length
 
   /** Preserva o evento ao trocar de filtro, e vice-versa. */
   const url = (mudanca: { evento?: string; etapa?: string | null }) => {
@@ -204,7 +253,7 @@ export default async function AtividadesPage({
         titulo="Atividades do evento"
         descricao={`${escolhido.nome} — cada batida registrada, na ordem em que aconteceu`}
         acoes={
-          eventos.length > 1 ? (
+          eventos.length ? (
             /* Sem JS: um <select> dentro de form GET troca de evento. Esta tela
                é aberta no celular no meio do evento — não vale carregar um
                componente cliente só pra um seletor. */
@@ -218,7 +267,7 @@ export default async function AtividadesPage({
               >
                 {eventos.map(e => (
                   <option key={e.id} value={e.id}>
-                    {e.nome}{e.ativo ? '' : ' (encerrado)'}
+                    {rotuloEvento(e)}
                   </option>
                 ))}
               </select>
@@ -228,11 +277,11 @@ export default async function AtividadesPage({
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Batidas hoje" value={batidasHoje} icon={Activity} tom="acento" />
-        <StatCard label="Presentes agora" value={presentes.length} sub={`de ${ativos.length} na equipe`} icon={UserCheck} tom="sucesso" />
+        <StatCard label="Presentes agora" value={presentes.length} sub={`de ${totalEquipe} na equipe`} icon={UserCheck} tom="sucesso" />
         <StatCard label="Ainda não chegaram" value={naoChegaram.length} icon={Clock} tom="aviso" />
-        <StatCard label="Já saíram" value={sairam.size} icon={ShieldCheck} tom="info" />
+        <StatCard label="Já saíram" value={jaSairam} icon={ShieldCheck} tom="info" />
       </div>
 
       {/* Filtro por etapa — o log inteiro é longo, e quase sempre a pergunta é
@@ -240,12 +289,12 @@ export default async function AtividadesPage({
       <div className="abas">
         <Link href={url({ etapa: null })} className={`aba ${!filtroEtapa ? 'aba-ativa' : ''}`}>
           Tudo
-          <span className="aba-contador">{linhas.length}</span>
+          <span className="aba-contador">{linhasNaTela.length}</span>
         </Link>
         {ETAPAS.map(t => (
           <Link key={t} href={url({ etapa: t })} className={`aba ${filtroEtapa === t ? 'aba-ativa' : ''}`}>
             {ROTULO[t]}
-            <span className="aba-contador">{linhas.filter(l => l.etapa === t).length}</span>
+            <span className="aba-contador">{linhasNaTela.filter(l => l.etapa === t).length}</span>
           </Link>
         ))}
       </div>
@@ -253,7 +302,7 @@ export default async function AtividadesPage({
       <Secao
         titulo="Linha do tempo"
         descricao={
-          linhas.length >= LIMITE_LOG
+          linhasNaTela.length >= LIMITE_LOG
             ? `Mostrando as ${LIMITE_LOG} batidas mais recentes deste evento`
             : 'Da mais recente para a mais antiga'
         }
@@ -336,7 +385,7 @@ export default async function AtividadesPage({
                 <div key={f.id} className="px-4 py-2.5">
                   <p className="text-slate-800 text-sm font-medium truncate">{f.nome}</p>
                   <p className="text-slate-500 text-xs">
-                    {nomeSetor.get(f.fornecedor_id as string) ?? '—'}
+                    {f.setor}
                     {f.telefone ? ` · ${f.telefone}` : ''}
                   </p>
                 </div>
@@ -358,7 +407,7 @@ export default async function AtividadesPage({
                 <div key={f.id} className="px-4 py-2.5">
                   <p className="text-slate-800 text-sm font-medium truncate">{f.nome}</p>
                   <p className="text-slate-500 text-xs">
-                    {nomeSetor.get(f.fornecedor_id as string) ?? '—'}
+                    {f.setor}
                   </p>
                 </div>
               ))}

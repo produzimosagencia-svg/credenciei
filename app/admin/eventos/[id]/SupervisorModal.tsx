@@ -61,7 +61,7 @@ export default function SupervisorModal(props: Props) {
       {isEditar ? (
         <button
           onClick={() => setOpen(true)}
-          className="w-full flex items-center gap-1.5 text-left px-2 py-1 rounded-lg text-slate-600 hover:text-brand-600 hover:bg-slate-50 transition-colors"
+          className="w-full flex items-center gap-1.5 text-left text-sm px-2 py-1.5 rounded-lg text-slate-700 hover:text-brand-500 hover:bg-slate-50 transition-colors"
         >
           <span className="truncate flex-1">{props.supervisor.nome}</span>
           {!props.supervisor.ativo && (
@@ -72,7 +72,7 @@ export default function SupervisorModal(props: Props) {
       ) : (
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors font-medium"
+          className="btn btn-secundario btn-sm"
         >
           <UserPlus className="w-3 h-3" />
           Criar Supervisor

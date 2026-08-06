@@ -129,8 +129,8 @@ export default async function UsuariosPage({
     <div className="space-y-5">
       <div data-tutorial="usr-resumo">
         <PageHeader
-          titulo="Usuários"
-          descricao="Gerencie quem tem acesso ao sistema e quais setores cada pessoa enxerga."
+          titulo="Acessos"
+          descricao="Quem entra no sistema e o que cada pessoa enxerga. Não confunda com a equipe do evento."
           acoes={
             <>
               <TutorialButton />
