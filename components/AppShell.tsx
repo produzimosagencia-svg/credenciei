@@ -1,9 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
-import { QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles, IdCard } from 'lucide-react'
+import {
+  QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles, IdCard,
+  Activity,
+} from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
@@ -19,21 +22,76 @@ const supabase = createBrowserClient(
 )
 
 type NavItem = { href: string; label: string; icon: React.ElementType }
+type Grupo = { titulo?: string; itens: NavItem[] }
 
-function navItemsPara(role: string): NavItem[] {
-  const itens: NavItem[] = [{ href: '/admin', label: 'Início', icon: Home }]
-  if (ehMaster(role)) {
-    itens.push({ href: '/admin/organizacoes', label: 'Organizações', icon: Building2 })
-    itens.push({ href: '/admin/base-funcionarios', label: 'Base de Funcionários', icon: IdCard })
-  }
-  // "Eventos" saiu do menu: a lista foi para dentro do Início, então o item
-  // levaria pra mesma tela em que a pessoa já está.
-  if (podeGerenciarUsuarios(role)) itens.push({ href: '/admin/usuarios', label: 'Usuários', icon: Users })
+/**
+ * O menu em grupos, como na referência: um bloco sem rótulo no topo com o
+ * que se usa todo dia, e abaixo os blocos rotulados por assunto. Agrupar só
+ * vale a pena quando os grupos têm nome — uma lista corrida de sete itens
+ * obriga a ler todos pra achar um.
+ */
+function gruposPara(role: string): Grupo[] {
+  const grupos: Grupo[] = []
+
+  // "Eventos" não está aqui de propósito: a lista vive dentro do Início, e o
+  // item levaria pra mesma tela em que a pessoa já está.
+  const principal: NavItem[] = [{ href: '/admin', label: 'Início', icon: Home }]
+  if (podeGerenciarUsuarios(role)) principal.push({ href: '/admin/usuarios', label: 'Usuários', icon: Users })
+  grupos.push({ itens: principal })
+
   if (podeEscanear(role)) {
-    itens.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })
-    itens.push({ href: '/admin/localizar', label: 'Localizar funcionário', icon: UserSearch })
+    grupos.push({
+      titulo: 'Operação',
+      itens: [
+        { href: '/scan', label: 'Escanear QR', icon: ScanLine },
+        { href: '/admin/atividades', label: 'Atividades do evento', icon: Activity },
+        { href: '/admin/localizar', label: 'Localizar funcionário', icon: UserSearch },
+      ],
+    })
   }
-  return itens
+
+  if (ehMaster(role)) {
+    grupos.push({
+      titulo: 'Plataforma',
+      itens: [
+        { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
+        { href: '/admin/base-funcionarios', label: 'Base de funcionários', icon: IdCard },
+      ],
+    })
+  }
+
+  return grupos
+}
+
+/**
+ * Rótulos da trilha. Segmento que não está aqui (id de evento, id de setor)
+ * não vira degrau: "Eventos › 8f3a-… › Setor" não ajuda ninguém a se
+ * localizar, só ocupa a linha.
+ */
+const ROTULO_TRILHA: Record<string, string> = {
+  admin: 'Início',
+  usuarios: 'Usuários',
+  atividades: 'Atividades do evento',
+  organizacoes: 'Organizações',
+  'base-funcionarios': 'Base de funcionários',
+  localizar: 'Localizar funcionário',
+  eventos: 'Eventos',
+  fornecedor: 'Setor',
+  novo: 'Novo',
+  editar: 'Editar',
+  scan: 'Escanear QR',
+}
+
+function trilhaDe(pathname: string): { href: string; label: string }[] {
+  const segmentos = pathname.split('/').filter(Boolean)
+  const degraus: { href: string; label: string }[] = []
+  let acumulado = ''
+  for (const seg of segmentos) {
+    acumulado += `/${seg}`
+    const label = ROTULO_TRILHA[seg]
+    if (label) degraus.push({ href: acumulado, label })
+  }
+  return degraus
 }
 
 function iniciais(nome: string): string {
@@ -44,9 +102,9 @@ function iniciais(nome: string): string {
 }
 
 /**
- * Avatar do cabeçalho: foto da organização quando ela tem uma cadastrada,
- * senão as iniciais do nome. O master não pertence a organização nenhuma,
- * então pra ele fica sempre nas iniciais.
+ * Avatar: foto da organização quando ela tem uma cadastrada, senão as
+ * iniciais do nome. O master não pertence a organização nenhuma, então pra
+ * ele fica sempre nas iniciais.
  */
 function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
   fotoUrl: string | null
@@ -57,61 +115,59 @@ function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
   const estilo = { width: tamanho, height: tamanho }
   if (fotoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={fotoUrl} alt={nome} style={estilo} className={`rounded-full object-cover shrink-0 ${className}`} />
+    return <img src={fotoUrl} alt="" style={estilo} className={`rounded-full object-cover shrink-0 ${className}`} />
   }
   return (
     <div
       style={estilo}
       className={`rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center font-semibold shrink-0 ${className}`}
     >
-      <span style={{ fontSize: Math.max(11, tamanho * 0.32) }}>{iniciais(nome)}</span>
+      <span style={{ fontSize: Math.max(10, tamanho * 0.36) }}>{iniciais(nome)}</span>
     </div>
   )
 }
 
-/**
- * Itens do menu.
- *
- * Item ativo é fundo sutil + texto forte, sem barrinha colorida na lateral e
- * sem pintar o texto de azul: dentro de um menu escuro, contraste já basta
- * pra dizer "você está aqui". Ícone a 16px, hover discreto — menu não é
- * conteúdo, ele deve recuar.
- */
-function NavLinks({ nav, pathname, onNavigate }: { nav: NavItem[]; pathname: string; onNavigate?: () => void }) {
+function NavLinks({ grupos, pathname, onNavigate }: {
+  grupos: Grupo[]
+  pathname: string
+  onNavigate?: () => void
+}) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
   return (
-    <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-      {nav.map(item => {
-        const isAtivo = ativo(item.href)
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={isAtivo ? 'page' : undefined}
-            className={`flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium transition-colors ${
-              isAtivo ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            <item.icon className="w-4 h-4 shrink-0" />
-            {item.label}
-          </Link>
-        )
-      })}
+    <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      {grupos.map((grupo, i) => (
+        <div key={grupo.titulo ?? i}>
+          {grupo.titulo && <p className="menu-grupo-titulo px-2.5 mb-1.5">{grupo.titulo}</p>}
+          <div className="space-y-px">
+            {grupo.itens.map(item => {
+              const isAtivo = ativo(item.href)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  aria-current={isAtivo ? 'page' : undefined}
+                  className={`menu-item ${isAtivo ? 'menu-item-ativo' : ''}`}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   )
 }
 
-/** Abre o assistente. Fica no menu, junto das outras seções — não é um
- *  flutuante no canto: no menu ele é uma parte do sistema, não um adereço. */
+/** Abre o assistente. Fica no rodapé do menu, junto das outras seções — não é
+ *  um flutuante no canto: no menu ele é parte do sistema, não um adereço. */
 function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
   const { abrir } = useAssistente()
   return (
-    <div className="px-2 pb-1 shrink-0">
-      <button
-        onClick={() => { abrir(); onNavigate?.() }}
-        className="w-full flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-      >
+    <div className="px-3 pb-3 shrink-0">
+      <button onClick={() => { abrir(); onNavigate?.() }} className="menu-item w-full">
         <Sparkles className="w-4 h-4 shrink-0" />
         Credenciei IA
       </button>
@@ -119,39 +175,99 @@ function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-function BotaoSair({ onLogout }: { onLogout: () => void }) {
+/**
+ * Menu do usuário no canto superior direito, como na referência: o avatar
+ * abre um painel com quem está logado e a saída. Tirar "Sair" do menu
+ * lateral libera a barra pra navegação — sair não é um lugar do sistema.
+ */
+function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
+  perfil: Perfil
+  fotoOrgUrl: string | null
+  onLogout: () => void
+}) {
+  const [aberto, setAberto] = useState(false)
+  const caixa = useRef<HTMLDivElement>(null)
+
+  // Fecha ao clicar fora e no Esc — um painel que só fecha no próprio botão
+  // fica preso na tela quando a pessoa desiste e clica em qualquer lugar.
+  useEffect(() => {
+    if (!aberto) return
+    const clique = (e: MouseEvent) => {
+      if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false)
+    }
+    const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape') setAberto(false) }
+    document.addEventListener('mousedown', clique)
+    document.addEventListener('keydown', tecla)
+    return () => {
+      document.removeEventListener('mousedown', clique)
+      document.removeEventListener('keydown', tecla)
+    }
+  }, [aberto])
+
   return (
-    <div className="p-2 border-t border-slate-100 shrink-0">
+    <div className="relative shrink-0" ref={caixa}>
       <button
-        onClick={onLogout}
-        className="w-full flex items-center gap-2.5 text-sm px-2.5 py-1.5 rounded-md font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+        onClick={() => setAberto(v => !v)}
+        aria-haspopup="menu"
+        aria-expanded={aberto}
+        aria-label="Menu do usuário"
+        className="flex items-center gap-2 rounded-full p-0.5 hover:bg-slate-100 transition-colors"
       >
-        <LogOut className="w-4 h-4" />
-        Sair
+        <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={28} />
       </button>
+
+      {aberto && (
+        <div
+          role="menu"
+          className="modal-pop-in absolute right-0 top-full mt-1.5 w-60 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50"
+        >
+          <div className="flex items-center gap-2.5 px-3 py-3 border-b border-slate-100">
+            <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={34} />
+            <div className="min-w-0">
+              <p className="text-slate-800 text-sm font-medium truncate">{perfil.nome}</p>
+              <p className="text-slate-500 text-xs truncate">{perfil.email}</p>
+            </div>
+          </div>
+          <div className="px-3 py-2 border-b border-slate-100">
+            <span className="indicador-selo selo-neutro">{ROLE_LABELS[perfil.role] ?? perfil.role}</span>
+          </div>
+          <button
+            role="menuitem"
+            onClick={onLogout}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
 /**
- * Shell do painel: menu lateral fixo (desktop) + barra superior + gaveta
- * (mobile). Layout no padrão SaaS de referência do cliente — sidebar branca
- * à esquerda, conteúdo sobre fundo claro levemente azulado.
+ * Moldura do painel.
+ *
+ * Segue o desenho da referência: barra superior com o contexto (marca ›
+ * organização) valendo pra tela inteira, faixa de trilha logo abaixo, e só
+ * então menu lateral e conteúdo lado a lado. O menu começando ABAIXO do topo
+ * é o que faz o cabeçalho ser do sistema, e não do conteúdo.
  */
-export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
+export default function AppShell({ perfil, fotoOrgUrl = null, orgNome = null, children }: {
   perfil: Perfil
   fotoOrgUrl?: string | null
+  orgNome?: string | null
   children: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
-  const nav = navItemsPara(perfil.role)
+  const grupos = gruposPara(perfil.role)
+  const trilha = trilhaDe(pathname)
 
-  // suppressHydrationWarning no <p>: servidor (UTC) e navegador (BRT) podem
-  // divergir na virada do dia — o texto do client prevalece sem warning.
-  const bruto = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date())
-  const dataHoje = bruto.charAt(0).toUpperCase() + bruto.slice(1)
+  // O master não pertence a organização nenhuma — pra ele o contexto é a
+  // plataforma inteira, e dizer isso é mais honesto que repetir a marca.
+  const contexto = orgNome ?? (ehMaster(perfil.role) ? 'Plataforma' : null)
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -160,95 +276,118 @@ export default function AppShell({ perfil, fotoOrgUrl = null, children }: {
 
   return (
     <AssistenteIAProvider usuarioId={perfil.id}>
-    <div className="tema-escuro min-h-screen flex">
-      {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r border-slate-200 sticky top-0 h-screen">
-        <Link href="/admin" className="flex items-center gap-2 px-4 h-14 border-b border-slate-100 shrink-0">
-          <div className="logo-marca w-6 h-6 rounded-md flex items-center justify-center">
-            <QrCode className="w-3.5 h-3.5 text-white" />
+    <div className="min-h-screen flex flex-col">
+      {/* Barra superior: marca › contexto, e o usuário à direita */}
+      <header className="topo-app sticky top-0 z-30 h-14 shrink-0">
+        <div className="h-full px-3 md:px-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1 min-w-0">
+            <button
+              onClick={() => setMenuAberto(true)}
+              className="btn-press md:hidden w-9 h-9 -ml-1 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 shrink-0"
+              aria-label="Abrir menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <Link href="/admin" className="chip-contexto shrink-0">
+              <span className="logo-marca w-5 h-5 rounded-md flex items-center justify-center shrink-0">
+                <QrCode className="w-3 h-3 text-white" />
+              </span>
+              <span className="font-semibold">Credenciei</span>
+            </Link>
           </div>
-          <span className="font-semibold text-slate-800 text-sm">Credenciei</span>
-        </Link>
-        <NavLinks nav={nav} pathname={pathname} />
-        <BotaoAssistente />
-        <BotaoSair onLogout={handleLogout} />
-      </aside>
 
-      {/* Coluna principal */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
-          <div className="px-4 md:px-6 h-14 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <button
-                onClick={() => setMenuAberto(true)}
-                className="btn-press md:hidden w-9 h-9 flex items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 -ml-1.5 shrink-0"
-                aria-label="Abrir menu"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              <Link href="/admin" className="md:hidden flex items-center gap-2 shrink-0">
-                <div className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center">
-                  <QrCode className="w-4 h-4 text-white" />
-                </div>
-                <span className="font-bold text-slate-800">Credenciei</span>
-              </Link>
-              <p className="hidden md:block text-slate-400 text-sm" suppressHydrationWarning>{dataHoje}</p>
-            </div>
+          <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />
+        </div>
+      </header>
 
-            <div className="flex items-center gap-2.5 shrink-0">
-              <div className="text-right leading-tight hidden sm:block">
-                <p className="text-slate-700 text-xs font-semibold">{perfil.nome}</p>
-                <p className="text-slate-400 text-2xs">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
-              </div>
-              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={28} />
+      <div className="flex-1 flex min-h-0">
+        {/* Menu lateral (desktop). Começa logo abaixo da barra superior e vai
+            até o fim da tela: como é escuro, precisa ser uma COLUNA inteira —
+            recortado entre duas faixas claras viraria um bloco solto no meio
+            da página. Por isso a trilha mora do lado do conteúdo, não aqui. */}
+        <aside className="menu-lateral hidden md:flex flex-col w-60 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)]">
+          <NavLinks grupos={grupos} pathname={pathname} />
+          <BotaoAssistente />
+        </aside>
+
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Faixa de trilha */}
+          <div className="trilha-app sticky top-14 z-20 h-10 shrink-0">
+            <div className="h-full px-4 md:px-6 flex items-center gap-1.5 overflow-x-auto">
+              {trilha.map((degrau, i) => {
+                const ultimo = i === trilha.length - 1
+                return (
+                  <span key={degrau.href} className="flex items-center gap-1.5 shrink-0">
+                    {i > 0 && <span className="trilha-sep" aria-hidden="true">›</span>}
+                    {ultimo ? (
+                      <span className="trilha-atual" aria-current="page">{degrau.label}</span>
+                    ) : (
+                      <Link href={degrau.href} className="trilha-item">{degrau.label}</Link>
+                    )}
+                  </span>
+                )
+              })}
             </div>
           </div>
-        </header>
 
-        <main className="flex-1 p-4 md:p-6">
-          {/* Publica quem está logado pro tutorial saber de quem é o histórico */}
-          <TutorialUsuarioProvider id={perfil.id}>
-            <div className="max-w-6xl mx-auto">{children}</div>
-          </TutorialUsuarioProvider>
-        </main>
+          {/* Sem trava de largura: com `max-w-6xl` sobrava meia tela vazia à
+              direita em monitor grande, e o conteúdo ficava jogado num canto.
+              O conteúdo ocupa a área que tem — quem precisa de coluna estreita
+              (formulário) limita a própria largura. */}
+          <main className="flex-1 min-w-0 p-4 md:p-6">
+            {/* Publica quem está logado pro tutorial saber de quem é o histórico */}
+            <TutorialUsuarioProvider id={perfil.id}>
+              {children}
+            </TutorialUsuarioProvider>
+          </main>
+        </div>
       </div>
 
       {/* Gaveta (mobile) */}
       {menuAberto && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="overlay-fade-in absolute inset-0 bg-black/45" onClick={() => setMenuAberto(false)} />
-          <div className="tema-escuro absolute inset-y-0 left-0 w-72 max-w-[80vw] bg-white shadow-2xl flex flex-col drawer-slide-in">
-            <div className="flex items-center justify-between px-5 h-16 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center">
-                  <QrCode className="w-4 h-4 text-white" />
-                </div>
-                <span className="font-bold text-slate-800">Credenciei</span>
-              </div>
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="overlay-fade-in absolute inset-0 bg-black/40" onClick={() => setMenuAberto(false)} />
+          {/* Mesma coluna escura do desktop — a gaveta é o mesmo menu, não
+              uma segunda navegação com outra aparência. */}
+          <div className="menu-lateral absolute inset-y-0 left-0 w-72 max-w-[82vw] shadow-2xl flex flex-col drawer-slide-in">
+            <div className="flex items-center justify-between px-4 h-14 border-b border-white/10 shrink-0">
+              <span className="flex items-center gap-2">
+                <span className="logo-marca w-6 h-6 rounded-md flex items-center justify-center">
+                  <QrCode className="w-3.5 h-3.5 text-white" />
+                </span>
+                <span className="font-semibold text-white text-sm">Credenciei</span>
+              </span>
               <button
                 onClick={() => setMenuAberto(false)}
-                className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-white/50 hover:text-white hover:bg-white/10"
                 aria-label="Fechar menu"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
-              <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={40} />
-              <div className="min-w-0">
-                <p className="text-slate-800 text-sm font-semibold truncate">{perfil.nome}</p>
-                <p className="text-slate-400 text-xs">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
+            {contexto && (
+              <div className="flex items-center gap-2.5 px-4 py-3 border-b border-white/10 shrink-0">
+                <Avatar fotoUrl={fotoOrgUrl} nome={contexto} tamanho={30} />
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{contexto}</p>
+                  <p className="text-white/45 text-xs truncate">{ROLE_LABELS[perfil.role] ?? perfil.role}</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            <NavLinks nav={nav} pathname={pathname} onNavigate={() => setMenuAberto(false)} />
+            <NavLinks grupos={grupos} pathname={pathname} onNavigate={() => setMenuAberto(false)} />
             <BotaoAssistente onNavigate={() => setMenuAberto(false)} />
-            <BotaoSair onLogout={handleLogout} />
+            <div className="px-3 pb-3 shrink-0 border-t border-white/10 pt-3">
+              <button onClick={handleLogout} className="menu-item w-full">
+                <LogOut className="w-4 h-4 shrink-0" />
+                Sair
+              </button>
+            </div>
           </div>
         </div>
       )}
-
     </div>
     </AssistenteIAProvider>
   )

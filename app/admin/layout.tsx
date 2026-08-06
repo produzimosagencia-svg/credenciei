@@ -6,15 +6,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
 
-  // Foto da organização no cabeçalho: dá identidade visual ao painel de cada
-  // cliente. O master não pertence a nenhuma organização → cai nas iniciais.
+  // Nome e foto da organização no cabeçalho: é o "contexto" da barra superior
+  // (marca › organização), que diz de quem é o painel aberto. O master não
+  // pertence a nenhuma organização → o AppShell mostra "Plataforma".
   let fotoOrgUrl: string | null = null
+  let orgNome: string | null = null
   if (perfil.organizacao_id) {
     const { data: org } = await supabaseAdmin
       .from('organizacoes')
-      .select('foto_perfil_path')
+      .select('nome, foto_perfil_path')
       .eq('id', perfil.organizacao_id)
       .single()
+    orgNome = org?.nome ?? null
     if (org?.foto_perfil_path) {
       const { data: assinada } = await supabaseAdmin.storage
         .from('presencas')
@@ -23,5 +26,5 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     }
   }
 
-  return <AppShell perfil={perfil} fotoOrgUrl={fotoOrgUrl}>{children}</AppShell>
+  return <AppShell perfil={perfil} fotoOrgUrl={fotoOrgUrl} orgNome={orgNome}>{children}</AppShell>
 }

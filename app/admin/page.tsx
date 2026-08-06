@@ -2,13 +2,10 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import {
-  CalendarDays, MapPin, Users, Plus, LayoutGrid, UserCheck, Clock, TrendingUp,
-  ChevronLeft, ChevronRight, Lock,
-} from 'lucide-react'
+import { CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Lock } from 'lucide-react'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
-import StatCard from '@/components/StatCard'
+import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import { COR_ETAPA } from '@/components/charts'
 import { FluxoDoDia } from '@/components/charts-cliente'
 import EventoActions from './eventos/EventoActions'
@@ -25,8 +22,6 @@ const TUTORIAL: TutorialConfig = {
   tela: 'dashboard',
   versao: 2,
   passos: [
-    { alvo: 'dash-stats', titulo: 'Como está agora', posicao: 'bottom',
-      descricao: 'Os quatro números do momento: eventos acontecendo, quantos da equipe já chegaram, quantos ainda faltam e quantas entradas foram registradas hoje.' },
     { alvo: 'dash-graficos', titulo: 'Fluxo de credenciamento', posicao: 'bottom',
       descricao: 'A curva de registros por hora. É aqui que você vê se o pico de chegada já passou — cada cor é uma etapa: entrada, meio e saída.' },
     { alvo: 'dash-novo-evento', titulo: 'Criar um evento', posicao: 'left',
@@ -179,222 +174,221 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   }
   const dadosFluxo = fluxo.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
 
-  // Os números do topo olham só pros eventos ATIVOS: somar evento encerrado
-  // misturaria o que já acabou com o que está acontecendo agora.
-  const esperadosAtivos = linhasAtivas.reduce((acc, e) => acc + e.equipe, 0)
-  const presentesAtivos = linhasAtivas.reduce((acc, e) => acc + e.presentes, 0)
-  const faltamChegar = Math.max(0, esperadosAtivos - presentesAtivos)
+  // Ainda usado pelo subtítulo do gráfico, pra dizer se a curva é de hoje ou
+  // de um dia anterior.
   const hoje = agora.toDateString()
-  const entradasHoje = (registros24h ?? []).filter(
-    r => r.tipo === 'entrada' && new Date(r.created_at as string).toDateString() === hoje
-  ).length
 
-  const stats = [
-    { label: 'Eventos ativos', value: linhasAtivas.length, sub: `de ${totalEventos}`, icon: CalendarDays, tom: 'acento' as const },
-    { label: 'Presentes agora', value: presentesAtivos, sub: `de ${esperadosAtivos}`, icon: UserCheck, tom: 'sucesso' as const },
-    { label: 'Ainda não chegaram', value: faltamChegar, icon: Clock, tom: faltamChegar > 0 ? ('aviso' as const) : ('neutro' as const) },
-    { label: 'Entradas hoje', value: entradasHoje, icon: TrendingUp, tom: 'neutro' as const },
-  ]
+  // Data do topo. Vem do servidor (não do relógio do browser), então não há
+  // divergência de fuso pra suprimir na hidratação.
+  const dataPorExtenso = format(agora, "EEEE, d 'de' MMMM", { locale: ptBR })
+
+  /**
+   * Os eventos abrem a tela.
+   *
+   * Eles são o objeto do sistema — indicador e gráfico falam SOBRE eles. Com a
+   * lista no rodapé era preciso rolar a página inteira pra chegar no que se
+   * veio fazer, que é entrar num evento. (Antes isto era uma tela separada,
+   * com uma lista encolhida aqui dizendo "ver todos": duas telas pro mesmo
+   * conteúdo — agora é só esta.)
+   */
+  const blocoEventos = !totalEventos ? (
+    <Secao titulo="Eventos" descricao="Cada evento reúne os setores, a equipe e as presenças do dia">
+      <EmptyState
+        icone={<CalendarDays className="w-7 h-7" />}
+        titulo="Nenhum evento criado"
+        descricao={
+          podeCriarEvento
+            ? 'Crie seu primeiro evento para começar'
+            : 'Suas licenças de evento acabaram. Fale com o administrador da plataforma para liberar mais.'
+        }
+        acao={
+          podeCriarEvento ? (
+            <Link href="/admin/eventos/novo" className="btn btn-primario">
+              <Plus className="w-3.5 h-3.5" /> Criar evento
+            </Link>
+          ) : undefined
+        }
+      />
+    </Secao>
+  ) : (
+    <div className="space-y-4">
+      {!!linhasAtivas.length && (
+        <Secao
+          tom="destaque"
+          titulo="Eventos ativos"
+          descricao="Acontecendo agora clique no nome para gerenciar setores e equipe"
+          acoes={<span className="indicador-selo selo-sucesso">{linhasAtivas.length}</span>}
+        >
+          <div className="divide-y divide-slate-100">
+            {linhasAtivas.map((e, i) => (
+              <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />
+            ))}
+          </div>
+        </Secao>
+      )}
+
+      {!!linhasEncerradas.length && (
+        <Secao
+          titulo="Eventos encerrados"
+          descricao="Já terminaram e não aceitam novas presenças"
+          acoes={<span className="indicador-selo selo-neutro">{totalEncerradosCount}</span>}
+        >
+          <div className="divide-y divide-slate-100">
+            {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} />)}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+              <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
+              <div className="flex items-center gap-1">
+                <Link
+                  href={`/admin?page=${page - 1}`}
+                  aria-disabled={page <= 1}
+                  aria-label="Página anterior"
+                  className={`btn btn-secundario btn-icone ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Link>
+                <Link
+                  href={`/admin?page=${page + 1}`}
+                  aria-disabled={page >= totalPages}
+                  aria-label="Próxima página"
+                  className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          )}
+        </Secao>
+      )}
+    </div>
+  )
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.18)' }}>
-            <LayoutGrid className="w-5 h-5 text-brand-400" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Painel</h1>
-            <p className="text-slate-500 text-sm" suppressHydrationWarning>
-              {format(agora, "EEEE, d 'de' MMMM", { locale: ptBR })}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <TutorialButton />
-          {podeCriarEvento ? (
-            <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario">
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Novo evento</span>
-              <span className="sm:hidden">Novo</span>
-            </Link>
-          ) : (
-            /* Sem isto o botão sumia e nada explicava por quê. */
-            <span className="flex items-center gap-1.5 text-slate-500 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5">
-              <Lock className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">Sem licença disponível</span>
-              <span className="sm:hidden">Sem licença</span>
-            </span>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        titulo="Painel"
+        descricao={dataPorExtenso}
+        acoes={
+          <>
+            <TutorialButton />
+            {podeCriarEvento ? (
+              <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario">
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Novo evento</span>
+                <span className="sm:hidden">Novo</span>
+              </Link>
+            ) : (
+              /* Sem isto o botão sumia e nada explicava por quê. */
+              <span className="flex items-center gap-1.5 text-slate-500 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Sem licença disponível</span>
+                <span className="sm:hidden">Sem licença</span>
+              </span>
+            )}
+          </>
+        }
+      />
 
-      <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {stats.map(s => <StatCard key={s.label} {...s} />)}
-      </div>
+      {blocoEventos}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         {/* Fluxo do dia: durante um evento a pergunta é "o pico já passou?",
             e isso só se responde com eixo do tempo. */}
-        <div data-tutorial="dash-graficos" className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl">
-          <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-slate-100">
-            <div>
-              <h2 className="text-slate-800 font-semibold text-lg">Fluxo de credenciamento</h2>
-              {/* Diz de QUANDO é a curva: sem isso, um gráfico de um evento de
-                  semana passada pareceria movimento de agora. */}
-              <p className="text-slate-500 text-xs mt-0.5">
-                {fimJanela.toDateString() === hoje
-                  ? 'Registros por hora nas últimas 24 horas'
-                  : `Registros por hora — 24h até ${format(fimJanela, "d 'de' MMM, HH'h'", { locale: ptBR })}`}
-              </p>
-            </div>
-            <div className="hidden sm:flex items-center gap-3 shrink-0 pt-1">
-              {([['Entrada', COR_ETAPA.entrada], ['Meio', COR_ETAPA.meio], ['Saída', COR_ETAPA.fim]] as const).map(([rotulo, cor]) => (
-                <span key={rotulo} className="flex items-center gap-1.5 text-slate-500 text-xs">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: cor }} />
-                  {rotulo}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="p-5 pl-2">
+        <div data-tutorial="dash-graficos" className="lg:col-span-2">
+          <Secao
+            titulo="Fluxo de credenciamento"
+            /* Diz de QUANDO é a curva: sem isso, um gráfico de um evento de
+               semana passada pareceria movimento de agora. */
+            descricao={
+              fimJanela.toDateString() === hoje
+                ? 'Registros por hora nas últimas 24 horas'
+                : `Registros por hora — 24h até ${format(fimJanela, "d 'de' MMM, HH'h'", { locale: ptBR })}`
+            }
+            acoes={
+              <div className="hidden sm:flex items-center gap-3">
+                {([['Entrada', COR_ETAPA.entrada], ['Meio', COR_ETAPA.meio], ['Saída', COR_ETAPA.fim]] as const).map(([rotulo, cor]) => (
+                  <span key={rotulo} className="flex items-center gap-1.5 text-slate-500 text-xs">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: cor }} />
+                    {rotulo}
+                  </span>
+                ))}
+              </div>
+            }
+            corpoClassName="p-4 pl-1"
+          >
             <FluxoDoDia dados={dadosFluxo} />
-          </div>
+          </Secao>
         </div>
 
         {/* Atividade ao vivo — timeline: a linha vertical liga os registros no
             tempo e é o que dá a sensação de "acontecendo agora". */}
-        <div className="bg-white border border-slate-200 rounded-2xl">
-          <div className="px-5 py-3.5 border-b border-slate-100">
-            <h2 className="text-slate-800 font-semibold text-lg">Atividade recente</h2>
-          </div>
-          <div className="p-5">
-            {!ultimosRegistros?.length ? (
-              <p className="text-slate-500 text-sm text-center py-10">Sem atividade ainda</p>
-            ) : (
-              <div className="relative overflow-y-auto max-h-56 pl-4">
-                <span className="absolute left-[3px] top-1.5 bottom-1.5 w-px bg-slate-200" aria-hidden="true" />
-                <div className="space-y-3.5">
-                  {ultimosRegistros.map(r => {
-                    const func = r.funcionarios as unknown as { nome?: string; empresa?: string; cargo?: string } | null
-                    const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
-                    return (
-                      <div key={r.id as string} className="relative">
-                        <span
-                          className="absolute -left-4 top-1.5 w-[7px] h-[7px] rounded-full ring-2 ring-white"
-                          style={{ background: cor }}
-                          aria-hidden="true"
-                        />
-                        <p className="text-slate-800 text-xs font-medium truncate">{func?.nome}</p>
-                        <p className="text-slate-500 text-2xs truncate">
-                          {func?.empresa}{func?.cargo ? ` · ${func.cargo}` : ''}
-                        </p>
-                        <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
-                          {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'} ·{' '}
-                          {format(new Date(r.created_at as string), 'HH:mm', { locale: ptBR })}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
+        <Secao titulo="Atividade recente" corpoClassName={ultimosRegistros?.length ? 'p-4' : ''}>
+          {!ultimosRegistros?.length ? (
+            <EmptyState titulo="Sem atividade ainda" />
+          ) : (
+            <div className="relative overflow-y-auto max-h-60 pl-4">
+              <span className="absolute left-[3px] top-1.5 bottom-1.5 w-px bg-slate-200" aria-hidden="true" />
+              <div className="space-y-3.5">
+                {ultimosRegistros.map(r => {
+                  const func = r.funcionarios as unknown as { nome?: string; empresa?: string; cargo?: string } | null
+                  const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
+                  return (
+                    <div key={r.id as string} className="relative">
+                      <span
+                        className="absolute -left-4 top-1.5 w-[7px] h-[7px] rounded-full ring-2 ring-white"
+                        style={{ background: cor }}
+                        aria-hidden="true"
+                      />
+                      <p className="text-slate-800 text-xs font-medium truncate">{func?.nome}</p>
+                      <p className="text-slate-500 text-2xs truncate">
+                        {func?.empresa}{func?.cargo ? ` · ${func.cargo}` : ''}
+                      </p>
+                      <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
+                        {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'} ·{' '}
+                        {format(new Date(r.created_at as string), 'HH:mm', { locale: ptBR })}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+        </Secao>
       </div>
 
-      {/* Eventos: era uma tela separada, e uma lista encolhida aqui dizendo
-          "ver todos". Duas telas pro mesmo conteúdo — agora é só esta. */}
-      {!totalEventos ? (
-        <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center">
-          <CalendarDays className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-700 text-sm font-medium">Nenhum evento criado</p>
-          {podeCriarEvento ? (
-            <>
-              <p className="text-slate-500 text-sm mt-1">Crie seu primeiro evento para começar</p>
-              <Link href="/admin/eventos/novo" className="inline-flex mt-4 btn btn-primario">
-                <Plus className="w-3.5 h-3.5" /> Criar evento
-              </Link>
-            </>
-          ) : (
-            <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">
-              Suas licenças de evento acabaram. Fale com o administrador da plataforma para liberar mais.
-            </p>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {!!linhasAtivas.length && (
-            <section className="space-y-2">
-              <h2 className="text-2xs text-slate-500 uppercase tracking-widest font-semibold">
-                Ativos · {linhasAtivas.length}
-              </h2>
-              {linhasAtivas.map((e, i) => (
-                <EventoCard key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />
-              ))}
-            </section>
-          )}
-
-          {!!linhasEncerradas.length && (
-            <section className="space-y-2">
-              <h2 className="text-2xs text-slate-500 uppercase tracking-widest font-semibold">
-                Encerrados · {totalEncerradosCount}
-              </h2>
-              {linhasEncerradas.map(e => <EventoCard key={e.id} evento={e} podeExcluir={podeExcluir} />)}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-2">
-                  <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
-                  <div className="flex items-center gap-1">
-                    <Link
-                      href={`/admin?page=${page - 1}`}
-                      aria-disabled={page <= 1}
-                      aria-label="Página anterior"
-                      className={`btn btn-secundario btn-icone ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Link>
-                    <Link
-                      href={`/admin?page=${page + 1}`}
-                      aria-disabled={page >= totalPages}
-                      aria-label="Próxima página"
-                      className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-        </div>
-      )}
     </div>
     </TutorialProvider>
   )
 }
 
-function EventoCard({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
+/**
+ * Uma linha da lista de eventos — linha de tabela, não cartão solto: dentro
+ * de uma seção com título, repetir borda e canto arredondado em cada item
+ * cria caixa dentro de caixa e engorda a lista sem informar nada.
+ */
+function EventoLinha({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
   const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
 
   return (
-    <div className={`bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-center gap-4 hover:border-slate-300 transition-colors ${evento.ativo ? '' : 'opacity-60'}`}>
+    <div className={`px-4 py-3 flex items-center gap-4 hover:bg-slate-50 transition-colors ${evento.ativo ? '' : 'opacity-70'}`}>
       <Link
         href={`/admin/eventos/${evento.id}`}
         data-tutorial={destacar ? 'eventos-card' : undefined}
-        className="flex-1 min-w-0 space-y-1.5"
+        className="flex-1 min-w-0 space-y-1"
       >
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-slate-800 font-semibold text-sm truncate">{evento.nome}</h3>
+          {/* Roxo: é o link que leva pra dentro do evento, e a lista inteira
+              existe pra ser clicada aqui. */}
+          <h3 className="text-brand-500 font-medium text-sm truncate">{evento.nome}</h3>
           {evento.ativo ? (
-            <span className="inline-flex items-center gap-1 text-2xs font-medium text-sucesso-700 bg-sucesso-50 border border-sucesso-200 px-1.5 py-0.5 rounded">
+            <Badge tom="positivo">
               <span className="w-1.5 h-1.5 rounded-full bg-sucesso-600" />
               Ativo
-            </span>
+            </Badge>
           ) : (
-            <span className="text-2xs font-medium text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-              Encerrado
-            </span>
+            <Badge tom="neutro">Encerrado</Badge>
           )}
         </div>
 
@@ -418,7 +412,7 @@ function EventoCard({ evento, podeExcluir, destacar }: { evento: LinhaEvento; po
 
       <div className="hidden sm:block w-44 shrink-0">
         {evento.equipe === 0 ? (
-          <p className="text-slate-500 text-xs text-right">Equipe ainda não cadastrada</p>
+          <p className="text-slate-400 text-xs text-right">Equipe ainda não cadastrada</p>
         ) : (
           <>
             <div className="flex items-baseline justify-between gap-2 mb-1">

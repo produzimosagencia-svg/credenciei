@@ -7,7 +7,52 @@ import Link from 'next/link'
  * Component igual. Ícone entra como filho (JSX), nunca como prop de
  * componente — passar componente do servidor pro cliente quebra em produção,
  * e já quebrou aqui em cinco telas de uma vez.
+ *
+ * A aparência mora nas classes do globals.css (`.secao`, `.pagina-titulo`,
+ * `.tabela`…). Aqui fica só a montagem: assim o mesmo desenho vale pra quem
+ * usa o componente e pra quem escreve a classe direto no JSX, sem duas
+ * fontes de verdade.
  */
+
+// ─── Seção ───────────────────────────────────────────────────────────────────
+
+/**
+ * O bloco de conteúdo da referência: uma moldura cinza clara com o título e
+ * a descrição na própria borda, e dentro dela a superfície branca. O título
+ * fora da caixa branca é o que separa "o que é isto" de "o conteúdo" sem
+ * precisar de uma linha divisória.
+ */
+export function Secao({ titulo, descricao, acoes, tom = 'neutro', corpoClassName = '', className = '', children }: {
+  titulo?: string
+  descricao?: string
+  /** Botões no canto direito do cabeçalho. */
+  acoes?: React.ReactNode
+  /**
+   * `destaque` pinta a moldura no roxo do sistema. Use em UMA seção por
+   * tela — a que responde ao que a pessoa veio fazer ali. Duas seções em
+   * destaque na mesma tela é o mesmo que nenhuma.
+   */
+  tom?: 'neutro' | 'destaque'
+  /** Some com o padding interno pra tabela/lista encostar na borda. */
+  corpoClassName?: string
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className={`secao ${tom === 'destaque' ? 'secao-destaque' : ''} ${className}`}>
+      {(titulo || acoes) && (
+        <div className="secao-cabecalho flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {titulo && <h2 className="secao-titulo">{titulo}</h2>}
+            {descricao && <p className="secao-descricao">{descricao}</p>}
+          </div>
+          {acoes && <div className="flex items-center gap-2 shrink-0">{acoes}</div>}
+        </div>
+      )}
+      <div className={`secao-corpo ${corpoClassName}`}>{children}</div>
+    </section>
+  )
+}
 
 // ─── Cartão ──────────────────────────────────────────────────────────────────
 
@@ -15,14 +60,14 @@ const PADDINGS = { nenhum: '', sm: 'p-4', md: 'p-5', lg: 'p-6' } as const
 
 type CartaoProps = {
   padding?: keyof typeof PADDINGS
-  /** Some com o padding interno pra tabela/lista encostar na borda. */
   className?: string
   children: React.ReactNode
 }
 
+/** Superfície branca simples, sem a moldura da Secao. */
 export function Cartao({ padding = 'md', className = '', children }: CartaoProps) {
   return (
-    <div className={`bg-white border border-slate-200 rounded-2xl shadow-sm ${PADDINGS[padding]} ${className}`}>
+    <div className={`bg-white border border-slate-200 rounded-2xl ${PADDINGS[padding]} ${className}`}>
       {children}
     </div>
   )
@@ -33,9 +78,9 @@ export function CartaoLink({ padding = 'md', className = '', children, ...props 
   return (
     <Link
       {...props}
-      className={`block bg-white border border-slate-200 rounded-2xl shadow-sm transition-all ` +
-        `hover:border-brand-300 hover:shadow-md ` +
-        `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 ` +
+      className={`block bg-white border border-slate-200 rounded-2xl transition-colors ` +
+        `hover:border-slate-300 hover:bg-slate-50 ` +
+        `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ` +
         `${PADDINGS[padding]} ${className}`}
     >
       {children}
@@ -54,15 +99,20 @@ type PageHeaderProps = {
   acoes?: React.ReactNode
 }
 
+/**
+ * Topo de tela: título e uma linha dizendo o que é. Sem bloco de ícone
+ * colorido ao lado — na referência o topo é só texto, e é o que faz a tela
+ * começar no conteúdo em vez de num enfeite.
+ */
 export function PageHeader({ titulo, descricao, voltarPara, acoes }: PageHeaderProps) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div className="flex items-center gap-3 min-w-0">
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+      <div className="flex items-start gap-2.5 min-w-0">
         {voltarPara && (
           <Link
             href={voltarPara}
             aria-label="Voltar"
-            className="btn-press w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
+            className="btn btn-secundario btn-icone shrink-0 mt-0.5"
           >
             {/* Seta desenhada à mão: evita importar ícone só pra isto e manda
                 o componente ficar do lado do cliente sem precisar. */}
@@ -72,8 +122,8 @@ export function PageHeader({ titulo, descricao, voltarPara, acoes }: PageHeaderP
           </Link>
         )}
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-slate-800 truncate">{titulo}</h1>
-          {descricao && <p className="text-slate-500 text-sm mt-0.5">{descricao}</p>}
+          <h1 className="pagina-titulo truncate">{titulo}</h1>
+          {descricao && <p className="pagina-descricao">{descricao}</p>}
         </div>
       </div>
       {acoes && <div className="flex items-center gap-2 shrink-0">{acoes}</div>}
@@ -84,7 +134,7 @@ export function PageHeader({ titulo, descricao, voltarPara, acoes }: PageHeaderP
 // ─── Lista vazia ─────────────────────────────────────────────────────────────
 
 type EmptyStateProps = {
-  /** Ícone já renderizado, ex.: <IdCard className="w-12 h-12" />. */
+  /** Ícone já renderizado, ex.: <IdCard className="w-7 h-7" />. */
   icone?: React.ReactNode
   titulo: string
   descricao?: string
@@ -93,23 +143,23 @@ type EmptyStateProps = {
 
 export function EmptyState({ icone, titulo, descricao, acao }: EmptyStateProps) {
   return (
-    <Cartao padding="nenhum" className="p-12 sm:p-16 text-center">
-      {icone && <div className="text-slate-200 flex justify-center mb-4">{icone}</div>}
-      <p className="text-slate-500 font-semibold">{titulo}</p>
-      {descricao && <p className="text-slate-400 text-sm mt-1 max-w-sm mx-auto">{descricao}</p>}
+    <div className="py-14 px-6 text-center">
+      {icone && <div className="text-slate-300 flex justify-center mb-3">{icone}</div>}
+      <p className="text-slate-800 text-sm font-medium">{titulo}</p>
+      {descricao && <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto">{descricao}</p>}
       {acao && <div className="mt-5 flex justify-center">{acao}</div>}
-    </Cartao>
+    </div>
   )
 }
 
 // ─── Selo de status ──────────────────────────────────────────────────────────
 
 const TONS = {
-  neutro: 'bg-slate-50 text-slate-500 border-slate-200',
-  marca: 'bg-brand-50 text-brand-700 border-brand-200',
-  positivo: 'bg-green-50 text-green-600 border-green-200',
-  atencao: 'bg-amber-50 text-amber-700 border-amber-200',
-  negativo: 'bg-red-50 text-red-600 border-red-200',
+  neutro: 'selo-neutro',
+  marca: 'selo-acento',
+  positivo: 'selo-sucesso',
+  atencao: 'selo-aviso',
+  negativo: 'selo-erro',
 } as const
 
 export type TomBadge = keyof typeof TONS
@@ -119,11 +169,7 @@ export function Badge({ tom = 'neutro', className = '', children }: {
   className?: string
   children: React.ReactNode
 }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold border ${TONS[tom]} ${className}`}>
-      {children}
-    </span>
-  )
+  return <span className={`indicador-selo ${TONS[tom]} ${className}`}>{children}</span>
 }
 
 // ─── Aviso ───────────────────────────────────────────────────────────────────
@@ -140,7 +186,7 @@ export function Aviso({ tom = 'marca', icone, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className={`flex items-start gap-2 border rounded-2xl px-4 py-3 text-sm ${AVISOS[tom]}`}>
+    <div className={`flex items-start gap-2 border rounded-xl px-4 py-3 text-sm ${AVISOS[tom]}`}>
       {icone && <span className="shrink-0 mt-0.5">{icone}</span>}
       <div className="min-w-0">{children}</div>
     </div>

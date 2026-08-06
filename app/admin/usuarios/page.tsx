@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Bui
 import { format } from 'date-fns'
 import { podeGerenciarUsuarios, ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
+import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -36,11 +37,11 @@ const PAGE_SIZE = 20
  * cinco cores, e nenhuma delas dizendo nada.
  */
 const ROLE_BADGE: Record<Role, string> = {
-  master: 'bg-brand-50 text-brand-700 border-brand-200',
-  admin: 'bg-brand-50 text-brand-700 border-brand-200',
-  gerente: 'bg-slate-100 text-slate-600 border-slate-200',
-  supervisor: 'bg-slate-100 text-slate-600 border-slate-200',
-  cliente: 'bg-slate-100 text-slate-600 border-slate-200',
+  master: 'selo-acento',
+  admin: 'selo-acento',
+  gerente: 'selo-neutro',
+  supervisor: 'selo-neutro',
+  cliente: 'selo-neutro',
 }
 
 type Aba = 'todos' | 'ativos' | 'inativos'
@@ -126,34 +127,42 @@ export default async function UsuariosPage({
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-5">
-      {/* Cabeçalho: bloco de ícone + título + contagem, ações à direita */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3" data-tutorial="usr-resumo">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(59,130,246,0.18)' }}>
-            <Users className="w-5 h-5 text-brand-400" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-800 leading-tight">Usuários</h1>
-            <p className="text-slate-500 text-sm">
-              {total} {total === 1 ? 'pessoa com acesso' : 'pessoas com acesso'}
-              {busca && ' para esta busca'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <TutorialButton />
-          <Link href="/admin/usuarios/novo" data-tutorial="usr-novo" className="btn btn-primario">
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Novo usuário</span>
-            <span className="sm:hidden">Novo</span>
+      <div data-tutorial="usr-resumo">
+        <PageHeader
+          titulo="Usuários"
+          descricao="Gerencie quem tem acesso ao sistema e quais setores cada pessoa enxerga."
+          acoes={
+            <>
+              <TutorialButton />
+              <Link href="/admin/usuarios/novo" data-tutorial="usr-novo" className="btn btn-primario">
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Novo usuário</span>
+                <span className="sm:hidden">Novo</span>
+              </Link>
+            </>
+          }
+        />
+      </div>
+
+      {/* Abas com contador — filtram por situação sem recarregar o conceito */}
+      <div className="abas" data-tutorial="usr-abas">
+        {ABAS.map(({ chave, rotulo, contador }) => (
+          <Link
+            key={chave}
+            href={url({ aba: chave })}
+            className={`aba ${aba === chave ? 'aba-ativa' : ''}`}
+            aria-current={aba === chave ? 'page' : undefined}
+          >
+            {rotulo}
+            <span className="aba-contador">{contador}</span>
           </Link>
-        </div>
+        ))}
       </div>
 
       {/* Busca */}
       <form className="flex gap-2">
         {aba !== 'todos' && <input type="hidden" name="aba" value={aba} />}
-        <div className="relative flex-1">
+        <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             name="q"
@@ -170,127 +179,93 @@ export default async function UsuariosPage({
         )}
       </form>
 
-      {/* Abas com contador — filtram por situação sem recarregar o conceito */}
-      <div className="border-b border-slate-200 flex items-center gap-1" data-tutorial="usr-abas">
-        {ABAS.map(({ chave, rotulo, contador }) => {
-          const ativa = aba === chave
-          return (
-            <Link
-              key={chave}
-              href={url({ aba: chave })}
-              className={`relative flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${
-                ativa ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {rotulo}
-              <span className={`text-2xs tabular-nums px-1.5 py-0.5 rounded ${
-                ativa ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'
-              }`}>
-                {contador}
-              </span>
-              {ativa && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-slate-800 rounded-full" />}
-            </Link>
-          )
-        })}
-      </div>
-
-      {!linhas.length ? (
-        <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center">
-          <Users className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-700 text-sm font-medium">
-            {busca ? 'Ninguém encontrado' : aba === 'inativos' ? 'Ninguém inativo' : 'Nenhum usuário cadastrado'}
-          </p>
-          <p className="text-slate-500 text-sm mt-1">
-            {busca ? 'Tente outro nome ou e-mail.' : 'Crie um acesso para sua equipe começar a usar.'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {linhas.map((u, i) => (
-            <div
-              key={u.id}
-              className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-start gap-3 hover:border-slate-300 transition-colors"
-            >
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                style={{ background: 'rgba(59,130,246,0.16)' }}
-              >
-                <span className="text-brand-400 text-xs font-semibold">{iniciais(u.nome)}</span>
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-slate-800 text-sm font-semibold truncate">{u.nome}</p>
-                  {u.id === perfil!.id && (
-                    <span className="text-2xs font-medium text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-                      Você
-                    </span>
-                  )}
-                  {!u.ativo && (
-                    <span className="text-2xs font-medium text-aviso-700 bg-aviso-50 border border-aviso-200 px-1.5 py-0.5 rounded">
-                      Inativo
-                    </span>
-                  )}
+      <Secao
+        titulo={aba === 'ativos' ? 'Acessos ativos' : aba === 'inativos' ? 'Acessos inativos' : 'Todos os acessos'}
+        descricao={
+          busca
+            ? `${total} resultado${total === 1 ? '' : 's'} para "${busca}"`
+            : `${total} ${total === 1 ? 'pessoa' : 'pessoas'} nesta lista`
+        }
+      >
+        {!linhas.length ? (
+          <EmptyState
+            icone={<Users className="w-7 h-7" />}
+            titulo={busca ? 'Ninguém encontrado' : aba === 'inativos' ? 'Ninguém inativo' : 'Nenhum usuário cadastrado'}
+            descricao={busca ? 'Tente outro nome ou e-mail.' : 'Crie um acesso para sua equipe começar a usar.'}
+          />
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {linhas.map((u, i) => (
+              <div key={u.id} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-slate-600 text-2xs font-semibold">{iniciais(u.nome)}</span>
                 </div>
 
-                {/* Metadados numa linha só, separados por ícone — é o que dá
-                    densidade sem virar tabela. */}
-                <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
-                  <span className="flex items-center gap-1 min-w-0">
-                    <Mail className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{u.email}</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Building2 className="w-3 h-3 shrink-0" />
-                    {u.role === 'supervisor'
-                      ? (u.setorNome ?? 'sem setor')
-                      : `${u.eventoCount} evento${u.eventoCount !== 1 ? 's' : ''}`}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <CalendarDays className="w-3 h-3 shrink-0" />
-                    {format(new Date(u.criadoEm), 'dd/MM/yyyy')}
-                  </span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-slate-800 text-sm font-medium truncate">{u.nome}</p>
+                    {u.id === perfil!.id && <Badge tom="neutro">Você</Badge>}
+                    {!u.ativo && <Badge tom="atencao">Inativo</Badge>}
+                    <span
+                      data-tutorial={i === 0 ? 'usr-papel' : undefined}
+                      className={`indicador-selo ${ROLE_BADGE[u.role] ?? ROLE_BADGE.cliente}`}
+                    >
+                      {ROLE_LABELS[u.role] ?? u.role}
+                    </span>
+                  </div>
+
+                  {/* Metadados numa linha só, separados por ícone — é o que dá
+                      densidade sem virar tabela. */}
+                  <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
+                    <span className="flex items-center gap-1 min-w-0">
+                      <Mail className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{u.email}</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Building2 className="w-3 h-3 shrink-0" />
+                      {u.role === 'supervisor'
+                        ? (u.setorNome ?? 'sem setor')
+                        : `${u.eventoCount} evento${u.eventoCount !== 1 ? 's' : ''}`}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <CalendarDays className="w-3 h-3 shrink-0" />
+                      {format(new Date(u.criadoEm), 'dd/MM/yyyy')}
+                    </span>
+                  </div>
                 </div>
 
-                <span
-                  data-tutorial={i === 0 ? 'usr-papel' : undefined}
-                  className={`inline-flex text-2xs px-1.5 py-0.5 rounded font-medium border ${ROLE_BADGE[u.role] ?? ROLE_BADGE.cliente}`}
-                >
-                  {ROLE_LABELS[u.role] ?? u.role}
-                </span>
+                <div className="shrink-0 -mr-1" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
+                  {u.id !== perfil!.id && <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />}
+                </div>
               </div>
-
-              <div className="shrink-0 -mr-1" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
-                {u.id !== perfil!.id && <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
-          <div className="flex items-center gap-1">
-            <Link
-              href={url({ page: page - 1 })}
-              aria-disabled={page <= 1}
-              aria-label="Página anterior"
-              className={`btn btn-secundario btn-icone ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Link>
-            <Link
-              href={url({ page: page + 1 })}
-              aria-disabled={page >= totalPages}
-              aria-label="Próxima página"
-              className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Link>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+            <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
+            <div className="flex items-center gap-1">
+              <Link
+                href={url({ page: page - 1 })}
+                aria-disabled={page <= 1}
+                aria-label="Página anterior"
+                className={`btn btn-secundario btn-icone ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Link>
+              <Link
+                href={url({ page: page + 1 })}
+                aria-disabled={page >= totalPages}
+                aria-label="Próxima página"
+                className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        )}
+      </Secao>
     </div>
     </TutorialProvider>
   )
