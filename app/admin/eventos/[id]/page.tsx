@@ -3,7 +3,7 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine } from 'lucide-react'
+import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import StatCard from '@/components/StatCard'
@@ -144,7 +144,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
-      <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Setores" value={fornecedores?.length ?? 0} icon={Users} tom="acento" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} tom="info" />
         <StatCard label="Presentes agora" value={presentesAgora} icon={Clock} tom="sucesso" />
@@ -154,6 +154,8 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       {/* Progresso de presença por etapa */}
       <div data-tutorial="evt-progresso">
         <Secao
+          tom="sucesso"
+          icone={<TrendingUp className="w-3.5 h-3.5" />}
           titulo="Progresso de presença"
           descricao={`Quantos dos ${totalFuncionarios} funcionários já registraram cada etapa`}
           corpoClassName="p-5"
@@ -172,6 +174,8 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         {/* Fornecedores */}
         <div data-tutorial="evt-setores" className="md:col-span-3">
           <Secao
+            tom="acento"
+            icone={<Users className="w-3.5 h-3.5" />}
             titulo="Fornecedores e setores"
             descricao="Cada setor gera um link próprio de cadastro para a equipe"
             acoes={<FornecedorModal eventoId={id} mode="criar" />}
@@ -196,6 +200,8 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         {/* Feed de atividade */}
         <div data-tutorial="evt-atividade" className="md:col-span-2">
           <Secao
+            tom="info"
+            icone={<Activity className="w-3.5 h-3.5" />}
             titulo="Atividade do evento"
             descricao="Cada leitura de QR ou check-in por foto aparece aqui"
             corpoClassName={registros?.length ? 'p-4 overflow-y-auto max-h-[26rem]' : ''}

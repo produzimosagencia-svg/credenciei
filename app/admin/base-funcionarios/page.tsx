@@ -88,7 +88,7 @@ export default async function BaseFuncionariosPage({
         descricao="Todo mundo que já foi credenciado por qualquer cliente, identificado pelo CPF"
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Pessoas na base" value={pessoas.length.toLocaleString('pt-BR')} icon={IdCard} tom="acento" />
         <StatCard label="Cadastros feitos" value={totalCadastros.toLocaleString('pt-BR')} icon={Users} tom="info" />
         <StatCard
@@ -159,9 +159,9 @@ export default async function BaseFuncionariosPage({
             {/* Celular: cartão. Desktop: tabela. Mesma lista, leituras diferentes. */}
             <div className="md:hidden divide-y divide-slate-100">
               {pessoas.map(p => (
-                <div key={p.cpf} className="p-4 space-y-2">
+                <Link key={p.cpf} href={`/admin/pessoas/${p.cpf}`} className="block p-4 space-y-2 hover:bg-slate-50 transition-colors">
                   <div>
-                    <p className="text-slate-800 text-sm font-medium truncate">{p.nome}</p>
+                    <p className="text-brand-500 text-sm font-medium truncate">{p.nome}</p>
                     <p className="text-slate-500 text-xs tabular-nums">{formatCpf(p.cpf)}</p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -172,7 +172,7 @@ export default async function BaseFuncionariosPage({
                   <p className="text-slate-400 text-2xs">
                     {p.telefone ? `${p.telefone} · ` : ''}último cadastro em {formatarBR(p.ultimo, 'curto')}
                   </p>
-                </div>
+                </Link>
               ))}
             </div>
 
@@ -189,7 +189,9 @@ export default async function BaseFuncionariosPage({
                   {pessoas.map(p => (
                     <tr key={p.cpf}>
                       <td>
-                        <p className="text-slate-800 font-medium">{p.nome}</p>
+                        <Link href={`/admin/pessoas/${p.cpf}`} className="text-brand-500 font-medium hover:underline">
+                          {p.nome}
+                        </Link>
                         {p.cargo && <p className="text-slate-500 text-xs">{p.cargo}</p>}
                       </td>
                       <td className="tabular-nums">{formatCpf(p.cpf)}</td>

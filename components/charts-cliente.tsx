@@ -69,10 +69,14 @@ export type PontoFluxo = { hora: string; entrada: number; meio: number; fim: num
  * própria história, e as três ondas (chegada, meio, saída) aparecem separadas
  * no tempo, que é justamente o que se quer enxergar.
  */
-export function FluxoDoDia({ dados }: { dados: PontoFluxo[] }) {
-  const vazio = dados.every(d => d.entrada + d.meio + d.fim === 0)
+export function FluxoDoDia({ dados, vazioTexto }: { dados: PontoFluxo[]; vazioTexto?: string }) {
+  const vazio = !dados.length || dados.every(d => d.entrada + d.meio + d.fim === 0)
   if (vazio) {
-    return <p className="text-slate-500 text-sm text-center py-16">Nenhum registro nas últimas 24 horas</p>
+    return (
+      <p className="text-slate-500 text-sm text-center py-16">
+        {vazioTexto ?? 'Nenhum registro nesta janela'}
+      </p>
+    )
   }
   return (
     <ResponsiveContainer width="100%" height={220}>
@@ -93,7 +97,9 @@ export function FluxoDoDia({ dados }: { dados: PontoFluxo[] }) {
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <Caixa
-                titulo={`${label}h`}
+                /* O rótulo já vem formatado da página ("03h" ou "05/08 03h"),
+                   porque só ela sabe se a janela atravessa mais de um dia. */
+                titulo={String(label)}
                 linhas={[
                   { nome: 'Entrada', valor: Number(payload.find(p => p.dataKey === 'entrada')?.value ?? 0), cor: COR.entrada },
                   { nome: 'Meio', valor: Number(payload.find(p => p.dataKey === 'meio')?.value ?? 0), cor: COR.meio },

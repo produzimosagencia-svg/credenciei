@@ -1011,7 +1011,7 @@ export async function registrarPresencaFoto(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; fotoBase64?: string }
+  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; cidade?: string; fotoBase64?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -1022,6 +1022,23 @@ export async function cadastrarFuncionarioPublico(
 
   const cpf = dados.cpf.replace(/\D/g, '')
   if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números e tente de novo.' }
+
+  /*
+   * Cidade é obrigatória no cadastro público.
+   *
+   * A checagem é aqui, e não só no `required` do formulário: aquilo é
+   * validação de navegador e some com qualquer chamada direta à action. É
+   * este campo que alimenta a busca por região em "Encontrar funcionários" —
+   * cadastro sem cidade entra na base e nunca aparece em busca nenhuma.
+   *
+   * Duas letras é o piso: existe município de nome curto, mas ninguém mora em
+   * "a". A coluna segue aceitando nulo no banco porque o cadastro feito pelo
+   * organizador (tela do setor, planilha, IA) não pergunta cidade.
+   */
+  const cidade = (dados.cidade ?? '').trim()
+  if (cidade.length < 2) {
+    return { error: 'Informe a cidade onde você mora — é por ela que os organizadores encontram você para outros eventos.' }
+  }
 
   // Trava opcional do setor: se o organizador definiu uma lista de CPFs
   // autorizados, só quem está nela consegue se cadastrar por este link.
@@ -1062,6 +1079,7 @@ export async function cadastrarFuncionarioPublico(
     empresa: dados.empresa.trim(),
     cargo: dados.cargo.trim(),
     chave_pix: dados.chavePix?.trim() || null,
+    cidade,
     ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id, qr_token').single()
 
@@ -1102,7 +1120,7 @@ export async function cadastrarFuncionarioPublico(
 export async function buscarCadastroPorCpf(
   fornecedorId: string,
   cpfBruto: string
-): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null } | null> {
+): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null; cidade: string | null } | null> {
   const cpf = cpfBruto.replace(/\D/g, '')
   if (!validarCpf(cpf)) return null
 
@@ -1114,7 +1132,7 @@ export async function buscarCadastroPorCpf(
   const eventoRel = fornecedor?.eventos as { organizacao_id: string | null } | { organizacao_id: string | null }[] | null
   const organizacaoId = Array.isArray(eventoRel) ? eventoRel[0]?.organizacao_id : eventoRel?.organizacao_id
 
-  const colunas = 'nome, telefone, empresa, cargo, chave_pix, created_at'
+  const colunas = 'nome, telefone, empresa, cargo, chave_pix, cidade, created_at'
 
   // Primeiro procura na própria organização: é o dado mais confiável, porque
   // veio de um evento do mesmo organizador.
@@ -1124,6 +1142,7 @@ export async function buscarCadastroPorCpf(
     empresa: string | null
     cargo: string | null
     chave_pix: string | null
+    cidade: string | null
   }
   let func: CadastroAnterior | undefined
   if (organizacaoId) {
@@ -1157,6 +1176,7 @@ export async function buscarCadastroPorCpf(
     empresa: func.empresa ?? '',
     cargo: func.cargo ?? '',
     chavePix: func.chave_pix ?? null,
+    cidade: func.cidade ?? null,
   }
 }
 

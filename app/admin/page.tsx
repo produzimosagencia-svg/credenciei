@@ -2,10 +2,17 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Lock } from 'lucide-react'
+import {
+  CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight,
+  TrendingUp, Activity, Radio, UserCheck, Clock,
+} from 'lucide-react'
+import StatCard from '@/components/StatCard'
+import { formatarBR } from '@/lib/tz'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
+// APRESENTACAO — temporário. Ver lib/apresentacao.ts para desligar/remover.
+import { APRESENTACAO, fluxoDeExemplo, atividadeDeExemplo, eventoDeExemplo } from '@/lib/apresentacao'
 import { COR_ETAPA } from '@/components/charts'
 import { FluxoDoDia } from '@/components/charts-cliente'
 import EventoActions from './eventos/EventoActions'
@@ -31,6 +38,49 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'eventos-acoes', titulo: 'Ações do evento', posicao: 'left',
       descricao: 'Encerre um evento quando ele acabar ou exclua se foi criado por engano. Evento encerrado para de aceitar novas presenças.' },
   ],
+}
+
+/** Teto de pontos no gráfico. Acima disso o passo cresce (2h, 3h…). */
+const MAX_PONTOS = 96
+
+/**
+ * A janela de operação de um evento: da primeira etapa que abre até a última
+ * que fecha.
+ *
+ * Usa o MENOR início e o MAIOR fim entre as janelas definidas, e não
+ * `janela_entrada_inicio`/`janela_fim_fim` direto, porque janela em branco é
+ * comum — evento com só entrada configurada, por exemplo. As datas do evento
+ * entram como último recurso; sem nada disso, não há gráfico a desenhar.
+ */
+function janelaDoEvento(evento: Record<string, unknown> | null) {
+  if (!evento) return null
+
+  const instante = (v: unknown) => {
+    const t = v ? new Date(v as string).getTime() : NaN
+    return Number.isFinite(t) ? t : null
+  }
+
+  const inicios = [
+    evento.janela_entrada_inicio, evento.janela_meio_inicio, evento.janela_fim_inicio,
+  ].map(instante).filter((v): v is number => v != null)
+  const fins = [
+    evento.janela_fim_fim, evento.janela_meio_fim, evento.janela_entrada_fim,
+  ].map(instante).filter((v): v is number => v != null)
+
+  const inicio = inicios.length ? Math.min(...inicios) : instante(evento.data_inicio)
+  const fim = fins.length ? Math.max(...fins) : instante(evento.data_fim)
+  if (inicio == null || fim == null || fim <= inicio) return null
+
+  // Arredonda pra hora cheia dos dois lados: o eixo fica em horas inteiras e a
+  // última hora aparece inteira, em vez de cortada no minuto do fechamento.
+  const HORA = 60 * 60 * 1000
+  const de = Math.floor(inicio / HORA) * HORA
+  const ate = Math.ceil(fim / HORA) * HORA
+  const horas = Math.round((ate - de) / HORA)
+  // Evento de vários dias renderiza a cada 2h, 3h… em vez de virar 300 pontos.
+  const passo = Math.max(1, Math.ceil(horas / MAX_PONTOS))
+
+  return { de, ate, horas, passo, nome: String(evento.nome ?? ''), multiDia: horas > 24 }
 }
 
 type LinhaEvento = {
@@ -74,25 +124,28 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // Uma leitura só do relógio pra toda a página.
   const agora = new Date()
 
-  const [{ data: ativos }, { data: encerrados, count: totalEncerrados }, { data: maisRecente }] = await Promise.all([
+  // A consulta do "último registro que existe" saiu junto com a janela móvel:
+  // a janela do gráfico agora vem do evento, não do relógio.
+  const [{ data: ativos }, { data: encerrados, count: totalEncerrados }] = await Promise.all([
     ativosQuery,
     encerradosQuery,
-    // Quando foi o último registro que existe. Ver comentário do fim da janela.
-    db.from('registros').select('created_at').order('created_at', { ascending: false }).limit(1),
   ])
 
   /**
-   * Fim da janela do gráfico.
+   * Janela do gráfico: a do EVENTO, não uma janela móvel de 24h.
    *
-   * Ancorar em "agora" deixava o gráfico vazio o tempo todo: fora dos dias de
-   * evento não existe registro nenhum nas últimas 24h, e a tela mostrava
-   * "nenhum registro" mesmo com o histórico cheio. Agora a janela termina no
-   * ÚLTIMO registro que existe — se o movimento foi hoje, é o mesmo que
-   * antes; se foi semana passada, mostra aquele dia em vez de nada.
+   * O que interessa a quem organiza é o intervalo em que a operação acontece —
+   * da abertura do credenciamento ao fechamento da saída. Um evento que abre
+   * às 20h e fecha às 4h da manhã cabe inteiro em 8 horas; espalhar isso em 24
+   * deixava a curva espremida num canto e 16 horas de linha reta no resto,
+   * mostrando horas em que, por definição, nada podia acontecer.
+   *
+   * O evento de referência é o ativo mais recente; sem nenhum ativo, o último
+   * que existiu — assim a tela continua contando a última operação em vez de
+   * esvaziar quando o evento é encerrado.
    */
-  const ultimoRegistroEm = maisRecente?.[0]?.created_at ? new Date(maisRecente[0].created_at as string) : null
-  const fimJanela = ultimoRegistroEm && ultimoRegistroEm < agora ? ultimoRegistroEm : agora
-  const desde24h = new Date(fimJanela.getTime() - 23 * 60 * 60 * 1000).toISOString()
+  const eventoDoGrafico = (ativos ?? [])[0] ?? (encerrados ?? [])[0] ?? null
+  const janela = janelaDoEvento(eventoDoGrafico)
 
   const idsNaTela = [...(ativos ?? []), ...(encerrados ?? [])].map(e => e.id as string)
 
@@ -101,7 +154,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * para a página inteira — não duas por evento, que era o padrão antigo e
    * multiplicava requisição conforme a lista crescia.
    */
-  const [{ data: funcionarios }, { data: entradas }, { data: registros24h }, { data: ultimosRegistros }] =
+  const [{ data: funcionarios }, { data: entradas }, { data: registrosDaJanela }, { data: ultimosRegistros }] =
     await Promise.all([
       idsNaTela.length
         ? db.from('funcionarios').select('id, fornecedores!inner(evento_id)').in('fornecedores.evento_id', idsNaTela)
@@ -109,12 +162,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       idsNaTela.length
         ? db.from('registros').select('funcionario_id, evento_id').in('evento_id', idsNaTela).eq('tipo', 'entrada')
         : Promise.resolve({ data: [] }),
-      // Só created_at e tipo: é tudo que a curva precisa. Olha TODOS os
-      // eventos, não só os ativos — senão o gráfico esvazia assim que o
-      // evento é encerrado, justamente quando se quer revisar como foi.
-      idsNaTela.length
-        ? db.from('registros').select('created_at, tipo').in('evento_id', idsNaTela)
-            .gte('created_at', desde24h).lte('created_at', fimJanela.toISOString())
+      // Só os registros DO evento do gráfico, dentro da janela dele. Antes isto
+      // varria todos os eventos numa faixa de 24h — misturava a curva de um
+      // evento com a de outro quando havia mais de um em andamento.
+      janela && eventoDoGrafico
+        ? db.from('registros').select('created_at, tipo')
+            .eq('evento_id', eventoDoGrafico.id as string)
+            .gte('created_at', new Date(janela.de).toISOString())
+            .lte('created_at', new Date(janela.ate).toISOString())
         : Promise.resolve({ data: [] }),
       idsNaTela.length
         ? db.from('registros').select('id, tipo, created_at, funcionarios(nome, cargo, empresa)').in('evento_id', idsNaTela).order('created_at', { ascending: false }).limit(10)
@@ -145,38 +200,103 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     presentes: presentesPorEvento.get(e.id as string)?.size ?? 0,
   })
 
-  const linhasAtivas = (ativos ?? []).map(montar)
+  const linhasReaisAtivas = (ativos ?? []).map(montar)
   const linhasEncerradas = (encerrados ?? []).map(montar)
+
+  // APRESENTACAO — temporário: barra de presença do evento. Só entra quando
+  // NINGUÉM bateu entrada ainda; um único registro real desliga isto.
+  const linhasAtivas =
+    APRESENTACAO && linhasReaisAtivas.every(e => e.presentes === 0)
+      ? linhasReaisAtivas.map(e => ({ ...e, ...eventoDeExemplo() }))
+      : linhasReaisAtivas
   const totalEncerradosCount = totalEncerrados ?? 0
   const totalPages = Math.max(1, Math.ceil(totalEncerradosCount / PAGE_SIZE))
   const totalEventos = linhasAtivas.length + totalEncerradosCount
 
   /**
-   * Agrupa os registros das últimas 24h por hora cheia. Monta as 24 casas
-   * primeiro e depois preenche — assim hora sem movimento vira vale no
-   * gráfico, em vez de sumir e distorcer a curva.
+   * Monta as casas do gráfico ao longo da janela do evento e depois preenche.
+   * Casa sem movimento vira vale na curva, em vez de sumir e distorcer o
+   * desenho como aconteceria agrupando só o que existe.
    */
-  const fluxo = Array.from({ length: 24 }, (_, i) => {
-    const d = new Date(fimJanela.getTime() - (23 - i) * 60 * 60 * 1000)
-    return {
-      chave: `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`,
-      hora: String(d.getHours()).padStart(2, '0'),
-      entrada: 0, meio: 0, fim: 0,
-    }
-  })
-  const porChave = new Map(fluxo.map(f => [f.chave, f]))
-  for (const r of registros24h ?? []) {
-    const d = new Date(r.created_at as string)
-    const alvo = porChave.get(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}`)
-    if (!alvo) continue
-    const t = r.tipo as 'entrada' | 'meio' | 'fim'
-    if (t === 'entrada' || t === 'meio' || t === 'fim') alvo[t]++
-  }
-  const dadosFluxo = fluxo.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
+  const HORA_MS = 60 * 60 * 1000
+  const casas = janela
+    ? Array.from({ length: Math.ceil(janela.horas / janela.passo) + 1 }, (_, i) => {
+        const d = new Date(janela.de + i * janela.passo * HORA_MS)
+        return {
+          inicio: d.getTime(),
+          // Evento que atravessa mais de um dia precisa da data no rótulo:
+          // só "03" apareceria duas vezes e ninguém saberia qual é qual.
+          hora: janela.multiDia
+            ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h`
+            : `${String(d.getHours()).padStart(2, '0')}h`,
+          entrada: 0, meio: 0, fim: 0,
+        }
+      })
+    : []
 
-  // Ainda usado pelo subtítulo do gráfico, pra dizer se a curva é de hoje ou
-  // de um dia anterior.
-  const hoje = agora.toDateString()
+  for (const r of registrosDaJanela ?? []) {
+    const t = new Date(r.created_at as string).getTime()
+    const i = Math.floor((t - (janela?.de ?? 0)) / (janela?.passo ?? 1) / HORA_MS)
+    const alvo = casas[i]
+    if (!alvo) continue
+    const tipo = r.tipo as 'entrada' | 'meio' | 'fim'
+    if (tipo === 'entrada' || tipo === 'meio' || tipo === 'fim') alvo[tipo]++
+  }
+  const fluxoReal = casas.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
+
+  // APRESENTACAO — temporário: curva do gráfico. Só entra com a curva zerada.
+  const semMovimento = fluxoReal.every(f => f.entrada + f.meio + f.fim === 0)
+  const dadosFluxo = APRESENTACAO && semMovimento ? fluxoDeExemplo(fluxoReal) : fluxoReal
+
+  // APRESENTACAO — temporário: feed de atividade. Só entra com o feed vazio.
+  const registrosNaTela =
+    APRESENTACAO && !ultimosRegistros?.length ? atividadeDeExemplo(agora) : ultimosRegistros
+
+  /*
+   * Números do topo. Olham só pros eventos ATIVOS: somar evento encerrado
+   * misturaria o que já acabou com o que está acontecendo agora. As batidas
+   * saem do mesmo array do gráfico, então os dois contam a mesma janela — se
+   * viessem de consultas diferentes, um diria 84 e o outro 91 na mesma tela.
+   */
+  const esperados = linhasAtivas.reduce((a, e) => a + e.equipe, 0)
+  const presentes = linhasAtivas.reduce((a, e) => a + e.presentes, 0)
+  const batidas = dadosFluxo.reduce((a, p) => a + p.entrada + p.meio + p.fim, 0)
+
+  const stats = [
+    {
+      label: 'Eventos ativos',
+      value: linhasAtivas.length,
+      sub: `de ${totalEventos} no total`,
+      icon: Radio,
+      tom: 'acento' as const,
+    },
+    {
+      label: 'Presentes agora',
+      value: presentes,
+      sub: esperados ? `de ${esperados} na equipe` : 'equipe não cadastrada',
+      icon: UserCheck,
+      tom: 'sucesso' as const,
+    },
+    {
+      label: 'Ainda não chegaram',
+      value: Math.max(0, esperados - presentes),
+      icon: Clock,
+      tom: 'aviso' as const,
+    },
+    {
+      label: 'Batidas na janela',
+      value: batidas,
+      sub: janela ? 'entrada, meio e saída' : 'sem janela definida',
+      icon: Activity,
+      tom: 'info' as const,
+    },
+  ]
+
+  /** Subtítulo do gráfico: diz de QUE janela é a curva. */
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const legendaJanela = janela
+    ? `${janela.nome || 'Evento'} · das ${formatarBR(iso(janela.de), 'hora')} de ${formatarBR(iso(janela.de), 'data')} às ${formatarBR(iso(janela.ate), 'hora')} de ${formatarBR(iso(janela.ate), 'data')}`
+    : 'As janelas de horário deste evento ainda não foram definidas'
 
   // Data do topo. Vem do servidor (não do relógio do browser), então não há
   // divergência de fuso pra suprimir na hidratação.
@@ -212,23 +332,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     </Secao>
   ) : (
     <div className="space-y-4">
+      {/* O evento ativo não é linha de lista: é o que está acontecendo agora,
+          e ganha cartão próprio. A moldura escura com uma tira branca dentro
+          espremia tudo à esquerda e deixava um vão no meio — aqui o conteúdo
+          ocupa o cartão inteiro. */}
       {!!linhasAtivas.length && (
-        <Secao
-          tom="destaque"
-          titulo="Eventos ativos"
-          descricao="Acontecendo agora clique no nome para gerenciar setores e equipe"
-          acoes={<span className="indicador-selo selo-sucesso">{linhasAtivas.length}</span>}
-        >
-          <div className="divide-y divide-slate-100">
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="menu-grupo-titulo">Acontecendo agora</span>
+            <span className="indicador-selo selo-sucesso">{linhasAtivas.length}</span>
+          </div>
+          <div className={`grid gap-3 ${linhasAtivas.length > 1 ? 'lg:grid-cols-2' : ''}`}>
             {linhasAtivas.map((e, i) => (
-              <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />
+              <EventoAoVivo key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />
             ))}
           </div>
-        </Secao>
+        </section>
       )}
 
       {!!linhasEncerradas.length && (
         <Secao
+          icone={<CalendarDays className="w-3.5 h-3.5" />}
           titulo="Eventos encerrados"
           descricao="Já terminaram e não aceitam novas presenças"
           acoes={<span className="indicador-selo selo-neutro">{totalEncerradosCount}</span>}
@@ -272,7 +396,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         descricao={dataPorExtenso}
         acoes={
           <>
-            <TutorialButton />
+            <TutorialButton/>
             {podeCriarEvento ? (
               <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario">
                 <Plus className="w-3.5 h-3.5" />
@@ -282,14 +406,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             ) : (
               /* Sem isto o botão sumia e nada explicava por quê. */
               <span className="flex items-center gap-1.5 text-slate-500 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5">
-                <Lock className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Sem licença disponível</span>
                 <span className="sm:hidden">Sem licença</span>
               </span>
             )}
           </>
         }
       />
+
+      <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map(s => <StatCard key={s.label} {...s} />)}
+      </div>
 
       {blocoEventos}
 
@@ -298,14 +424,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             e isso só se responde com eixo do tempo. */}
         <div data-tutorial="dash-graficos" className="lg:col-span-2">
           <Secao
+            tom="acento"
+            icone={<TrendingUp className="w-3.5 h-3.5" />}
             titulo="Fluxo de credenciamento"
-            /* Diz de QUANDO é a curva: sem isso, um gráfico de um evento de
+            /* Diz de QUE janela é a curva: sem isso, o gráfico de um evento da
                semana passada pareceria movimento de agora. */
-            descricao={
-              fimJanela.toDateString() === hoje
-                ? 'Registros por hora nas últimas 24 horas'
-                : `Registros por hora — 24h até ${format(fimJanela, "d 'de' MMM, HH'h'", { locale: ptBR })}`
-            }
+            descricao={legendaJanela}
             acoes={
               <div className="hidden sm:flex items-center gap-3">
                 {([['Entrada', COR_ETAPA.entrada], ['Meio', COR_ETAPA.meio], ['Saída', COR_ETAPA.fim]] as const).map(([rotulo, cor]) => (
@@ -318,20 +442,32 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             }
             corpoClassName="p-4 pl-1"
           >
-            <FluxoDoDia dados={dadosFluxo} />
+            <FluxoDoDia
+              dados={dadosFluxo}
+              vazioTexto={
+                janela
+                  ? 'Nenhum registro nesta janela do evento'
+                  : 'Defina as janelas de horário do evento para a curva aparecer'
+              }
+            />
           </Secao>
         </div>
 
         {/* Atividade ao vivo — timeline: a linha vertical liga os registros no
             tempo e é o que dá a sensação de "acontecendo agora". */}
-        <Secao titulo="Atividade recente" corpoClassName={ultimosRegistros?.length ? 'p-4' : ''}>
-          {!ultimosRegistros?.length ? (
+        <Secao
+          tom="info"
+          icone={<Activity className="w-3.5 h-3.5" />}
+          titulo="Atividade recente"
+          corpoClassName={registrosNaTela?.length ? 'p-4' : ''}
+        >
+          {!registrosNaTela?.length ? (
             <EmptyState titulo="Sem atividade ainda" />
           ) : (
             <div className="relative overflow-y-auto max-h-60 pl-4">
               <span className="absolute left-[3px] top-1.5 bottom-1.5 w-px bg-slate-200" aria-hidden="true" />
               <div className="space-y-3.5">
-                {ultimosRegistros.map(r => {
+                {registrosNaTela.map(r => {
                   const func = r.funcionarios as unknown as { nome?: string; empresa?: string; cargo?: string } | null
                   const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
                   return (
@@ -364,9 +500,85 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 }
 
 /**
- * Uma linha da lista de eventos — linha de tabela, não cartão solto: dentro
- * de uma seção com título, repetir borda e canto arredondado em cada item
- * cria caixa dentro de caixa e engorda a lista sem informar nada.
+ * Cartão do evento que está acontecendo agora.
+ *
+ * Escuro e grande de propósito: é a única coisa da tela que exige ação neste
+ * momento, e disputa atenção com quatro indicadores coloridos logo acima. O
+ * número de presentes vira a métrica do cartão — durante o evento é a pergunta
+ * que se repete no rádio a cada dez minutos.
+ */
+function EventoAoVivo({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
+  const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
+
+  return (
+    <div className="evento-vivo">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="evento-vivo-selo">
+            <span className="ponto-vivo" aria-hidden="true" />
+            Ao vivo
+          </span>
+          <Link
+            href={`/admin/eventos/${evento.id}`}
+            data-tutorial={destacar ? 'eventos-card' : undefined}
+            className="block mt-2"
+          >
+            <h3 className="text-white text-lg font-semibold truncate hover:underline">{evento.nome}</h3>
+          </Link>
+          <div className="flex items-center gap-3 flex-wrap text-white/60 text-xs mt-1.5">
+            <span className="flex items-center gap-1">
+              <CalendarDays className="w-3 h-3 shrink-0" />
+              {format(new Date(evento.data_inicio), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+            </span>
+            {evento.local && (
+              <span className="flex items-center gap-1 min-w-0">
+                <MapPin className="w-3 h-3 shrink-0" />
+                <span className="truncate">{evento.local}</span>
+              </span>
+            )}
+            <span className="flex items-center gap-1">
+              <Users className="w-3 h-3 shrink-0" />
+              {evento.setores} setor{evento.setores !== 1 ? 'es' : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* O menu vem com cores de tema claro; aqui ele herda o branco. */}
+        <div className="acoes-no-escuro shrink-0 -mr-1 -mt-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
+          <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
+        </div>
+      </div>
+
+      {evento.equipe === 0 ? (
+        <p className="text-white/50 text-xs mt-5">Equipe ainda não cadastrada neste evento</p>
+      ) : (
+        <div className="mt-5">
+          <div className="flex items-end justify-between gap-3 mb-2">
+            <div>
+              <p className="text-white/60 text-xs">Presentes agora</p>
+              <p className="text-white text-2xl font-semibold tabular-nums leading-tight mt-0.5">
+                {evento.presentes}
+                <span className="text-white/45 text-base font-normal">/{evento.equipe}</span>
+              </p>
+            </div>
+            <span className="indicador-selo selo-sucesso mb-1">{pct}%</span>
+          </div>
+          <div className="h-2 bg-white/12 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22c55e, #16a34a)' }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Uma linha da lista de eventos encerrados — linha de tabela, não cartão
+ * solto: dentro de uma seção com título, repetir borda e canto arredondado em
+ * cada item cria caixa dentro de caixa e engorda a lista sem informar nada.
  */
 function EventoLinha({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
   const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0

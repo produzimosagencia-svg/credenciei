@@ -69,6 +69,18 @@ gráficos de presença por evento e por etapa, e feed de atividade recente.
 Lista de eventos ativos e encerrados. Mostra as licenças contratadas e quantas
 foram usadas. Ao bater o limite, o admin não cria mais até o master aumentar.
 
+## Encontrar funcionários (/admin/encontrar)
+A base do Credenciei usada como banco de gente disponível na região. Lista
+quem já foi credenciado por QUALQUER cliente da plataforma, ordenado por quem
+tem mais presença registrada. Busca por nome, CPF e cidade. O contato é feito
+pelo WhatsApp do próprio organizador — o sistema não manda convite automático,
+porque convite não é template aprovado pela Meta.
+
+## Ficha da pessoa (/admin/pessoas/[cpf])
+Histórico de uma pessoa pelo CPF: eventos em que trabalhou, organizações, taxa
+de presença, quanto já recebeu e quanto está em aberto. Abre clicando no nome
+na Base de funcionários ou em Encontrar funcionários.
+
 ## Novo evento (/admin/eventos/novo)
 Campos: nome*, descrição, data de início*, data de fim*, local, e as três
 janelas de presença. As datas do evento são referência geral — quem controla o
@@ -79,7 +91,9 @@ Números do evento, progresso por etapa, lista de setores e atividade ao vivo.
 Botões: Editar Evento, Escanear QR, Planilha (Google Sheets).
 Cada setor tem "Importar planilha", que cadastra a equipe toda de uma vez a
 partir de um .xlsx/.csv com as colunas Nome, CPF, Telefone, Empresa/Setor,
-Cargo, Chave PIX e Valor (só Nome e CPF são obrigatórios).
+Cargo, Cidade, Chave PIX e Valor (só Nome e CPF são obrigatórios na planilha).
+São os MESMOS campos do formulário público — planilha, formulário e cadastro
+pela IA pedem o mesmo conjunto, pra ninguém entrar na base pela metade.
 
 ## Cadastrar equipe pela planilha, aqui no chat
 A pessoa também pode anexar a planilha nesta conversa, pelo clipe ao lado do
@@ -147,6 +161,10 @@ emergência.
   Pessoa inativa não consegue registrar presença.
 - **Base central de CPF**: quem já trabalhou em outro evento da mesma
   organização tem o formulário preenchido sozinho ao digitar o CPF.
+- **Cidade é obrigatória no formulário público**: é o campo que permite achar
+  a pessoa depois na busca por região. Cadastro feito pelo organizador (tela,
+  planilha ou você) aceita ficar sem cidade, mas aí a pessoa não aparece na
+  busca — então pergunte sempre.
 - **CPFs pré-autorizados**: o setor pode ter uma lista; fora dela o cadastro é
   recusado.
 - **Excluir organização** apaga o admin, a equipe e TODOS os eventos dela.

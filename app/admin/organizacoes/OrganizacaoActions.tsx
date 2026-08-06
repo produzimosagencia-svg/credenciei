@@ -1,10 +1,11 @@
 'use client'
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { MoreHorizontal, Power, Trash2, Pencil, X, Camera } from 'lucide-react'
+import { Power, Trash2, Pencil, X, Camera } from 'lucide-react'
 import { toggleAtivoOrganizacao, deletarOrganizacao, editarOrganizacao } from '@/lib/actions'
 import { NomeInput, CpfCnpjInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
+import { MenuAcoes, ItemMenu } from '@/components/ui/MenuAcoes'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import OrganizacaoAvatar from './OrganizacaoAvatar'
 import ValorCobradoPicker from '@/components/ValorCobradoPicker'
@@ -23,21 +24,16 @@ type Org = {
 }
 
 export default function OrganizacaoActions({ org }: { org: Org }) {
-  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const handleToggle = () => {
-    setOpen(false)
     startTransition(() => toggleAtivoOrganizacao(org.id, org.ativo))
   }
 
-  const handleDelete = () => {
-    setOpen(false)
-    setConfirmOpen(true)
-  }
+  const handleDelete = () => setConfirmOpen(true)
 
   const confirmarExclusao = () => {
     setConfirmOpen(false)
@@ -54,41 +50,23 @@ export default function OrganizacaoActions({ org }: { org: Org }) {
 
   return (
     <div className="relative shrink-0">
-      <button
-        onClick={() => setOpen(o => !o)}
-        disabled={isPending}
-        className="btn-press w-9 h-9 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 disabled:opacity-50"
-      >
-        <MoreHorizontal className="w-4 h-4" />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-11 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 w-52 py-1.5 overflow-hidden">
-            <button
-              onClick={() => { setEditing(true); setOpen(false) }}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-            >
+      <MenuAcoes disabled={isPending} rotulo={`Ações de ${org.nome}`}>
+        {fechar => (
+          <>
+            <ItemMenu onClick={() => { fechar(); setEditing(true) }}>
               <Pencil className="w-3.5 h-3.5" /> Editar organização
-            </button>
-            <button
-              onClick={handleToggle}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-            >
+            </ItemMenu>
+            <ItemMenu onClick={() => { fechar(); handleToggle() }}>
               <Power className="w-3.5 h-3.5" />
               {org.ativo ? 'Suspender acesso' : 'Reativar acesso'}
-            </button>
+            </ItemMenu>
             <div className="border-t border-slate-100 my-1" />
-            <button
-              onClick={handleDelete}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-            >
+            <ItemMenu tom="perigo" onClick={() => { fechar(); handleDelete() }}>
               <Trash2 className="w-3.5 h-3.5" /> Excluir organização
-            </button>
-          </div>
-        </>
-      )}
+            </ItemMenu>
+          </>
+        )}
+      </MenuAcoes>
 
       {editing && <ModalEditar org={org} isPending={isPending} onSave={handleSave} onClose={() => setEditing(false)} />}
 

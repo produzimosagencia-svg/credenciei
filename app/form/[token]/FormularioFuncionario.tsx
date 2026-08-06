@@ -10,6 +10,7 @@ const initialForm = {
   telefone: '',
   empresa: '',
   cargo: '',
+  cidade: '',
   chavePix: '',
 }
 
@@ -71,6 +72,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         telefone: f.telefone || formatTelefone(dados.telefone),
         empresa: f.empresa || dados.empresa,
         cargo: f.cargo || dados.cargo,
+        cidade: f.cidade || (dados.cidade ?? ''),
         chavePix: f.chavePix || (dados.chavePix ?? ''),
       }))
       setAutofill(true)
@@ -102,6 +104,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       telefone: form.telefone,
       empresa: form.empresa,
       cargo: form.cargo,
+      cidade: form.cidade,
       chavePix: form.chavePix,
       fotoBase64: foto ?? undefined,
     })
@@ -181,6 +184,17 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       </Field>
       <Field label="Cargo *">
         <input required value={form.cargo} onChange={e => set('cargo', titleCaseNome(e.target.value))} placeholder="Ex: Segurança, Garçom..." className="input" />
+      </Field>
+      <Field label="Cidade onde você mora *">
+        {/* Serve pra você ser chamado pra trabalhar em eventos perto de onde
+            mora — é o filtro que o organizador usa pra montar equipe. */}
+        <input
+          required
+          value={form.cidade}
+          onChange={e => set('cidade', titleCaseNome(e.target.value))}
+          placeholder="Ex: Vitória, Vila Velha, Serra..."
+          className="input"
+        />
       </Field>
       <Field label="Chave PIX (opcional)" tutorial="form-pix">
         <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />

@@ -57,7 +57,9 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
       nome: 'cadastrar_funcionario',
       descricao:
         'Cadastra uma pessoa na equipe de um setor. Se o setor já bateu o teto, ela entra INATIVA e precisa ser ativada. ' +
-        'Com telefone preenchido, a pessoa recebe as boas-vindas com o link da credencial no WhatsApp.',
+        'Com telefone preenchido, a pessoa recebe as boas-vindas com o link da credencial no WhatsApp. ' +
+        'PEÇA OS MESMOS DADOS DO FORMULÁRIO PÚBLICO antes de chamar: nome, CPF, telefone, empresa, cargo e CIDADE onde a pessoa mora (obrigatórios), e chave PIX e valor a receber quando o usuário souber. ' +
+        'A cidade não é detalhe: é por ela que a pessoa é encontrada depois na busca por região. Se o usuário não informar, pergunte — não invente e não deixe em branco.',
       parametros: {
         type: 'object',
         properties: {
@@ -67,12 +69,13 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           telefone: { type: 'string' },
           empresa: { type: 'string' },
           cargo: { type: 'string', description: 'a função da pessoa no evento' },
+          cidade: { type: 'string', description: 'cidade onde a PESSOA mora (não onde é o evento)' },
           chave_pix: { type: 'string' },
           valor_receber: { type: 'number', description: 'quanto esta pessoa deve receber, em reais' },
         },
-        required: ['fornecedor_id', 'nome', 'cpf'],
+        required: ['fornecedor_id', 'nome', 'cpf', 'telefone', 'cargo', 'cidade'],
       },
-      executar: async ({ fornecedor_id, nome, cpf, telefone, empresa, cargo, chave_pix, valor_receber }) => {
+      executar: async ({ fornecedor_id, nome, cpf, telefone, empresa, cargo, cidade, chave_pix, valor_receber }) => {
         const r = await resolverSetor(perfil, fornecedor_id)
         if (!r.ok) return r.erro
 
@@ -95,6 +98,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           telefone: fone,
           empresa: String(empresa ?? r.setor.nome).trim(),
           cargo: String(cargo ?? '').trim(),
+          cidade: String(cidade ?? '').trim() || null,
           chave_pix: chave_pix ? String(chave_pix).trim() : null,
           valor_receber: valorNumerico(valor_receber) ?? 0,
           ativo,
@@ -132,7 +136,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
     ferramenta({
       nome: 'editar_funcionario',
       descricao:
-        'Altera os dados de uma pessoa da equipe: nome, telefone, CPF, empresa, cargo/função, chave PIX e valor a receber. Mande só os campos que mudam. ' +
+        'Altera os dados de uma pessoa da equipe: nome, telefone, CPF, empresa, cargo/função, cidade, chave PIX e valor a receber. Mande só os campos que mudam. ' +
         'Confirme com buscar_funcionario que é a pessoa certa antes de chamar.',
       parametros: {
         type: 'object',
@@ -143,12 +147,13 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           cpf: { type: 'string' },
           empresa: { type: 'string' },
           cargo: { type: 'string' },
+          cidade: { type: 'string', description: 'cidade onde a pessoa mora' },
           chave_pix: { type: 'string' },
           valor_receber: { type: 'number' },
         },
         required: ['funcionario_id'],
       },
-      executar: async ({ funcionario_id, nome, telefone, cpf, empresa, cargo, chave_pix, valor_receber }) => {
+      executar: async ({ funcionario_id, nome, telefone, cpf, empresa, cargo, cidade, chave_pix, valor_receber }) => {
         const r = await resolverFuncionario(perfil, funcionario_id)
         if (!r.ok) return r.erro
 
@@ -157,6 +162,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (telefone != null) mudancas.telefone = String(telefone).replace(/\D/g, '')
         if (empresa != null) mudancas.empresa = String(empresa).trim()
         if (cargo != null) mudancas.cargo = String(cargo).trim()
+        if (cidade != null) mudancas.cidade = String(cidade).trim() || null
         if (chave_pix != null) mudancas.chave_pix = String(chave_pix).trim() || null
 
         if (valor_receber != null) {

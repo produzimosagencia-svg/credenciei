@@ -15,6 +15,7 @@ export type LinhaPlanilha = {
   chavePix: string
   empresa: string
   cargo: string
+  cidade: string
   valor: string
 }
 
@@ -29,6 +30,9 @@ const COLUNAS: Record<keyof LinhaPlanilha, string[]> = {
   chavePix: ['chave pix', 'chave_pix', 'pix'],
   empresa: ['empresa/setor', 'empresa', 'setor', 'company', 'equipe'],
   cargo: ['cargo', 'função', 'funcao', 'role'],
+  // Mesmo campo que o formulário público pede: cidade onde a pessoa MORA.
+  // É o que alimenta a busca por região em "Encontrar funcionários".
+  cidade: ['cidade', 'cidade onde mora', 'municipio', 'município', 'city'],
   valor: ['valor', 'valor a receber', 'valor_receber'],
 }
 
@@ -62,6 +66,7 @@ export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[
       chavePix: valorDaColuna(linha, COLUNAS.chavePix),
       empresa: valorDaColuna(linha, COLUNAS.empresa),
       cargo: valorDaColuna(linha, COLUNAS.cargo),
+      cidade: valorDaColuna(linha, COLUNAS.cidade),
       valor: valorDaColuna(linha, COLUNAS.valor),
     }))
     .filter(l => l.nome)
@@ -77,7 +82,9 @@ export function resumirPlanilha(linhas: LinhaPlanilha[]) {
     linhas: linhas.length,
     sem_telefone: linhas.filter(l => !l.telefone).length,
     sem_cargo: linhas.filter(l => !l.cargo).length,
+    sem_cidade: linhas.filter(l => !l.cidade).length,
     empresas_citadas: unicos(linhas.map(l => l.empresa)),
     cargos_citados: unicos(linhas.map(l => l.cargo)),
+    cidades_citadas: unicos(linhas.map(l => l.cidade)),
   }
 }

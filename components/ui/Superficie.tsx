@@ -22,29 +22,47 @@ import Link from 'next/link'
  * fora da caixa branca é o que separa "o que é isto" de "o conteúdo" sem
  * precisar de uma linha divisória.
  */
-export function Secao({ titulo, descricao, acoes, tom = 'neutro', corpoClassName = '', className = '', children }: {
+const TONS_SECAO = {
+  neutro: '',
+  destaque: 'secao-destaque',
+  acento: 'secao-acento',
+  info: 'secao-info',
+  sucesso: 'secao-sucesso',
+  aviso: 'secao-aviso',
+} as const
+
+export type TomSecao = keyof typeof TONS_SECAO
+
+export function Secao({
+  titulo, descricao, icone, acoes, tom = 'neutro', corpoClassName = '', className = '', children,
+}: {
   titulo?: string
   descricao?: string
+  /** Ícone já renderizado, ex.: <Activity className="w-3.5 h-3.5" />. */
+  icone?: React.ReactNode
   /** Botões no canto direito do cabeçalho. */
   acoes?: React.ReactNode
   /**
-   * `destaque` pinta a moldura no roxo do sistema. Use em UMA seção por
-   * tela — a que responde ao que a pessoa veio fazer ali. Duas seções em
+   * A cor da moldura. `destaque` é a moldura escura — use em UMA seção por
+   * tela, a que responde ao que a pessoa veio fazer ali. Duas seções em
    * destaque na mesma tela é o mesmo que nenhuma.
    */
-  tom?: 'neutro' | 'destaque'
+  tom?: TomSecao
   /** Some com o padding interno pra tabela/lista encostar na borda. */
   corpoClassName?: string
   className?: string
   children: React.ReactNode
 }) {
   return (
-    <section className={`secao ${tom === 'destaque' ? 'secao-destaque' : ''} ${className}`}>
+    <section className={`secao ${TONS_SECAO[tom]} ${className}`}>
       {(titulo || acoes) && (
         <div className="secao-cabecalho flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {titulo && <h2 className="secao-titulo">{titulo}</h2>}
-            {descricao && <p className="secao-descricao">{descricao}</p>}
+          <div className="flex items-start gap-2.5 min-w-0">
+            {icone && <span className="secao-icone mt-px">{icone}</span>}
+            <div className="min-w-0">
+              {titulo && <h2 className="secao-titulo">{titulo}</h2>}
+              {descricao && <p className="secao-descricao">{descricao}</p>}
+            </div>
           </div>
           {acoes && <div className="flex items-center gap-2 shrink-0">{acoes}</div>}
         </div>
