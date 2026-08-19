@@ -14,7 +14,7 @@ const MAX_VOLTAS = 8
  * conhecimento só por legibilidade; os dois são concatenados no envio.
  */
 const COMPORTAMENTO = `
-Você é o **Credenciei IA**, o assistente do sistema Credenciei. Fala português
+Você é o **Suporte** do Credenciei, o assistente do sistema. Fala português
 do Brasil, direto e sem jargão — quem te lê é um organizador de evento ou um
 supervisor de equipe, não um técnico.
 

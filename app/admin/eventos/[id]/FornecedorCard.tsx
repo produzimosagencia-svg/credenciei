@@ -28,11 +28,14 @@ export default function FornecedorCard({
   eventoId,
   supervisores = [],
   podeGerenciarSupervisores = false,
+  podeExcluir = false,
 }: {
   fornecedor: Fornecedor
   eventoId: string
   supervisores?: Supervisor[]
   podeGerenciarSupervisores?: boolean
+  /** Só o master exclui. O admin encerra o evento, que resolve sem destruir. */
+  podeExcluir?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -87,14 +90,16 @@ export default function FornecedorCard({
             valor_combinado={f.valor_combinado}
             cpfs_autorizados={f.cpfs_autorizados}
           />
-          <button
-            onClick={() => setConfirmOpen(true)}
-            disabled={isPending}
-            aria-label={`Excluir setor ${f.nome}`}
-            className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-erro-600 hover:bg-erro-50 disabled:opacity-50"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {podeExcluir && (
+            <button
+              onClick={() => setConfirmOpen(true)}
+              disabled={isPending}
+              aria-label={`Excluir setor ${f.nome}`}
+              className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-erro-600 hover:bg-erro-50 disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -180,7 +185,7 @@ export default function FornecedorCard({
           ) : (
             <div className="-mx-1">
               {supervisores.map(s => (
-                <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} supervisor={s} />
+                <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} supervisor={s} podeExcluir={podeExcluir} />
               ))}
             </div>
           )}

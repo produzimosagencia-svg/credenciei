@@ -9,7 +9,7 @@ import { mensagemAmigavel } from '@/lib/erros'
 
 type Props =
   | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string }
-  | { mode: 'editar'; eventoId: string; supervisor: { id: string; nome: string; email: string; telefone: string | null; ativo: boolean } }
+  | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; telefone: string | null; ativo: boolean } }
 
 export default function SupervisorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -137,7 +137,9 @@ export default function SupervisorModal(props: Props) {
                 >
                   {isPending ? 'Salvando...' : isEditar ? 'Salvar alterações' : 'Criar supervisor'}
                 </button>
-                {isEditar && (
+                {/* Excluir supervisor apaga o acesso E o histórico dele. Desativar
+                    bloqueia o login e preserva os registros — é o caminho do admin. */}
+                {isEditar && props.podeExcluir && (
                   <button
                     type="button"
                     onClick={handleDelete}

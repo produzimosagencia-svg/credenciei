@@ -89,7 +89,7 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
           {status.ok && !!status.invalidos && (
             <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-amber-600">
               <AlertCircle className="w-3 h-3 shrink-0" />
-              {status.invalidos} linha{status.invalidos !== 1 ? 's' : ''} com CPF inválido {status.invalidos !== 1 ? 'foram ignoradas' : 'foi ignorada'}. Corrija na planilha e importe de novo.
+              {status.invalidos} linha{status.invalidos !== 1 ? 's' : ''} com CPF fora do formato (precisa ter 11 dígitos) {status.invalidos !== 1 ? 'foram ignoradas' : 'foi ignorada'}. Corrija na planilha e importe de novo.
             </div>
           )}
           {status.ok && !!status.reaproveitados && (

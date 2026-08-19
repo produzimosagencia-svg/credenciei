@@ -18,12 +18,15 @@ import {
   podeGerenciarEventos,
   podeGerenciarOrganizacoes,
   podeExcluirEventos,
+  podeExcluir,
   podeEscanear,
   ehMaster,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
+import { gerarDias, janelaAbertaAgora, proximaJanela, type Jornada } from './jornada'
 import { validarCpf } from './format'
 import { mensagemAmigavel } from './erros'
+import { podePassar } from './limite'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor, agendarBoasVindasFuncionario } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 
@@ -438,7 +441,9 @@ export async function editarSupervisor(id: string, formData: FormData) {
 
 export async function deletarUsuario(id: string) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para excluir usuários')
+  if (!podeExcluir(perfil?.role)) {
+    throw new Error('Apenas o master pode excluir acessos. Você pode desativar o usuário, que bloqueia o login sem perder o histórico.')
+  }
   if (perfil!.id === id) throw new Error('Você não pode excluir a si mesmo')
 
   const admin = getAdminSupabase()
@@ -596,6 +601,12 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
 
 export async function deletarFornecedor(id: string, eventoId: string) {
   await exigirEventoDaOrg(eventoId)
+  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
+  // checagem é a que vale: esconder o botão não impede a chamada direta.
+  const perfilExclusao = await getPerfil()
+  if (!podeExcluir(perfilExclusao?.role)) {
+    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
+  }
   const db = supabaseAdmin
 
   // Setor com supervisores vinculados não pode ser excluído (teriam que ser
@@ -623,6 +634,12 @@ export async function criarSetor(eventoId: string, formData: FormData) {
 
 export async function deletarSetor(id: string, eventoId: string) {
   await exigirEventoDaOrg(eventoId)
+  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
+  // checagem é a que vale: esconder o botão não impede a chamada direta.
+  const perfilExclusao = await getPerfil()
+  if (!podeExcluir(perfilExclusao?.role)) {
+    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
+  }
   const db = supabaseAdmin
   await db.from('setores').delete().eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}`)
@@ -660,7 +677,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   const db = supabaseAdmin
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
-  if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os números.')
+  if (!validarCpf(cpf)) throw new Error('O CPF precisa ter 11 dígitos.')
 
   // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento
   const { data: existentes } = await db
@@ -699,8 +716,104 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
+/**
+ * Atribui alguém da base regional a um setor de um evento.
+ *
+ * É a ponta comercial da base: a organização contrata o serviço de montagem de
+ * equipe, e o master coloca a pessoa dentro do evento dela — a partir daí o
+ * cliente enxerga essa pessoa na própria tela de setor e fala com ela.
+ *
+ * Exclusiva do master. Um admin fazendo isso significaria puxar gente de dentro
+ * de outra organização sem que ninguém intermediasse.
+ *
+ * Os dados vêm do cadastro MAIS RECENTE daquele CPF: é o telefone que ainda
+ * atende e a função que a pessoa exerceu por último. Nada é digitado de novo,
+ * então não há chance de errar um dígito do CPF ao recopiar.
+ */
+export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId: string) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Apenas o master atribui colaboradores da base')
+
+  const cpf = cpfBruto.replace(/\D/g, '')
+  if (!validarCpf(cpf)) throw new Error('O CPF precisa ter 11 dígitos.')
+
+  const db = supabaseAdmin
+
+  const [{ data: base }, { data: setor }] = await Promise.all([
+    db.from('funcionarios')
+      .select('nome, cpf, telefone, empresa, cargo, cidade, chave_pix')
+      .eq('cpf', cpf)
+      .order('created_at', { ascending: false })
+      .limit(1),
+    db.from('fornecedores')
+      .select('id, nome, evento_id, eventos(nome)')
+      .eq('id', fornecedorId)
+      .single(),
+  ])
+
+  const pessoa = base?.[0]
+  if (!pessoa) throw new Error('Esta pessoa não está na base do Credenciei')
+  if (!setor) throw new Error('Setor não encontrado')
+
+  // Mesma trava do formulário público e da importação: um CPF por evento.
+  const { data: jaNoEvento } = await db
+    .from('funcionarios')
+    .select('id, fornecedores!inner(nome, evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', setor.evento_id)
+    .limit(1)
+  if (jaNoEvento?.length) {
+    const outro = (jaNoEvento[0].fornecedores as unknown as { nome: string }).nome
+    throw new Error(`${pessoa.nome} já está neste evento, no setor "${outro}".`)
+  }
+
+  const { data: novo, error } = await db.from('funcionarios').insert([{
+    fornecedor_id: fornecedorId,
+    nome: pessoa.nome,
+    cpf,
+    telefone: pessoa.telefone ?? '',
+    // A empresa passa a ser o setor de destino: ela descreve onde a pessoa
+    // trabalha NESTE evento, não onde trabalhou no anterior.
+    empresa: setor.nome,
+    cargo: pessoa.cargo ?? '',
+    cidade: pessoa.cidade ?? null,
+    chave_pix: pessoa.chave_pix ?? null,
+    ativo: await estaDentroDoTeto(fornecedorId),
+  }]).select('id, ativo').single()
+
+  if (error || !novo) throw new Error(mensagemAmigavel(error))
+
+  // Fora do caminho crítico: WhatsApp fora do ar não pode derrubar a atribuição.
+  if (pessoa.telefone) {
+    after(() => agendarBoasVindasFuncionario({
+      eventoId: setor.evento_id,
+      funcionarioId: novo.id,
+      telefone: pessoa.telefone!,
+    }).catch(console.error))
+  }
+  after(() => sincronizarAgendamentos(setor.evento_id).catch(console.error))
+
+  revalidatePath(`/admin/eventos/${setor.evento_id}/fornecedor/${fornecedorId}`)
+  revalidatePath(`/admin/pessoas/${cpf}`)
+
+  const evento = (setor.eventos as unknown as { nome: string } | null)?.nome ?? 'o evento'
+  return {
+    ok: true as const,
+    ativo: novo.ativo !== false,
+    setor: setor.nome,
+    evento,
+    semTelefone: !pessoa.telefone,
+  }
+}
+
 export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
+  // checagem é a que vale: esconder o botão não impede a chamada direta.
+  const perfilExclusao = await getPerfil()
+  if (!podeExcluir(perfilExclusao?.role)) {
+    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
+  }
   const db = supabaseAdmin
   await db.from('funcionarios').delete().eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
@@ -846,6 +959,123 @@ export async function sincronizarRegistroNaPlanilha(
   }
 }
 
+// ─── Jornadas recorrentes ("despertador") ────────────────────────────────────
+
+export type ModoAplicacao = 'proximos' | 'todos'
+
+/**
+ * Salva a regra da jornada e materializa os dias.
+ *
+ * `modo` responde à pergunta que o pedido levanta: ao mudar a configuração,
+ * o que acontece com o que já foi gerado?
+ *
+ * - `proximos`: preserva o passado. Só regera de hoje em diante — o histórico
+ *   do que já aconteceu fica intacto, que é o comportamento seguro quando a
+ *   operação já começou.
+ * - `todos`: regera o período inteiro. Use quando a configuração estava errada
+ *   desde o começo. Dias passados que tinham registro NÃO somem: o registro
+ *   guarda `data_ref` próprio e sobrevive à troca do dia.
+ *
+ * Dia cancelado à mão é sempre preservado — remarcar um feriado não pode ser
+ * desfeito por uma edição de horário.
+ */
+export async function salvarJornada(eventoId: string, jornada: Jornada, modo: ModoAplicacao = 'proximos') {
+  await exigirEventoDaOrg(eventoId)
+  const db = supabaseAdmin
+
+  if (!jornada.dataInicio || !jornada.dataFim) throw new Error('Informe a data inicial e a final.')
+  if (jornada.dataFim < jornada.dataInicio) throw new Error('A data final é anterior à inicial.')
+  const blocosValidos = (jornada.blocos ?? []).filter(
+    b => b.dias?.length && (b.turnos ?? []).some(t => t.entrada && t.saida)
+  )
+  if (!blocosValidos.length) throw new Error('Marque ao menos um dia da semana com horário de entrada e saída.')
+
+  const { data: salva, error } = await db.from('evento_jornadas').upsert([{
+    evento_id: eventoId,
+    data_inicio: jornada.dataInicio,
+    data_fim: jornada.dataFim,
+    tolerancia_min: Math.max(0, Math.min(240, jornada.toleranciaMin || 0)),
+    blocos: blocosValidos,
+    atualizado_em: new Date().toISOString(),
+  }], { onConflict: 'evento_id' }).select('id').single()
+  if (error || !salva) throw new Error('Não foi possível salvar a configuração. Tente de novo.')
+
+  const dias = gerarDias({ ...jornada, blocos: blocosValidos })
+  if (!dias.length) throw new Error('Essa configuração não gera nenhum dia. Confira o período e os dias da semana.')
+
+  const hoje = new Date().toISOString().slice(0, 10)
+  const corte = modo === 'proximos' ? hoje : jornada.dataInicio
+
+  // Preserva os dias que o responsável cancelou à mão antes de regerar.
+  const { data: cancelados } = await db
+    .from('jornada_dias').select('data, turno')
+    .eq('evento_id', eventoId).eq('cancelado', true)
+  const eraCancelado = new Set((cancelados ?? []).map(d => `${d.data}:${d.turno}`))
+
+  await db.from('jornada_dias').delete().eq('evento_id', eventoId).gte('data', corte)
+
+  const paraInserir = dias
+    .filter(d => d.data >= corte)
+    .map(d => ({
+      evento_id: eventoId,
+      jornada_id: salva.id,
+      data: d.data,
+      turno: d.turno,
+      entrada_inicio: d.entradaInicio,
+      entrada_fim: d.entradaFim,
+      saida_inicio: d.saidaInicio,
+      saida_fim: d.saidaFim,
+      cancelado: eraCancelado.has(`${d.data}:${d.turno}`),
+    }))
+
+  if (paraInserir.length) {
+    const { error: erroDias } = await db.from('jornada_dias').insert(paraInserir)
+    if (erroDias) throw new Error('A configuração foi salva, mas houve erro ao gerar os dias. Salve de novo.')
+  }
+
+  // As datas do evento acompanham o período: elas são a referência exibida em
+  // toda a interface, e deixá-las divergindo da jornada confunde.
+  await db.from('eventos').update({
+    data_inicio: inputParaISO(`${jornada.dataInicio}T00:00`),
+    data_fim: inputParaISO(`${jornada.dataFim}T23:59`),
+  }).eq('id', eventoId)
+
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath(`/admin/eventos/${eventoId}/jornada`)
+
+  return { ok: true as const, dias: paraInserir.length, preservados: dias.length - paraInserir.length }
+}
+
+/**
+ * Liga/desliga um dia específico sem mexer na regra — o feriado no meio do mês.
+ * É a "exceção" que o item 6 do pedido pede: fora da configuração só se houver
+ * uma regra explícita, e esta é ela.
+ */
+export async function alternarDiaJornada(diaId: string, cancelado: boolean) {
+  const { data: dia } = await supabaseAdmin
+    .from('jornada_dias').select('id, evento_id').eq('id', diaId).single()
+  if (!dia) throw new Error('Dia não encontrado')
+  await exigirEventoDaOrg(dia.evento_id)
+
+  await supabaseAdmin.from('jornada_dias').update({ cancelado }).eq('id', diaId)
+  revalidatePath(`/admin/eventos/${dia.evento_id}/jornada`)
+  return { ok: true as const }
+}
+
+/** Remove a jornada e volta o evento pro modo de janela fixa (um dia só). */
+export async function removerJornada(eventoId: string) {
+  await exigirEventoDaOrg(eventoId)
+  const perfil = await getPerfil()
+  if (!podeExcluir(perfil?.role)) {
+    throw new Error('Apenas o master remove a configuração de registros diários. Você pode editá-la.')
+  }
+  await supabaseAdmin.from('evento_jornadas').delete().eq('evento_id', eventoId)
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath(`/admin/eventos/${eventoId}/jornada`)
+  return { ok: true as const }
+}
+
 // ─── Presença: QR (entrada/saída) + foto (meio) ───────────────────────────────
 //
 // Regra do fluxo: QR CODE escaneado na ENTRADA, FOTO tirada pelo próprio
@@ -856,21 +1086,129 @@ export type MomentoPresenca = 'entrada' | 'meio' | 'fim'
 
 const JANELA_SELECT = 'janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim'
 
-/** Valida se AGORA está dentro da janela do momento. Retorna mensagem de erro ou null. */
-function validarJanela(evento: any, momento: MomentoPresenca): string | null {
-  const inicio = evento?.[`janela_${momento}_inicio`]
-  const fim = evento?.[`janela_${momento}_fim`]
-  if (!inicio || !fim) return 'O organizador ainda não definiu o horário desta etapa.'
+/**
+ * Onde o registro vai cair: qual dia da jornada e qual etapa.
+ *
+ * Dois modos convivem de propósito:
+ *
+ * - **Jornada recorrente** (evento de vários dias). A janela vem do DIA, e o
+ *   `data_ref` é o dia daquela jornada — não a data do relógio. Num turno que
+ *   vira a madrugada, a saída das 04:00 pertence ao dia anterior.
+ * - **Janela fixa** (evento de um dia), que é como tudo funcionava. Continua
+ *   valendo quando o evento não tem jornada, e o `data_ref` é a data de início
+ *   do evento — o mesmo balde em que os registros antigos foram backfillados.
+ *
+ * A etapa "meio" (selfie) não entra na jornada: ela é uma conferência no meio
+ * da operação, não um ponto de entrada/saída. Continua na janela fixa do
+ * evento nos dois modos.
+ */
+async function resolverJanela(
+  evento: any,
+  momento: MomentoPresenca
+): Promise<{ erro: string } | { erro: null; dataRef: string; jornadaDiaId: string | null }> {
   const agora = new Date()
-  if (agora < new Date(inicio)) return 'Ainda não abriu o horário desta etapa.'
-  if (agora > new Date(fim)) return 'O horário desta etapa já encerrou.'
-  return null
+  const dataDoEvento = (evento?.data_inicio ? String(evento.data_inicio) : new Date().toISOString()).slice(0, 10)
+
+  const pelaJanelaFixa = (): { erro: string } | { erro: null; dataRef: string; jornadaDiaId: null } => {
+    const inicio = evento?.[`janela_${momento}_inicio`]
+    const fim = evento?.[`janela_${momento}_fim`]
+    if (!inicio || !fim) return { erro: 'O organizador ainda não definiu o horário desta etapa.' }
+    if (agora < new Date(inicio)) return { erro: 'Ainda não abriu o horário desta etapa.' }
+    if (agora > new Date(fim)) return { erro: 'O horário desta etapa já encerrou.' }
+    return { erro: null, dataRef: dataDoEvento, jornadaDiaId: null }
+  }
+
+  if (momento === 'meio') return pelaJanelaFixa()
+
+  // Só os dias que podem estar abertos agora: sem isto, um evento de 400 dias
+  // traria a tabela inteira a cada leitura de QR.
+  const limite = 24 * 60 * 60 * 1000
+  const { data: dias } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id, data, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .eq('evento_id', evento.id)
+    .gte('entrada_inicio', new Date(agora.getTime() - limite).toISOString())
+    .lte('entrada_inicio', new Date(agora.getTime() + limite).toISOString())
+    .order('entrada_inicio')
+
+  // Sem jornada configurada, o evento é de um dia só: regra antiga.
+  const { count: temJornada } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id', { count: 'exact', head: true })
+    .eq('evento_id', evento.id)
+  if (!temJornada) return pelaJanelaFixa()
+
+  const aberta = janelaAbertaAgora(dias ?? [], momento, agora)
+  if (aberta) return { erro: null, dataRef: aberta.data, jornadaDiaId: aberta.diaId }
+
+  // Recusa explicando QUANDO abre. "Fora do horário" sozinho não diz se faltam
+  // dez minutos ou dois dias, e é isso que se pergunta no portão.
+  const proxima = proximaJanela(dias ?? [], momento, agora)
+  const etapa = momento === 'entrada' ? 'entrada' : 'saída'
+  return {
+    erro: proxima
+      ? `Fora do horário de ${etapa}. A próxima abre em ${formatarBR(proxima, 'curto')}.`
+      : `Fora do horário de ${etapa}. Não há mais janela programada para hoje.`,
+  }
 }
 
-/** Substitui o registro do momento (um por etapa) e insere o novo. */
-async function upsertRegistro(funcionarioId: string, eventoId: string, momento: MomentoPresenca, extra: Record<string, unknown> = {}) {
-  await supabaseAdmin.from('registros').delete().eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', momento)
-  return supabaseAdmin.from('registros').insert([{ funcionario_id: funcionarioId, evento_id: eventoId, tipo: momento, ...extra }]).select('id').single()
+/**
+ * Grava o registro daquela pessoa, naquela etapa, NAQUELE DIA.
+ *
+ * O delete antes do insert é o "refazer a batida": se a pessoa passar duas
+ * vezes, vale a última. O que mudou com a jornada é o escopo — antes era um
+ * registro por etapa por EVENTO, o que num evento de 30 dias fazia o dia 2
+ * apagar o dia 1.
+ */
+async function upsertRegistro(
+  funcionarioId: string,
+  eventoId: string,
+  momento: MomentoPresenca,
+  extra: Record<string, unknown> = {},
+  dataRef?: string,
+  jornadaDiaId?: string | null
+) {
+  const q = supabaseAdmin.from('registros').delete()
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', momento)
+  if (dataRef) q.eq('data_ref', dataRef)
+  await q
+
+  return supabaseAdmin.from('registros').insert([{
+    funcionario_id: funcionarioId,
+    evento_id: eventoId,
+    tipo: momento,
+    data_ref: dataRef ?? null,
+    jornada_dia_id: jornadaDiaId ?? null,
+    ...extra,
+  }]).select('id').single()
+}
+
+/**
+ * A qual dia da jornada um registro FORA de janela pertence.
+ *
+ * O registro assistido existe justamente pra quando a janela já fechou, então
+ * `resolverJanela` não serve aqui — ele recusaria. A regra é: o dia da jornada
+ * que começou mais recentemente (o expediente de hoje, ou o da madrugada que
+ * ainda não virou). Sem jornada, cai na data de início do evento, que é o
+ * balde único dos eventos de um dia.
+ */
+async function diaDeReferencia(evento: { id: string; data_inicio?: string | null }) {
+  const agora = new Date()
+  const { data: dias } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id, data, entrada_inicio')
+    .eq('evento_id', evento.id)
+    .eq('cancelado', false)
+    .lte('entrada_inicio', new Date(agora.getTime() + 6 * 60 * 60 * 1000).toISOString())
+    .order('entrada_inicio', { ascending: false })
+    .limit(1)
+
+  const dia = dias?.[0]
+  if (dia) return { dataRef: dia.data as string, jornadaDiaId: dia.id as string }
+  return {
+    dataRef: (evento.data_inicio ? String(evento.data_inicio) : agora.toISOString()).slice(0, 10),
+    jornadaDiaId: null as string | null,
+  }
 }
 
 /** Preenche o endereço aproximado (geocoding reverso) em background — cosmético, sem retry. */
@@ -932,11 +1270,11 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     return { success: false, message: 'Funcionário não pertence ao seu setor', funcionario: funcInfo }
   }
 
-  const erroJanela = validarJanela(evento, momento)
-  if (erroJanela) return { success: false, message: erroJanela, funcionario: funcInfo }
+  const janela = await resolverJanela(evento, momento)
+  if (janela.erro !== null) return { success: false, message: janela.erro, funcionario: funcInfo }
 
   const extra = perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}
-  const { error } = await upsertRegistro(func.id, eventoId, momento, extra)
+  const { error } = await upsertRegistro(func.id, eventoId, momento, extra, janela.dataRef, janela.jornadaDiaId)
   if (error) return { success: false, message: 'Erro ao registrar. Tente de novo.' }
 
   return {
@@ -961,6 +1299,12 @@ export async function registrarPresencaFoto(
   if (latitude == null || longitude == null) return { error: 'Localização obrigatória. Ative o GPS e tente de novo.' }
   if (!fotoBase64?.startsWith('data:image/')) return { error: 'Foto inválida' }
 
+  // Ação pública (o qr_token é o segredo). Sem teto, um token vazado vira
+  // upload ilimitado no Storage — a pessoa legítima bate uma vez, não vinte.
+  if (!podePassar(`foto:${token}`, 20, 10 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
+
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
     .select(`id, ativo, fornecedores(evento_id, eventos(${JANELA_SELECT}))`)
@@ -974,8 +1318,8 @@ export async function registrarPresencaFoto(
   const eventoId = fornecedor?.evento_id
   if (!evento || !eventoId) return { error: 'Evento não encontrado' }
 
-  const erroJanela = validarJanela(evento, 'meio')
-  if (erroJanela) return { error: erroJanela }
+  const janela = await resolverJanela(evento, 'meio')
+  if (janela.erro !== null) return { error: janela.erro }
 
   // Decodifica a foto (data URL) e envia ao Storage
   const match = fotoBase64.match(/^data:(image\/\w+);base64,(.+)$/)
@@ -994,7 +1338,11 @@ export async function registrarPresencaFoto(
     return { error: 'Não foi possível salvar a foto. Tente de novo.' }
   }
 
-  const { data: registro, error } = await upsertRegistro(func.id, eventoId, 'meio', { foto_url: path, latitude, longitude })
+  const { data: registro, error } = await upsertRegistro(
+    func.id, eventoId, 'meio', { foto_url: path, latitude, longitude },
+    janela.dataRef,
+    janela.jornadaDiaId,
+  )
   if (error) return { error: 'Erro ao registrar. Tente de novo.' }
 
   after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
@@ -1011,7 +1359,7 @@ export async function registrarPresencaFoto(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; cidade?: string; fotoBase64?: string }
+  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -1020,8 +1368,14 @@ export async function cadastrarFuncionarioPublico(
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
 
+  // O link do formulário circula em grupo de WhatsApp: sem teto, um script
+  // enche o setor de cadastros falsos e trava a operação no dia do evento.
+  if (!podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
+    return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
+  }
+
   const cpf = dados.cpf.replace(/\D/g, '')
-  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os números e tente de novo.' }
+  if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
 
   /*
    * Cidade é obrigatória no cadastro público.
@@ -1038,6 +1392,18 @@ export async function cadastrarFuncionarioPublico(
   const cidade = (dados.cidade ?? '').trim()
   if (cidade.length < 2) {
     return { error: 'Informe a cidade onde você mora — é por ela que os organizadores encontram você para outros eventos.' }
+  }
+
+  /*
+   * Consentimento da base regional.
+   *
+   * Checado no servidor pelo mesmo motivo da cidade: `required` no HTML some
+   * com uma chamada direta à action. Mas aqui o motivo é mais forte — sem o
+   * aceite, guardar o cadastro para recrutamento seria usar o dado para uma
+   * finalidade diferente da que a pessoa aceitou (trabalhar NESTE evento).
+   */
+  if (dados.consentimento !== true) {
+    return { error: 'Você precisa autorizar o uso dos seus dados para concluir o cadastro.' }
   }
 
   // Trava opcional do setor: se o organizador definiu uma lista de CPFs
@@ -1080,6 +1446,8 @@ export async function cadastrarFuncionarioPublico(
     cargo: dados.cargo.trim(),
     chave_pix: dados.chavePix?.trim() || null,
     cidade,
+    consentimento_base: true,
+    consentimento_em: new Date().toISOString(),
     ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id, qr_token').single()
 
@@ -1111,11 +1479,24 @@ export async function cadastrarFuncionarioPublico(
 }
 
 /**
- * Base central de cadastros: busca o cadastro mais recente deste CPF dentro
- * da MESMA organização (dona do evento do formulário) para pré-preencher o
- * formulário público — quem já trabalhou em um evento anterior não precisa
- * digitar tudo de novo. Escopado por organização para não vazar dados entre
- * clientes diferentes da plataforma.
+ * Base central de cadastros: busca o cadastro mais recente deste CPF para
+ * pré-preencher o formulário público — quem já trabalhou antes não digita tudo
+ * de novo.
+ *
+ * ⚠️ Esta é a superfície pública mais sensível do sistema. Ela não tem sessão
+ * pra checar (é o formulário aberto), recebe um CPF e devolve nome, telefone e
+ * chave PIX. O link do formulário circula em grupo de WhatsApp, então
+ * considere-o conhecido: quem o tiver pode, em tese, varrer CPFs e colher
+ * dados de qualquer pessoa que já passou pela plataforma.
+ *
+ * Três contenções, e nenhuma delas é perfeita — a de verdade seria exigir algo
+ * que só a própria pessoa saiba:
+ *
+ * 1. Limite de tentativas por token de formulário (abaixo).
+ * 2. A busca só devolve o que o formulário precisa preencher; nunca CPF,
+ *    histórico, valores ou em que eventos a pessoa trabalhou.
+ * 3. A preferência é o cadastro da PRÓPRIA organização; a base central é
+ *    consultada só quando ela não conhece o CPF.
  */
 export async function buscarCadastroPorCpf(
   fornecedorId: string,
@@ -1123,6 +1504,14 @@ export async function buscarCadastroPorCpf(
 ): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null; cidade: string | null } | null> {
   const cpf = cpfBruto.replace(/\D/g, '')
   if (!validarCpf(cpf)) return null
+
+  /*
+   * 40 consultas por hora por setor. Uma pessoa preenchendo o formulário faz
+   * UMA; quem faz quarenta está varrendo. O limite é por token de formulário
+   * porque é o único identificador estável que existe aqui — não há sessão, e
+   * IP em serverless atrás de CDN não é confiável.
+   */
+  if (!podePassar(`cpf:${fornecedorId}`, 40, 60 * 60 * 1000)) return null
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -1259,7 +1648,7 @@ export async function localizarFuncionario(
   if (!busca) return { error: 'Digite o CPF ou o nome da pessoa.' }
   if (!pareceCpf && busca.length < 3) return { error: 'Digite pelo menos 3 letras do nome.' }
   if (pareceCpf && digitos.length === 11 && !validarCpf(digitos)) {
-    return { error: 'CPF inválido. Confira os números digitados.' }
+    return { error: 'O CPF precisa ter 11 dígitos.' }
   }
 
   const consulta = supabaseAdmin
@@ -1456,11 +1845,15 @@ export async function registrarPresencaAssistida(
 
   // Recalcula a etapa pendente no servidor: o que a tela mostrou pode ter
   // mudado (o próprio colaborador pode ter batido nesse meio tempo).
+  const refAssistido = await diaDeReferencia(evento)
   const { data: registros } = await supabaseAdmin
     .from('registros')
     .select('tipo')
     .eq('funcionario_id', func.id)
     .eq('evento_id', evento.id)
+    // Do DIA, não do evento inteiro: numa operação de 30 dias, olhar o evento
+    // faria a tela dizer "já registrou tudo" a partir do segundo dia.
+    .eq('data_ref', refAssistido.dataRef)
   const feitos = new Set((registros ?? []).map(r => r.tipo))
   const pendente = ORDEM_ETAPAS.find(e => !feitos.has(e.momento))
   if (!pendente) return { error: 'Esta pessoa já registrou todas as etapas — não há nada pendente.' }
@@ -1480,7 +1873,7 @@ export async function registrarPresencaAssistida(
     justificativa: JUSTIFICATIVA_ASSISTIDO,
     dispositivo: dados.dispositivo?.slice(0, 300) ?? null,
     ...(temGps ? { latitude: dados.latitude, longitude: dados.longitude } : {}),
-  })
+  }, refAssistido.dataRef, refAssistido.jornadaDiaId)
   if (error) return { error: mensagemAmigavel(error) }
 
   if (registro && temGps) {
@@ -1490,8 +1883,67 @@ export async function registrarPresencaAssistida(
   return { ok: true, nome: func.nome, etapa: pendente.rotulo }
 }
 
-/** Gera URLs assinadas (temporárias) para o admin ver as fotos de presença. */
+/**
+ * URL temporária de uma foto de presença, para o admin conferir a batida.
+ *
+ * ⚠️ Esta função é uma Server Action: qualquer pessoa na internet pode
+ * chamá-la. Antes ela aceitava um caminho QUALQUER e devolvia uma URL
+ * assinada — bastava adivinhar o caminho pra baixar a selfie de qualquer
+ * funcionário de qualquer organização, ou a foto de perfil de qualquer
+ * cliente. Um IDOR clássico.
+ *
+ * Agora o caminho não é confiado: ele é procurado no banco, e só é liberado
+ * se pertencer a um registro/funcionário que ESTE usuário pode ver.
+ */
 export async function urlAssinadaFoto(path: string): Promise<string | null> {
-  const { data } = await supabaseAdmin.storage.from('presencas').createSignedUrl(path, 60 * 60)
+  const perfil = await getPerfil()
+  if (!perfil) return null
+
+  const caminho = String(path ?? '').trim()
+  if (!caminho) return null
+
+  /*
+   * De onde a foto pode vir, e quem pode vê-la:
+   *   registros.foto_url       → selfie de presença   → quem enxerga o evento
+   *   funcionarios.foto_perfil → avatar da pessoa     → quem enxerga o evento
+   *   organizacoes.foto_perfil → logo do cliente      → a própria org, ou master
+   * Qualquer caminho fora disso não existe pro sistema, então não é assinado.
+   */
+  const [{ data: registro }, { data: func }, { data: org }] = await Promise.all([
+    supabaseAdmin.from('registros')
+      .select('evento_id, funcionarios!inner(fornecedor_id)')
+      .eq('foto_url', caminho).limit(1).maybeSingle(),
+    supabaseAdmin.from('funcionarios')
+      .select('fornecedor_id, fornecedores!inner(evento_id)')
+      .eq('foto_perfil_path', caminho).limit(1).maybeSingle(),
+    supabaseAdmin.from('organizacoes')
+      .select('id').eq('foto_perfil_path', caminho).limit(1).maybeSingle(),
+  ])
+
+  let liberado = false
+
+  if (org) {
+    liberado = ehMaster(perfil.role) || org.id === perfil.organizacao_id
+  } else if (registro || func) {
+    const eventoId = registro
+      ? (registro.evento_id as string)
+      : ((func!.fornecedores as unknown as { evento_id: string }).evento_id)
+    const fornecedorId = registro
+      ? ((registro.funcionarios as unknown as { fornecedor_id: string }).fornecedor_id)
+      : (func!.fornecedor_id as string)
+
+    if (perfil.role === 'supervisor') {
+      // Supervisor vê a foto só de quem é do setor dele.
+      liberado = perfil.fornecedor_id === fornecedorId
+    } else {
+      const { data: evento } = await supabaseAdmin
+        .from('eventos').select('organizacao_id').eq('id', eventoId).single()
+      liberado = ehMaster(perfil.role) || (!!evento && evento.organizacao_id === perfil.organizacao_id)
+    }
+  }
+
+  if (!liberado) return null
+
+  const { data } = await supabaseAdmin.storage.from('presencas').createSignedUrl(caminho, 60 * 60)
   return data?.signedUrl ?? null
 }

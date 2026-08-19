@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X } from 'lucide-react'
 import { format } from 'date-fns'
-import { podeGerenciarUsuarios, ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
+import { podeGerenciarUsuarios, ehMaster, podeExcluir, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -235,7 +235,9 @@ export default async function UsuariosPage({
                 </div>
 
                 <div className="shrink-0 -mr-1" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
-                  {u.id !== perfil!.id && <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />}
+                  {u.id !== perfil!.id && podeExcluir(perfil!.role) && (
+                  <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />
+                )}
                 </div>
               </div>
             ))}

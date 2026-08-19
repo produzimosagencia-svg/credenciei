@@ -1,13 +1,13 @@
 import { notFound, redirect } from 'next/navigation'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity } from 'lucide-react'
+import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity, CalendarCheck } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import StatCard from '@/components/StatCard'
-import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
+import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
@@ -22,6 +22,8 @@ const TUTORIAL: TutorialConfig = {
   passos: [
     { alvo: 'evt-editar', titulo: 'Configurar o evento', posicao: 'bottom',
       descricao: 'Aqui você ajusta datas, local e principalmente as janelas de horário — os períodos em que a equipe pode bater entrada, meio e saída.' },
+    { alvo: 'evt-jornada', titulo: 'Registros diários', posicao: 'bottom',
+      descricao: 'Para operação de vários dias: configure período, dias da semana e horários UMA vez, como um despertador, e o sistema repete em todos os dias escolhidos. Evento de um dia só não precisa disto — use as janelas da tela de edição.' },
     { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
@@ -60,6 +62,13 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       .from('registros')
       .select('funcionario_id, tipo')
       .eq('evento_id', id),
+  ])
+
+  // Em que modo este evento valida ponto: jornada recorrente ou janela fixa.
+  const [{ data: jornada }, { count: diasGerados }] = await Promise.all([
+    supabase.from('evento_jornadas').select('data_inicio, data_fim, blocos').eq('evento_id', id).maybeSingle(),
+    supabase.from('jornada_dias').select('id', { count: 'exact', head: true })
+      .eq('evento_id', id).eq('cancelado', false),
   ])
 
   if (!evento) notFound()
@@ -126,6 +135,10 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           <Link href={`/admin/eventos/${id}/editar`} data-tutorial="evt-editar" className="btn btn-secundario">
             <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
           </Link>
+          <Link href={`/admin/eventos/${id}/jornada`} data-tutorial="evt-jornada" className="btn btn-secundario">
+            <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+            {jornada ? 'Registros diários' : 'Configurar registros diários'}
+          </Link>
           {evento.spreadsheet_id && (
             <a
               href={`https://docs.google.com/spreadsheets/d/${evento.spreadsheet_id}`}
@@ -144,6 +157,16 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
+      {jornada && (
+        <Aviso tom="marca" icone={<CalendarCheck className="w-3.5 h-3.5" />}>
+          <strong>Registros diários ativos.</strong> {diasGerados ?? 0} dia(s) configurado(s) entre{' '}
+          {formatarBR(`${String(jornada.data_inicio).slice(0, 10)}T12:00:00-03:00`, 'data')} e{' '}
+          {formatarBR(`${String(jornada.data_fim).slice(0, 10)}T12:00:00-03:00`, 'data')}.
+          Enquanto isso valer, as janelas fixas de entrada e saída da tela de edição ficam de lado.{' '}
+          <Link href={`/admin/eventos/${id}/jornada`} className="underline font-medium">Ver configuração</Link>
+        </Aviso>
+      )}
+
       <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Setores" value={fornecedores?.length ?? 0} icon={Users} tom="acento" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} tom="info" />
@@ -191,6 +214,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
                   eventoId={id}
                   supervisores={supervisoresPorFornecedor[f.id] ?? []}
                   podeGerenciarSupervisores={podeGerenciarSupervisores}
+                  podeExcluir={podeExcluir(perfil?.role)}
                 />
               ))
             )}

@@ -27,25 +27,24 @@ export function formatCpfCnpj(value: string): string {
 }
 
 /**
- * Valida o CPF pelo algoritmo oficial dos dígitos verificadores (módulo 11),
- * não só a quantidade de dígitos. Recebe com ou sem máscara. Rejeita
- * sequências repetidas (000.000.000-00, 111.111.111-11 etc.), que passam no
- * cálculo mas nunca são CPFs reais.
+ * Confere só o FORMATO do CPF: 11 dígitos, com ou sem máscara.
+ *
+ * A checagem dos dígitos verificadores (módulo 11) foi retirada a pedido — na
+ * operação real aparece gente com documento estrangeiro, CPF anotado errado no
+ * papel e cadastro feito às pressas no portão, e a recusa travava o
+ * credenciamento no pior momento possível.
+ *
+ * O CPF continua sendo a chave de identidade (um por evento, base central),
+ * então o comprimento ainda importa; o que deixou de existir é o julgamento
+ * sobre o número ser "real". Consequência aceita: dá pra cadastrar
+ * 000.000.000-00, e dois CPFs digitados errado não colidem entre si.
+ *
+ * Se um dia precisar voltar, o lugar é aqui: TODOS os caminhos de cadastro
+ * (formulário público, planilha, tela do setor e assistente) passam por esta
+ * função.
  */
 export function validarCpf(value: string): boolean {
-  const d = value.replace(/\D/g, '')
-  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false
-
-  const digito = (base: string) => {
-    let soma = 0
-    for (let i = 0; i < base.length; i++) soma += parseInt(base[i], 10) * (base.length + 1 - i)
-    const resto = (soma * 10) % 11
-    return resto === 10 ? 0 : resto
-  }
-
-  const d1 = digito(d.slice(0, 9))
-  const d2 = digito(d.slice(0, 9) + d1)
-  return d === d.slice(0, 9) + d1 + d2
+  return value.replace(/\D/g, '').length === 11
 }
 
 /** Formata telefone: (00) 00000-0000 ou (00) 0000-0000 */

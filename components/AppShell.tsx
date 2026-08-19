@@ -8,7 +8,7 @@ import {
   Activity, ClipboardCheck,
 } from 'lucide-react'
 import {
-  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeGerenciarEventos, podeEscanear, type Role,
+  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -50,9 +50,6 @@ function gruposPara(role: string): Grupo[] {
     principal.push({ href: '/admin/localizar', label: 'Registrar ponto', icon: ClipboardCheck })
     principal.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
-  if (podeGerenciarEventos(role)) {
-    principal.push({ href: '/admin/encontrar', label: 'Encontre colaborador', icon: UserSearch })
-  }
   if (podeGerenciarUsuarios(role)) {
     principal.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
   }
@@ -66,6 +63,9 @@ function gruposPara(role: string): Grupo[] {
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
         { href: '/admin/base-funcionarios', label: 'Base de funcionários', icon: IdCard },
+        // A base regional é serviço vendido à parte: quem consulta e atribui
+        // gente ao evento de um cliente é o dono da plataforma, não o cliente.
+        { href: '/admin/encontrar', label: 'Encontre colaborador', icon: UserSearch },
       ],
     })
   }
@@ -148,7 +148,7 @@ function BotaoAssistente({ onNavigate }: { onNavigate?: () => void }) {
     <div className="px-3 pb-3 shrink-0">
       <button onClick={() => { abrir(); onNavigate?.() }} className="menu-item menu-item-ia w-full">
         <Sparkles className="w-4 h-4 shrink-0" />
-        Credenciei IA
+        Suporte
       </button>
     </div>
   )

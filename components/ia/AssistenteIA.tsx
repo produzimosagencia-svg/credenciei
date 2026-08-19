@@ -28,7 +28,7 @@ const SUGESTOES = [
 type AssistenteCtx = { abrir: () => void; aberto: boolean }
 const Ctx = createContext<AssistenteCtx | null>(null)
 
-/** Usado pelo item "Credenciei IA" do menu lateral. */
+/** Usado pelo item "Suporte" do menu lateral. */
 export function useAssistente() {
   const c = useContext(Ctx)
   if (!c) throw new Error('useAssistente precisa estar dentro de <AssistenteIAProvider>')
@@ -139,7 +139,7 @@ export function CartaoConfirmacao({ c, onConfirmar, ocupado }: {
 }
 
 /**
- * Modal central do Credenciei IA.
+ * Modal central do Suporte (o assistente do sistema).
  *
  * A confirmação de exclusão só aparece quando o SERVIDOR manda um evento
  * 'confirmar'; clicar reenvia a conversa com o id liberado. Nada que o modelo
@@ -317,7 +317,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
             )}
             <div className="leading-tight min-w-0">
               <p className="text-slate-800 font-bold text-sm truncate">
-                {verHistorico ? 'Conversas anteriores' : 'Credenciei IA'}
+                {verHistorico ? 'Conversas anteriores' : 'Suporte'}
               </p>
               <p className="text-slate-400 text-2xs truncate">
                 {verHistorico ? `${conversas.length} guardada(s) neste aparelho` : 'Pergunte ou peça pra fazer'}

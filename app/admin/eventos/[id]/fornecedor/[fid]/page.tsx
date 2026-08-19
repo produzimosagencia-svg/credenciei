@@ -1,5 +1,5 @@
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluir } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp } from 'lucide-react'
@@ -204,6 +204,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           fornecedorId={fid}
           eventoId={id}
           valorCombinado={fornecedor.valor_combinado ?? null}
+          podeExcluir={podeExcluir(perfil.role)}
         />
       </div>
     </div>
