@@ -130,6 +130,29 @@ function esperaSugerida(erro: unknown): number | null {
   return m ? Math.ceil(parseFloat(m[1]) * 1000) : null
 }
 
+/**
+ * Traduz o esgotamento de cota do Gemini numa frase que diz a verdade.
+ *
+ * A mensagem genérica de 429 ("aguarde um minuto") é enganosa quando a cota
+ * que acabou é a DIÁRIA: a pessoa espera, tenta de novo, falha igual, e
+ * conclui que o sistema está quebrado. São situações diferentes e precisam de
+ * respostas diferentes — e nas duas vale dizer que só o assistente parou, não
+ * o Credenciei.
+ */
+function erroDeCota(texto: string): Error | null {
+  const semCota = /RESOURCE_EXHAUSTED|429|quota/i.test(texto)
+  if (!semCota) return null
+
+  const porDia = /PerDay|per day|daily/i.test(texto)
+  return new Error(
+    porDia
+      ? 'O assistente atingiu o limite de uso de hoje e volta a funcionar amanhã. ' +
+        'O restante do sistema continua normal — cadastro, scanner e presenças não dependem dele.'
+      : 'O assistente está recebendo muitas perguntas ao mesmo tempo. ' +
+        'Espere cerca de um minuto e mande de novo. O restante do sistema segue funcionando.'
+  )
+}
+
 async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<T> {
   for (let i = 0; ; i++) {
     try {
@@ -137,7 +160,11 @@ async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<
     } catch (e) {
       const texto = String((e as Error)?.message ?? e)
       const transitorio = /UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|high demand/i.test(texto)
-      if (!transitorio || i >= tentativas - 1) throw e
+      if (!transitorio || i >= tentativas - 1) {
+        // Esgotou as tentativas: a pessoa precisa saber o que fazer, e
+        // sobretudo que o resto do sistema não caiu junto.
+        throw erroDeCota(texto) ?? e
+      }
       // Teto de 30s: acima disso é melhor devolver o erro do que deixar a
       // pessoa olhando pro "pensando..." sem fim.
       const espera = Math.min(esperaSugerida(e) ?? 2000 * 2 ** i, 30_000)

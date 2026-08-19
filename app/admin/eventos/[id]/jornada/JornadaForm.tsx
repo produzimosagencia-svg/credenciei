@@ -8,6 +8,7 @@ import {
   type BlocoJornada, type DiaSemana, type Jornada,
 } from '@/lib/jornada'
 import { Secao } from '@/components/ui/Superficie'
+import DateTimePicker from '@/components/DateTimePicker'
 
 /**
  * Configuração de registros diários — a tela do "despertador".
@@ -100,11 +101,25 @@ export default function JornadaForm({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label className="block">
             <span className="text-slate-500 text-xs">Data inicial</span>
-            <input type="date" value={dataInicio} onChange={e => { setDataInicio(e.target.value); setFeito(null) }} className="input mt-1" />
+            <div className="mt-1">
+              <DateTimePicker
+                modo="data"
+                value={dataInicio}
+                onChange={v => { setDataInicio(v); setFeito(null) }}
+                placeholder="Escolher data"
+              />
+            </div>
           </label>
           <label className="block">
             <span className="text-slate-500 text-xs">Data final</span>
-            <input type="date" value={dataFim} onChange={e => { setDataFim(e.target.value); setFeito(null) }} className="input mt-1" />
+            <div className="mt-1">
+              <DateTimePicker
+                modo="data"
+                value={dataFim}
+                onChange={v => { setDataFim(v); setFeito(null) }}
+                placeholder="Escolher data"
+              />
+            </div>
           </label>
           <label className="block">
             <span className="text-slate-500 text-xs">Tolerância</span>
@@ -189,14 +204,28 @@ export default function JornadaForm({
             <div className="space-y-2">
               {bloco.turnos.map((t, ti) => (
                 <div key={ti} className="flex flex-wrap items-end gap-2">
-                  <label className="block">
+                  <div className="block w-36">
                     <span className="text-slate-500 text-xs">Entrada</span>
-                    <input type="time" value={t.entrada} onChange={e => mudarTurno(i, ti, 'entrada', e.target.value)} className="input mt-1 w-32" />
-                  </label>
-                  <label className="block">
+                    <div className="mt-1">
+                      <DateTimePicker
+                        modo="hora"
+                        value={t.entrada}
+                        onChange={v => mudarTurno(i, ti, 'entrada', v)}
+                        placeholder="Horário"
+                      />
+                    </div>
+                  </div>
+                  <div className="block w-36">
                     <span className="text-slate-500 text-xs">Saída</span>
-                    <input type="time" value={t.saida} onChange={e => mudarTurno(i, ti, 'saida', e.target.value)} className="input mt-1 w-32" />
-                  </label>
+                    <div className="mt-1">
+                      <DateTimePicker
+                        modo="hora"
+                        value={t.saida}
+                        onChange={v => mudarTurno(i, ti, 'saida', v)}
+                        placeholder="Horário"
+                      />
+                    </div>
+                  </div>
                   {bloco.turnos.length > 1 && (
                     <button
                       type="button"

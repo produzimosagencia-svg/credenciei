@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
+import { useCampoFormatado } from '@/components/inputs'
 
 const initialForm = {
   nome: '',
@@ -52,6 +53,17 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
 
   const set = (field: keyof typeof form, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
+
+  /*
+   * Campos de texto com Title Case. Passam pelo hook em vez de formatar no
+   * onChange: em teclado com acento morto, reformatar durante a composição
+   * grava "Conceiçã" no lugar de "Conceição" — e ninguém percebe até o crachá
+   * sair errado.
+   */
+  const campoNome = useCampoFormatado(titleCaseNome, v => set('nome', v))
+  const campoEmpresa = useCampoFormatado(titleCaseNome, v => set('empresa', v))
+  const campoCargo = useCampoFormatado(titleCaseNome, v => set('cargo', v))
+  const campoCidade = useCampoFormatado(titleCaseNome, v => set('cidade', v))
 
   // Base central de cadastros: quando o CPF fica completo, busca o cadastro
   // mais recente da pessoa (eventos anteriores do mesmo organizador) e
@@ -167,7 +179,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         {erroFoto && <p className="text-red-500 text-xs mt-1">{erroFoto}</p>}
       </Field>
       <Field label="Nome completo *">
-        <input required value={form.nome} onChange={e => set('nome', titleCaseNome(e.target.value))} placeholder="Seu nome completo" className="input" />
+        <input required value={form.nome} {...campoNome} placeholder="Seu nome completo" className="input" />
       </Field>
       <Field label="CPF *" tutorial="form-cpf">
         <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
@@ -182,10 +194,10 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
       </Field>
       <Field label="Empresa *">
-        <input required value={form.empresa} onChange={e => set('empresa', titleCaseNome(e.target.value))} placeholder="Nome da sua empresa" className="input" />
+        <input required value={form.empresa} {...campoEmpresa} placeholder="Nome da sua empresa" className="input" />
       </Field>
       <Field label="Cargo *">
-        <input required value={form.cargo} onChange={e => set('cargo', titleCaseNome(e.target.value))} placeholder="Ex: Segurança, Garçom..." className="input" />
+        <input required value={form.cargo} {...campoCargo} placeholder="Ex: Segurança, Garçom..." className="input" />
       </Field>
       <Field label="Cidade onde você mora *">
         {/* Serve pra você ser chamado pra trabalhar em eventos perto de onde
@@ -193,7 +205,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         <input
           required
           value={form.cidade}
-          onChange={e => set('cidade', titleCaseNome(e.target.value))}
+          {...campoCidade}
           placeholder="Ex: Vitória, Vila Velha, Serra..."
           className="input"
         />

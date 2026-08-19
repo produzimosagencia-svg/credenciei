@@ -470,7 +470,10 @@ button, [role='button'], a.btn-press {
   margin-top: 0.125rem;
   font-size: 0.75rem;
   color: var(--color-neutro-500);
+  /* Quebra em vez de correr por baixo do botão de ação do cabeçalho. */
+  overflow-wrap: anywhere;
 }
+.secao-titulo { overflow-wrap: anywhere; }
 .secao-corpo {
   background: #ffffff;
   border: 1px solid var(--color-neutro-200);
@@ -752,6 +755,10 @@ button, [role='button'], a.btn-press {
   color: #ffffff;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  /* O cartão tem overflow:hidden pro brilho do canto não vazar. Sem isto,
+     valor grande (R$ 1.234.567,89) era cortado no meio, sem reticências. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .indicador-sub {
   position: relative;
@@ -813,7 +820,18 @@ button, [role='button'], a.btn-press {
 /* ============================================================
    ABAS — sublinhado no item ativo, contador ao lado.
    ============================================================ */
-.abas { display: flex; align-items: center; gap: 0.125rem; border-bottom: 1px solid var(--color-neutro-200); }
+.abas {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border-bottom: 1px solid var(--color-neutro-200);
+  /* Rola em vez de cortar: no celular, quatro abas com contador estouram a
+     largura e as últimas ficavam inalcançáveis. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.abas::-webkit-scrollbar { display: none; }
+.aba { flex-shrink: 0; }
 .aba {
   position: relative;
   display: inline-flex;
