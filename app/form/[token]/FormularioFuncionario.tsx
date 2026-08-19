@@ -40,6 +40,7 @@ function comprimir(file: File): Promise<string> {
 
 export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
   const [form, setForm] = useState(initialForm)
+  const [consentimento, setConsentimento] = useState(false)
   const [foto, setFoto] = useState<string | null>(null)
   const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -60,7 +61,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
     setAutofill(false)
     const digitos = value.replace(/\D/g, '')
     if (digitos.length < 11) { setErroCpf(null); return }
-    if (!validarCpf(digitos)) { setErroCpf('CPF inválido. Confira os números.'); return }
+    if (!validarCpf(digitos)) { setErroCpf('O CPF precisa ter 11 dígitos.'); return }
     setErroCpf(null)
     if (cpfBuscado.current === digitos) return
     cpfBuscado.current = digitos
@@ -94,7 +95,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validarCpf(form.cpf)) {
-      setErroCpf('CPF inválido. Confira os números.')
+      setErroCpf('O CPF precisa ter 11 dígitos.')
       return
     }
     setLoading(true)
@@ -105,6 +106,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       empresa: form.empresa,
       cargo: form.cargo,
       cidade: form.cidade,
+      consentimento,
       chavePix: form.chavePix,
       fotoBase64: foto ?? undefined,
     })
@@ -200,10 +202,33 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />
       </Field>
 
+      {/*
+        Aceite da base regional.
+        Fica no fim, logo acima do botão, porque é a última coisa que a pessoa
+        decide antes de enviar. O texto diz o que acontece com o dado em vez de
+        remeter a um "termo" que ninguém abre: quem vê, o que vê e pra quê.
+      */}
+      <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5 cursor-pointer hover:border-slate-300 transition-colors">
+        <input
+          type="checkbox"
+          required
+          checked={consentimento}
+          onChange={e => setConsentimento(e.target.checked)}
+          className="mt-0.5 w-4 h-4 shrink-0 accent-brand-500 cursor-pointer"
+        />
+        <span className="text-slate-600 text-xs leading-relaxed">
+          Autorizo o Credenciei a guardar meus dados e a mostrar meu{' '}
+          <strong className="text-slate-800">nome, cidade, função e telefone</strong> para
+          organizadores de outros eventos que procurem equipe na minha região.
+          Serve para eu ser chamado para trabalhar em novos eventos.
+          Meu CPF não é usado para isso, e posso pedir a remoção a qualquer momento.
+        </span>
+      </label>
+
       <button
         type="submit"
         data-tutorial="form-enviar"
-        disabled={loading}
+        disabled={loading || !consentimento}
         className="w-full btn btn-primario btn-lg"
       >
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}

@@ -1,5 +1,5 @@
 /**
- * Ferramentas do Credenciei IA — porta de entrada.
+ * Ferramentas do Suporte — porta de entrada.
  *
  * A implementação vive em `ferramentas/`, um módulo por assunto. Este arquivo
  * só junta tudo e reexporta os tipos, para que `agente.ts` e a rota da API não

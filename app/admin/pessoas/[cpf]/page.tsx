@@ -1,14 +1,16 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
-  CalendarDays, Building2, Briefcase, MapPin, Phone, MessageCircle, IdCard,
+  CalendarDays, Building2, Briefcase, MapPin, Phone, MessageCircle, IdCard, CalendarPlus,
+  ShieldCheck, ShieldAlert,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
-import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
+import { ehMaster } from '@/lib/permissions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
+import AtribuirEvento from './AtribuirEvento'
 
 export const revalidate = 0
 
@@ -33,9 +35,9 @@ const ROTULO: Record<string, string> = { entrada: 'Entrada', meio: 'Meio', fim: 
 export default async function PessoaPage({ params }: { params: Promise<{ cpf: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Admin e master: a ficha existe pra montar equipe, que é trabalho de quem
-  // gerencia evento. Supervisor não recruta.
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  // Só o master: a ficha junta o histórico da pessoa em TODAS as organizações
+  // da plataforma (ver comentário em /admin/encontrar).
+  if (!ehMaster(perfil.role)) redirect('/admin')
 
   const { cpf: cpfParam } = await params
   const cpf = decodeURIComponent(cpfParam).replace(/\D/g, '')
@@ -45,6 +47,7 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
     .from('funcionarios')
     .select(`
       id, nome, cpf, telefone, empresa, cargo, cidade, chave_pix, ativo, created_at,
+      consentimento_base, consentimento_em,
       fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, data_inicio, data_fim, organizacao_id, organizacoes(nome)))
     `)
     .eq('cpf', cpf)
@@ -93,6 +96,9 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
   const cidade = cadastros.find(c => c.cidade)?.cidade ?? null
   const telefone = (atual.telefone as string | null) ?? null
 
+  // Basta UM cadastro com aceite: a pessoa autorizou a base uma vez, e a
+  // autorização não é por evento.
+  const comAceite = cadastros.find(c => c.consentimento_base)
   const organizacoes = new Set(trabalhos.map(t => t.organizacao))
   const compareceu = trabalhos.filter(t => t.compareceu).length
   const ultimoTrabalho = trabalhos[0]?.data ? formatarBR(trabalhos[0].data, 'data') : '—'
@@ -103,12 +109,36 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
   // Só dígitos e com o 55 na frente: é o formato que o wa.me aceita.
   const zap = telefone ? `55${telefone.replace(/\D/g, '')}` : null
 
+  /*
+   * Opções do seletor de atribuição. Traz TODOS os eventos da plataforma
+   * porque quem atribui é o master — ele coloca gente da base dentro do evento
+   * do cliente que contratou o serviço. Encerrados entram na lista marcados:
+   * às vezes é preciso acertar a equipe de um evento que acabou de fechar.
+   */
+  const [{ data: eventosBrutos }, { data: setoresBrutos }] = await Promise.all([
+    supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio').order('data_inicio', { ascending: false }).limit(100),
+    supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('nome'),
+  ])
+
+  const eventosOpcoes = (eventosBrutos ?? []).map(e => ({
+    id: e.id as string,
+    nome: e.nome as string,
+    ativo: e.ativo !== false,
+    data: e.data_inicio ? formatarBR(e.data_inicio, 'data') : 'sem data',
+  }))
+  const setoresOpcoes = (setoresBrutos ?? []).map(f => ({
+    id: f.id as string,
+    nome: f.nome as string,
+    eventoId: f.evento_id as string,
+  }))
+  const jaNosEventos = [...new Set(trabalhos.map(t => t.eventoId))]
+
   return (
     <div className="space-y-5">
       <PageHeader
         titulo={atual.nome as string}
         descricao={[cargoMaisComum(trabalhos), cidade].filter(Boolean).join(' · ') || 'Sem função registrada'}
-        voltarPara={ehMaster(perfil.role) ? '/admin/base-funcionarios' : '/admin/encontrar'}
+        voltarPara="/admin/encontrar"
         acoes={
           zap ? (
             <a
@@ -131,12 +161,46 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
         <StatCard label="Último trabalho" value={ultimoTrabalho} icon={CalendarDays} small tom="aviso" />
       </div>
 
+      <Secao
+        tom="acento"
+        icone={<CalendarPlus className="w-3.5 h-3.5" />}
+        titulo="Atribuir a um evento"
+        descricao="Coloca esta pessoa na equipe de um setor. O cliente passa a vê-la na tela do setor e fala com ela direto."
+      >
+        <AtribuirEvento
+          cpf={cpf}
+          nome={atual.nome as string}
+          eventos={eventosOpcoes}
+          setores={setoresOpcoes}
+          jaNosEventos={jaNosEventos}
+        />
+      </Secao>
+
       <Secao titulo="Dados de contato" icone={<IdCard className="w-3.5 h-3.5" />} corpoClassName="p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
           <Dado rotulo="CPF" valor={formatCpf(cpf)} />
           <Dado rotulo="Telefone" valor={telefone || '—'} icone={<Phone className="w-3 h-3" />} />
           <Dado rotulo="Cidade" valor={cidade || 'não informada'} icone={<MapPin className="w-3 h-3" />} />
           <Dado rotulo="Chave PIX" valor={(atual.chave_pix as string | null) || '—'} />
+        </div>
+
+        {/* De onde vem o direito de esta pessoa aparecer na busca regional. */}
+        <div className="mt-4 pt-3.5 border-t border-slate-100">
+          {comAceite ? (
+            <p className="flex items-start gap-2 text-sucesso-700 text-xs">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
+              Autorizou aparecer na base regional
+              {comAceite.consentimento_em
+                ? ` em ${formatarBR(comAceite.consentimento_em as string, 'curto')}`
+                : ''}.
+            </p>
+          ) : (
+            <p className="flex items-start gap-2 text-aviso-700 text-xs">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
+              Não aparece na busca regional: cadastrou-se antes da autorização existir no formulário.
+              Você chegou aqui pela Base de funcionários, que é a visão completa da plataforma.
+            </p>
+          )}
         </div>
       </Secao>
 

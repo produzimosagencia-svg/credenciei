@@ -17,7 +17,7 @@ const MAX_LINHAS_PLANILHA = 1000
 export const maxDuration = 120
 
 /**
- * Conversa com o Credenciei IA.
+ * Conversa com o Suporte (assistente do sistema).
  *
  * Responde num stream de linhas JSON (uma por linha), cada uma com um tipo:
  *   {t:'texto', v}       — pedaço da resposta, pra escrever na tela ao vivo

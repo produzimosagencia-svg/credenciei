@@ -119,7 +119,7 @@ export async function importarFuncionarios(
     const motivo = duplicados
       ? `Todos os CPFs da planilha já estão cadastrados neste evento (${duplicados} duplicado${duplicados !== 1 ? 's' : ''}).`
       : invalidos
-        ? `Nenhum CPF válido encontrado (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF inválido).`
+        ? `Nenhum CPF no formato certo (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF que não tem 11 dígitos).`
         : 'Nenhum funcionário válido encontrado'
     return { ok: false, status: 400, error: motivo }
   }

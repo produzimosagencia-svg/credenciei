@@ -39,8 +39,20 @@ export const podeGerenciarUsuarios = (role?: string) =>
 export const podeGerenciarEventos = (role?: string) =>
   role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente'
 
-/** Pode EXCLUIR eventos. Apenas o master (admin não apaga eventos). */
-export const podeExcluirEventos = (role?: string) => role === 'master'
+/**
+ * Pode EXCLUIR qualquer coisa do sistema — evento, setor, funcionário,
+ * supervisor, organização. Só o master.
+ *
+ * Exclusão aqui é sempre em cascata (apagar um setor leva a equipe e as
+ * presenças junto) e não tem desfazer. O admin continua podendo ENCERRAR
+ * evento e DESATIVAR pessoa, que resolvem o mesmo problema do dia a dia sem
+ * destruir histórico. Quando ele precisa apagar de verdade, fala com a
+ * plataforma — é a fricção que se quer.
+ */
+export const podeExcluir = (role?: string) => role === 'master'
+
+/** @deprecated Use `podeExcluir`. Mantido porque já é chamado em algumas telas. */
+export const podeExcluirEventos = podeExcluir
 
 /** Pode usar o scanner (todos os papéis autenticados podem). */
 export const podeEscanear = (role?: string) =>

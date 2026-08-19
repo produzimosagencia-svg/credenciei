@@ -1,5 +1,5 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { editarEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
 import { NomeInput } from '@/components/inputs'
@@ -8,7 +8,7 @@ import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import { CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
-import { ehMaster } from '@/lib/permissions'
+import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -41,6 +41,16 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     supabase.from('eventos').select('*').eq('id', id).single(),
   ])
   if (!evento) notFound()
+
+  /*
+   * Isolamento por organização. A action `editarEvento` já barrava a ESCRITA,
+   * mas a leitura estava aberta: com o UUID de um evento de outro cliente, um
+   * admin abria esta tela e via datas, local, janelas e o id da planilha do
+   * Google. `notFound` em vez de "sem permissão" pra não confirmar que o
+   * evento existe.
+   */
+  if (!perfil || !podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   const action = editarEvento.bind(null, id)
   const fmt = (d: string | null | undefined) => isoParaInput(d)

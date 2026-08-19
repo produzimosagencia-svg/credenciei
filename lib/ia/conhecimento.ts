@@ -69,17 +69,22 @@ gráficos de presença por evento e por etapa, e feed de atividade recente.
 Lista de eventos ativos e encerrados. Mostra as licenças contratadas e quantas
 foram usadas. Ao bater o limite, o admin não cria mais até o master aumentar.
 
-## Encontrar funcionários (/admin/encontrar)
-A base do Credenciei usada como banco de gente disponível na região. Lista
-quem já foi credenciado por QUALQUER cliente da plataforma, ordenado por quem
-tem mais presença registrada. Busca por nome, CPF e cidade. O contato é feito
-pelo WhatsApp do próprio organizador — o sistema não manda convite automático,
-porque convite não é template aprovado pela Meta.
+## Encontre colaborador (/admin/encontrar) — SÓ MASTER
+A base regional da plataforma, e um serviço vendido à parte: a organização que
+não consegue fechar a própria equipe contrata, e o master atribui gente da base
+ao evento dela. Nenhum admin enxerga esta tela — aberta a eles, entregaria a
+equipe de um cliente ao concorrente.
+Lista só quem AUTORIZOU aparecer (caixa de aceite no formulário público),
+ordenado por quem tem mais presença registrada. Busca por nome, CPF e cidade.
+O contato sai pelo WhatsApp do próprio master; o sistema não manda convite
+automático, porque convite não é template aprovado pela Meta.
 
-## Ficha da pessoa (/admin/pessoas/[cpf])
+## Ficha da pessoa (/admin/pessoas/[cpf]) — SÓ MASTER
 Histórico de uma pessoa pelo CPF: eventos em que trabalhou, organizações, taxa
-de presença, quanto já recebeu e quanto está em aberto. Abre clicando no nome
-na Base de funcionários ou em Encontrar funcionários.
+de presença e último trabalho. NÃO mostra valores — o que uma organização pagou
+é preço de concorrente. Tem também "Atribuir a um evento": escolhe evento e
+setor, e a pessoa entra na equipe daquele cliente com os dados do cadastro mais
+recente dela.
 
 ## Novo evento (/admin/eventos/novo)
 Campos: nome*, descrição, data de início*, data de fim*, local, e as três
@@ -165,6 +170,12 @@ emergência.
   a pessoa depois na busca por região. Cadastro feito pelo organizador (tela,
   planilha ou você) aceita ficar sem cidade, mas aí a pessoa não aparece na
   busca — então pergunte sempre.
+- **A base regional depende de AUTORIZAÇÃO da pessoa.** No formulário público
+  há uma caixa em que ela aceita aparecer para outros organizadores. Só quem
+  marcou entra na tela "Encontre colaborador". Cadastro feito pelo organizador
+  (tela do setor, planilha ou você) NUNCA marca esse aceite: ele tem que vir da
+  própria pessoa. Se perguntarem por que alguém não aparece na busca regional,
+  é quase sempre isto.
 - **CPFs pré-autorizados**: o setor pode ter uma lista; fora dela o cadastro é
   recusado.
 - **Excluir organização** apaga o admin, a equipe e TODOS os eventos dela.

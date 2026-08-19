@@ -65,11 +65,19 @@ export default function FuncionarioTable({
   fornecedorId,
   eventoId,
   valorCombinado,
+  podeExcluir = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
   eventoId: string
   valorCombinado: number | null
+  /**
+   * Só o master exclui. Para o supervisor/admin, DESATIVAR resolve o mesmo
+   * problema do dia (a pessoa para de registrar presença) sem apagar as
+   * batidas que já aconteceram — que é justamente o que se precisa provar
+   * depois, se alguém contestar pagamento.
+   */
+  podeExcluir?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -264,14 +272,16 @@ export default function FuncionarioTable({
                     >
                       {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
                     </button>
-                    <button
-                      onClick={() => handleDelete(f)}
-                      disabled={isPending}
-                      className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                      aria-label="Remover"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {podeExcluir && (
+                      <button
+                        onClick={() => handleDelete(f)}
+                        disabled={isPending}
+                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
+                        aria-label="Remover"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -367,14 +377,16 @@ export default function FuncionarioTable({
                       >
                         {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
                       </button>
-                      <button
-                        onClick={() => handleDelete(f)}
-                        disabled={isPending}
-                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                        title="Remover"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {podeExcluir && (
+                        <button
+                          onClick={() => handleDelete(f)}
+                          disabled={isPending}
+                          className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
+                          title="Remover"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

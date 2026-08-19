@@ -80,7 +80,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (!r.ok) return r.erro
 
         const digitos = String(cpf).replace(/\D/g, '')
-        if (!validarCpf(digitos)) return 'CPF inválido — confira os números com o usuário.'
+        if (!validarCpf(digitos)) return 'O CPF precisa ter 11 dígitos — confira com o usuário.'
 
         const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id)
         if (outroSetor) {
@@ -175,7 +175,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         // CPF por evento). Muda, mas só validado e sem colidir com ninguém.
         if (cpf != null) {
           const digitos = String(cpf).replace(/\D/g, '')
-          if (!validarCpf(digitos)) return 'CPF inválido — confira os números.'
+          if (!validarCpf(digitos)) return 'O CPF precisa ter 11 dígitos.'
           const outroSetor = await cpfJaNoEvento(digitos, r.func.evento_id, funcionario_id)
           if (outroSetor) return `Já existe outra pessoa com este CPF neste evento, no setor "${outroSetor}".`
           mudancas.cpf = digitos
@@ -383,7 +383,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           setor: r.setor.nome,
           observacao: [
             res.duplicados ? `${res.duplicados} já estavam neste evento e foram ignorados, sem duplicar ninguém.` : null,
-            res.invalidos ? `${res.invalidos} linha(s) tinham CPF inválido e ficaram de fora — precisam ser corrigidas na planilha.` : null,
+            res.invalidos ? `${res.invalidos} linha(s) tinham CPF fora do formato (11 dígitos) e ficaram de fora — precisam ser corrigidas na planilha.` : null,
             res.reaproveitados ? `${res.reaproveitados} já estavam na base do Credenciei: telefone, cargo e PIX que faltavam foram preenchidos sozinhos.` : null,
           ].filter(Boolean).join(' ') || null,
         })
