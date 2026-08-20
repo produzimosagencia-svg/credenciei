@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
+import { estadoDaInstancia } from '@/lib/whatsapp'
 import { formatarBR, inputParaISO } from '@/lib/tz'
 import { sincronizarAgendamentos } from '@/lib/mensagens'
 import { registrarAuditoriaIA } from '../auditoria'
@@ -24,11 +25,24 @@ const TIPOS_VALIDOS = [
   'reforco_entrada', 'reforco_meio', 'reforco_fim',
 ] as const
 
-/** Estado do canal — sem isto a IA diz "reenviado" quando nada vai sair. */
-function estadoDoCanal() {
+/**
+ * Estado do canal — sem isto a IA diz "reenviado" quando nada vai sair.
+ *
+ * Na Evolution a conexão cai sozinha (celular desligado, sessão derrubada,
+ * número banido) e o envio falha em silêncio. Perguntar o estado da instância
+ * é a diferença entre "não recebeu porque a instância está desconectada" e um
+ * genérico "erro no envio".
+ */
+async function estadoDoCanal() {
+  const configurada = !!(
+    process.env.EVOLUTION_URL && process.env.EVOLUTION_INSTANCIA && process.env.EVOLUTION_APIKEY
+  )
+  const instancia = configurada ? await estadoDaInstancia() : { conectada: false, estado: 'não configurada' }
   return {
     envio_pausado: process.env.WHATSAPP_PAUSADO === 'true',
-    credenciais_configuradas: !!(process.env.WHATSAPP_CLOUD_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
+    credenciais_configuradas: configurada,
+    instancia_conectada: instancia.conectada,
+    estado_da_instancia: instancia.estado,
   }
 }
 
@@ -97,7 +111,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
           pessoa: r.func.nome,
           telefone_cadastrado: r.func.telefone || 'SEM TELEFONE — nenhuma mensagem pode ser enviada',
           ativa: r.func.ativo || 'INATIVA — inativo não recebe lembrete nenhum',
-          ...estadoDoCanal(),
+          ...await estadoDoCanal(),
           mensagens: (msgs ?? []).map(m => ({
             mensagem_id: m.id,
             tipo: m.tipo,
@@ -191,7 +205,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
               pessoas_alcancadas: new Set(msgs.map(m => m.funcionario_id)).size,
               tipo: tipo ?? 'todas as que falharam',
               filtro: apenas_sem_registro ? `só quem não registrou ${ROTULO_ETAPA[apenas_sem_registro]}` : 'sem filtro',
-              ...estadoDoCanal(),
+              ...await estadoDoCanal(),
             },
             'quantas pessoas vão receber e qual mensagem',
             'criar'
@@ -210,7 +224,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
           evento_id, escopo, tipo: tipo ?? 'falhadas', quantidade: msgs.length,
         })
 
-        const canal = estadoDoCanal()
+        const canal = await estadoDoCanal()
         return JSON.stringify({
           ok: true,
           reenviadas: msgs.length,
@@ -332,7 +346,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
           }))
 
         return JSON.stringify({
-          ...estadoDoCanal(),
+          ...await estadoDoCanal(),
           resumo_por_tipo: apenas_problemas ? undefined : Object.fromEntries(porTipo),
           total: msgs?.length ?? 0,
           falhadas_amostra: falhadas,

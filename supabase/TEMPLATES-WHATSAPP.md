@@ -1,8 +1,14 @@
-# Templates do WhatsApp (Meta Cloud API)
+# Textos das mensagens de WhatsApp
 
-Estes são os 7 templates que precisam estar **aprovados no WhatsApp Manager**
-antes de ligar o envio (`WHATSAPP_PAUSADO=false`). O sistema só manda template
-— mensagem livre não é permitida pra conversa iniciada pela empresa.
+> ⚠️ **HISTÓRICO.** O sistema voltou a enviar pela **Evolution API**, que manda
+> TEXTO LIVRE — não há mais template a aprovar na Meta, e nada nesta página
+> precisa ser cadastrado em lugar nenhum. Os textos vivem em
+> `lib/mensagens-modelos.ts`; este documento fica como referência do conteúdo e
+> como receita caso um dia se volte para a Cloud API (o código continua
+> produzindo `template + params`, então a volta é trocar `lib/whatsapp.ts`).
+>
+> Configure `EVOLUTION_URL`, `EVOLUTION_INSTANCIA` e `EVOLUTION_APIKEY`, e leia
+> o aviso de banimento no topo de `lib/whatsapp.ts` antes de ligar o envio.
 
 ## Como cadastrar
 
