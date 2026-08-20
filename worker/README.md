@@ -14,8 +14,9 @@ redundante) — os dois chamam a mesma função `processarFilaMensagens()` de
 4. Variáveis de ambiente obrigatórias:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `WHATSAPP_CLOUD_TOKEN` (token permanente do WhatsApp Business Platform, gerado no Meta Business Manager)
-   - `WHATSAPP_PHONE_NUMBER_ID` (ID do número na Cloud API — não é o número em si)
+   - `EVOLUTION_URL` (endereço da instância, ex.: `http://187.77.251.119:8085`)
+   - `EVOLUTION_INSTANCIA` (nome da instância, ex.: `Credenciei`)
+   - `EVOLUTION_APIKEY` (a chave da instância)
 5. Sem porta HTTP exposta — é um processo de background puro (loop `setInterval`), não um servidor.
 
 ## Rodando localmente pra testar

@@ -11,7 +11,8 @@
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
 import { createClient } from '@supabase/supabase-js'
 import { formatarBR } from './tz'
-import { formatarNumeroWhatsApp, enviarWhatsApp, type ResultadoEnvio } from './whatsapp'
+import { formatarNumeroWhatsApp, enviarWhatsApp, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
+import { renderizarMensagem } from './mensagens-modelos'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -385,7 +386,19 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
     .select('*')
 
   let processadas = 0
-  for (const msg of claimados ?? []) {
+  for (const [indice, msg] of (claimados ?? []).entries()) {
+    /*
+     * Espaça os envios com intervalo aleatório.
+     *
+     * Não é cosmético: foi disparar o lote inteiro no mesmo segundo que fez o
+     * WhatsApp marcar o número como robô e bani-lo da vez anterior em que este
+     * projeto usou a Evolution. Um lote de 10 passa a levar ~1 minuto, o que é
+     * irrelevante para lembrete e decisivo para o número sobreviver.
+     */
+    if (indice > 0) {
+      const { min, max } = ESPACAMENTO_MS
+      await new Promise(r => setTimeout(r, min + Math.random() * (max - min)))
+    }
     await enviarUma(msg)
     processadas++
     await new Promise(r => setTimeout(r, pacingAleatorio()))
@@ -601,16 +614,24 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
   const tentativa = msg.tentativas + 1
   const numero = formatarNumeroWhatsApp(msg.telefone)
 
-  const resultado: ResultadoEnvio = numero
-    ? await enviarWhatsApp(numero, envio.template, envio.params)
-    : { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
+  // A Evolution manda texto livre. `montarEnvioTemplate` continua produzindo
+  // template + parâmetros (é lá que estão as consultas e as regras) e o
+  // renderizador transforma isso no texto final — assim voltar pra Cloud API
+  // é trocar lib/whatsapp.ts, sem mexer na montagem.
+  const texto = renderizarMensagem(envio.template, envio.params)
+
+  const resultado: ResultadoEnvio = !numero
+    ? { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
+    : !texto
+      ? { ok: false, statusHttp: 0, resposta: { erro: `Modelo de mensagem desconhecido: ${envio.template}` } }
+      : await enviarWhatsApp(numero, texto)
 
   await supabase.from('mensagens_log').insert({
     mensagem_agendada_id: msg.id,
     tentativa,
     status: resultado.ok ? 'sucesso' : 'erro',
     status_http: resultado.statusHttp,
-    resposta_evolution: resultado.resposta, // coluna legada de nome; agora guarda a resposta da Cloud API
+    resposta_evolution: resultado.resposta,
     erro: resultado.ok ? null : JSON.stringify(resultado.resposta),
     destinatario_telefone: msg.telefone,
     tipo: msg.tipo,
@@ -620,7 +641,7 @@ async function enviarUma(msg: MensagemClaimada): Promise<void> {
     await supabase.from('mensagens_agendadas').update({
       status: 'enviado',
       tentativas: tentativa,
-      evolution_message_id: resultado.messageId ?? null, // coluna legada de nome; agora guarda o wamid da Cloud API
+      evolution_message_id: resultado.messageId ?? null,
       enviado_em: new Date().toISOString(),
       erro: null,
     }).eq('id', msg.id)

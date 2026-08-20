@@ -1,13 +1,20 @@
-// Client fino pra WhatsApp Cloud API (Meta oficial) — substitui a Evolution
-// API (WhatsApp Web não-oficial) depois do banimento do número por padrão
-// de envio automatizado. Sem dependência de Next.js — usado tanto pelos
-// server actions/rotas quanto pelo worker standalone que roda na VPS.
+// Client fino pra Evolution API (WhatsApp Web não-oficial).
 //
-// Diferença que importa pro resto do código: mensagens iniciadas pelo
-// sistema (fora de uma janela de 24h de conversa começada pelo usuário) só
-// podem ser enviadas como TEMPLATE previamente aprovado pela Meta — nunca
-// texto livre. Por isso a assinatura recebe um nome de template + lista de
-// parâmetros, em vez de um texto pronto.
+// ⚠️ HISTÓRICO QUE IMPORTA: este projeto JÁ usou a Evolution, migrou pra Cloud
+// API oficial da Meta depois de o número ser BANIDO por padrão de envio
+// automatizado, e agora voltou pra Evolution a pedido. O risco de banimento
+// não sumiu — ele é inerente a automatizar o WhatsApp Web. Por isso este
+// arquivo tem duas defesas que a versão anterior não tinha:
+//
+//   1. `delay` no próprio payload, que faz a Evolution simular digitação;
+//   2. espaçamento com jitter entre envios (ver ESPACAMENTO_MS), aplicado
+//      por quem processa a fila.
+//
+// Não são garantia. O que de fato reduz banimento é volume baixo, número
+// aquecido e gente respondendo a conversa — nada disso é código.
+//
+// Sem dependência de Next.js: roda tanto nos server actions quanto no worker
+// standalone da VPS.
 
 export type ResultadoEnvio = {
   ok: boolean
@@ -16,9 +23,17 @@ export type ResultadoEnvio = {
   resposta: unknown
 }
 
-const GRAPH_VERSION = 'v21.0'
+/**
+ * Espaçamento entre uma mensagem e a próxima, no processamento da fila.
+ * Disparar 40 mensagens no mesmo segundo é exatamente o padrão que marca o
+ * número como robô.
+ */
+export const ESPACAMENTO_MS = { min: 3_000, max: 8_000 }
 
-/** Normaliza telefone de funcionarios.telefone (10-11 dígitos, sem DDI) pro formato que a Cloud API espera (DDI + DDD + número, sem "+"). */
+/** Simula digitação antes de entregar. Valor em ms, aceito pela Evolution. */
+const DELAY_DIGITACAO_MS = 1_200
+
+/** Normaliza telefone (10-11 dígitos, sem DDI) pro formato com DDI do Brasil. */
 export function formatarNumeroWhatsApp(telefone: string): string | null {
   const digitos = (telefone ?? '').replace(/\D/g, '')
   if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`
@@ -29,42 +44,84 @@ export function formatarNumeroWhatsApp(telefone: string): string | null {
   return null
 }
 
-/**
- * Envia uma mensagem de TEMPLATE via WhatsApp Cloud API. `params` preenche,
- * em ordem, as variáveis {{1}}, {{2}}... do corpo do template (idioma
- * pt_BR). O template precisa já estar aprovado no WhatsApp Manager da Meta
- * com esse nome e essa quantidade de variáveis — nome errado ou template
- * ainda em análise retorna erro da própria API. Nunca lança — erros de
- * rede/API viram { ok: false }.
- */
-export async function enviarWhatsApp(numero: string, templateName: string, params: string[]): Promise<ResultadoEnvio> {
-  const token = process.env.WHATSAPP_CLOUD_TOKEN
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID
-  if (!token || !phoneNumberId) {
-    return { ok: false, statusHttp: 0, resposta: { erro: 'WhatsApp Cloud API não configurada (WHATSAPP_CLOUD_TOKEN/WHATSAPP_PHONE_NUMBER_ID ausentes)' } }
+/** Configuração da instância. Sem ela nada sai — e o erro diz o que falta. */
+type Configuracao =
+  | { ok: false; erro: string }
+  | { ok: true; base: string; instancia: string; apikey: string }
+
+function configuracao(): Configuracao {
+  const base = (process.env.EVOLUTION_URL ?? '').replace(/\/+$/, '')
+  const instancia = process.env.EVOLUTION_INSTANCIA
+  const apikey = process.env.EVOLUTION_APIKEY
+  if (!base || !instancia || !apikey) {
+    return {
+      ok: false,
+      erro: 'Evolution API não configurada (EVOLUTION_URL / EVOLUTION_INSTANCIA / EVOLUTION_APIKEY ausentes)',
+    }
   }
+  return { ok: true, base, instancia, apikey }
+}
+
+/**
+ * Envia uma mensagem de TEXTO pela Evolution.
+ *
+ * Nunca lança: falha de rede ou erro da API viram `{ ok: false }`, porque o
+ * processamento da fila precisa registrar a tentativa e seguir para a próxima
+ * mensagem em vez de abortar o lote inteiro.
+ */
+export async function enviarWhatsApp(numero: string, texto: string): Promise<ResultadoEnvio> {
+  const cfg = configuracao()
+  if (!cfg.ok) return { ok: false, statusHttp: 0, resposta: { erro: cfg.erro } }
 
   try {
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
+    // Evolution v2: POST /message/sendText/{instancia}, autenticação no header.
+    const res = await fetch(`${cfg.base}/message/sendText/${encodeURIComponent(cfg.instancia)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', apikey: cfg.apikey },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: numero,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: 'pt_BR' },
-          ...(params.length ? { components: [{ type: 'body', parameters: params.map(text => ({ type: 'text', text })) }] } : {}),
-        },
+        number: numero,
+        text: texto,
+        delay: DELAY_DIGITACAO_MS,
+        linkPreview: false,
       }),
+      // A instância roda numa VPS própria: sem timeout, uma queda dela
+      // deixaria o worker pendurado e a fila parada.
+      signal: AbortSignal.timeout(20_000),
     })
+
     const resposta = await res.json().catch(() => null)
     if (!res.ok) return { ok: false, statusHttp: res.status, resposta }
-    const messageId = resposta?.messages?.[0]?.id
+
+    // A Evolution devolve a chave da mensagem em `key.id`.
+    const messageId = (resposta as { key?: { id?: string } } | null)?.key?.id
     return { ok: true, statusHttp: res.status, messageId, resposta }
   } catch (e: unknown) {
-    const erro = e instanceof Error ? e.message : 'Falha de rede ao chamar a WhatsApp Cloud API'
+    const erro = e instanceof Error ? e.message : 'Falha de rede ao chamar a Evolution API'
     return { ok: false, statusHttp: 0, resposta: { erro } }
+  }
+}
+
+/**
+ * A instância está conectada ao WhatsApp?
+ *
+ * Serve ao diagnóstico: na Evolution o número desconecta sozinho (celular
+ * desligado, sessão derrubada, número banido) e, quando isso acontece, todo
+ * envio falha em silêncio. Sem esta checagem, a resposta a "por que fulano não
+ * recebeu" seria sempre "erro no envio", sem dizer a causa real.
+ */
+export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string }> {
+  const cfg = configuracao()
+  if (!cfg.ok) return { conectada: false, estado: cfg.erro }
+
+  try {
+    const res = await fetch(`${cfg.base}/instance/connectionState/${encodeURIComponent(cfg.instancia)}`, {
+      headers: { apikey: cfg.apikey },
+      signal: AbortSignal.timeout(10_000),
+    })
+    const corpo = await res.json().catch(() => null)
+    const estado: string = (corpo as { instance?: { state?: string } } | null)?.instance?.state ?? 'desconhecido'
+    return { conectada: estado === 'open', estado }
+  } catch (e: unknown) {
+    return { conectada: false, estado: e instanceof Error ? e.message : 'sem resposta' }
   }
 }
