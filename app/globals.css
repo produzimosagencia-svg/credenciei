@@ -474,11 +474,27 @@ button, [role='button'], a.btn-press {
   overflow-wrap: anywhere;
 }
 .secao-titulo { overflow-wrap: anywhere; }
-.secao-corpo {
-  background: #ffffff;
-  border: 1px solid var(--color-neutro-200);
-  border-radius: 0.625rem;
-  overflow: hidden;
+/*
+ * O `overflow: hidden` existe pra tabela e lista não vazarem pelos cantos
+ * arredondados — mas ele estava FORA de camada nomeada, e regra fora de
+ * camada vence qualquer utilitário do Tailwind (que vive em @layer
+ * utilities), não por especificidade, mas pela ordem da cascata.
+ *
+ * Resultado real: `corpoClassName="overflow-y-auto max-h-[26rem]"` na lista de
+ * fornecedores era ignorado, e a lista aparecia CORTADA, sem barra de rolagem
+ * — o segundo setor sumia sem jeito de alcançar.
+ *
+ * É a mesma armadilha já documentada no topo deste arquivo pro `.truncate`.
+ * Dentro de @layer components, quem escreve utilitário no call site vence,
+ * que é justamente o contrato do resto do sistema (ver `.btn`).
+ */
+@layer components {
+  .secao-corpo {
+    background: #ffffff;
+    border: 1px solid var(--color-neutro-200);
+    border-radius: 0.625rem;
+    overflow: hidden;
+  }
 }
 
 /*
