@@ -11,7 +11,7 @@
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
 import { createClient } from '@supabase/supabase-js'
 import { formatarBR } from './tz'
-import { formatarNumeroWhatsApp, enviarWhatsApp, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
+import { formatarNumeroWhatsApp, enviarWhatsApp, estadoDaInstancia, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
 import { renderizarMensagem } from './mensagens-modelos'
 
 const supabase = createClient(
@@ -359,6 +359,25 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
   // Interruptor de emergência: seta WHATSAPP_PAUSADO=true (worker na VPS e/ou
   // Vercel) pra parar todo envio na hora, sem precisar redeployar.
   if (process.env.WHATSAPP_PAUSADO === 'true') return { processadas: 0 }
+
+  /*
+   * A instância precisa estar CONECTADA antes de qualquer coisa.
+   *
+   * Descoberto testando: com a instância fechada (QR não lido, sessão
+   * derrubada, número banido), o `sendText` da Evolution não recusa — ele
+   * PENDURA até estourar o timeout de 20s. Sem esta checagem, um lote de 10
+   * levaria mais de 3 minutos preso e, pior, gastaria as três tentativas de
+   * cada mensagem até marcá-las como `falhou` em definitivo. Lembrete de
+   * evento perdido não volta.
+   *
+   * Uma consulta por lote resolve: se está fechada, nem reivindica as
+   * mensagens — elas ficam `pendente` esperando a conexão voltar.
+   */
+  const canal = await estadoDaInstancia()
+  if (!canal.conectada) {
+    console.warn(`[mensagens] instância desconectada (${canal.estado}) — nada enviado, fila preservada`)
+    return { processadas: 0 }
+  }
 
   const agoraISO = new Date().toISOString()
 
