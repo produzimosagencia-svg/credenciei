@@ -9,88 +9,117 @@
  * O ganho é reversibilidade: voltar pra Cloud API é trocar `lib/whatsapp.ts`
  * de novo, sem tocar em `montarEnvioTemplate`.
  *
- * Os textos são os mesmos que estavam aprovados na Meta (ver
- * supabase/TEMPLATES-WHATSAPP.md). Mantê-los idênticos importa: eles foram
- * escritos pra explicar as três etapas a quem nunca usou o sistema, e são a
- * única instrução que o funcionário recebe.
+ * Sobre o TOM: quem recebe estas mensagens é o freelancer que vai trabalhar no
+ * evento, no WhatsApp pessoal dele, muitas vezes de madrugada e com pressa.
+ * Emoji aqui não é enfeite — é o que faz a mensagem ser lida em vez de
+ * ignorada como aviso automático, e o que dá âncora visual pra achar a
+ * informação (📍 é o local, 🕐 é o horário, 🔗 é o link) sem ler tudo.
+ *
+ * Emoji marca INFORMAÇÃO, não decora frase. Um por linha útil, sempre o mesmo
+ * símbolo pro mesmo tipo de dado em todas as mensagens — senão vira ruído e
+ * o efeito se perde.
  */
 
 /** Ordem dos parâmetros = a mesma de `montarEnvioTemplate`. */
 const MODELOS: Record<string, (p: string[]) => string> = {
   boas_vindas_funcionario: ([nome, evento, setor, data, local, link]) =>
-`Olá, ${nome}! Seu cadastro no evento ${evento} foi confirmado. ✅
+`Oi, ${nome}! 🎉 Seu cadastro no *${evento}* está confirmado.
 
-Setor: ${setor}
-Data: ${data}
-Local: ${local}
+📋 Setor: ${setor}
+📅 Data: ${data}
+📍 Local: ${local}
 
-Sua credencial está neste link — salve nos favoritos, é ela que você vai usar durante todo o evento:
+🔗 Sua credencial:
 ${link}
 
-Como funciona no dia, em 3 etapas:
+⭐ Salve esse link nos favoritos — é ele que você vai usar o evento inteiro.
 
-1. ENTRADA — ao chegar, procure seu supervisor e mostre o QR Code da credencial.
-2. DURANTE O EVENTO — no horário indicado na credencial, abra o link e tire uma selfie você mesmo, com a localização do celular ligada.
-3. SAÍDA — na hora de ir embora, mostre o QR Code de novo para o supervisor.
+*Como funciona no dia:*
 
-Cada etapa só funciona dentro do horário marcado. Vamos te lembrar por aqui na hora de cada uma.`,
+1️⃣ *CHEGADA* — procure seu supervisor e mostre o QR Code da credencial.
+2️⃣ *DURANTE* — no horário indicado, abra o link e tire uma selfie, com a localização do celular ligada.
+3️⃣ *SAÍDA* — na hora de ir, mostre o QR Code de novo.
+
+⏰ Cada etapa só funciona dentro do horário marcado. Pode ficar tranquilo: a gente te avisa por aqui na hora de cada uma. 😉`,
 
   lembrete_credenciamento: ([nome, evento, instrucao, limite, link]) =>
-`Olá, ${nome}! Chegou a hora de registrar sua presença no evento ${evento}.
+`🔔 ${nome}, chegou a hora de registrar sua presença no *${evento}*!
 
-O que fazer agora: ${instrucao}.
+✅ O que fazer agora: ${instrucao}.
 
-Você tem até às ${limite} para registrar. Depois desse horário o sistema não aceita mais.
+⏰ Você tem até *${limite}* — depois desse horário o sistema não aceita mais.
 
-Sua credencial: ${link}`,
+🔗 Sua credencial:
+${link}`,
 
   reforco_credenciamento: ([nome, evento, instrucao, limite, link]) =>
-`${nome}, atenção: sua presença no evento ${evento} ainda não foi registrada. ⏰
+`⚠️ ${nome}, atenção! Sua presença no *${evento}* ainda não foi registrada.
 
-O que fazer: ${instrucao}.
+✅ O que fazer: ${instrucao}.
 
-O prazo encerra às ${limite}. Depois disso não dá mais para registrar.
+⏳ O prazo encerra às *${limite}*. Depois disso não dá mais.
 
-Sua credencial: ${link}`,
+🔗 Sua credencial:
+${link}
+
+Corre lá! 🏃`,
 
   aviso_dia_evento: ([nome, evento, abre, fecha, link]) =>
-`Bom dia, ${nome}! Hoje é o dia do evento ${evento}. 🎉
+`🎉 Bom dia, ${nome}! Hoje é dia de *${evento}*!
 
-O credenciamento abre às ${abre} e fecha às ${fecha}. Chegue com folga e procure seu supervisor para registrar o QR Code da sua credencial.
+🕐 O credenciamento abre às *${abre}* e fecha às *${fecha}*.
 
-Não esqueça que durante o evento você também precisa fazer o registro por selfie, e mostrar o QR Code de novo na saída.
+📌 Chegue com folga e procure seu supervisor para registrar o QR Code da sua credencial.
 
-Sua credencial: ${link}`,
+Lembrando que durante o evento você também faz o registro por selfie 🤳, e mostra o QR Code de novo na saída 👋
+
+🔗 Sua credencial:
+${link}
+
+Bom trabalho! 💪`,
 
   confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link]) =>
-`Olá, ${nome}! Confirmando sua escala no evento ${evento}.
+`📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.
 
-Função: ${funcao}
-Setor: ${setor}
-Quando: ${quando}
+👤 Função: ${funcao}
+🏷️ Setor: ${setor}
+📅 Quando: ${quando}
 
-${instrucoes}
+📌 ${instrucoes}
 
-Sua credencial com o QR Code: ${link}
+🔗 Sua credencial com o QR Code:
+${link}
 
-Qualquer impedimento, avise seu supervisor o quanto antes.`,
+Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
 
   alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, link]) =>
-`${nome}, atenção: ${quantidade} pessoa(s) do setor ${setor} não registraram a etapa ${etapa}.
+`🚨 ${nome}, atenção!
 
-Veja quem está pendente no painel: ${link}`,
+*${quantidade} pessoa(s)* do setor *${setor}* não registraram a etapa *${etapa}*.
 
-  credenciais_supervisor: ([nome, setor, evento, data, email, senha, login, formulario]) =>
-`Olá, ${nome}! Você foi cadastrado como supervisor do setor ${setor}, no evento ${evento}, que acontece em ${data}.
+🔗 Veja quem está pendente:
+${link}`,
 
-Seu acesso ao sistema:
-E-mail: ${email}
-Senha: ${senha}
-Entre em: ${login}
+  /*
+   * O supervisor recebe NOME DE USUÁRIO, não e-mail: é assim que ele entra.
+   * O endereço interno do banco de autenticação nunca aparece pra ele.
+   */
+  credenciais_supervisor: ([nome, setor, evento, data, usuario, senha, login, formulario]) =>
+`🔑 Olá, ${nome}! Você é o supervisor do setor *${setor}*, no evento *${evento}*, que acontece em *${data}*.
 
-Para a sua equipe se cadastrar, compartilhe este link no grupo do setor: ${formulario}
+*Seu acesso ao sistema:*
+👤 Usuário: *${usuario}*
+🔒 Senha: *${senha}*
+🔗 Entre em: ${login}
 
-No sistema você acompanha quem já se cadastrou, escaneia o QR Code na entrada e na saída, e vê quem está com presença pendente.`,
+⚠️ Entre com o USUÁRIO acima, não com e-mail.
+
+📲 Para sua equipe se cadastrar, mande este link no grupo do setor:
+${formulario}
+
+No sistema você acompanha quem já se cadastrou ✅, escaneia o QR Code na entrada e na saída 📷, e vê quem está com presença pendente ⏰
+
+Bom evento! 🎉`,
 }
 
 /**

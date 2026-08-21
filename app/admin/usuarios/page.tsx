@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Bui
 import { format } from 'date-fns'
 import { podeGerenciarUsuarios, ehMaster, podeExcluir, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
+import { exibirIdentificador } from '@/lib/usuario'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
@@ -219,7 +220,7 @@ export default async function UsuariosPage({
                   <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
                     <span className="flex items-center gap-1 min-w-0">
                       <Mail className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{u.email}</span>
+                      <span className="truncate">{exibirIdentificador(u.email)}</span>
                     </span>
                     <span className="flex items-center gap-1">
                       <Building2 className="w-3 h-3 shrink-0" />

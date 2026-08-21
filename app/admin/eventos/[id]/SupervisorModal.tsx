@@ -5,6 +5,7 @@ import { UserPlus, Pencil, X, Trash2 } from 'lucide-react'
 import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
 import { NomeInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
+import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
 
 type Props =
@@ -104,8 +105,26 @@ export default function SupervisorModal(props: Props) {
               <Field label="Nome completo *">
                 <NomeInput name="nome" required defaultValue={isEditar ? props.supervisor.nome : ''} placeholder="Nome do supervisor" className="input" />
               </Field>
-              <Field label="E-mail *">
-                <input name="email" type="email" required defaultValue={isEditar ? props.supervisor.email : ''} placeholder="email@exemplo.com" className="input" />
+              {/* Nome de usuário, não e-mail: quem trabalha no portão nem sempre
+                  tem endereço à mão, e inventar um travava o cadastro quando o
+                  endereço já existia na plataforma. */}
+              <Field label="Nome de usuário *">
+                <input
+                  name="usuario"
+                  required
+                  minLength={3}
+                  maxLength={32}
+                  defaultValue={isEditar ? exibirIdentificador(props.supervisor.email) : ''}
+                  placeholder="Ex: juan.bar"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="input"
+                />
+                <p className="text-slate-500 text-xs mt-1.5">
+                  É com isto que o supervisor entra no sistema — sem e-mail. Letras, números e ponto.
+                  Ele recebe o usuário e a senha pelo WhatsApp.
+                </p>
               </Field>
               <Field label="Telefone">
                 <TelefoneInput name="telefone" defaultValue={isEditar ? (props.supervisor.telefone ?? '') : ''} placeholder="(11) 99999-9999" className="input" />

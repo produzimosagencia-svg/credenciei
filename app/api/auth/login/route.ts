@@ -1,10 +1,14 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { identificadorParaEmail } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
 
 export async function POST(request: NextRequest) {
   const { email, senha } = await request.json()
+  // Sem "@" é nome de usuário de supervisor; com "@" é e-mail de admin/master.
+  // A mesma tela atende os dois, sem a pessoa escolher tipo de conta.
+  const identificador = identificadorParaEmail(String(email ?? ''))
 
   const cookieStore = await cookies()
 
@@ -24,7 +28,7 @@ export async function POST(request: NextRequest) {
   )
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: identificador,
     password: senha,
   })
 

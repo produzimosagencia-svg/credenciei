@@ -25,6 +25,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import { gerarDias, janelaAbertaAgora, proximaJanela, type Jornada } from './jornada'
 import { validarCpf } from './format'
+import { normalizarUsuario, validarUsuario, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor, agendarBoasVindasFuncionario } from './mensagens'
@@ -367,15 +368,25 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     throw new Error('Sem permissão sobre este setor')
   }
 
-  const nome = (formData.get('nome') as string).trim()
-  const email = (formData.get('email') as string).trim()
+  const nome = ((formData.get('nome') as string) ?? '').trim()
   const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
   const senha = formData.get('senha') as string
   const ativo = formData.get('ativo') !== 'false'
 
-  const admin = getAdminSupabase()
+  /*
+   * Supervisor entra por NOME DE USUÁRIO, não por e-mail.
+   *
+   * Quem trabalha no portão muitas vezes não tem e-mail à mão, e o organizador
+   * acabava inventando um endereço — que precisava ser único na plataforma
+   * inteira e travava o cadastro na hora errada. O nome de usuário vira um
+   * endereço num domínio interno, que ninguém possui e que nunca recebe nada.
+   */
+  const usuario = normalizarUsuario((formData.get('usuario') as string) ?? '')
+  const erroUsuario = validarUsuario(usuario)
+  if (erroUsuario) throw new Error(erroUsuario)
+  const email = usuarioParaEmail(usuario)
 
-  if (!email) throw new Error('Informe o e-mail de acesso do supervisor.')
+  const admin = getAdminSupabase()
   if (!senha || senha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
 
   const { data: user, error } = await admin.auth.admin.createUser({
@@ -383,7 +394,13 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     password: senha,
     email_confirm: true,
   })
-  if (error) throw new Error(mensagemAuth(error.message))
+  if (error) {
+    // O Auth fala em "e-mail"; aqui quem existe é o nome de usuário.
+    const jaExiste = /already|exist|registered/i.test(error.message)
+    throw new Error(jaExiste
+      ? `O nome de usuário "${usuario}" já está em uso. Escolha outro — por exemplo, ${usuario}.2 ou ${usuario}.bar.`
+      : mensagemAuth(error.message))
+  }
 
   /*
    * O perfil PRECISA entrar, e o erro precisa ser lido.
@@ -425,7 +442,9 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
       setorNome: fornecedor.nome,
       eventoNome: eventoDoFornecedor?.nome ?? '',
       dataEvento: formatarBR(eventoDoFornecedor?.data_inicio, 'data'),
-      email,
+      // O supervisor entra com o USUÁRIO; o endereço interno nunca aparece
+      // pra ele.
+      email: usuario,
       senha,
       linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
     }).catch(console.error))
@@ -447,18 +466,25 @@ export async function editarSupervisor(id: string, formData: FormData) {
     throw new Error('Sem permissão sobre este supervisor')
   }
 
-  const nome = (formData.get('nome') as string).trim()
-  const email = (formData.get('email') as string).trim()
+  const nome = ((formData.get('nome') as string) ?? '').trim()
   const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
   const ativo = formData.get('ativo') !== 'false'
   const novaSenha = (formData.get('senha') as string) || ''
   if (novaSenha && novaSenha.length < 6) throw new Error('Senha muito curta. Use ao menos 6 caracteres.')
 
+  const usuario = normalizarUsuario((formData.get('usuario') as string) ?? '')
+  const erroUsuario = validarUsuario(usuario)
+  if (erroUsuario) throw new Error(erroUsuario)
+  const email = usuarioParaEmail(usuario)
+
   const { error: authErr } = await admin.auth.admin.updateUserById(id, {
     email,
     ...(novaSenha ? { password: novaSenha } : {}),
   })
-  if (authErr) throw new Error(mensagemAuth(authErr.message))
+  if (authErr) {
+    const jaExiste = /already|exist|registered/i.test(authErr.message)
+    throw new Error(jaExiste ? `O nome de usuário "${usuario}" já está em uso.` : mensagemAuth(authErr.message))
+  }
 
   await admin.from('perfis').update({ nome, email, telefone, ativo }).eq('id', id)
 
