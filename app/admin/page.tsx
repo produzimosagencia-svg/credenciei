@@ -11,8 +11,6 @@ import { formatarBR } from '@/lib/tz'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
-// APRESENTACAO — temporário. Ver lib/apresentacao.ts para desligar/remover.
-import { APRESENTACAO, fluxoDeExemplo, atividadeDeExemplo, eventoDeExemplo } from '@/lib/apresentacao'
 import { COR_ETAPA } from '@/components/charts'
 import { FluxoDoDia } from '@/components/charts-cliente'
 import EventoActions from './eventos/EventoActions'
@@ -200,15 +198,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     presentes: presentesPorEvento.get(e.id as string)?.size ?? 0,
   })
 
-  const linhasReaisAtivas = (ativos ?? []).map(montar)
+  const linhasAtivas = (ativos ?? []).map(montar)
   const linhasEncerradas = (encerrados ?? []).map(montar)
-
-  // APRESENTACAO — temporário: barra de presença do evento. Só entra quando
-  // NINGUÉM bateu entrada ainda; um único registro real desliga isto.
-  const linhasAtivas =
-    APRESENTACAO && linhasReaisAtivas.every(e => e.presentes === 0)
-      ? linhasReaisAtivas.map(e => ({ ...e, ...eventoDeExemplo() }))
-      : linhasReaisAtivas
   const totalEncerradosCount = totalEncerrados ?? 0
   const totalPages = Math.max(1, Math.ceil(totalEncerradosCount / PAGE_SIZE))
   const totalEventos = linhasAtivas.length + totalEncerradosCount
@@ -242,15 +233,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const tipo = r.tipo as 'entrada' | 'meio' | 'fim'
     if (tipo === 'entrada' || tipo === 'meio' || tipo === 'fim') alvo[tipo]++
   }
-  const fluxoReal = casas.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
-
-  // APRESENTACAO — temporário: curva do gráfico. Só entra com a curva zerada.
-  const semMovimento = fluxoReal.every(f => f.entrada + f.meio + f.fim === 0)
-  const dadosFluxo = APRESENTACAO && semMovimento ? fluxoDeExemplo(fluxoReal) : fluxoReal
-
-  // APRESENTACAO — temporário: feed de atividade. Só entra com o feed vazio.
-  const registrosNaTela =
-    APRESENTACAO && !ultimosRegistros?.length ? atividadeDeExemplo(agora) : ultimosRegistros
+  const dadosFluxo = casas.map(({ hora, entrada, meio, fim }) => ({ hora, entrada, meio, fim }))
+  const registrosNaTela = ultimosRegistros
 
   /*
    * Números do topo. Olham só pros eventos ATIVOS: somar evento encerrado
