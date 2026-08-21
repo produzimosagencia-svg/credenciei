@@ -235,8 +235,12 @@ export default async function UsuariosPage({
                 </div>
 
                 <div className="shrink-0 -mr-1" data-tutorial={i === 0 ? 'usr-acoes' : undefined}>
-                  {u.id !== perfil!.id && podeExcluir(perfil!.role) && (
-                  <UsuarioActions usuarioId={u.id} usuarioNome={u.nome} />
+                  {u.id !== perfil!.id && (
+                  <UsuarioActions
+                    usuarioId={u.id}
+                    usuarioNome={u.nome}
+                    podeExcluir={podeExcluir(perfil!.role)}
+                  />
                 )}
                 </div>
               </div>

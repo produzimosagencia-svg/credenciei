@@ -1,7 +1,7 @@
 import { criarEvento } from '@/lib/actions'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
-import { getPerfil, licencasDeEventoRestantes } from '@/lib/supabase-server'
+import { getPerfil, licencasDeEventoRestantes, supabaseAdmin } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
@@ -38,6 +38,16 @@ export default async function NovoEventoPage() {
   // Sem licença de evento disponível → volta para a lista
   if ((await licencasDeEventoRestantes(perfil)) <= 0) redirect('/admin/eventos')
 
+  /*
+   * O master não pertence a organização nenhuma, então precisa DIZER de quem é
+   * o evento. Sem isso ele nascia órfão: sem dono, invisível pra todo admin, e
+   * com supervisores criados sem vínculo. O admin não vê este campo — o evento
+   * dele é sempre da própria organização.
+   */
+  const organizacoes = ehMaster(perfil?.role)
+    ? (await supabaseAdmin.from('organizacoes').select('id, nome, ativo').order('nome')).data ?? []
+    : []
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
       <div className="max-w-xl space-y-6">
@@ -47,7 +57,7 @@ export default async function NovoEventoPage() {
           descricao="Preencha os dados do evento"
           acoes={<TutorialButton />}
         />
-        <EventoForm action={criarEvento} submitLabel="Criar Evento" />
+        <EventoForm action={criarEvento} submitLabel="Criar Evento" organizacoes={organizacoes} />
       </div>
     </TutorialProvider>
   )
@@ -60,13 +70,30 @@ type EventoDefaults = {
   janela_fim_inicio?: string; janela_fim_fim?: string
 }
 
-function EventoForm({ action, submitLabel, defaults }: {
+function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
   action: (formData: FormData) => Promise<void>
   submitLabel: string
   defaults?: EventoDefaults
+  /** Só o master recebe a lista; vazia esconde o campo. */
+  organizacoes?: { id: string; nome: string; ativo: boolean }[]
 }) {
   return (
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
+      {!!organizacoes.length && (
+        <Field label="Organização dona do evento *">
+          <select name="organizacao_id" required defaultValue="" className="input">
+            <option value="" disabled>Escolha o cliente…</option>
+            {organizacoes.map(o => (
+              <option key={o.id} value={o.id} disabled={!o.ativo}>
+                {o.nome}{o.ativo ? '' : ' (suspensa)'}
+              </option>
+            ))}
+          </select>
+          <p className="text-slate-500 text-xs mt-1.5">
+            É quem vai enxergar e operar este evento. Sem dono, o evento não aparece pra nenhum administrador.
+          </p>
+        </Field>
+      )}
       <Field label="Nome do evento *" tutorial="evt-novo-nome">
         <NomeInput name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />
       </Field>

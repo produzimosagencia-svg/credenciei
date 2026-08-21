@@ -496,7 +496,25 @@ export async function criarEvento(formData: FormData) {
   if (!perfil || !podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão para criar eventos')
 
   const admin = getAdminSupabase()
-  const organizacaoId = perfil.organizacao_id
+
+  /*
+   * De quem é o evento.
+   *
+   * O admin cria sempre para a própria organização. O MASTER não pertence a
+   * nenhuma (organizacao_id nulo), então antes o evento nascia órfão — sem
+   * organização, invisível para qualquer admin e com supervisores criados sem
+   * vínculo. Agora ele escolhe no formulário, e a escolha é obrigatória.
+   */
+  let organizacaoId = perfil.organizacao_id
+  if (ehMaster(perfil.role)) {
+    const escolhida = (formData.get('organizacao_id') as string | null)?.trim()
+    if (!escolhida) throw new Error('Escolha a organização dona deste evento.')
+    const { data: org } = await admin.from('organizacoes').select('id, ativo').eq('id', escolhida).single()
+    if (!org) throw new Error('Organização não encontrada.')
+    if (!org.ativo) throw new Error('Esta organização está suspensa. Reative-a antes de criar eventos.')
+    organizacaoId = escolhida
+  }
+
   let driveFolder: string | null = perfil.drive_folder_id ?? null
 
   // Admin: respeita o limite de eventos e o status da organização
@@ -602,6 +620,87 @@ export async function deletarEvento(id: string) {
   revalidatePath('/admin/eventos')
   revalidatePath('/admin')
   redirect('/admin/eventos')
+}
+
+/**
+ * Move um evento de organização — ou dá dono a um evento órfão.
+ *
+ * Evento criado pelo master nascia sem organização (ele não pertence a
+ * nenhuma), e evento sem dono some da tela de todo admin. É a correção para os
+ * que já ficaram assim, e a forma de transferir um evento entre clientes.
+ *
+ * Só o master: mover evento entre organizações é mexer no dado de dois
+ * clientes ao mesmo tempo.
+ */
+export async function atribuirEventoAOrganizacao(eventoId: string, organizacaoId: string | null) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Apenas o master atribui eventos a organizações')
+
+  const db = supabaseAdmin
+  const { data: evento } = await db.from('eventos').select('id, nome').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+
+  let nomeOrg = 'nenhuma organização'
+  if (organizacaoId) {
+    const { data: org } = await db.from('organizacoes').select('id, nome').eq('id', organizacaoId).single()
+    if (!org) throw new Error('Organização não encontrada')
+    nomeOrg = org.nome
+  }
+
+  const { error } = await db.from('eventos').update({ organizacao_id: organizacaoId }).eq('id', eventoId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  /*
+   * Os perfis vinculados aos setores deste evento acompanham a mudança. Sem
+   * isto o supervisor continuaria apontando pra organização antiga e veria
+   * (ou deixaria de ver) coisa errada — o vínculo dele com o setor é o que
+   * define a organização a que ele pertence.
+   */
+  const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', eventoId)
+  const idsSetores = (setores ?? []).map(f => f.id)
+  if (idsSetores.length) {
+    await db.from('perfis').update({ organizacao_id: organizacaoId }).in('fornecedor_id', idsSetores)
+  }
+
+  revalidatePath('/admin/organizacoes')
+  revalidatePath('/admin/eventos')
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath('/admin')
+  return { ok: true as const, evento: evento.nome, organizacao: nomeOrg, supervisores: idsSetores.length }
+}
+
+/**
+ * Redefine a senha de qualquer acesso.
+ *
+ * Existe porque a troca de senha só era possível pela tela de supervisor —
+ * admin e master não tinham nenhum caminho, e quem esquece a senha fica de
+ * fora do próprio sistema no dia do evento.
+ *
+ * Master mexe em qualquer um; admin só na própria equipe. Ninguém redefine a
+ * própria senha por aqui: para isso existe o fluxo de conta, e um caminho
+ * administrativo sobre si mesmo só serve pra confundir.
+ */
+export async function redefinirSenha(usuarioId: string, novaSenha: string) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para redefinir senhas')
+  if (!novaSenha || novaSenha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
+
+  const admin = getAdminSupabase()
+  const { data: alvo } = await admin.from('perfis').select('id, nome, email, role, organizacao_id').eq('id', usuarioId).single()
+  if (!alvo) throw new Error('Usuário não encontrado')
+
+  // Admin não mexe em quem é de outra organização, nem em master.
+  if (!ehMaster(perfil!.role)) {
+    if (alvo.organizacao_id !== perfil!.organizacao_id) throw new Error('Sem permissão sobre este usuário')
+    if (alvo.role === 'master') throw new Error('Sem permissão sobre este usuário')
+  }
+
+  const { error } = await admin.auth.admin.updateUserById(usuarioId, { password: novaSenha })
+  if (error) throw new Error(mensagemAuth(error.message))
+
+  console.warn(`[redefinirSenha] ${perfil!.email} redefiniu a senha de ${alvo.email}`)
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const, nome: alvo.nome as string, email: alvo.email as string }
 }
 
 // ─── Fornecedores ────────────────────────────────────────────────────────────
