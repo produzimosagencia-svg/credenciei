@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
-  CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight,
+  CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Search, X,
   TrendingUp, Activity, Radio, UserCheck, Clock,
 } from 'lucide-react'
 import StatCard from '@/components/StatCard'
@@ -92,7 +92,7 @@ type LinhaEvento = {
   presentes: number
 }
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   // Supervisor não gerencia nada: vai direto pro painel do próprio setor
@@ -107,7 +107,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const licencasRestantes = await licencasDeEventoRestantes(perfil)
   const podeCriarEvento = licencasRestantes > 0
 
-  const { page: pageParam } = await searchParams
+  const { page: pageParam, q } = await searchParams
+  const busca = (q ?? '').trim()
   const page = Math.max(1, Number(pageParam) || 1)
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
@@ -117,6 +118,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (!veTodosEventos(perfil.role)) {
     ativosQuery.eq('organizacao_id', perfil.organizacao_id)
     encerradosQuery.eq('organizacao_id', perfil.organizacao_id)
+  }
+  /*
+   * Busca por nome OU local: com muitos eventos, "onde foi aquele da Arena?"
+   * é uma pergunta tão comum quanto o nome exato — e o nome quase nunca é
+   * lembrado inteiro.
+   */
+  if (busca) {
+    const filtro = `nome.ilike.%${busca}%,local.ilike.%${busca}%`
+    ativosQuery.or(filtro)
+    encerradosQuery.or(filtro)
   }
 
   // Uma leitura só do relógio pra toda a página.
@@ -202,6 +213,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const linhasEncerradas = (encerrados ?? []).map(montar)
   const totalEncerradosCount = totalEncerrados ?? 0
   const totalPages = Math.max(1, Math.ceil(totalEncerradosCount / PAGE_SIZE))
+
+  /** Trocar de página não pode perder a busca, e vice-versa. */
+  const urlPagina = (n: number) => {
+    const p = new URLSearchParams()
+    if (busca) p.set('q', busca)
+    if (n > 1) p.set('page', String(n))
+    const qs = p.toString()
+    return `/admin${qs ? `?${qs}` : ''}`
+  }
   const totalEventos = linhasAtivas.length + totalEncerradosCount
 
   /**
@@ -295,24 +315,65 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * com uma lista encolhida aqui dizendo "ver todos": duas telas pro mesmo
    * conteúdo — agora é só esta.)
    */
+  /*
+   * Busca de eventos. Fica colada na lista, e não no topo da tela: ela filtra
+   * os eventos, não os indicadores — que continuam contando a operação
+   * inteira. Form GET, então o filtro vira URL e dá pra mandar o link pronto
+   * pra outra pessoa da produção.
+   */
+  const barraDeBusca = (
+    <form className="flex gap-2">
+      <div className="relative flex-1 max-w-md">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          name="q"
+          defaultValue={busca}
+          placeholder="Buscar evento por nome ou local..."
+          className="input"
+          style={{ paddingLeft: 36 }}
+        />
+      </div>
+      {busca && (
+        <Link href="/admin" className="btn btn-secundario btn-icone shrink-0" aria-label="Limpar busca">
+          <X className="w-4 h-4" />
+        </Link>
+      )}
+    </form>
+  )
+
   const blocoEventos = !totalEventos ? (
-    <Secao titulo="Eventos" descricao="Cada evento reúne os setores, a equipe e as presenças do dia">
-      <EmptyState
-        icone={<CalendarDays className="w-7 h-7" />}
-        titulo="Nenhum evento criado"
-        descricao={
-          podeCriarEvento
-            ? 'Crie seu primeiro evento para começar'
-            : 'Suas licenças de evento acabaram. Fale com o administrador da plataforma para liberar mais.'
-        }
-        acao={
-          podeCriarEvento ? (
-            <Link href="/admin/eventos/novo" className="btn btn-primario">
-              <Plus className="w-3.5 h-3.5" /> Criar evento
-            </Link>
-          ) : undefined
-        }
-      />
+    /* "Nada encontrado" e "nenhum evento criado" são situações diferentes, e
+       oferecer "Criar evento" a quem só errou a busca manda a pessoa pro
+       lugar errado. */
+    <Secao
+      titulo={busca ? 'Busca de eventos' : 'Eventos'}
+      descricao={busca ? `Nenhum resultado para "${busca}"` : 'Cada evento reúne os setores, a equipe e as presenças do dia'}
+    >
+      {busca ? (
+        <EmptyState
+          icone={<Search className="w-7 h-7" />}
+          titulo="Nenhum evento encontrado"
+          descricao="Tente outro nome ou o local do evento."
+          acao={<Link href="/admin" className="btn btn-secundario">Limpar busca</Link>}
+        />
+      ) : (
+        <EmptyState
+          icone={<CalendarDays className="w-7 h-7" />}
+          titulo="Nenhum evento criado"
+          descricao={
+            podeCriarEvento
+              ? 'Crie seu primeiro evento para começar'
+              : 'Suas licenças de evento acabaram. Fale com o administrador da plataforma para liberar mais.'
+          }
+          acao={
+            podeCriarEvento ? (
+              <Link href="/admin/eventos/novo" className="btn btn-primario">
+                <Plus className="w-3.5 h-3.5" /> Criar evento
+              </Link>
+            ) : undefined
+          }
+        />
+      )}
     </Secao>
   ) : (
     <div className="space-y-4">
@@ -349,7 +410,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
               <div className="flex items-center gap-1">
                 <Link
-                  href={`/admin?page=${page - 1}`}
+                  href={urlPagina(page - 1)}
                   aria-disabled={page <= 1}
                   aria-label="Página anterior"
                   className={`btn btn-secundario btn-icone ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}
@@ -357,7 +418,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                   <ChevronLeft className="w-4 h-4" />
                 </Link>
                 <Link
-                  href={`/admin?page=${page + 1}`}
+                  href={urlPagina(page + 1)}
                   aria-disabled={page >= totalPages}
                   aria-label="Próxima página"
                   className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
@@ -400,6 +461,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
+
+      {(!!totalEventos || busca) && barraDeBusca}
 
       {blocoEventos}
 
