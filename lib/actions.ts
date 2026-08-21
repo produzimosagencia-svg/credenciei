@@ -245,13 +245,21 @@ export async function criarOrganizacao(formData: FormData) {
     throw new Error(mensagemAuth(userErr.message))
   }
 
-  await admin.from('perfis').insert([{
+  // Mesmo cuidado do supervisor: sem checar o erro, o usuário do Auth ficava
+  // órfão e o e-mail do cliente ficava queimado para sempre.
+  const { error: erroPerfilAdmin } = await admin.from('perfis').insert([{
     id: user.user!.id,
     nome: adminNome,
     email,
     role: 'admin',
     organizacao_id: org.id,
   }])
+  if (erroPerfilAdmin) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    await admin.from('organizacoes').delete().eq('id', org.id)
+    console.error('[criarOrganizacao] falha ao inserir perfil do admin', erroPerfilAdmin)
+    throw new Error(mensagemAmigavel(erroPerfilAdmin))
+  }
 
   // 4) Primeiro evento da organização (apenas se o master preencheu os dados)
   if (criarPrimeiroEvento) {
@@ -367,6 +375,9 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   const admin = getAdminSupabase()
 
+  if (!email) throw new Error('Informe o e-mail de acesso do supervisor.')
+  if (!senha || senha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
+
   const { data: user, error } = await admin.auth.admin.createUser({
     email,
     password: senha,
@@ -374,7 +385,18 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   })
   if (error) throw new Error(mensagemAuth(error.message))
 
-  await admin.from('perfis').insert([{
+  /*
+   * O perfil PRECISA entrar, e o erro precisa ser lido.
+   *
+   * Antes o insert era disparado sem checar `error`: quando ele falhava, o
+   * usuário do Auth já existia e ficava órfão — conta sem perfil, invisível no
+   * sistema e impossível de recriar, porque o e-mail passava a acusar "já
+   * cadastrado". Havia 9 contas nesse estado quando isto foi descoberto.
+   *
+   * Falhando, desfazemos a criação no Auth. Sem esse rollback, uma tentativa
+   * malsucedida queima o endereço de e-mail da pessoa para sempre.
+   */
+  const { error: erroPerfil } = await admin.from('perfis').insert([{
     id: user.user!.id,
     nome,
     email,
@@ -384,6 +406,14 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     organizacao_id: organizacaoId,
     fornecedor_id: fornecedorId,
   }])
+
+  if (erroPerfil) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    console.error('[criarSupervisor] falha ao inserir perfil', {
+      fornecedorId, eventoId, organizacaoId, erro: erroPerfil,
+    })
+    throw new Error(mensagemAmigavel(erroPerfil))
+  }
 
   // Envia as credenciais de acesso por WhatsApp (não bloqueia; sobrevive ao serverless)
   if (telefone) {
