@@ -542,7 +542,33 @@ export async function deletarEvento(id: string) {
   const perfil = await getPerfil()
   if (!podeExcluirEventos(perfil?.role)) throw new Error('Apenas o master pode excluir eventos')
   const db = supabaseAdmin
-  await db.from('eventos').delete().eq('id', id)
+
+  /*
+   * Desvincula os supervisores ANTES de apagar.
+   *
+   * `perfis.fornecedor_id` referencia `fornecedores(id)` sem `on delete`, então
+   * o padrão do Postgres é BLOQUEAR. Apagar o evento cascateia pros setores, e
+   * qualquer supervisor ligado a um deles derrubava a operação inteira com
+   * violação de chave estrangeira.
+   *
+   * Desvincular é o desfecho certo: o supervisor é a conta de uma PESSOA, que
+   * continua existindo depois do evento — o que deixa de fazer sentido é o
+   * vínculo com um setor que não existe mais. Apagar a conta junto seria pior;
+   * bloquear a exclusão obrigaria o master a caçar supervisor por supervisor
+   * antes de remover um evento de teste.
+   */
+  const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', id)
+  const idsSetores = (setores ?? []).map(f => f.id)
+  if (idsSetores.length) {
+    await db.from('perfis').update({ fornecedor_id: null }).in('fornecedor_id', idsSetores)
+  }
+
+  // O erro precisa ser LIDO. Sem isto, uma falha de chave estrangeira era
+  // descartada em silêncio e o código seguia pro redirect — a tela voltava
+  // pra lista, o evento continuava lá, e nada explicava o porquê.
+  const { error } = await db.from('eventos').delete().eq('id', id)
+  if (error) throw new Error(mensagemAmigavel(error))
+
   revalidatePath('/admin/eventos')
   revalidatePath('/admin')
   redirect('/admin/eventos')
@@ -815,7 +841,8 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
     throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
   }
   const db = supabaseAdmin
-  await db.from('funcionarios').delete().eq('id', id)
+  const { error } = await db.from('funcionarios').delete().eq('id', id)
+  if (error) throw new Error(mensagemAmigavel(error))
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
