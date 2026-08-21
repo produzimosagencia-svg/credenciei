@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { CalendarDays, Plus, X, AlertCircle } from 'lucide-react'
 import { atribuirEventoAOrganizacao } from '@/lib/actions'
+import SeletorLista from '@/components/SeletorLista'
 
 export type EventoResumo = { id: string; nome: string; data: string; ativo: boolean }
 
@@ -60,30 +61,43 @@ export default function EventosDaOrganizacao({
       {/* Anexar: só aparece quando existe evento sem dono, senão seria um
           botão que nunca tem o que oferecer. */}
       {abrindo && (
-        <div className="flex flex-wrap items-center gap-2 mb-2.5 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
-          <select
-            value={escolhido}
-            onChange={e => setEscolhido(e.target.value)}
-            className="input flex-1 min-w-48"
-          >
-            <option value="">Evento sem organização…</option>
-            {semDono.map(e => (
-              <option key={e.id} value={e.id}>{e.nome} · {e.data}</option>
-            ))}
-          </select>
+        <div className="mb-2.5 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-slate-500 text-2xs font-semibold uppercase tracking-wide">
+              Anexar evento a {organizacaoNome}
+            </p>
+            <button
+              onClick={() => { setAbrindo(false); setEscolhido(''); setErro(null) }}
+              aria-label="Cancelar"
+              className="btn-press w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Mesmo desenho do seletor de data: botão que abre modal, e não o
+              <select> nativo, que herda a aparência do sistema operacional e
+              destoa do resto da tela. */}
+          <SeletorLista
+            opcoes={semDono.map(e => ({
+              valor: e.id,
+              rotulo: e.nome,
+              detalhe: `${e.data}${e.ativo ? '' : ' · encerrado'}`,
+            }))}
+            valor={escolhido}
+            onChange={setEscolhido}
+            placeholder="Escolher evento sem organização…"
+            titulo="Eventos sem organização"
+            vazio="Todos os eventos já têm dono."
+            busca={semDono.length > 6}
+          />
+
           <button
             onClick={() => escolhido && mover(escolhido, organizacaoId)}
             disabled={!escolhido || pendente}
-            className="btn btn-primario btn-sm"
+            className="btn btn-primario btn-sm w-full"
           >
-            {pendente ? 'Anexando…' : `Anexar a ${organizacaoNome}`}
-          </button>
-          <button
-            onClick={() => { setAbrindo(false); setEscolhido(''); setErro(null) }}
-            aria-label="Cancelar"
-            className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200"
-          >
-            <X className="w-4 h-4" />
+            {pendente ? 'Anexando…' : 'Anexar ao cliente'}
           </button>
         </div>
       )}
