@@ -18,7 +18,7 @@ import {
 import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
 import { registrarEstadoWhatsApp } from './saude'
 import { formatCpf } from './format'
-import { formatarNumeroWhatsApp, enviarWhatsApp, estadoDaInstancia, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
+import { formatarNumeroWhatsApp, enviarMensagem, estadoDaInstancia, ESPACAMENTO_MS, provedor, type ResultadoEnvio } from './whatsapp'
 import { renderizarMensagem } from './mensagens-modelos'
 
 const supabase = createClient(
@@ -909,18 +909,31 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
   // é trocar lib/whatsapp.ts, sem mexer na montagem.
   const texto = renderizarMensagem(envio.template, envio.params)
 
+  /*
+   * O conteúdo vai nas duas formas, e o canal ativo escolhe.
+   *
+   * A Cloud API precisa do template com os parâmetros soltos (fora da janela
+   * de 24h ela não aceita texto livre); a Evolution precisa do texto pronto.
+   * Montar os dois aqui é o que permite trocar de canal por variável de
+   * ambiente, sem deploy — ver lib/whatsapp.ts.
+   */
   const resultado: ResultadoEnvio = !numero
     ? { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
     : !texto
       ? { ok: false, statusHttp: 0, resposta: { erro: `Modelo de mensagem desconhecido: ${envio.template}` } }
-      : await enviarWhatsApp(numero, texto)
+      : await enviarMensagem({
+          numero,
+          template: envio.template,
+          parametros: envio.params,
+          texto,
+        })
 
   await supabase.from('mensagens_log').insert({
     mensagem_agendada_id: msg.id,
     tentativa,
     status: resultado.ok ? 'sucesso' : 'erro',
     status_http: resultado.statusHttp,
-    resposta_evolution: resultado.resposta,
+    resposta_evolution: { provedor: provedor(), ...(resultado.resposta as object ?? {}) },
     erro: resultado.ok ? null : JSON.stringify(resultado.resposta),
     destinatario_telefone: msg.telefone,
     tipo: msg.tipo,

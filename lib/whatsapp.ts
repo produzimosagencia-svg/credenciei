@@ -1,127 +1,85 @@
-// Client fino pra Evolution API (WhatsApp Web não-oficial).
+// Por onde o WhatsApp sai — a Cloud API da Meta ou a Evolution.
 //
-// ⚠️ HISTÓRICO QUE IMPORTA: este projeto JÁ usou a Evolution, migrou pra Cloud
-// API oficial da Meta depois de o número ser BANIDO por padrão de envio
-// automatizado, e agora voltou pra Evolution a pedido. O risco de banimento
-// não sumiu — ele é inerente a automatizar o WhatsApp Web. Por isso este
-// arquivo tem duas defesas que a versão anterior não tinha:
+// ─── POR QUE OS DOIS CONVIVEM ───────────────────────────────────────────────
 //
-//   1. `delay` no próprio payload, que faz a Evolution simular digitação;
-//   2. espaçamento com jitter entre envios (ver ESPACAMENTO_MS), aplicado
-//      por quem processa a fila.
+// A troca acontece no meio de uma operação com equipe já cadastrada e evento
+// marcado. Um corte seco deixaria o sistema sem canal se algo desse errado na
+// Cloud API (número ainda em verificação, template não aprovado, camada de
+// destinatários baixa demais). Com o seletor, voltar é mudar uma variável de
+// ambiente — não um deploy às pressas na véspera do evento.
 //
-// Não são garantia. O que de fato reduz banimento é volume baixo, número
-// aquecido e gente respondendo a conversa — nada disso é código.
+// O padrão é a Cloud API assim que o token existe. A Evolution fica como saída
+// de emergência, sabendo do preço: ela derrubou o número duas vezes, e a
+// segunda foi com 51 mensagens num único dia.
 //
-// Sem dependência de Next.js: roda tanto nos server actions quanto no worker
-// standalone da VPS.
+// ─── A DIFERENÇA QUE O RESTO DO SISTEMA PRECISA CONHECER ────────────────────
+//
+// A Evolution manda TEXTO LIVRE. A Cloud API, fora da janela de 24h, só manda
+// TEMPLATE APROVADO com os parâmetros separados. Por isso `enviarMensagem`
+// recebe as duas formas do mesmo conteúdo — o template com os parâmetros e o
+// texto já renderizado — e cada provedor usa a que sabe entregar.
 
-export type ResultadoEnvio = {
-  ok: boolean
-  statusHttp: number
-  messageId?: string
-  resposta: unknown
-}
+import {
+  enviarTemplate, enviarTextoLivre, estadoDaInstancia as estadoMeta,
+  formatarNumeroWhatsApp as formatarMeta, ESPACAMENTO_MS as ESPACAMENTO_META,
+  type ResultadoEnvio,
+} from './whatsapp-meta'
+import {
+  enviarTextoEvolution, estadoEvolution, ESPACAMENTO_EVOLUTION,
+} from './whatsapp-evolution'
+
+export type { ResultadoEnvio }
+
+export type Provedor = 'meta' | 'evolution'
 
 /**
- * Espaçamento entre uma mensagem e a próxima, no processamento da fila.
- * Disparar 40 mensagens no mesmo segundo é exatamente o padrão que marca o
- * número como robô.
+ * Qual canal usar.
+ *
+ * `WHATSAPP_PROVEDOR` manda quando definido. Sem ela, a presença do token da
+ * Meta decide — quem configurou a Cloud API quer usá-la, e exigir uma segunda
+ * variável só para dizer isso seria mais um passo para esquecer.
  */
-export const ESPACAMENTO_MS = { min: 3_000, max: 8_000 }
+export function provedor(): Provedor {
+  const escolhido = (process.env.WHATSAPP_PROVEDOR ?? '').trim().toLowerCase()
+  if (escolhido === 'meta' || escolhido === 'evolution') return escolhido
+  return process.env.WHATSAPP_TOKEN ? 'meta' : 'evolution'
+}
 
-/** Simula digitação antes de entregar. Valor em ms, aceito pela Evolution. */
-const DELAY_DIGITACAO_MS = 1_200
+/** Espaçamento entre envios na fila — cada canal tem o seu risco. */
+export const ESPACAMENTO_MS = provedor() === 'meta' ? ESPACAMENTO_META : ESPACAMENTO_EVOLUTION
 
 /** Normaliza telefone (10-11 dígitos, sem DDI) pro formato com DDI do Brasil. */
-export function formatarNumeroWhatsApp(telefone: string): string | null {
-  const digitos = (telefone ?? '').replace(/\D/g, '')
-  if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`
-  if (digitos.length === 12 || digitos.length === 13) {
-    // já parece vir com DDI
-    return digitos.startsWith('55') ? digitos : null
-  }
-  return null
-}
+export const formatarNumeroWhatsApp = formatarMeta
 
-/** Configuração da instância. Sem ela nada sai — e o erro diz o que falta. */
-type Configuracao =
-  | { ok: false; erro: string }
-  | { ok: true; base: string; instancia: string; apikey: string }
-
-function configuracao(): Configuracao {
-  const base = (process.env.EVOLUTION_URL ?? '').replace(/\/+$/, '')
-  const instancia = process.env.EVOLUTION_INSTANCIA
-  const apikey = process.env.EVOLUTION_APIKEY
-  if (!base || !instancia || !apikey) {
-    return {
-      ok: false,
-      erro: 'Evolution API não configurada (EVOLUTION_URL / EVOLUTION_INSTANCIA / EVOLUTION_APIKEY ausentes)',
-    }
-  }
-  return { ok: true, base, instancia, apikey }
+/**
+ * Manda a mensagem pelo canal ativo.
+ *
+ * Recebe o conteúdo nas duas formas de propósito: a Cloud API precisa do
+ * template com os parâmetros soltos, a Evolution precisa do texto pronto.
+ * Quem chama monta as duas uma vez e não precisa saber qual canal está no ar.
+ */
+export async function enviarMensagem(params: {
+  numero: string
+  template: string
+  parametros: string[]
+  texto: string
+}): Promise<ResultadoEnvio> {
+  return provedor() === 'meta'
+    ? enviarTemplate(params.numero, params.template, params.parametros)
+    : enviarTextoEvolution(params.numero, params.texto)
 }
 
 /**
- * Envia uma mensagem de TEXTO pela Evolution.
- *
- * Nunca lança: falha de rede ou erro da API viram `{ ok: false }`, porque o
- * processamento da fila precisa registrar a tentativa e seguir para a próxima
- * mensagem em vez de abortar o lote inteiro.
+ * Resposta em conversa aberta (dentro das 24h). Texto livre nos dois canais —
+ * na Cloud API é o único caso em que texto livre é permitido.
  */
-export async function enviarWhatsApp(numero: string, texto: string): Promise<ResultadoEnvio> {
-  const cfg = configuracao()
-  if (!cfg.ok) return { ok: false, statusHttp: 0, resposta: { erro: cfg.erro } }
-
-  try {
-    // Evolution v2: POST /message/sendText/{instancia}, autenticação no header.
-    const res = await fetch(`${cfg.base}/message/sendText/${encodeURIComponent(cfg.instancia)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: cfg.apikey },
-      body: JSON.stringify({
-        number: numero,
-        text: texto,
-        delay: DELAY_DIGITACAO_MS,
-        linkPreview: false,
-      }),
-      // A instância roda numa VPS própria: sem timeout, uma queda dela
-      // deixaria o worker pendurado e a fila parada.
-      signal: AbortSignal.timeout(20_000),
-    })
-
-    const resposta = await res.json().catch(() => null)
-    if (!res.ok) return { ok: false, statusHttp: res.status, resposta }
-
-    // A Evolution devolve a chave da mensagem em `key.id`.
-    const messageId = (resposta as { key?: { id?: string } } | null)?.key?.id
-    return { ok: true, statusHttp: res.status, messageId, resposta }
-  } catch (e: unknown) {
-    const erro = e instanceof Error ? e.message : 'Falha de rede ao chamar a Evolution API'
-    return { ok: false, statusHttp: 0, resposta: { erro } }
-  }
+export async function responderConversa(numero: string, texto: string): Promise<ResultadoEnvio> {
+  return provedor() === 'meta'
+    ? enviarTextoLivre(numero, texto)
+    : enviarTextoEvolution(numero, texto)
 }
 
-/**
- * A instância está conectada ao WhatsApp?
- *
- * Serve ao diagnóstico: na Evolution o número desconecta sozinho (celular
- * desligado, sessão derrubada, número banido) e, quando isso acontece, todo
- * envio falha em silêncio. Sem esta checagem, a resposta a "por que fulano não
- * recebeu" seria sempre "erro no envio", sem dizer a causa real.
- */
+/** O canal está saudável? Alimenta a faixa de alerta do Painel. */
 export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string }> {
-  const cfg = configuracao()
-  if (!cfg.ok) return { conectada: false, estado: cfg.erro }
-
-  try {
-    const res = await fetch(`${cfg.base}/instance/connectionState/${encodeURIComponent(cfg.instancia)}`, {
-      headers: { apikey: cfg.apikey },
-      signal: AbortSignal.timeout(10_000),
-    })
-    const corpo = await res.json().catch(() => null)
-    const estado: string = (corpo as { instance?: { state?: string } } | null)?.instance?.state ?? 'desconhecido'
-    return { conectada: estado === 'open', estado }
-  } catch (e: unknown) {
-    return { conectada: false, estado: e instanceof Error ? e.message : 'sem resposta' }
-  }
+  return provedor() === 'meta' ? estadoMeta() : estadoEvolution()
 }
