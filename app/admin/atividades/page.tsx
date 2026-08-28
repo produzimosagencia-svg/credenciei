@@ -4,6 +4,7 @@ import { Activity, QrCode, Camera, UserCheck, Clock, MapPin, ShieldCheck } from 
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeEscanear } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
+import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
 import { formatCpf } from '@/lib/format'
 import { COR_ETAPA } from '@/components/charts'
 import StatCard from '@/components/StatCard'
@@ -71,6 +72,10 @@ export default async function AtividadesPage({
   if (!podeEscanear(perfil.role)) redirect('/admin')
 
   const { evento: eventoParam, etapa: etapaParam } = await searchParams
+
+  // Um instante só para o render inteiro: duas leituras de relógio na mesma
+  // página podiam cair em dias diferentes na virada da meia-noite.
+  const agoraDoRender = new Date()
   const filtroEtapa = ETAPAS.includes(etapaParam as Etapa) ? (etapaParam as Etapa) : null
 
   // ─── Escopo ───────────────────────────────────────────────────────────────
@@ -186,18 +191,47 @@ export default async function AtividadesPage({
   // limitado), então vêm de uma consulta própria de contagem.
   const { data: todosRegistros } = await supabaseAdmin
     .from('registros')
-    .select('funcionario_id, tipo, created_at')
+    .select('funcionario_id, tipo, created_at, data_ref')
     .eq('evento_id', escolhido.id)
+    /*
+     * Só hoje e ontem.
+     *
+     * "Quem não chegou" e "presentes agora" são perguntas sobre o DIA. Olhando
+     * o evento inteiro, a partir do dia 2 ninguém apareceria como faltante (a
+     * entrada de ontem conta) e todo mundo que já trabalhou algum dia contaria
+     * como presente. Ontem entra por causa do turno que vira a madrugada.
+     */
+    .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
     .in('tipo', ETAPAS as unknown as string[])
 
   const idsEquipe = new Set((equipe ?? []).map(f => f.id))
-  const meus = (todosRegistros ?? []).filter(r => idsEquipe.has(r.funcionario_id))
+
+  // O ciclo aberto de cada pessoa: o dia da entrada mais recente dentro do
+  // teto de turno, ou hoje. Mesma regra do scanner (ver TETO_TURNO_H).
+  const agoraMs = agoraDoRender.getTime()
+  const hojeRef = diaBRT(agoraDoRender)
+  const diaPorFunc = new Map<string, string>()
+  for (const r of todosRegistros ?? []) {
+    if (r.tipo !== 'entrada') continue
+    if (agoraMs - new Date(r.created_at as string).getTime() > TETO_TURNO_H * 60 * 60 * 1000) continue
+    const dia = (r.data_ref as string | null) ?? diaBRT(r.created_at as string)
+    const atual = diaPorFunc.get(r.funcionario_id as string)
+    if (!atual || dia > atual) diaPorFunc.set(r.funcionario_id as string, dia)
+  }
+
+  const meus = (todosRegistros ?? []).filter(r =>
+    idsEquipe.has(r.funcionario_id) &&
+    ((r.data_ref as string | null) ?? hojeRef) === (diaPorFunc.get(r.funcionario_id as string) ?? hojeRef)
+  )
   const quemFez = (t: Etapa) => new Set(meus.filter(r => r.tipo === t).map(r => r.funcionario_id))
   const entraram = quemFez('entrada')
   const sairam = quemFez('fim')
 
   const ativos = (equipe ?? []).filter(f => f.ativo !== false)
-  const hojeStr = new Date().toDateString()
+  // O dia em BRASÍLIA, não o do relógio do servidor.
+  // A Vercel roda em UTC: das 21:00 à meia-noite de Brasília lá já é o dia
+  // seguinte, então "batidas hoje" zerava justamente no auge do evento.
+  const hojeStr = diaBRT(agoraDoRender)
 
   const linhasNaTela = linhas
   const doFiltro = filtroEtapa ? linhasNaTela.filter(l => l.etapa === filtroEtapa) : linhasNaTela
@@ -220,7 +254,7 @@ export default async function AtividadesPage({
 
   const totalEquipe = ativos.length
   const jaSairam = sairam.size
-  const batidasHoje = meus.filter(r => new Date(r.created_at as string).toDateString() === hojeStr).length
+  const batidasHoje = meus.filter(r => diaBRT(r.created_at as string) === hojeStr).length
 
   /** Preserva o evento ao trocar de filtro, e vice-versa. */
   const url = (mudanca: { evento?: string; etapa?: string | null }) => {

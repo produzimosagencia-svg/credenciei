@@ -36,11 +36,15 @@ ${link}
 
 *Como funciona no dia:*
 
-1️⃣ *CHEGADA* — procure seu supervisor e mostre o QR Code da credencial.
-2️⃣ *DURANTE* — no horário indicado, abra o link e tire uma selfie, com a localização do celular ligada.
-3️⃣ *SAÍDA* — na hora de ir, mostre o QR Code de novo.
+1️⃣ *CHEGADA* — vá ao credenciamento e mostre o QR Code da credencial.
+2️⃣ *4 HORAS DEPOIS* — abra o link e tire uma selfie, com a localização do celular ligada.
+3️⃣ *SAÍDA* — na hora de ir, volte ao credenciamento e mostre o QR Code de novo.
 
-⏰ Cada etapa só funciona dentro do horário marcado. Pode ficar tranquilo: a gente te avisa por aqui na hora de cada uma. 😉`,
+🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
+
+🔐 O QR Code muda sozinho de tempos em tempos. Print não funciona: mostre a tela ao vivo.
+
+⏰ Pode ficar tranquilo: a gente te avisa por aqui na hora de cada etapa. 😉`,
 
   lembrete_credenciamento: ([nome, evento, instrucao, limite, link]) =>
 `🔔 ${nome}, chegou a hora de registrar sua presença no *${evento}*!
@@ -69,9 +73,9 @@ Corre lá! 🏃`,
 
 🕐 O credenciamento abre às *${abre}* e fecha às *${fecha}*.
 
-📌 Chegue com folga e procure seu supervisor para registrar o QR Code da sua credencial.
+📌 Chegue com folga e vá ao credenciamento para registrar o QR Code da sua credencial.
 
-Lembrando que durante o evento você também faz o registro por selfie 🤳, e mostra o QR Code de novo na saída 👋
+Lembrando que *4 horas depois da sua entrada* você faz o registro por selfie 🤳, e mostra o QR Code de novo na saída 👋
 
 🔗 Sua credencial:
 ${link}
@@ -92,12 +96,23 @@ ${link}
 
 Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
 
-  alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, link]) =>
+  /*
+   * A lista vem pronta de `montarEnvioTemplate`, uma pessoa por linha.
+   *
+   * O supervisor le isso no meio da operacao, quase sempre em pe e com pressa.
+   * So a contagem ("5 pessoas") o obriga a largar o que esta fazendo e abrir o
+   * sistema pra descobrir quem sao — os nomes no corpo da mensagem deixam ele
+   * ja sair atras das pessoas, e o link fica para conferir o resto.
+   */
+  alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, evento, lista, link]) =>
 `🚨 ${nome}, atenção!
 
-*${quantidade} pessoa(s)* do setor *${setor}* não registraram a etapa *${etapa}*.
+*${quantidade} pessoa(s)* do setor *${setor}*: ${etapa}.
+📅 ${evento}
 
-🔗 Veja quem está pendente:
+${lista}
+
+🔗 Lista completa e detalhes:
 ${link}`,
 
   /*

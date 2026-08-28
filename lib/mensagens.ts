@@ -11,6 +11,12 @@
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
 import { createClient } from '@supabase/supabase-js'
 import { formatarBR } from './tz'
+import {
+  diaBRT, janelaMeio, horariosEsperados, periodoDoEvento,
+  type EventoJanelas, type DiaDaJornada,
+} from './janelas'
+import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
+import { formatCpf } from './format'
 import { formatarNumeroWhatsApp, enviarWhatsApp, estadoDaInstancia, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
 import { renderizarMensagem } from './mensagens-modelos'
 
@@ -39,45 +45,30 @@ const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 
-// Cada batida tem uma janela de abertura (janela_X_inicio) e um "horário
-// limite" de fechamento (janela_X_fim, o mesmo campo que já valida o
-// check-in em registrarPresencaQR/registrarPresencaFoto).
-//   - lembrete ao funcionário: exatamente quando a janela ABRE.
-//   - reforço ao funcionário: 2min antes do limite FECHAR, só se ele ainda
-//     não tiver registrado (condicional).
-//   - alerta ao supervisor: exatamente quando o limite expira, também
-//     condicional a não ter registro.
-const JANELAS: {
-  momento: MomentoRegistro
-  campoInicio: 'janela_entrada_inicio' | 'janela_meio_inicio' | 'janela_fim_inicio'
-  campoFim: 'janela_entrada_fim' | 'janela_meio_fim' | 'janela_fim_fim'
-  tipoLembrete: TipoMensagem
-  tipoReforco: TipoMensagem
-  tipoAlerta: TipoMensagem
-  rotulo: string
-}[] = [
-  { momento: 'entrada', campoInicio: 'janela_entrada_inicio', campoFim: 'janela_entrada_fim', tipoLembrete: 'lembrete_entrada', tipoReforco: 'reforco_entrada', tipoAlerta: 'alerta_supervisor_entrada', rotulo: 'Entrada' },
-  { momento: 'meio', campoInicio: 'janela_meio_inicio', campoFim: 'janela_meio_fim', tipoLembrete: 'lembrete_meio', tipoReforco: 'reforco_meio', tipoAlerta: 'alerta_supervisor_meio', rotulo: 'Meio do Evento' },
-  { momento: 'fim', campoInicio: 'janela_fim_inicio', campoFim: 'janela_fim_fim', tipoLembrete: 'lembrete_fim', tipoReforco: 'reforco_fim', tipoAlerta: 'alerta_supervisor_fim', rotulo: 'Saída' },
-]
-
-/** A qual etapa (entrada/meio/fim) cada tipo de mensagem pertence — usado tanto pra achar a janela quanto pro texto do template. */
+/** A qual etapa cada tipo de mensagem pertence. */
 const MOMENTO_POR_TIPO: Partial<Record<TipoMensagem, MomentoRegistro>> = {
   lembrete_entrada: 'entrada', lembrete_meio: 'meio', lembrete_fim: 'fim',
   reforco_entrada: 'entrada', reforco_meio: 'meio', reforco_fim: 'fim',
   alerta_supervisor_entrada: 'entrada', alerta_supervisor_meio: 'meio', alerta_supervisor_fim: 'fim',
 }
 
+/*
+ * As instruções falam em CREDENCIAMENTO, não em supervisor.
+ *
+ * Quem lê o QR é o posto de credenciamento — que pode ser o supervisor do
+ * setor, a portaria ou outra pessoa da produção. Mandar procurar "seu
+ * supervisor" fazia a pessoa ir atrás de quem, na maioria dos eventos, não é
+ * quem faz a leitura.
+ */
 const INSTRUCAO_ETAPA: Record<MomentoRegistro, string> = {
-  entrada: 'Procure seu supervisor para registrar seu QR Code de entrada',
-  meio: 'Tire uma selfie pelo sistema, com a localização ativada',
-  fim: 'Procure seu supervisor para registrar seu QR Code de saída',
+  entrada: 'Vá ao credenciamento e mostre o QR Code da sua credencial',
+  meio: 'Abra sua credencial e tire uma selfie, com a localização ativada',
+  fim: 'Volte ao credenciamento e mostre o QR Code para registrar a saída',
 }
 
 /**
- * Nome do template aprovado no WhatsApp Manager (Meta) pra cada tipo.
- * Vários tipos compartilham o mesmo template (a etapa entra como parâmetro
- * de texto) — reduz de 11 pra 5 templates precisando de aprovação.
+ * Nome do modelo de texto de cada tipo. Vários tipos compartilham o mesmo
+ * modelo (a etapa entra como parâmetro).
  */
 const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   lembrete_entrada: 'lembrete_credenciamento',
@@ -97,21 +88,57 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
 
+/** Teto de dias agendados de uma vez. Além disso a fila cresce sem necessidade. */
+const HORIZONTE_DIAS = 45
+
+type DiaDaOperacao = { data: string; jornadaDia: DiaDaJornada | null }
+
 /**
- * Garante que todo funcionário do evento tenha agendado (1) o lembrete de
- * cada batida, (2) o reforço condicional a ele mesmo perto do fechamento e
- * (3) o alerta condicional ao supervisor caso não registre. Só decide
- * QUANDO enviar — o conteúdo (template + parâmetros) é montado na hora do
- * envio, com dados frescos.
- * Idempotente: chamado toda vez que o evento (janelas) ou a equipe
- * (funcionários) mudam. Nunca mexe em linhas já 'enviado'/'cancelado';
- * linhas 'pendente'/'falhou' são atualizadas (reagendamento quando o admin
- * edita a janela).
+ * Os dias em que se espera gente trabalhando.
+ *
+ * Com jornada configurada são os dias dela (a escala). Sem jornada, o evento é
+ * de um dia e o dia é o principal. Em ambos os casos o que sai daqui é
+ * EXPECTATIVA — ninguém é impedido de bater fora disso, ver lib/janelas.ts.
+ */
+async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<DiaDaOperacao[]> {
+  const hoje = diaBRT()
+  const { data: dias } = await supabase
+    .from('jornada_dias')
+    .select('data, tipo, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .eq('evento_id', evento.id)
+    .eq('cancelado', false)
+    .gte('data', hoje)
+    .order('data')
+    .limit(HORIZONTE_DIAS)
+
+  if (dias?.length) {
+    return dias.map(d => ({ data: d.data as string, jornadaDia: d as DiaDaJornada }))
+  }
+
+  // Evento antigo, de antes de os dias serem materializados: o dia principal
+  // continua sendo a data de início.
+  const periodo = periodoDoEvento(evento)
+  if (!periodo) return []
+  const principal = periodo.primeiro
+  return principal >= hoje ? [{ data: principal, jornadaDia: { tipo: 'principal' as const } }] : []
+}
+
+/**
+ * Garante que cada funcionário e cada supervisor tenham, PARA CADA DIA da
+ * operação, os avisos agendados: lembrete e reforço ao funcionário, alerta ao
+ * supervisor sobre quem ficou pendente.
+ *
+ * Idempotente — roda toda vez que o evento ou a equipe mudam. Nunca mexe em
+ * linhas já 'enviado'/'cancelado'; 'pendente'/'falhou' são reagendadas.
+ *
+ * ⚠️ O lembrete do MEIO não é agendado aqui, e não pode ser: o horário dele é
+ * a entrada real da pessoa + 4h, que só existe depois de ela bater o ponto.
+ * Quem agenda é `agendarMeioAposEntrada`, chamada no momento da entrada.
  */
 export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, msg_pre_evento_envio, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+    .select('id, nome, msg_pre_evento_envio, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
     .eq('id', eventoId)
     .single()
   if (!evento) return
@@ -123,6 +150,8 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     .select('id, telefone, fornecedor_id, fornecedores!inner(evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
+    // Quem ja foi descredenciado cumpriu o evento: nao recebe mais lembrete.
+    .is('descredenciado_em', null)
   if (!funcionarios?.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
@@ -132,9 +161,9 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     .eq('role', 'supervisor')
     .eq('ativo', true)
     .in('fornecedor_id', fornecedorIds)
-  // Se houver mais de um supervisor ativo no mesmo setor, o alerta vai só
-  // pro primeiro encontrado (a constraint de dedupe é por perfil+tipo, não
-  // dá pra notificar vários sem redesenhar a chave de dedupe).
+  // Havendo mais de um supervisor ativo no mesmo setor, o alerta vai só pro
+  // primeiro: a chave de dedupe é por perfil+tipo+dia, e notificar vários
+  // exigiria redesenhá-la.
   const supervisorPorFornecedor = new Map<string, { perfilId: string; telefone: string | null }>()
   for (const s of supervisores ?? []) {
     if (!supervisorPorFornecedor.has(s.fornecedor_id as string)) {
@@ -144,129 +173,147 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
 
   const { data: existentes } = await supabase
     .from('mensagens_agendadas')
-    .select('funcionario_id, perfil_id, tipo, status')
+    .select('funcionario_id, perfil_id, tipo, data_ref, status')
     .eq('evento_id', eventoId)
   const travadosPorFuncionario = new Set(
     (existentes ?? [])
       .filter(m => m.funcionario_id && (m.status === 'enviado' || m.status === 'cancelado'))
-      .map(m => `${m.funcionario_id}:${m.tipo}`)
+      .map(m => `${m.funcionario_id}:${m.tipo}:${m.data_ref}`)
   )
   const travadosPorSupervisor = new Set(
     (existentes ?? [])
       .filter(m => m.perfil_id && (m.status === 'enviado' || m.status === 'cancelado'))
-      .map(m => `${m.perfil_id}:${m.tipo}`)
+      .map(m => `${m.perfil_id}:${m.tipo}:${m.data_ref}`)
   )
 
   const agora = Date.now()
   const PLACEHOLDER = '(gerado no momento do envio)'
-  const linhasFuncionario: {
-    evento_id: string; funcionario_id: string; tipo: TipoMensagem
+  const dias = await diasDaOperacao(evento as EventoJanelas & { id: string })
+  const diaPrincipal = diaBRT(evento.data_inicio as string)
+
+  type LinhaFunc = {
+    evento_id: string; funcionario_id: string; tipo: TipoMensagem; data_ref: string
     agendado_para: string; telefone: string; mensagem: string; condicao?: string
-  }[] = []
-  const linhasSupervisor: {
-    evento_id: string; perfil_id: string; tipo: TipoMensagem
+  }
+  type LinhaSup = {
+    evento_id: string; perfil_id: string; tipo: TipoMensagem; data_ref: string
     agendado_para: string; telefone: string; mensagem: string
-  }[] = []
+  }
+  const linhasFuncionario: LinhaFunc[] = []
+  const linhasSupervisor: LinhaSup[] = []
+
+  /** Agenda se for no futuro e ainda não estiver travada. */
+  const agendarFunc = (
+    funcId: string, telefone: string, tipo: TipoMensagem, dataRef: string, quando: string | null, condicao?: string
+  ) => {
+    if (!quando || travadosPorFuncionario.has(`${funcId}:${tipo}:${dataRef}`)) return
+    if (new Date(quando).getTime() <= agora) return
+    linhasFuncionario.push({
+      evento_id: eventoId, funcionario_id: funcId, tipo, data_ref: dataRef,
+      agendado_para: new Date(quando).toISOString(), telefone, mensagem: PLACEHOLDER,
+      ...(condicao ? { condicao } : {}),
+    })
+  }
 
   for (const func of funcionarios) {
-    // Confirmação de escala pré-evento, no horário definido pelo produtor
-    if (evento.msg_pre_evento_envio && !travadosPorFuncionario.has(`${func.id}:confirmacao_escala`)) {
-      const agendadoPara = new Date(evento.msg_pre_evento_envio)
-      if (agendadoPara.getTime() > agora) {
-        linhasFuncionario.push({
-          evento_id: eventoId,
-          funcionario_id: func.id,
-          tipo: 'confirmacao_escala',
-          agendado_para: agendadoPara.toISOString(),
-          telefone: func.telefone,
-          mensagem: PLACEHOLDER,
-        })
-      }
+    // Confirmação de escala e aviso do dia falam do EVENTO, não de um dia da
+    // escala: ficam presos ao dia principal, e por isso mandados uma vez só.
+    if (evento.msg_pre_evento_envio) {
+      agendarFunc(func.id, func.telefone, 'confirmacao_escala', diaPrincipal, evento.msg_pre_evento_envio as string)
+    }
+    if (evento.janela_entrada_inicio) {
+      const quando = new Date(new Date(evento.janela_entrada_inicio as string).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
+      agendarFunc(func.id, func.telefone, 'aviso_dia_evento', diaPrincipal, quando.toISOString())
     }
 
-    // Aviso do dia do evento: 2h antes do credenciamento abrir, resume
-    // horário de entrada e lembra do check-in do meio e do descredenciamento
-    // — mensagem fixa, independente da confirmação de escala configurável.
-    if (evento.janela_entrada_inicio && !travadosPorFuncionario.has(`${func.id}:aviso_dia_evento`)) {
-      const agendadoPara = new Date(new Date(evento.janela_entrada_inicio).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
-      if (agendadoPara.getTime() > agora) {
-        linhasFuncionario.push({
-          evento_id: eventoId,
-          funcionario_id: func.id,
-          tipo: 'aviso_dia_evento',
-          agendado_para: agendadoPara.toISOString(),
-          telefone: func.telefone,
-          mensagem: PLACEHOLDER,
-        })
-      }
-    }
+    for (const dia of dias) {
+      const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
 
-    for (const janela of JANELAS) {
-      const horarioInicioISO = (evento as Record<string, unknown>)[janela.campoInicio] as string | null
-      const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
+      // Lembrete quando se espera a pessoa; reforço pouco antes de ela virar
+      // pendência. Sem horário esperado (dia livre sem jornada) não há o que
+      // lembrar — cobrar horário que ninguém combinou só gera ruído.
+      agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
+      agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
+        new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
+        'sem_registro')
 
-      // Lembrete ao funcionário, exatamente quando a janela abre
-      if (horarioInicioISO && !travadosPorFuncionario.has(`${func.id}:${janela.tipoLembrete}`)) {
-        const agendadoPara = new Date(horarioInicioISO)
-        if (agendadoPara.getTime() > agora) {
-          linhasFuncionario.push({
-            evento_id: eventoId,
-            funcionario_id: func.id,
-            tipo: janela.tipoLembrete,
-            agendado_para: agendadoPara.toISOString(),
-            telefone: func.telefone,
-            mensagem: PLACEHOLDER,
-          })
-        }
-      }
-
-      // Reforço ao próprio funcionário, 2min antes do limite fechar, condicionado a não ter registro
-      if (horarioLimiteISO && !travadosPorFuncionario.has(`${func.id}:${janela.tipoReforco}`)) {
-        const agendadoPara = new Date(new Date(horarioLimiteISO).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000)
-        if (agendadoPara.getTime() > agora) {
-          linhasFuncionario.push({
-            evento_id: eventoId,
-            funcionario_id: func.id,
-            tipo: janela.tipoReforco,
-            agendado_para: agendadoPara.toISOString(),
-            telefone: func.telefone,
-            mensagem: PLACEHOLDER,
-            condicao: 'sem_registro',
-          })
-        }
-      }
+      agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
+      agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
+        new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
+        'sem_registro')
     }
   }
 
-  // Alerta ao supervisor: UMA mensagem por setor/etapa (não por
-  // funcionário). O texto real (quantos e quem está faltando) só dá pra
-  // saber no momento do envio — aqui só agenda o "gatilho".
-  for (const janela of JANELAS) {
-    const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
-    if (!horarioLimiteISO) continue
-    const limiteMs = new Date(horarioLimiteISO).getTime()
-    if (limiteMs <= agora) continue
+  // Alerta ao supervisor: UMA mensagem por setor, etapa e DIA. O conteúdo (quem
+  // está faltando) só dá pra saber na hora do envio; aqui só marca o gatilho.
+  for (const dia of dias) {
+    const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
+    const gatilhos: [TipoMensagem, string][] = [
+      ['alerta_supervisor_entrada', esperado.entradaLimite],
+      ['alerta_supervisor_meio', esperado.meioAlerta],
+      ['alerta_supervisor_fim', esperado.fimLimite],
+    ]
 
-    for (const [, supervisor] of supervisorPorFornecedor) {
-      if (!supervisor.telefone) continue
-      if (travadosPorSupervisor.has(`${supervisor.perfilId}:${janela.tipoAlerta}`)) continue
-      linhasSupervisor.push({
-        evento_id: eventoId,
-        perfil_id: supervisor.perfilId,
-        tipo: janela.tipoAlerta,
-        agendado_para: horarioLimiteISO,
-        telefone: supervisor.telefone,
-        mensagem: PLACEHOLDER,
-      })
+    for (const [tipo, quando] of gatilhos) {
+      if (new Date(quando).getTime() <= agora) continue
+      for (const [, supervisor] of supervisorPorFornecedor) {
+        if (!supervisor.telefone) continue
+        if (travadosPorSupervisor.has(`${supervisor.perfilId}:${tipo}:${dia.data}`)) continue
+        linhasSupervisor.push({
+          evento_id: eventoId, perfil_id: supervisor.perfilId, tipo, data_ref: dia.data,
+          agendado_para: new Date(quando).toISOString(), telefone: supervisor.telefone, mensagem: PLACEHOLDER,
+        })
+      }
     }
   }
 
   if (linhasFuncionario.length) {
-    await supabase.from('mensagens_agendadas').upsert(linhasFuncionario, { onConflict: 'evento_id,funcionario_id,tipo' })
+    await supabase.from('mensagens_agendadas').upsert(linhasFuncionario, { onConflict: 'evento_id,funcionario_id,tipo,data_ref' })
   }
   if (linhasSupervisor.length) {
-    await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo' })
+    await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo,data_ref' })
   }
+}
+
+/**
+ * Agenda os avisos do MEIO assim que a pessoa bate a entrada.
+ *
+ * Existe porque o meio deixou de ter horário fixo: ele é a entrada real + 4h,
+ * então não há como agendar antes de a entrada acontecer. Chamada de
+ * `registrarPresencaQR`, em background.
+ *
+ * O reforço vai perto do fim da janela e é condicional — quem já tirou a selfie
+ * não recebe nada.
+ */
+export async function agendarMeioAposEntrada(params: {
+  eventoId: string
+  funcionarioId: string
+  telefone: string
+  entradaEm: string
+  dataRef: string
+}): Promise<void> {
+  const telefone = (params.telefone ?? '').replace(/\D/g, '')
+  if (!telefone) return
+
+  const janela = janelaMeio(params.entradaEm)
+  const reforco = new Date(new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString()
+
+  const linhas = [
+    { tipo: 'lembrete_meio' as TipoMensagem, agendado_para: janela.inicio, condicao: null },
+    { tipo: 'reforco_meio' as TipoMensagem, agendado_para: reforco, condicao: 'sem_registro' },
+  ].map(l => ({
+    evento_id: params.eventoId,
+    funcionario_id: params.funcionarioId,
+    tipo: l.tipo,
+    data_ref: params.dataRef,
+    agendado_para: l.agendado_para,
+    telefone,
+    mensagem: '(gerado no momento do envio)',
+    condicao: l.condicao,
+  }))
+
+  await supabase.from('mensagens_agendadas')
+    .upsert(linhas, { onConflict: 'evento_id,funcionario_id,tipo,data_ref' })
 }
 
 /**
@@ -431,6 +478,7 @@ type MensagemClaimada = {
   funcionario_id: string | null
   perfil_id: string | null
   tipo: TipoMensagem
+  data_ref: string
   condicao: string | null
   telefone: string
   mensagem: string
@@ -443,14 +491,53 @@ async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
   if (msg.condicao !== 'sem_registro') return true
   const momento = MOMENTO_POR_TIPO[msg.tipo]
   if (!momento || !msg.funcionario_id) return true
+  // Do DIA da mensagem, nao do evento: sem o filtro, a batida de ontem
+  // cancelaria o reforco de hoje e a pessoa nunca mais seria lembrada.
   const { data } = await supabase
     .from('registros')
     .select('id')
     .eq('funcionario_id', msg.funcionario_id)
     .eq('evento_id', msg.evento_id)
     .eq('tipo', momento)
+    .eq('data_ref', msg.data_ref)
     .limit(1)
   return !(data && data.length)
+}
+
+/**
+ * Ate que horas a pessoa ainda pode registrar aquela etapa, naquele dia.
+ *
+ * O meio e o caso especial e o motivo desta funcao existir: ele nao tem
+ * horario no evento, e a entrada REAL da pessoa + 4h, entao o limite muda de
+ * funcionario para funcionario dentro do mesmo setor.
+ */
+async function limiteDaEtapa(
+  msg: MensagemClaimada,
+  momento: MomentoRegistro,
+  evento: EventoJanelas
+): Promise<string | null> {
+  if (momento === 'meio') {
+    const { data: entrada } = await supabase
+      .from('registros').select('created_at')
+      .eq('funcionario_id', msg.funcionario_id!)
+      .eq('evento_id', msg.evento_id)
+      .eq('tipo', 'entrada')
+      .eq('data_ref', msg.data_ref)
+      .limit(1)
+    return entrada?.[0] ? janelaMeio(entrada[0].created_at as string).fim : null
+  }
+
+  const { data: dia } = await supabase
+    .from('jornada_dias')
+    .select('entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .eq('evento_id', msg.evento_id)
+    .eq('data', msg.data_ref)
+    .eq('cancelado', false)
+    .order('turno')
+    .limit(1)
+
+  const esperado = horariosEsperados(evento, msg.data_ref, (dia?.[0] as DiaDaJornada | undefined) ?? null)
+  return momento === 'entrada' ? esperado.entradaLimite : esperado.fimLimite
 }
 
 /**
@@ -476,15 +563,17 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   if (msg.tipo.startsWith('lembrete_') || msg.tipo.startsWith('reforco_')) {
     if (!msg.funcionario_id) return null
     const momento = MOMENTO_POR_TIPO[msg.tipo]
-    const janela = JANELAS.find(j => j.momento === momento)
-    if (!momento || !janela) return null
+    if (!momento) return null
 
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
-      supabase.from('eventos').select(`nome, ${janela.campoFim}`).eq('id', msg.evento_id).single(),
+      supabase.from('eventos')
+        .select('nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+        .eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
-    const horarioLimiteISO = (evento as Record<string, unknown>)[janela.campoFim] as string | null
+
+    const horarioLimiteISO = await limiteDaEtapa(msg, momento, evento as EventoJanelas)
 
     return {
       template,
@@ -508,36 +597,43 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const { data: supervisor } = await supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single()
     if (!supervisor?.fornecedor_id) return null
 
-    const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', supervisor.fornecedor_id).single()
+    /*
+     * A LISTA, nao so o numero.
+     *
+     * Antes a mensagem dizia "5 pessoas do setor X nao registraram a entrada" e
+     * mandava um link. Isso obriga o supervisor a parar, abrir o navegador e
+     * fazer login no meio da operacao so pra descobrir QUEM. Com os nomes no
+     * corpo da mensagem ele ja sai atras das pessoas; o link continua ali para
+     * o resto da lista e para quem quiser conferir.
+     */
+    const pendentes = await pendenciasDoDia({
+      eventoId: msg.evento_id,
+      data: msg.data_ref,
+      fornecedorId: supervisor.fornecedor_id,
+      etapas: [momento],
+    })
+    if (!pendentes.length) return null
 
-    const { data: funcionarios } = await supabase
-      .from('funcionarios')
-      .select('id')
-      .eq('fornecedor_id', supervisor.fornecedor_id)
-      .eq('ativo', true)
-    if (!funcionarios?.length) return null
-
-    const { data: registros } = await supabase
-      .from('registros')
-      .select('funcionario_id')
-      .eq('evento_id', msg.evento_id)
-      .eq('tipo', momento)
-      .in('funcionario_id', funcionarios.map(f => f.id))
-
-    const registrados = new Set((registros ?? []).map(r => r.funcionario_id))
-    const semRegistro = funcionarios.filter(f => !registrados.has(f.id))
-    if (!semRegistro.length) return null
-
-    const rotulo = JANELAS.find(j => j.momento === momento)?.rotulo ?? momento
+    // Teto de nomes no WhatsApp: mensagem gigante e rolada sem ser lida, e
+    // volume alto de texto automatizado e o padrao que faz o numero ser banido.
+    const MAX_NOMES = 8
+    const linhas = pendentes.slice(0, MAX_NOMES).map(pen => {
+      const esperado = pen.esperadoEm ? ` · esperado ${formatarBR(pen.esperadoEm, 'hora')}` : ''
+      const entrou = pen.realizadoEm ? ` · entrou ${formatarBR(pen.realizadoEm, 'hora')}` : ''
+      return `• ${pen.nome} (${formatCpf(pen.cpf)})${esperado}${entrou}`
+    })
+    if (pendentes.length > MAX_NOMES) linhas.push(`…e mais ${pendentes.length - MAX_NOMES} no sistema.`)
 
     return {
       template,
       params: [
         supervisor.nome,
-        String(semRegistro.length),
-        fornecedor?.nome ?? 'seu setor',
-        rotulo,
-        `${SITE_URL}/admin/eventos/${msg.evento_id}/fornecedor/${supervisor.fornecedor_id}`,
+        String(pendentes.length),
+        pendentes[0].setorNome,
+        ROTULO_PENDENCIA[momento],
+        `${pendentes[0].eventoNome} · ${formatarBR(`${msg.data_ref}T12:00:00-03:00`, 'data')}`,
+        linhas.join('\n'),
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/pendencias?dia=${msg.data_ref}`,
       ],
     }
   }

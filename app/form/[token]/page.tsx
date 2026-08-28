@@ -13,7 +13,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'form-titulo', titulo: 'Bem-vindo!', posicao: 'bottom',
       descricao: 'Este cadastro é o seu credenciamento no evento. Leva menos de dois minutos e, no fim, você recebe sua credencial com QR Code. É rápido — vamos passar campo por campo.' },
     { alvo: 'form-foto', titulo: 'Sua foto', posicao: 'bottom',
-      descricao: 'É opcional, mas ajuda o supervisor a te identificar na hora da entrada. Ao tocar em "Tirar foto", seu celular abre a câmera frontal.' },
+      descricao: 'É opcional, mas ajuda o credenciamento a te identificar na hora da entrada. Ao tocar em "Tirar foto", seu celular abre a câmera frontal.' },
     { alvo: 'form-cpf', titulo: 'CPF', posicao: 'bottom',
       descricao: 'Se você já trabalhou em outro evento desta organização, ao digitar o CPF o resto do formulário se preenche sozinho. Só confira se os dados continuam certos.' },
     { alvo: 'form-telefone', titulo: 'Telefone — atenção aqui', posicao: 'bottom',

@@ -2,10 +2,11 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeExcluir } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp } from 'lucide-react'
+import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
+import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -23,15 +24,24 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
       descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
     { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
-      descricao: 'A lista completa com o status de cada etapa. Verde já registrou, amarelo está na hora e vermelho perdeu a janela. Clique numa pessoa para ver os detalhes.' },
+      descricao: 'A lista completa com o status de cada etapa. Verde já registrou, amarelo está na hora e vermelho passou do horário esperado. Clique numa pessoa para ver os detalhes.' },
   ],
 }
 
 type MomentoTipo = 'entrada' | 'meio' | 'fim'
 
+/**
+ * Status de uma etapa, no dia que a pessoa esta cumprindo.
+ *
+ * `inicio`/`fim` sao os horarios daquela etapa PARA AQUELA PESSOA. Entrada e
+ * saida costumam vir sem horario (sao livres fora do dia principal) e caem em
+ * 'aberto'; o meio vem da entrada real dela + 4h.
+ */
 function statusEtapa(presenca: Presenca, inicio: string | null, fim: string | null): StatusEtapa {
   if (presenca) return 'feito'
-  if (!inicio || !fim) return 'indefinido'
+  // Sem horario definido a etapa esta LIVRE, nao indefinida: e o caso mais
+  // comum agora, e marcar como indefinida pintaria a equipe inteira de cinza.
+  if (!inicio || !fim) return 'aberto'
   const agora = Date.now()
   if (agora < new Date(inicio).getTime()) return 'indefinido'
   if (agora > new Date(fim).getTime()) return 'fechado'
@@ -44,18 +54,31 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
 
+  // Um instante só para o render inteiro: duas leituras de relógio na mesma
+  // página podiam cair em dias diferentes na virada da meia-noite.
+  const agoraDoRender = new Date()
+
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id)').eq('id', fid).single(),
     supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo').eq('fornecedor_id', fid).order('nome'),
+    /*
+     * So HOJE e ONTEM.
+     *
+     * A tabela mostra o ciclo do dia. Trazer o evento inteiro faria, a partir
+     * do dia 2, todo mundo aparecer verde por causa das batidas de ontem.
+     * Ontem entra junto por causa do turno que vira a madrugada: quem entrou as
+     * 22:00 continua no ciclo de ontem quando o supervisor abre a tela as 02:00.
+     */
     supabase
       .from('registros')
-      .select('funcionario_id, tipo, created_at, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
+      .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
       .eq('evento_id', id)
       .eq('funcionarios.fornecedor_id', fid)
+      .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
       .in('tipo', ['entrada', 'meio', 'fim']),
     supabase
       .from('eventos')
-      .select('janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+      .select('data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
       .eq('id', id)
       .single(),
   ])
@@ -88,10 +111,30 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     for (const s of signed ?? []) if (s.path && s.signedUrl) urlPorPath[s.path] = s.signedUrl
   }
 
+  /*
+   * Qual dia cada pessoa esta cumprindo.
+   *
+   * Quase sempre e hoje. A excecao e quem entrou ontem a noite e ainda esta no
+   * turno: para essa pessoa o ciclo aberto e o de ontem, e e ele que a tabela
+   * precisa mostrar. Mesma regra do scanner (ver TETO_TURNO_H).
+   */
+  const agora = agoraDoRender.getTime()
+  const hoje = diaBRT(agoraDoRender)
+  const diaPorFunc = new Map<string, string>()
+  for (const r of registros ?? []) {
+    if (r.tipo !== 'entrada') continue
+    if (agora - new Date(r.created_at).getTime() > TETO_TURNO_H * 60 * 60 * 1000) continue
+    const dia = (r.data_ref as string | null) ?? diaBRT(r.created_at)
+    const atual = diaPorFunc.get(r.funcionario_id)
+    if (!atual || dia > atual) diaPorFunc.set(r.funcionario_id, dia)
+  }
+  const diaDe = (funcId: string) => diaPorFunc.get(funcId) ?? hoje
+
   // Mapa funcionario → { entrada, meio, fim }
   const presencaPorFunc: Record<string, Record<MomentoTipo, Presenca>> = {}
   for (const r of registros ?? []) {
     const tipo = r.tipo as MomentoTipo
+    if (((r.data_ref as string | null) ?? hoje) !== diaDe(r.funcionario_id)) continue
     if (!presencaPorFunc[r.funcionario_id]) presencaPorFunc[r.funcionario_id] = { entrada: null, meio: null, fim: null }
     presencaPorFunc[r.funcionario_id][tipo] = {
       feitoEm: r.created_at,
@@ -126,9 +169,25 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       entrada,
       meio,
       fim,
-      statusEntrada: statusEtapa(entrada, evento?.janela_entrada_inicio ?? null, evento?.janela_entrada_fim ?? null),
-      statusMeio: statusEtapa(meio, evento?.janela_meio_inicio ?? null, evento?.janela_meio_fim ?? null),
-      statusFim: statusEtapa(fim, evento?.janela_fim_inicio ?? null, evento?.janela_fim_fim ?? null),
+      // Entrada e saida so tem horario no dia principal; o meio vem da
+      // entrada real desta pessoa + 4h. Ver lib/janelas.ts.
+      ...(() => {
+        const principal = evento ? ehDiaPrincipal(evento as EventoJanelas, diaDe(f.id)) : false
+        const meioJanela = entrada ? janelaMeio(entrada.feitoEm) : null
+        return {
+          statusEntrada: statusEtapa(
+            entrada,
+            principal ? evento?.janela_entrada_inicio ?? null : null,
+            principal ? evento?.janela_entrada_fim ?? null : null,
+          ),
+          statusMeio: statusEtapa(meio, meioJanela?.inicio ?? null, meioJanela?.fim ?? null),
+          statusFim: statusEtapa(
+            fim,
+            principal ? evento?.janela_fim_inicio ?? null : null,
+            principal ? evento?.janela_fim_fim ?? null : null,
+          ),
+        }
+      })(),
     }
   })
 
@@ -167,6 +226,12 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         acoes={
           <>
             <TutorialButton />
+            {/* Quem ficou faltando em cada etapa. É a mesma lista que chega no
+                WhatsApp do supervisor quando o horário passa — ter o atalho
+                aqui evita ele ter que caçar a mensagem no meio da operação. */}
+            <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
+              <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
+            </Link>
             <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
               <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
             </Link>

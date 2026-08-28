@@ -3,7 +3,7 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity, CalendarCheck } from 'lucide-react'
+import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity, CalendarCheck, ClipboardList } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import FornecedorCard from './FornecedorCard'
 import StatCard from '@/components/StatCard'
@@ -21,9 +21,9 @@ const TUTORIAL: TutorialConfig = {
   versao: 1,
   passos: [
     { alvo: 'evt-editar', titulo: 'Configurar o evento', posicao: 'bottom',
-      descricao: 'Aqui você ajusta datas, local e principalmente as janelas de horário — os períodos em que a equipe pode bater entrada, meio e saída.' },
+      descricao: 'Aqui você ajusta datas, local e os horários do dia principal — o único dia em que entrada e saída ficam presas a um horário.' },
     { alvo: 'evt-jornada', titulo: 'Registros diários', posicao: 'bottom',
-      descricao: 'Para operação de vários dias: configure período, dias da semana e horários UMA vez, como um despertador, e o sistema repete em todos os dias escolhidos. Evento de um dia só não precisa disto — use as janelas da tela de edição.' },
+      descricao: 'Para operação de vários dias: configure período, dias da semana e horários UMA vez, como um despertador. Estes horários não travam o ponto — eles dizem que horas se ESPERA cada pessoa, e é isso que alimenta a tela de Pendências e os lembretes de WhatsApp.' },
     { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
@@ -138,6 +138,11 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           <Link href={`/admin/eventos/${id}/jornada`} data-tutorial="evt-jornada" className="btn btn-secundario">
             <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
             {jornada ? 'Registros diários' : 'Configurar registros diários'}
+          </Link>
+          {/* Mesma lista que o supervisor recebe no WhatsApp quando o horário
+              de cada etapa passa — aqui dá pra abrir qualquer dia. */}
+          <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
+            <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
           </Link>
           {evento.spreadsheet_id && (
             <a

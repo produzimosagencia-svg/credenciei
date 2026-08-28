@@ -1,11 +1,13 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento } from '@/lib/actions'
+import { editarEvento, diasDoEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
+import { diaBRT } from '@/lib/janelas'
+import DiasDeTrabalho from './DiasDeTrabalho'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
+import { CalendarDays, MapPin, LogIn, LogOut, Camera, CalendarRange, Save, MessageCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -20,11 +22,13 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'edt-geral', titulo: 'Informações gerais', posicao: 'right', icone: 'MapPin',
       descricao: 'Nome, descrição e local. Mudar o nome aqui muda em todo lugar: na lista, na credencial da equipe e nas mensagens de WhatsApp que ainda não foram enviadas.' },
     { alvo: 'edt-duracao', titulo: 'Duração do evento', posicao: 'right', icone: 'CalendarDays',
-      descricao: 'Quando o evento começa e termina. É uma referência geral — quem controla o horário de bater ponto são as janelas, logo abaixo.' },
-    { alvo: 'edt-janelas', titulo: 'Janelas de presença', posicao: 'right', icone: 'LogIn',
-      descricao: 'O intervalo em que cada etapa aceita registro. Fora dele o sistema recusa o ponto. Mudar um horário aqui reagenda automaticamente os lembretes de WhatsApp da equipe inteira — inclusive de quem já foi avisado.' },
+      descricao: 'Quando o evento começa e termina. Este período delimita tudo: fora dele ninguém bate ponto. Dentro dele, entrada e saída são livres em qualquer dia.' },
+    { alvo: 'edt-janelas', titulo: 'Horários do dia principal', posicao: 'right', icone: 'LogIn',
+      descricao: 'Entrada, meio e saída do DIA DO EVENTO. Nos dias de preparação, marcados mais abaixo, estes horários não valem: lá a entrada e a saída são livres. Mudar um horário aqui reagenda os lembretes de WhatsApp da equipe inteira, inclusive de quem já foi avisado.' },
     { alvo: 'edt-janela-meio', titulo: 'A do meio é diferente', posicao: 'right', icone: 'Camera',
-      descricao: 'Entrada e saída são o supervisor lendo o QR Code no portão. A do meio é o próprio funcionário tirando uma selfie com a localização ligada, sem precisar procurar ninguém.' },
+      descricao: 'Entrada e saída são o QR Code lido no credenciamento. A do meio é o próprio funcionário tirando uma selfie com a localização ligada. Este horário vale só no dia do evento — nos dias de preparação o meio abre 4 horas depois da entrada de cada pessoa.' },
+    { alvo: 'edt-dias', titulo: 'Dias de montagem e desmontagem', posicao: 'top', icone: 'CalendarDays',
+      descricao: 'O evento não acontece só no dia do evento. Marque aqui os dias em que a equipe trabalha na preparação: neles a entrada e a saída são livres, e o meio é contado 4 horas depois da entrada de cada pessoa. Dia não marcado não é dia de trabalho — ninguém bate ponto nele.' },
     { alvo: 'edt-msg-envio', titulo: 'Quando enviar a confirmação', posicao: 'right', icone: 'MessageCircle',
       descricao: 'Data e hora em que a equipe recebe a confirmação de escala no WhatsApp. Deixe em branco para não enviar essa mensagem.' },
     { alvo: 'edt-msg-texto', titulo: 'Instruções do evento', posicao: 'top', icone: 'MessageCircle',
@@ -55,11 +59,22 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   const action = editarEvento.bind(null, id)
   const fmt = (d: string | null | undefined) => isoParaInput(d)
 
+  /*
+   * Os três horários valem SÓ no dia principal.
+   *
+   * O "meio" está de volta aqui depois de ter saído: nos dias de preparação
+   * ele continua sendo a entrada real + 4h, mas no dia do evento a operação é
+   * sincronizada e o produtor precisa marcar a hora em que todo mundo confirma
+   * presença de uma vez.
+   */
   const janelas = [
     { key: 'entrada', label: 'Entrada', icon: LogIn, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-    { key: 'meio', label: 'Meio do evento', icon: Camera, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+    { key: 'meio', label: 'Meio', icon: Camera, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
+
+  const dias = await diasDoEvento(id)
+  const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
@@ -102,8 +117,8 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         {/* Janelas de presença */}
         <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-janelas">
           <SectionTitle
-            title="Janelas de registro de presença"
-            subtitle="Os funcionários tiram a foto de entrada, meio e fim dentro destes horários"
+            title="Horários do dia principal"
+            subtitle="Entrada, meio e saída do dia do evento. Nos dias de preparação, entrada e saída são livres e o meio abre 4h depois da entrada de cada pessoa."
           />
           <div className="space-y-3">
             {janelas.map(j => (
@@ -125,6 +140,16 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Dias trabalhados para desenvolvimento do evento */}
+        <div className="p-6 sm:p-8 space-y-4 border-t border-slate-100" data-tutorial="edt-dias">
+          <SectionTitle
+            title="Dias trabalhados para desenvolvimento do evento"
+            subtitle="Montagem, organização e desmontagem — marque os dias em que a equipe trabalha além do dia do evento"
+            icon={CalendarRange}
+          />
+          <DiasDeTrabalho eventoId={id} diaPrincipal={diaPrincipal} iniciais={dias} />
         </div>
 
         {/* Mensagem pré-evento */}

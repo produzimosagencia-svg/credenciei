@@ -43,6 +43,22 @@ export function isoParaInput(iso: string | null | undefined): string {
   return `${ano}-${p2(mes)}-${p2(dia)}T${p2(hora)}:${p2(min)}`
 }
 
+/**
+ * Data por extenso em horário de Brasília — "quinta-feira, 28 de agosto".
+ *
+ * Usa a zona IANA em vez do offset fixo: é a única forma de o texto sair certo
+ * tanto no servidor (que roda em UTC na Vercel) quanto no navegador de quem
+ * estiver em outro fuso. `date-fns` NÃO serve aqui — o format dele usa o fuso
+ * do runtime, então no servidor a data virava a do UTC.
+ */
+export function extensoBR(
+  iso: string | Date | null | undefined,
+  opcoes: Intl.DateTimeFormatOptions
+): string {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', ...opcoes })
+}
+
 /** Exibição em BRT. Modos: 'completo' (dd/MM/yyyy HH:mm), 'data', 'hora', 'curto' (dd/MM HH:mm). */
 export function formatarBR(iso: string | null | undefined, modo: 'completo' | 'data' | 'hora' | 'curto' = 'completo'): string {
   if (!iso) return ''

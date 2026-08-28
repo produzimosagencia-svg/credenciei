@@ -230,6 +230,14 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
                     {t.compareceu
                       ? <Badge tom="positivo">Compareceu</Badge>
                       : <Badge tom="atencao">Não bateu entrada</Badge>}
+                    {/* O dia a dia daquele evento: quais dias trabalhou, quais
+                        faltou e quantas horas — a tela do fechamento. */}
+                    <Link
+                      href={`/admin/funcionarios/${t.funcionarioId}/historico`}
+                      className="text-slate-400 hover:text-brand-500 text-2xs underline"
+                    >
+                      ver dia a dia
+                    </Link>
                     {!t.ativo && <Badge tom="neutro">Inativa</Badge>}
                   </div>
                   <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">

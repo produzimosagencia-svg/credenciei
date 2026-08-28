@@ -14,6 +14,16 @@ export type MomentoInfo = {
   fim: string | null
   status: Status
   feitoEm: string | null
+  /*
+   * O horário já em texto, montado no servidor.
+   *
+   * Existe porque as etapas deixaram de ter todas o mesmo formato: entrada e
+   * saída agora costumam ser "livre hoje, a qualquer hora" (sem instante
+   * nenhum), e o meio é calculado a partir da entrada de CADA pessoa. Só o
+   * servidor sabe qual das regras vale — deixar o cliente adivinhar a partir de
+   * inicio/fim faria "livre" virar "horário não definido".
+   */
+  janelaTexto: string
 }
 
 function horaBR(iso: string | null) {
@@ -141,7 +151,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
 }
 
 function Cartao({ info, busy, onFoto }: { info: MomentoInfo; busy: boolean; onFoto: () => void }) {
-  const janela = info.inicio && info.fim ? `${horaBR(info.inicio)} até ${horaBR(info.fim)}` : 'horário não definido'
+  const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
 
@@ -193,9 +203,11 @@ function Cartao({ info, busy, onFoto }: { info: MomentoInfo; busy: boolean; onFo
 
   // aguardando / encerrado / indefinido
   const info2: Record<string, { icon: React.ElementType; texto: string }> = {
-    aguardando: { icon: Clock, texto: `Abre às ${horaBR(info.inicio)}` },
-    encerrado: { icon: Lock, texto: 'Horário encerrado' },
-    indefinido: { icon: Clock, texto: 'Horário ainda não definido' },
+    // Sem instante (o meio de quem ainda não bateu a entrada), o próprio texto
+    // da janela já explica a espera — "Abre às " sozinho ficaria pela metade.
+    aguardando: { icon: Clock, texto: info.inicio ? `Abre às ${horaBR(info.inicio)}` : janela },
+    encerrado: { icon: Lock, texto: `Horário encerrado${info.fim ? ` às ${horaBR(info.fim)}` : ''}` },
+    indefinido: { icon: Clock, texto: janela },
   }
   const { icon: Icon, texto } = info2[info.status] ?? info2.indefinido
   return (

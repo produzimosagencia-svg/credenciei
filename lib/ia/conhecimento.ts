@@ -36,28 +36,55 @@ Papéis legados que ainda existem no banco mas não são mais oferecidos:
 
 Todo evento tem três momentos, nesta ordem:
 
-1. **entrada** — credenciamento na chegada. O supervisor lê o QR Code da pessoa.
-2. **meio** — durante o evento. A PRÓPRIA pessoa abre a credencial no celular e
+1. **entrada** — credenciamento na chegada. O posto de credenciamento lê o QR
+   Code da pessoa. NÃO diga que é "o supervisor" que credencia: quem lê o QR
+   pode ser o supervisor, a portaria ou outra pessoa da produção, e mandar o
+   funcionário procurar o supervisor faz ele ir ao lugar errado.
+2. **meio** — durante o turno. A PRÓPRIA pessoa abre a credencial no celular e
    tira uma selfie; o sistema grava foto e localização. Não tem QR aqui.
-3. **fim** — saída. De novo o supervisor lendo o QR Code.
+3. **fim** — saída (descredenciamento). De novo o QR Code no credenciamento.
 
-# Janelas de horário — a regra que mais gera dúvida
+# Horários — a regra que mais gera dúvida
 
-Cada etapa tem uma janela (janela_entrada_inicio/fim, janela_meio_inicio/fim,
-janela_fim_inicio/fim) definida no evento. A janela é o intervalo em que o
-sistema ACEITA o registro daquela etapa:
+## Entrada e saída são LIVRES
+Em qualquer dia do PERÍODO do evento (data_inicio até data_fim), entrada e saída
+podem ser registradas a qualquer hora. Não existe mais "perdeu a janela da
+entrada". Fora do período, aí sim recusa.
 
-- Antes do início: recusa com "Ainda não abriu o horário desta etapa."
-- Depois do fim: recusa com "O horário desta etapa já encerrou."
-- Janela em branco: a etapa fica BLOQUEADA — "O organizador ainda não definiu o
-  horário desta etapa."
+## A exceção é o DIA PRINCIPAL
+O dia principal é a data de início do evento. Só nele as janelas configuradas
+(janela_entrada_inicio/fim e janela_fim_inicio/fim) continuam valendo como
+trava, porque é o dia que tem portaria e horário combinado com o cliente.
 
-Os horários também disparam os lembretes de WhatsApp. Mudar uma janela reagenda
-os lembretes de toda a equipe, inclusive de quem já foi avisado.
+## O meio é individual: entrada + 4 horas
+O meio NÃO tem horário fixo e não usa mais janela_meio_*. Ele abre 4 horas
+depois da hora em que A PESSOA bateu a entrada, e fica aberto por 2 horas. Quem
+entrou 08:00 faz das 12:00 às 14:00; quem entrou 10:30 faz das 14:30 às 16:30.
+Duas pessoas do mesmo setor têm meios diferentes se entraram em horas
+diferentes — isso é o esperado, não um bug.
+Sem entrada registrada, o meio nem abre: a recusa diz pra bater a entrada antes.
 
-Quando alguém perde a janela, quem resolve é o supervisor pela tela "Localizar
-funcionário" (registro assistido) — essa tela NÃO valida janela, justamente
-porque existe pra quando o horário já fechou.
+## Uma janela por pessoa POR DIA
+Cada dia tem seu próprio ciclo. Quem trabalha hoje e amanhã bate entrada/meio/
+saída nos dois dias, e o registro de um dia não apaga o do outro (é o campo
+"data_ref" que separa). Segunda leitura do mesmo QR no mesmo dia NÃO regrava:
+responde "já registrada às HH:MM". Isso é de propósito — reescrever a entrada
+moveria junto o horário do meio.
+
+## O QR Code muda sozinho
+O QR carrega um código ASSINADO com prazo de 5 minutos, renovado pela própria
+tela. Print antigo não funciona: o scanner recusa com "QR Code expirado". Se
+alguém reclamar disso, a resposta é abrir a credencial ao vivo — ou o supervisor
+usar o registro assistido.
+
+## Jornadas recorrentes viraram EXPECTATIVA
+Os horários da jornada ("jornada_dias") não travam mais nada. Eles dizem "que
+horas era pra essa pessoa ter chegado" e alimentam as listas de pendência e os
+lembretes de WhatsApp.
+
+Quando alguém perde qualquer etapa, quem resolve é o supervisor pela tela
+"Localizar funcionário" (registro assistido) — essa tela NÃO valida horário,
+justamente porque existe pra quando o prazo já passou.
 
 # Telas do sistema
 
@@ -117,6 +144,13 @@ enviar + instruções livres que entram na confirmação de escala).
 scanner, localizar funcionário, números da equipe e a tabela com o status de
 cada etapa (verde = registrou, amarelo = janela aberta, vermelho = perdeu).
 
+## Pendências (/admin/eventos/[id]/pendencias)
+Quem ficou faltando em cada etapa, num dia escolhido: quem estava previsto e não
+credenciou a entrada, quem entrou e não fez o meio, quem entrou e não
+descredenciou. Traz nome, CPF, setor, horário esperado e a hora da entrada.
+É a MESMA lista que o supervisor recebe no WhatsApp — sai da mesma função. O
+supervisor vê só o próprio setor; admin vê o evento inteiro da organização.
+
 ## Usuários (/admin/usuarios) e Novo usuário (/admin/usuarios/novo)
 Quem tem acesso ao sistema. Não confunde com a equipe do evento: quem só
 trabalha no dia aparece dentro do setor, não aqui. Ao criar um supervisor, ele
@@ -147,11 +181,13 @@ Todas usam template aprovado na Meta (Cloud API). Tipos:
 - confirmacao_escala: antes do evento, se o organizador preencheu a mensagem
   pré-evento. Função, setor, data, local e instruções.
 - aviso_dia_evento: 2h antes de abrir o credenciamento.
-- lembrete_(entrada|meio|fim): quando a janela ABRE.
-- reforco_(entrada|meio|fim): pouco antes da janela fechar, só pra quem ainda
-  não registrou.
-- alerta_supervisor_(entrada|meio|fim): quando a janela fecha, avisa o
-  supervisor quantos do setor ficaram pendentes.
+- lembrete_(entrada|fim): no horário esperado daquele dia.
+- lembrete_meio: agendado NO MOMENTO da entrada, pra 4h depois — não dá pra
+  agendar antes, porque o horário depende da entrada real.
+- reforco_(entrada|meio|fim): pouco antes do prazo, só pra quem ainda não
+  registrou.
+- alerta_supervisor_(entrada|meio|fim): manda ao supervisor a LISTA de quem
+  ficou pendente (nome, CPF, horário esperado), uma vez por etapa POR DIA.
 - credenciais_supervisor: login do supervisor recém-criado.
 
 Se o envio está pausado (WHATSAPP_PAUSADO=true) nada sai — é um interruptor de

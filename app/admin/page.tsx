@@ -1,13 +1,11 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import {
   CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Search, X,
   TrendingUp, Activity, Radio, UserCheck, Clock,
 } from 'lucide-react'
 import StatCard from '@/components/StatCard'
-import { formatarBR } from '@/lib/tz'
+import { formatarBR, extensoBR } from '@/lib/tz'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -237,9 +235,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           inicio: d.getTime(),
           // Evento que atravessa mais de um dia precisa da data no rótulo:
           // só "03" apareceria duas vezes e ninguém saberia qual é qual.
+          /*
+            * Rótulo em horário de Brasília.
+            *
+            * `getHours()` devolve a hora do RELÓGIO DO SERVIDOR, que na Vercel
+            * é UTC: a casa das 17h do evento aparecia como "20h" no eixo. Como
+            * o resto do sistema, o texto sai por formatarBR.
+            */
           hora: janela.multiDia
-            ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h`
-            : `${String(d.getHours()).padStart(2, '0')}h`,
+            ? `${formatarBR(d.toISOString(), 'data').slice(0, 5)} ${formatarBR(d.toISOString(), 'hora').slice(0, 2)}h`
+            : `${formatarBR(d.toISOString(), 'hora').slice(0, 2)}h`,
           entrada: 0, meio: 0, fim: 0,
         }
       })
@@ -304,7 +309,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   // Data do topo. Vem do servidor (não do relógio do browser), então não há
   // divergência de fuso pra suprimir na hidratação.
-  const dataPorExtenso = format(agora, "EEEE, d 'de' MMMM", { locale: ptBR })
+  const dataPorExtenso = extensoBR(agora, { weekday: 'long', day: 'numeric', month: 'long' })
 
   /**
    * Os eventos abrem a tela.
@@ -530,7 +535,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                       </p>
                       <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
                         {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'} ·{' '}
-                        {format(new Date(r.created_at as string), 'HH:mm', { locale: ptBR })}
+                        {formatarBR(r.created_at as string, 'hora')}
                       </p>
                     </div>
                   )
@@ -575,7 +580,7 @@ function EventoAoVivo({ evento, podeExcluir, destacar }: { evento: LinhaEvento; 
           <div className="flex items-center gap-3 flex-wrap text-white/60 text-xs mt-1.5">
             <span className="flex items-center gap-1">
               <CalendarDays className="w-3 h-3 shrink-0" />
-              {format(new Date(evento.data_inicio), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+              {extensoBR(evento.data_inicio, { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
             {evento.local && (
               <span className="flex items-center gap-1 min-w-0">
@@ -654,7 +659,7 @@ function EventoLinha({ evento, podeExcluir, destacar }: { evento: LinhaEvento; p
         <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
           <span className="flex items-center gap-1">
             <CalendarDays className="w-3 h-3 shrink-0" />
-            {format(new Date(evento.data_inicio), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+            {extensoBR(evento.data_inicio, { day: '2-digit', month: 'short', year: 'numeric' })}
           </span>
           {evento.local && (
             <span className="flex items-center gap-1 min-w-0">
