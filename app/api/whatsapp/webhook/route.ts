@@ -134,13 +134,29 @@ export async function POST(request: NextRequest) {
   }
 
   if (linhas.length) {
-    const { error } = await supabase
-      .from('whatsapp_eventos')
-      .upsert(linhas, { onConflict: 'wa_message_id,direcao,tipo', ignoreDuplicates: true })
-    // Nunca devolve erro para a Meta: ela reenvia o mesmo evento por horas e,
-    // se acumular falha, desliga o webhook. Problema nosso se resolve no log.
-    if (error) console.error('[webhook] falha ao gravar:', error.message)
+    /*
+     * INSERT simples, com a duplicata tratada aqui.
+     *
+     * O caminho óbvio seria `upsert` com `onConflict`, e ele NÃO funciona: o
+     * índice de dedupe é PARCIAL (só vale quando wa_message_id não é nulo), e
+     * o PostgREST não consegue mirar um índice parcial no ON CONFLICT — a
+     * inserção falhava com "no unique or exclusion constraint matching", em
+     * silêncio, porque esta rota nunca devolve erro.
+     *
+     * 23505 é violação de unicidade: a Meta reenviando um evento que já
+     * gravamos. É o comportamento esperado dela, não um problema.
+     */
+    const { error } = await supabase.from('whatsapp_eventos').insert(linhas)
+    if (error && error.code !== '23505') {
+      console.error('[webhook] falha ao gravar:', error.code, error.message)
+    }
   }
+
+  /*
+   * Sempre 200, mesmo com erro nosso. A Meta reenvia o evento por horas quando
+   * não recebe 200, e desliga o webhook se a falha persistir — perder um
+   * evento é bem melhor que perder o canal.
+   */
 
   return new Response('ok', { status: 200 })
 }
