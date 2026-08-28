@@ -805,12 +805,12 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       params: [
         func.nome,
         evento.nome,
+        evento.local?.trim() || 'a confirmar',
         h(evento.janela_entrada_inicio),
         h(evento.janela_entrada_fim),
         h(evento.janela_meio_inicio),
         h(evento.janela_fim_inicio),
         h(evento.janela_fim_fim),
-        evento.local?.trim() || 'a confirmar',
         `${SITE_URL}/credential/${func.qr_token}`,
       ],
     }

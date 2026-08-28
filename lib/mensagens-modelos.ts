@@ -54,7 +54,9 @@ ${link}
 ⏰ Você tem até *${limite}* — depois desse horário o sistema não aceita mais.
 
 🔗 Sua credencial:
-${link}`,
+${link}
+
+Bom trabalho! 💪`,
 
   reforco_credenciamento: ([nome, evento, instrucao, limite, link]) =>
 `⚠️ ${nome}, atenção! Sua presença no *${evento}* ainda não foi registrada.
@@ -76,7 +78,7 @@ Corre lá! 🏃`,
    * gente que só aparece nesse dia — quem erra aqui erra na frente de todo
    * mundo. Por isso as três etapas vêm escritas, com horário e o que fazer.
    */
-  aviso_dia_evento: ([nome, evento, abre, fecha, meio, saidaAbre, saidaFecha, local, link]) =>
+  aviso_dia_evento: ([nome, evento, local, abre, fecha, meio, saidaAbre, saidaFecha, link]) =>
 `🎉 *HOJE É O GRANDE DIA!*
 
 ${nome}, hoje é o *${evento}*. Segue tudo o que você precisa saber 👇
@@ -183,12 +185,15 @@ Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
 `🚨 ${nome}, atenção!
 
 *${quantidade} pessoa(s)* do setor *${setor}*: ${etapa}.
-📅 ${evento}
+📅 Evento: ${evento}
 
+Quem está pendente:
 ${lista}
 
 🔗 Lista completa e detalhes:
-${link}`,
+${link}
+
+Vale conferir antes de encerrar a etapa. 🙏`,
 
   /*
    * O supervisor recebe NOME DE USUÁRIO, não e-mail: é assim que ele entra.
