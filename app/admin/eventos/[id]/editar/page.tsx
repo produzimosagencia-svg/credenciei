@@ -5,7 +5,7 @@ import { isoParaInput } from '@/lib/tz'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, MapPin, LogIn, Camera, LogOut, Save, MessageCircle } from 'lucide-react'
+import { CalendarDays, MapPin, LogIn, LogOut, Save, MessageCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -20,11 +20,11 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'edt-geral', titulo: 'Informações gerais', posicao: 'right', icone: 'MapPin',
       descricao: 'Nome, descrição e local. Mudar o nome aqui muda em todo lugar: na lista, na credencial da equipe e nas mensagens de WhatsApp que ainda não foram enviadas.' },
     { alvo: 'edt-duracao', titulo: 'Duração do evento', posicao: 'right', icone: 'CalendarDays',
-      descricao: 'Quando o evento começa e termina. É uma referência geral — quem controla o horário de bater ponto são as janelas, logo abaixo.' },
-    { alvo: 'edt-janelas', titulo: 'Janelas de presença', posicao: 'right', icone: 'LogIn',
-      descricao: 'O intervalo em que cada etapa aceita registro. Fora dele o sistema recusa o ponto. Mudar um horário aqui reagenda automaticamente os lembretes de WhatsApp da equipe inteira — inclusive de quem já foi avisado.' },
-    { alvo: 'edt-janela-meio', titulo: 'A do meio é diferente', posicao: 'right', icone: 'Camera',
-      descricao: 'Entrada e saída são o supervisor lendo o QR Code no portão. A do meio é o próprio funcionário tirando uma selfie com a localização ligada, sem precisar procurar ninguém.' },
+      descricao: 'Quando o evento começa e termina. Este período delimita tudo: fora dele ninguém bate ponto. Dentro dele, entrada e saída são livres em qualquer dia.' },
+    { alvo: 'edt-janelas', titulo: 'Horários do dia principal', posicao: 'right', icone: 'LogIn',
+      descricao: 'Só valem no dia de início do evento — nos outros dias do período a equipe bate ponto a qualquer hora. Mudar um horário aqui reagenda os lembretes de WhatsApp da equipe inteira, inclusive de quem já foi avisado.' },
+    { alvo: 'edt-janela-fim', titulo: 'E o meio do turno?', posicao: 'right', icone: 'Camera',
+      descricao: 'O meio não tem horário aqui: abre 4 horas depois da entrada de cada pessoa e fica aberto por 2 horas. Nele não tem QR — o próprio funcionário tira uma selfie com a localização ligada, sem precisar procurar ninguém.' },
     { alvo: 'edt-msg-envio', titulo: 'Quando enviar a confirmação', posicao: 'right', icone: 'MessageCircle',
       descricao: 'Data e hora em que a equipe recebe a confirmação de escala no WhatsApp. Deixe em branco para não enviar essa mensagem.' },
     { alvo: 'edt-msg-texto', titulo: 'Instruções do evento', posicao: 'top', icone: 'MessageCircle',
@@ -56,8 +56,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   const fmt = (d: string | null | undefined) => isoParaInput(d)
 
   const janelas = [
+    // Sem o "meio": ele virou entrada real + 4h, por pessoa. Um campo que o
+    // sistema ignora engana quem preenche.
     { key: 'entrada', label: 'Entrada', icon: LogIn, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-    { key: 'meio', label: 'Meio do evento', icon: Camera, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
@@ -102,8 +103,8 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         {/* Janelas de presença */}
         <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-janelas">
           <SectionTitle
-            title="Janelas de registro de presença"
-            subtitle="Os funcionários tiram a foto de entrada, meio e fim dentro destes horários"
+            title="Horários do dia principal"
+            subtitle="Valem só no dia de início do evento. Nos demais dias, entrada e saída são livres; o meio abre 4h depois da entrada de cada pessoa."
           />
           <div className="space-y-3">
             {janelas.map(j => (

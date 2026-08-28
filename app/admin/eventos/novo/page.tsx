@@ -17,17 +17,15 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'evt-novo-nome', titulo: 'Nome do evento', posicao: 'bottom',
       descricao: 'É como o evento aparece pra você, pros supervisores e no formulário que a equipe preenche. Use um nome que identifique bem, tipo "Show da Virada 2026".' },
     { alvo: 'evt-novo-datas', titulo: 'Início e fim do evento', posicao: 'bottom',
-      descricao: 'O período em que o evento acontece. Serve de referência geral — quem controla os horários de bater ponto são as janelas, mais abaixo.' },
-    { alvo: 'evt-novo-janelas', titulo: 'Janelas de registro: o mais importante', posicao: 'right',
-      descricao: 'Uma janela é o intervalo em que o sistema aceita registrar presença. Fora dela, ninguém consegue bater ponto — o sistema recusa e avisa que o horário não abriu ou já encerrou. São três momentos independentes: entrada, meio e fim.' },
-    { alvo: 'evt-novo-janela-entrada', titulo: 'Janela de entrada (chegada)', posicao: 'right',
-      descricao: 'Período de credenciamento na chegada, feito pelo supervisor lendo o QR Code de cada pessoa no portão. Dê folga no horário: se a equipe chega às 14h, abra às 13h e feche às 15h, senão quem atrasar fica travado.' },
-    { alvo: 'evt-novo-janela-meio', titulo: 'Janela do meio (durante o evento)', posicao: 'right',
-      descricao: 'Confirmação de que a pessoa continua no posto. Aqui não tem QR: o próprio funcionário abre a credencial no celular e tira uma selfie, e o sistema grava a foto e a localização dele. Escolha um horário no meio do turno.' },
-    { alvo: 'evt-novo-janela-fim', titulo: 'Janela de fim (saída)', posicao: 'right',
-      descricao: 'Descredenciamento na saída, de novo por QR Code com o supervisor. É o que fecha o ciclo e permite conferir quem cumpriu o turno inteiro.' },
-    { alvo: 'evt-novo-janelas', titulo: 'Pode deixar em branco agora', posicao: 'right',
-      descricao: 'Se ainda não sabe os horários, deixe vazio e preencha depois em "Editar" — só lembre que, enquanto a janela estiver em branco, aquela etapa fica bloqueada e ninguém consegue registrar presença nela. O sistema também usa esses horários pra disparar os lembretes no WhatsApp da equipe.' },
+      descricao: 'O período em que o evento acontece. É ele que delimita tudo: fora deste intervalo ninguém consegue bater ponto. Dentro dele, entrada e saída são livres em qualquer dia — inclusive nos dias de montagem e desmontagem.' },
+    { alvo: 'evt-novo-janelas', titulo: 'Horários do dia principal', posicao: 'right',
+      descricao: 'O dia principal é a data de INÍCIO do evento — o dia que tem portaria e horário combinado com o cliente. Só nele estes horários travam a entrada e a saída. Nos outros dias do período a equipe bate ponto a qualquer hora.' },
+    { alvo: 'evt-novo-janela-entrada', titulo: 'Entrada do dia principal', posicao: 'right',
+      descricao: 'Período de credenciamento na chegada, no dia principal. Dê folga: se a equipe chega às 14h, abra às 13h e feche às 15h, senão quem atrasar fica travado. Deixe em branco para que a entrada seja livre também neste dia.' },
+    { alvo: 'evt-novo-janela-fim', titulo: 'Saída do dia principal', posicao: 'right',
+      descricao: 'Descredenciamento na saída, no dia principal. É o que fecha o ciclo e permite conferir quem cumpriu o turno inteiro.' },
+    { alvo: 'evt-novo-janelas', titulo: 'E o meio do turno?', posicao: 'right',
+      descricao: 'O meio não tem horário aqui: ele é calculado por pessoa, 4 horas depois da hora em que ela bateu a entrada, e fica aberto por 2 horas. Quem entrou às 08:00 faz o meio das 12:00 às 14:00; quem entrou às 10:30 faz das 14:30 às 16:30.' },
     { alvo: 'evt-novo-submit', titulo: 'Criar o evento', posicao: 'top',
       descricao: 'Depois de criar, o próximo passo é abrir o evento e cadastrar os setores (fornecedores). Cada setor gera um link próprio pra equipe se cadastrar sozinha.' },
   ],
@@ -124,18 +122,20 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
 
 function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
   const janelas = [
+    // Sem o "meio": ele deixou de ter horário fixo e passou a ser a entrada
+    // real de cada pessoa + 4h. Manter o campo aqui faria o produtor preencher
+    // um horário que o sistema ignora, que é pior que não ter campo nenhum.
     { key: 'entrada', label: 'Entrada', cor: 'text-green-600' },
-    { key: 'meio', label: 'Meio (durante o evento)', cor: 'text-blue-600' },
-    { key: 'fim', label: 'Fim', cor: 'text-brand-600' },
+    { key: 'fim', label: 'Saída', cor: 'text-brand-600' },
   ] as const
   return (
     <div className="border-t border-slate-100 pt-4 space-y-3" data-tutorial="evt-novo-janelas">
       <div>
-        <p className="text-sm font-semibold text-slate-700">Janelas de registro de presença</p>
+        <p className="text-sm font-semibold text-slate-700">Horários do dia principal</p>
         <p className="text-xs text-slate-400">
-          Cada janela é o intervalo em que o sistema aceita o registro daquela etapa. Fora dela,
-          ninguém consegue bater ponto. Deixe em branco pra definir depois — enquanto estiver
-          vazia, a etapa fica bloqueada.
+          Valem só no dia de início do evento. Nos demais dias do período, entrada e saída são
+          livres a qualquer hora. Em branco, também ficam livres no dia principal. O meio do
+          turno não entra aqui: ele abre 4h depois da entrada de cada pessoa.
         </p>
       </div>
       {janelas.map(j => (

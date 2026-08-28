@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf } from '@/lib/format'
+import { diaBRT } from '@/lib/janelas'
 import {
   ferramenta, eventosVisiveis, exigirEvento, resolverSetor, urlBase, brl,
   ORDEM_ETAPAS, ROTULO_ETAPA,
@@ -191,11 +192,14 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
         const fichas = await Promise.all(
           achados.map(async f => {
             const forn = f.fornecedores as unknown as { id: string; nome: string; eventos: { id: string; nome: string } }
+            // Do ciclo de HOJE. Sem o recorte, num evento de varios dias a IA
+            // responderia "ja bateu a entrada" mostrando a batida de ontem.
             const { data: regs } = await supabaseAdmin
               .from('registros')
               .select('tipo, created_at, registro_manual')
               .eq('funcionario_id', f.id)
               .eq('evento_id', forn.eventos.id)
+              .eq('data_ref', diaBRT())
             const feitos = new Map((regs ?? []).map(r => [r.tipo, r]))
             const expirado = f.qr_expira_em ? new Date(f.qr_expira_em) < new Date() : false
             return {

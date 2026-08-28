@@ -220,22 +220,44 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         decide antes de enviar. O texto diz o que acontece com o dado em vez de
         remeter a um "termo" que ninguém abre: quem vê, o que vê e pra quê.
       */}
-      <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5 cursor-pointer hover:border-slate-300 transition-colors">
-        <input
-          type="checkbox"
-          required
-          checked={consentimento}
-          onChange={e => setConsentimento(e.target.checked)}
-          className="mt-0.5 w-4 h-4 shrink-0 accent-brand-500 cursor-pointer"
-        />
-        <span className="text-slate-600 text-xs leading-relaxed">
-          Autorizo o Credenciei a guardar meus dados e a mostrar meu{' '}
-          <strong className="text-slate-800">nome, cidade, função e telefone</strong> para
-          organizadores de outros eventos que procurem equipe na minha região.
-          Serve para eu ser chamado para trabalhar em novos eventos.
-          Meu CPF não é usado para isso, e posso pedir a remoção a qualquer momento.
-        </span>
-      </label>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+        {/* Uma linha, e o resto atrás de um toque.
+            O parágrafo inteiro aberto na tela era pulado por todo mundo: bloco
+            denso logo acima do botão de enviar, quando a pessoa só quer terminar
+            o cadastro. Ninguém lia — então nem servia como consentimento
+            informado, só ocupava a tela. Uma frase que diz o essencial ("guardar
+            e me chamar pra outros eventos") é lida; quem quiser o detalhe abre.
+            O texto completo continua ali, palavra por palavra. */}
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            required
+            checked={consentimento}
+            onChange={e => setConsentimento(e.target.checked)}
+            className="mt-0.5 w-4 h-4 shrink-0 accent-brand-500 cursor-pointer"
+          />
+          <span className="text-slate-600 text-xs leading-relaxed">
+            Autorizo o Credenciei a guardar meus dados para me chamar para trabalhar
+            em outros eventos.
+          </span>
+        </label>
+
+        {/* Fora do <label> de propósito: dentro dele, abrir o detalhe marcaria
+            o checkbox junto. */}
+        <details className="group pl-7">
+          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer text-brand-500 text-2xs font-medium hover:underline">
+            <span className="group-open:hidden">O que exatamente eu autorizo?</span>
+            <span className="hidden group-open:inline">Esconder detalhes</span>
+          </summary>
+          <p className="text-slate-500 text-2xs leading-relaxed mt-1.5">
+            O Credenciei guarda seus dados e mostra seu{' '}
+            <strong className="text-slate-700">nome, cidade, função e telefone</strong> para
+            organizadores de outros eventos que procurem equipe na sua região —
+            é assim que você é chamado para novos trabalhos. Seu CPF não é usado
+            para isso, e você pode pedir a remoção a qualquer momento.
+          </p>
+        </details>
+      </div>
 
       <button
         type="submit"

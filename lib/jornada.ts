@@ -5,8 +5,14 @@ import { inputParaISO, formatarBR } from '@/lib/tz'
  *
  * O responsável configura UMA vez (período + dias da semana + horários) e o
  * sistema materializa cada dia dentro do período. Este arquivo é a parte pura:
- * transforma a regra em dias e responde qual janela está aberta agora. Quem
- * grava no banco é `lib/actions.ts`.
+ * transforma a regra em dias. Quem grava no banco é `lib/actions.ts`.
+ *
+ * ⚠️ Os horários gerados aqui são EXPECTATIVA, não trava. Quem decide se uma
+ * batida é aceita agora é `lib/janelas.ts`: entrada e saída ficaram livres em
+ * todo dia do período (menos no dia principal do evento) e o meio passou a ser
+ * contado a partir da entrada real de cada pessoa. O que estes dias respondem
+ * é "que horas era pra essa pessoa ter chegado" — o horário esperado que
+ * aparece nas listas de pendência e nos lembretes.
  *
  * Tudo em horário de Brasília, como o resto do sistema — o responsável digita
  * "08:00" pensando no relógio dele, não em UTC.
@@ -134,69 +140,6 @@ export function gerarDias(jornada: Jornada): DiaGerado[] {
   }
 
   return dias
-}
-
-// ─── Leitura ─────────────────────────────────────────────────────────────────
-
-export type JanelaAberta = {
-  diaId: string
-  data: string
-  momento: 'entrada' | 'fim'
-}
-
-export type DiaDoBanco = {
-  id: string
-  data: string
-  cancelado?: boolean
-  entrada_inicio: string
-  entrada_fim: string
-  saida_inicio: string
-  saida_fim: string
-}
-
-/**
- * Qual janela está aberta AGORA, entre os dias de uma jornada.
- *
- * Devolve o dia e a etapa, ou null quando nada está aberto. Dia cancelado é
- * ignorado: é assim que "hoje não tem expediente" funciona sem apagar a linha.
- */
-export function janelaAbertaAgora(
-  dias: DiaDoBanco[],
-  momento: 'entrada' | 'fim',
-  agora = new Date()
-): JanelaAberta | null {
-  const t = agora.getTime()
-  const dentro = (ini: string, fim: string) =>
-    t >= new Date(ini).getTime() && t <= new Date(fim).getTime()
-
-  for (const d of dias) {
-    if (d.cancelado) continue
-    if (momento === 'entrada' && dentro(d.entrada_inicio, d.entrada_fim)) {
-      return { diaId: d.id, data: d.data, momento: 'entrada' }
-    }
-    if (momento === 'fim' && dentro(d.saida_inicio, d.saida_fim)) {
-      return { diaId: d.id, data: d.data, momento: 'fim' }
-    }
-  }
-  return null
-}
-
-/**
- * A próxima janela daquela etapa, para explicar a recusa. Sem isto o sistema
- * só diz "fora do horário", e quem está no portão não sabe se faltam dez
- * minutos ou dois dias.
- */
-export function proximaJanela(
-  dias: DiaDoBanco[],
-  momento: 'entrada' | 'fim',
-  agora = new Date()
-): string | null {
-  const t = agora.getTime()
-  const quando = (d: DiaDoBanco) => (momento === 'entrada' ? d.entrada_inicio : d.saida_inicio)
-  const futuras = dias
-    .filter(d => !d.cancelado && new Date(quando(d)).getTime() > t)
-    .sort((a, b) => new Date(quando(a)).getTime() - new Date(quando(b)).getTime())
-  return futuras[0] ? quando(futuras[0]) : null
 }
 
 // ─── Resumo em texto ─────────────────────────────────────────────────────────

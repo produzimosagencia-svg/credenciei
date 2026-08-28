@@ -3,41 +3,56 @@ import { notFound } from 'next/navigation'
 import { QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
+import QrProtegido from './QrProtegido'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
+import { gerarCodigoQR } from '@/lib/credencial-qr'
+import {
+  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio,
+  HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas,
+} from '@/lib/janelas'
+import { formatarBR } from '@/lib/tz'
 
 export const revalidate = 0
 
+/*
+ * O tutorial fala em CREDENCIAMENTO, não em supervisor.
+ *
+ * Quem lê o QR na entrada e na saída é o posto de credenciamento — pode ser o
+ * supervisor do setor, pode ser a portaria, pode ser outra pessoa da produção.
+ * Mandar procurar "seu supervisor" fazia a pessoa ir atrás de quem, na maior
+ * parte dos eventos, não é quem faz a leitura.
+ */
 const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-credencial',
-  versao: 1,
+  versao: 2,
   passos: [
     { alvo: 'cred-identidade', titulo: 'Esta é a sua credencial', posicao: 'bottom',
       descricao: 'Guarde este link no celular — é ele que você vai usar durante todo o evento. Vale só para você e para este evento.' },
     { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
-      descricao: 'Mostre esta tela para o supervisor quando chegar e quando for embora. Ele lê o código pelo celular dele e a sua presença fica registrada na hora.' },
+      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. Ele muda sozinho a cada poucos minutos, por segurança: print não funciona, precisa ser a tela ao vivo.' },
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
-      descricao: 'Na chegada, procure seu supervisor e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
+      descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
-      descricao: 'Durante o evento, no horário indicado aqui, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada.' },
+      descricao: `Quatro horas depois da sua entrada, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada.` },
     { alvo: 'cred-etapa-fim', titulo: '3. Saída', posicao: 'top',
-      descricao: 'Na hora de ir embora, mostre o QR Code de novo para o supervisor. Isso fecha o seu ciclo no evento.' },
-    { alvo: 'cred-etapas', titulo: 'Fique de olho nos horários', posicao: 'top',
-      descricao: 'Cada etapa só funciona dentro do horário mostrado no cartão. Antes disso aparece "Abre às...", e depois do horário fecha e não dá mais para registrar. Você também recebe um lembrete no WhatsApp na hora de cada uma.' },
+      descricao: 'Na hora de ir embora, volte ao credenciamento e mostre o QR Code de novo. Isso fecha o seu ciclo no dia.' },
+    { alvo: 'cred-etapas', titulo: 'Um ciclo por dia', posicao: 'top',
+      descricao: 'Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo: amanhã os três cartões voltam do zero. O horário do meio é contado a partir da hora em que você bateu a entrada naquele dia.' },
   ],
 }
 
-const MOMENTOS: { momento: MomentoInfo['momento']; label: string; descricao: string }[] = [
+type Etapa = 'entrada' | 'meio' | 'fim'
+
+const ROTULOS: { momento: Etapa; label: string; descricao: string }[] = [
   { momento: 'entrada', label: 'Entrada', descricao: 'QR code na chegada' },
-  { momento: 'meio', label: 'Meio', descricao: 'Foto durante o evento' },
+  { momento: 'meio', label: 'Meio', descricao: 'Foto durante o turno' },
   { momento: 'fim', label: 'Saída', descricao: 'QR code na saída' },
 ]
 
-function statusMomento(inicio: string | null, fim: string | null, feito: boolean): MomentoInfo['status'] {
-  if (feito) return 'feito'
-  if (!inicio || !fim) return 'indefinido'
-  const agora = new Date()
+/** Status a partir do relógio, quando a etapa tem horário. */
+function statusPorRelogio(inicio: string, fim: string, agora: Date): MomentoInfo['status'] {
   if (agora < new Date(inicio)) return 'aguardando'
   if (agora > new Date(fim)) return 'encerrado'
   return 'disponivel'
@@ -48,40 +63,107 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedores(nome, eventos(id, nome, local, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, empresa, cargo, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
   if (!funcionario) notFound()
 
   const fornecedor = funcionario.fornecedores as any
-  const evento = fornecedor?.eventos
+  const evento = fornecedor?.eventos as (EventoJanelas & { id: string; nome: string; local: string | null }) | null
 
-  // Registros já feitos por este funcionário neste evento
+  const agora = new Date()
+  const hoje = diaBRT(agora)
+
+  /*
+   * O DIA desta credencial.
+   *
+   * Não é sempre "hoje": quem entrou às 22:00 e está vendo a tela às 02:00
+   * continua no ciclo de ontem, e mostrar os três cartões zerados faria a
+   * pessoa achar que precisa bater a entrada de novo no meio do próprio turno.
+   */
+  const { data: entradaRecente } = await supabase
+    .from('registros')
+    .select('data_ref, created_at')
+    .eq('funcionario_id', funcionario.id)
+    .eq('evento_id', evento?.id ?? '')
+    .eq('tipo', 'entrada')
+    .gte('created_at', new Date(agora.getTime() - TETO_TURNO_H * 60 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const entrada = entradaRecente?.[0]
+    ? {
+        em: entradaRecente[0].created_at as string,
+        dataRef: (entradaRecente[0].data_ref as string | null) ?? diaBRT(entradaRecente[0].created_at as string),
+      }
+    : null
+
+  const dataRef = entrada?.dataRef ?? hoje
+
+  // Só os registros DESTE dia. Olhar o evento inteiro faria os cartões
+  // aparecerem verdes já no segundo dia de uma operação de vários dias.
   const { data: registros } = await supabase
     .from('registros')
     .select('tipo, created_at')
     .eq('funcionario_id', funcionario.id)
-    .eq('evento_id', evento?.id)
+    .eq('evento_id', evento?.id ?? '')
+    .eq('data_ref', dataRef)
 
   const feitoMap: Record<string, string> = {}
   for (const r of registros ?? []) feitoMap[r.tipo] = r.created_at
 
-  const momentos: MomentoInfo[] = MOMENTOS.map(m => {
-    const inicio = evento?.[`janela_${m.momento}_inicio`] ?? null
-    const fim = evento?.[`janela_${m.momento}_fim`] ?? null
-    const feitoEm = feitoMap[m.momento] ?? null
+  const periodo = evento ? periodoDoEvento(evento) : null
+  const dentroDoPeriodo = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
+  const diaPrincipal = !!evento && ehDiaPrincipal(evento, dataRef)
+
+  const momentos: MomentoInfo[] = ROTULOS.map(({ momento, label, descricao }) => {
+    const feitoEm = feitoMap[momento] ?? null
+    const base = { momento, label, descricao, feitoEm }
+
+    if (feitoEm) return { ...base, inicio: null, fim: null, status: 'feito' as const, janelaTexto: '' }
+
+    if (!evento || !dentroDoPeriodo) {
+      return { ...base, inicio: null, fim: null, status: 'indefinido' as const, janelaTexto: 'Fora do período do evento' }
+    }
+
+    // ── Meio: a única etapa com horário próprio, e ele é individual ──────────
+    if (momento === 'meio') {
+      if (!entrada) {
+        return {
+          ...base, inicio: null, fim: null, status: 'aguardando' as const,
+          janelaTexto: `Abre ${HORAS_ATE_MEIO}h depois da sua entrada`,
+        }
+      }
+      const j = janelaMeio(entrada.em)
+      return {
+        ...base, inicio: j.inicio, fim: j.fim,
+        status: statusPorRelogio(j.inicio, j.fim, agora),
+        janelaTexto: `${formatarBR(j.inicio, 'hora')} às ${formatarBR(j.fim, 'hora')}`,
+      }
+    }
+
+    // ── Entrada e saída: livres, menos no dia principal ─────────────────────
+    const inicio = evento[`janela_${momento}_inicio`] ?? null
+    const fim = evento[`janela_${momento}_fim`] ?? null
+
+    if (!diaPrincipal || !inicio || !fim) {
+      return { ...base, inicio: null, fim: null, status: 'disponivel' as const, janelaTexto: 'Livre hoje, a qualquer hora' }
+    }
     return {
-      ...m,
-      inicio,
-      fim,
-      feitoEm,
-      status: statusMomento(inicio, fim, !!feitoEm),
+      ...base, inicio, fim,
+      status: statusPorRelogio(inicio, fim, agora),
+      janelaTexto: `${formatarBR(inicio, 'hora')} às ${formatarBR(fim, 'hora')}`,
     }
   })
 
-  // QR da credencial (conteúdo = token). Escaneado pelo organizador na entrada e na saída.
-  const qrDataUrl = await QRCode.toDataURL(token, { width: 260, margin: 1 })
+  /*
+   * Primeiro código já pronto no servidor: a tela nunca abre sem QR, nem
+   * mesmo por um instante, o que na fila do portão seria péssimo. Daí em
+   * diante quem renova é o componente do cliente.
+   */
+  const { codigo, expiraEm } = gerarCodigoQR(token)
+  const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
@@ -106,12 +188,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
 
-              {/* QR code (entrada e saída) */}
-              <div className="text-center" data-tutorial="cred-qr">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={qrDataUrl} alt="QR code da credencial" className="mx-auto rounded-xl border border-slate-100" width={200} height={200} />
-                <p className="text-slate-400 text-xs mt-2">Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento</p>
-              </div>
+              <QrProtegido token={token} inicial={{ dataUrl: qrDataUrl, expiraEm }} />
 
               <div data-tutorial="cred-etapas">
                 <CheckinPresenca token={token} momentos={momentos} />
