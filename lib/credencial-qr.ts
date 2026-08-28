@@ -1,40 +1,36 @@
 // O conteúdo do QR Code da credencial — assinado e com prazo.
 //
-// ─── O QUE ESTE CÓDIGO FAZ, E O QUE NÃO FAZ ─────────────────────────────────
+// ─── UM QR POR DIA ──────────────────────────────────────────────────────────
 //
-// O QR carrega um código ASSINADO em vez do `qr_token` puro. A assinatura
-// (HMAC) impede que alguém forje um QR a partir de um token adivinhado:
-// conhecer o formato não basta, é preciso a chave, que nunca sai do servidor.
+// O QR carrega um código ASSINADO em vez do `qr_token` puro, e a assinatura
+// cobre O DIA. Isso significa que o mesmo link mostra um QR diferente a cada
+// dia da operação, sem precisar mandar mensagem nova: a pessoa abre a mesma
+// credencial de sempre e o código de hoje está lá.
 //
-// ⚠️ O código NÃO EXPIRA — decisão do cliente, tomada sabendo do custo.
+// É o que resolve o print passado adiante. Antes, a imagem do dia 28 valia
+// para sempre — bastava mandar no grupo e outra pessoa entrava por você. Agora
+// ela vale só no dia 28: no dia seguinte o scanner recusa, porque a assinatura
+// que ele confere inclui a data.
 //
-// Isso significa, sem rodeios: um print desta tela continua funcionando para
-// sempre. As travas visuais da credencial (bloquear salvar, arrastar,
-// imprimir, e esconder o QR quando a tela sai de foco) atrapalham a captura
-// casual, mas não impedem ninguém — sempre dá para fotografar a tela com um
-// segundo celular, e nenhum navegador consegue bloquear isso.
+// A assinatura (HMAC) é o que impede forjar: mudar a data dentro do código
+// quebra a conferência, e gerar uma assinatura nova exige a chave, que nunca
+// sai do servidor.
 //
-// A defesa que resta contra crachá emprestado é humana e já existe no fluxo:
-// o scanner mostra NOME, empresa e função de quem está sendo lido, então quem
-// credencia vê na hora se a pessoa na frente dele confere. Vale reforçar isso
-// com a equipe do credenciamento.
+// ─── O QUE ISTO NÃO RESOLVE ─────────────────────────────────────────────────
 //
-// Se um dia voltar a valer a pena expirar, o caminho é curto: o `expira` já
-// viaja dentro do código e já é coberto pela assinatura — basta voltar a
-// compará-lo com o relógio em `lerCodigoQR`.
+// Emprestar o crachá NO MESMO DIA continua possível — dentro do dia o código é
+// o mesmo, e nenhum navegador impede print. Contra isso a defesa é humana e já
+// existe: o scanner mostra NOME, empresa e função de quem está sendo lido, e
+// quem credencia confere com a pessoa à sua frente.
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-/**
- * Prazo gravado dentro do código.
- *
- * Fica de propósito num horizonte longo em vez de zero: o campo continua
- * assinado e verificável, então religar a expiração é trocar uma linha em
- * `lerCodigoQR`, sem invalidar nada do que já está em circulação.
+/*
+ * Versão do formato. Subiu de c1 para c2 quando o dia entrou na assinatura:
+ * um código antigo não tem data, então não há como saber de que dia ele é —
+ * e aceitar sem saber devolveria exatamente o print eterno que isto remove.
  */
-export const VALIDADE_CODIGO_S = 10 * 365 * 24 * 60 * 60
-
-const PREFIXO = 'c1'
+const PREFIXO = 'c2'
 
 /**
  * A chave da assinatura.
@@ -50,25 +46,21 @@ function chave(): string {
   return s
 }
 
-function assinar(token: string, expira: number): string {
+function assinar(token: string, dia: string): string {
   return createHmac('sha256', chave())
-    .update(`${PREFIXO}.${token}.${expira}`)
+    .update(`${PREFIXO}.${token}.${dia}`)
     .digest('base64url')
     .slice(0, 16)
 }
 
-export type CodigoQR = { codigo: string; expiraEm: number }
+export type CodigoQR = { codigo: string; dia: string }
 
-/** Um código novo para aquela credencial. */
-export function gerarCodigoQR(token: string, agora = Date.now()): CodigoQR {
-  const expira = Math.floor(agora / 1000) + VALIDADE_CODIGO_S
-  return {
-    codigo: `${PREFIXO}.${token}.${expira}.${assinar(token, expira)}`,
-    expiraEm: expira * 1000,
-  }
+/** O código daquela credencial NAQUELE DIA ("2026-08-28", em Brasília). */
+export function gerarCodigoQR(token: string, dia: string): CodigoQR {
+  return { codigo: `${PREFIXO}.${token}.${dia}.${assinar(token, dia)}`, dia }
 }
 
-export type LeituraQR = { ok: true; token: string } | { ok: false; erro: string }
+export type LeituraQR = { ok: true; token: string; dia: string } | { ok: false; erro: string }
 
 /**
  * Lê o que veio do scanner e devolve o token, ou a recusa já em português.
@@ -78,35 +70,34 @@ export type LeituraQR = { ok: true; token: string } | { ok: false; erro: string 
  * Quem estiver com a tela antiga aberta recebe uma instrução clara — recarregar
  * a credencial resolve, e é o que a própria tela faz sozinha.
  */
-export function lerCodigoQR(bruto: string, agora = Date.now()): LeituraQR {
+export function lerCodigoQR(bruto: string, diaDeHoje: string): LeituraQR {
   const partes = (bruto ?? '').trim().split('.')
 
   if (partes.length !== 4 || partes[0] !== PREFIXO) {
-    return { ok: false, erro: 'QR Code fora do padrão. Peça para a pessoa abrir a credencial de novo e mostrar o código atualizado.' }
+    return { ok: false, erro: 'QR Code fora do padrão. Peça para a pessoa abrir a credencial de novo e mostrar o código de hoje.' }
   }
 
-  const [, token, expiraStr, sig] = partes
-  const expira = Number(expiraStr)
-  if (!token || !Number.isFinite(expira)) {
+  const [, token, dia, sig] = partes
+  if (!token || !/^\d{4}-\d{2}-\d{2}$/.test(dia)) {
     return { ok: false, erro: 'QR Code ilegível. Peça para a pessoa recarregar a credencial.' }
   }
 
-  // Assinatura antes do prazo: sem isso, um código forjado com prazo válido
-  // seria recusado por "expirado", contando que o formato está certo.
-  const esperado = Buffer.from(assinar(token, expira))
+  // Assinatura ANTES da data: sem isso, um código com a data trocada à mão
+  // seria recusado por "de outro dia", quando na verdade é forjado — e a
+  // recusa mandaria a pessoa recarregar a tela em vez de acender o alerta.
+  const esperado = Buffer.from(assinar(token, dia))
   const recebido = Buffer.from(sig)
   if (esperado.length !== recebido.length || !timingSafeEqual(esperado, recebido)) {
     return { ok: false, erro: 'QR Code inválido. Este código não foi emitido por este sistema.' }
   }
 
-  /*
-   * NÃO checa o prazo, de propósito (ver o cabeçalho): o cliente pediu que o
-   * QR não expire. `agora` continua no parâmetro porque religar a expiração é
-   * só descomentar a comparação abaixo.
-   *
-   *   if (expira * 1000 < agora) return { ok: false, erro: 'QR Code expirado.' }
-   */
-  void agora
+  if (dia !== diaDeHoje) {
+    const [, m, d] = dia.split('-')
+    return {
+      ok: false,
+      erro: `Este QR Code é do dia ${d}/${m} e não vale hoje. Peça para a pessoa abrir a credencial ao vivo — o código de hoje aparece sozinho.`,
+    }
+  }
 
-  return { ok: true, token }
+  return { ok: true, token, dia }
 }

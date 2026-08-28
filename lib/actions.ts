@@ -1578,7 +1578,10 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   // O QR carrega um código ASSINADO e com prazo, não o token cru — ver
   // lib/credencial-qr.ts. O split de "|" sobrevive só por causa de um formato
   // antigo que já circulou com o tipo grudado no fim.
-  const leitura = lerCodigoQR((qrData ?? '').split('|')[0]?.trim() ?? '')
+  // O dia de HOJE, não o `data_ref` do registro: num turno que vira a
+  // madrugada o registro pertence a ontem, mas o crachá na mão da pessoa é o
+  // de hoje. Comparar com data_ref recusaria quem está saindo às 4 da manhã.
+  const leitura = lerCodigoQR((qrData ?? '').split('|')[0]?.trim() ?? '', diaBRT())
   if (!leitura.ok) return { success: false, message: leitura.erro }
   const token = leitura.token
 

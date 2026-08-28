@@ -31,7 +31,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'cred-identidade', titulo: 'Esta é a sua credencial', posicao: 'bottom',
       descricao: 'Guarde este link no celular — é ele que você vai usar durante todo o evento. Vale só para você e para este evento.' },
     { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
-      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. Esta credencial é sua: emprestar o QR para outra pessoa é uso indevido.' },
+      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. O código muda todo dia: o de hoje não vale amanhã, e o de ontem não vale hoje. Por isso mostre sempre a tela ao vivo, nunca um print.' },
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
       descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
@@ -158,11 +158,17 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   })
 
   /*
-   * O conteúdo do QR é um código ASSINADO, não o token cru: assinar impede que
-   * alguém forje um crachá a partir de um token adivinhado. Ele não expira —
-   * ver lib/credencial-qr.ts.
+   * O QR é um código ASSINADO e amarrado ao DIA DE HOJE.
+   *
+   * O link da credencial é sempre o mesmo — a pessoa não recebe mensagem nova
+   * —, mas a imagem muda a cada dia. Um print de ontem não passa hoje, que é o
+   * que impede o crachá de circular no grupo. Ver lib/credencial-qr.ts.
+   *
+   * Note que é `hoje`, não `dataRef`: num turno que vira a madrugada o registro
+   * pertence a ontem, mas o crachá na mão da pessoa tem que ser o de hoje, que
+   * é o que o scanner confere.
    */
-  const { codigo } = gerarCodigoQR(token)
+  const { codigo } = gerarCodigoQR(token, hoje)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 
   return (
@@ -188,7 +194,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
 
-              <QrProtegido dataUrl={qrDataUrl} />
+              <QrProtegido dataUrl={qrDataUrl} dia={hoje} />
 
               <div data-tutorial="cred-etapas">
                 <CheckinPresenca token={token} momentos={momentos} />

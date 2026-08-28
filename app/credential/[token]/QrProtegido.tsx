@@ -18,14 +18,31 @@ import { EyeOff, ShieldAlert } from 'lucide-react'
  * alguém tira um print — não existe API para isso em iOS nem em Android — e,
  * mesmo que existisse, dá para fotografar a tela com um segundo celular.
  *
- * O código dentro do QR não expira (decisão do cliente), então um print
- * continua valendo. A defesa que resta contra crachá emprestado é humana e já
+ * Quem de fato protege é o código: ele vale SÓ NO DIA em que foi gerado (ver
+ * lib/credencial-qr.ts). Um print de ontem não passa hoje, e é isso que impede
+ * o crachá de circular no grupo. Dentro do mesmo dia, a defesa é humana e já
  * existe no fluxo: o scanner mostra NOME, empresa e função de quem está sendo
  * lido, e quem credencia vê na hora se confere com a pessoa à sua frente.
  */
 
-export default function QrProtegido({ dataUrl }: { dataUrl: string }) {
+export default function QrProtegido({ dataUrl, dia }: { dataUrl: string; dia: string }) {
   const [oculto, setOculto] = useState(false)
+
+  /*
+   * Recarrega sozinho na virada do dia, em Brasília.
+   *
+   * O QR vale só no dia em que foi gerado. Quem deixa a credencial aberta a
+   * noite toda — o caso normal de quem trabalha na madrugada — acordaria com o
+   * código de ontem na tela e seria recusado no portão sem entender por quê.
+   */
+  useEffect(() => {
+    const agora = Date.now()
+    const viradaBRT = new Date(`${dia}T00:00:00-03:00`).getTime() + 24 * 60 * 60 * 1000
+    const faltam = viradaBRT - agora
+    if (faltam <= 0 || faltam > 26 * 60 * 60 * 1000) return
+    const t = setTimeout(() => window.location.reload(), faltam + 2000)
+    return () => clearTimeout(t)
+  }, [dia])
 
   // Esconde quando a tela sai de foco. É o sinal mais próximo de "alguém está
   // capturando" que a web oferece, e cobre também o caso de passar o aparelho
@@ -88,7 +105,7 @@ export default function QrProtegido({ dataUrl }: { dataUrl: string }) {
 
       <p className="text-slate-400 text-2xs mt-1.5 flex items-center justify-center gap-1">
         <ShieldAlert className="w-3 h-3 shrink-0" />
-        Esta credencial é pessoal. Emprestar o QR é uso indevido.
+        Este QR vale só hoje e muda amanhã. A credencial é pessoal — emprestar é uso indevido.
       </p>
     </div>
   )

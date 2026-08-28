@@ -42,7 +42,7 @@ ${link}
 
 🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
 
-🔐 Sua credencial é pessoal e não pode ser emprestada — o credenciamento confere seu nome na leitura.
+🔐 O QR Code muda todo dia: o de hoje não vale amanhã. Mostre sempre a tela ao vivo, nunca um print.
 
 ⏰ Pode ficar tranquilo: a gente te avisa por aqui na hora de cada etapa. 😉`,
 
