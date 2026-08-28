@@ -78,7 +78,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <PageHeader
         voltarPara={`/admin/eventos/${id}`}
         titulo="Editar evento"

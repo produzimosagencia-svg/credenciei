@@ -21,7 +21,6 @@ import {
   ehMaster,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
-import { gerarDias, type Jornada } from './jornada'
 import {
   diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida,
   HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
@@ -1153,122 +1152,6 @@ export async function sincronizarRegistroNaPlanilha(
 
 // ─── Jornadas recorrentes ("despertador") ────────────────────────────────────
 
-export type ModoAplicacao = 'proximos' | 'todos'
-
-/**
- * Salva a regra da jornada e materializa os dias.
- *
- * `modo` responde à pergunta que o pedido levanta: ao mudar a configuração,
- * o que acontece com o que já foi gerado?
- *
- * - `proximos`: preserva o passado. Só regera de hoje em diante — o histórico
- *   do que já aconteceu fica intacto, que é o comportamento seguro quando a
- *   operação já começou.
- * - `todos`: regera o período inteiro. Use quando a configuração estava errada
- *   desde o começo. Dias passados que tinham registro NÃO somem: o registro
- *   guarda `data_ref` próprio e sobrevive à troca do dia.
- *
- * Dia cancelado à mão é sempre preservado — remarcar um feriado não pode ser
- * desfeito por uma edição de horário.
- */
-export async function salvarJornada(eventoId: string, jornada: Jornada, modo: ModoAplicacao = 'proximos') {
-  await exigirEventoDaOrg(eventoId)
-  const db = supabaseAdmin
-
-  if (!jornada.dataInicio || !jornada.dataFim) throw new Error('Informe a data inicial e a final.')
-  if (jornada.dataFim < jornada.dataInicio) throw new Error('A data final é anterior à inicial.')
-  const blocosValidos = (jornada.blocos ?? []).filter(
-    b => b.dias?.length && (b.turnos ?? []).some(t => t.entrada && t.saida)
-  )
-  if (!blocosValidos.length) throw new Error('Marque ao menos um dia da semana com horário de entrada e saída.')
-
-  const { data: salva, error } = await db.from('evento_jornadas').upsert([{
-    evento_id: eventoId,
-    data_inicio: jornada.dataInicio,
-    data_fim: jornada.dataFim,
-    tolerancia_min: Math.max(0, Math.min(240, jornada.toleranciaMin || 0)),
-    blocos: blocosValidos,
-    atualizado_em: new Date().toISOString(),
-  }], { onConflict: 'evento_id' }).select('id').single()
-  if (error || !salva) throw new Error('Não foi possível salvar a configuração. Tente de novo.')
-
-  const dias = gerarDias({ ...jornada, blocos: blocosValidos })
-  if (!dias.length) throw new Error('Essa configuração não gera nenhum dia. Confira o período e os dias da semana.')
-
-  // Dia em Brasília. Em UTC, salvar a jornada depois das 21:00 tratava HOJE
-  // como dia passado e o expediente de hoje era descartado da regeração.
-  const hoje = diaBRT()
-  const corte = modo === 'proximos' ? hoje : jornada.dataInicio
-
-  // Preserva os dias que o responsável cancelou à mão antes de regerar.
-  const { data: cancelados } = await db
-    .from('jornada_dias').select('data, turno')
-    .eq('evento_id', eventoId).eq('cancelado', true)
-  const eraCancelado = new Set((cancelados ?? []).map(d => `${d.data}:${d.turno}`))
-
-  await db.from('jornada_dias').delete().eq('evento_id', eventoId).gte('data', corte)
-
-  const paraInserir = dias
-    .filter(d => d.data >= corte)
-    .map(d => ({
-      evento_id: eventoId,
-      jornada_id: salva.id,
-      data: d.data,
-      turno: d.turno,
-      entrada_inicio: d.entradaInicio,
-      entrada_fim: d.entradaFim,
-      saida_inicio: d.saidaInicio,
-      saida_fim: d.saidaFim,
-      cancelado: eraCancelado.has(`${d.data}:${d.turno}`),
-    }))
-
-  if (paraInserir.length) {
-    const { error: erroDias } = await db.from('jornada_dias').insert(paraInserir)
-    if (erroDias) throw new Error('A configuração foi salva, mas houve erro ao gerar os dias. Salve de novo.')
-  }
-
-  // As datas do evento acompanham o período: elas são a referência exibida em
-  // toda a interface, e deixá-las divergindo da jornada confunde.
-  await db.from('eventos').update({
-    data_inicio: inputParaISO(`${jornada.dataInicio}T00:00`),
-    data_fim: inputParaISO(`${jornada.dataFim}T23:59`),
-  }).eq('id', eventoId)
-
-  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
-  revalidatePath(`/admin/eventos/${eventoId}`)
-  revalidatePath(`/admin/eventos/${eventoId}/jornada`)
-
-  return { ok: true as const, dias: paraInserir.length, preservados: dias.length - paraInserir.length }
-}
-
-/**
- * Liga/desliga um dia específico sem mexer na regra — o feriado no meio do mês.
- * É a "exceção" que o item 6 do pedido pede: fora da configuração só se houver
- * uma regra explícita, e esta é ela.
- */
-export async function alternarDiaJornada(diaId: string, cancelado: boolean) {
-  const { data: dia } = await supabaseAdmin
-    .from('jornada_dias').select('id, evento_id').eq('id', diaId).single()
-  if (!dia) throw new Error('Dia não encontrado')
-  await exigirEventoDaOrg(dia.evento_id)
-
-  await supabaseAdmin.from('jornada_dias').update({ cancelado }).eq('id', diaId)
-  revalidatePath(`/admin/eventos/${dia.evento_id}/jornada`)
-  return { ok: true as const }
-}
-
-/** Remove a jornada e volta o evento pro modo de janela fixa (um dia só). */
-export async function removerJornada(eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
-  const perfil = await getPerfil()
-  if (!podeExcluir(perfil?.role)) {
-    throw new Error('Apenas o master remove a configuração de registros diários. Você pode editá-la.')
-  }
-  await supabaseAdmin.from('evento_jornadas').delete().eq('evento_id', eventoId)
-  revalidatePath(`/admin/eventos/${eventoId}`)
-  revalidatePath(`/admin/eventos/${eventoId}/jornada`)
-  return { ok: true as const }
-}
 
 // ─── Dias de trabalho do evento ───────────────────────────────────────────────
 

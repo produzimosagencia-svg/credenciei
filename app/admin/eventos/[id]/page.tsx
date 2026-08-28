@@ -22,8 +22,6 @@ const TUTORIAL: TutorialConfig = {
   passos: [
     { alvo: 'evt-editar', titulo: 'Configurar o evento', posicao: 'bottom',
       descricao: 'Aqui você ajusta datas, local e os horários do dia principal — o único dia em que entrada e saída ficam presas a um horário.' },
-    { alvo: 'evt-jornada', titulo: 'Registros diários', posicao: 'bottom',
-      descricao: 'Para operação de vários dias: configure período, dias da semana e horários UMA vez, como um despertador. Estes horários não travam o ponto — eles dizem que horas se ESPERA cada pessoa, e é isso que alimenta a tela de Pendências e os lembretes de WhatsApp.' },
     { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
@@ -64,12 +62,18 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       .eq('evento_id', id),
   ])
 
-  // Em que modo este evento valida ponto: jornada recorrente ou janela fixa.
-  const [{ data: jornada }, { count: diasGerados }] = await Promise.all([
-    supabase.from('evento_jornadas').select('data_inicio, data_fim, blocos').eq('evento_id', id).maybeSingle(),
-    supabase.from('jornada_dias').select('id', { count: 'exact', head: true })
-      .eq('evento_id', id).eq('cancelado', false),
-  ])
+  /*
+   * Os dias de trabalho deste evento.
+   *
+   * Vem direto de `jornada_dias`, que é a fonte única — a tabela de regra
+   * recorrente (`evento_jornadas`) saiu de cena junto com a tela que a
+   * alimentava. Ter duas formas de dizer "quais dias este evento tem" fazia
+   * uma apagar o que a outra gravava, sem avisar ninguém.
+   */
+  const { data: diasTrabalho } = await supabase
+    .from('jornada_dias').select('data, tipo, cancelado')
+    .eq('evento_id', id).eq('cancelado', false).order('data')
+  const diasPreparacao = (diasTrabalho ?? []).filter(d => d.tipo !== 'principal')
 
   if (!evento) notFound()
 
@@ -135,10 +139,6 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           <Link href={`/admin/eventos/${id}/editar`} data-tutorial="evt-editar" className="btn btn-secundario">
             <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
           </Link>
-          <Link href={`/admin/eventos/${id}/jornada`} data-tutorial="evt-jornada" className="btn btn-secundario">
-            <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
-            {jornada ? 'Registros diários' : 'Configurar registros diários'}
-          </Link>
           {/* Mesma lista que o supervisor recebe no WhatsApp quando o horário
               de cada etapa passa — aqui dá pra abrir qualquer dia. */}
           <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
@@ -162,13 +162,15 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Stats */}
-      {jornada && (
+      {/* Diz em uma linha as duas regras que convivem no evento, porque é a
+          dúvida que mais aparece: por que fulano bateu ponto às 3 da manhã num
+          dia e no outro não conseguiu às 10. */}
+      {!!diasPreparacao.length && (
         <Aviso tom="marca" icone={<CalendarCheck className="w-3.5 h-3.5" />}>
-          <strong>Registros diários ativos.</strong> {diasGerados ?? 0} dia(s) configurado(s) entre{' '}
-          {formatarBR(`${String(jornada.data_inicio).slice(0, 10)}T12:00:00-03:00`, 'data')} e{' '}
-          {formatarBR(`${String(jornada.data_fim).slice(0, 10)}T12:00:00-03:00`, 'data')}.
-          Enquanto isso valer, as janelas fixas de entrada e saída da tela de edição ficam de lado.{' '}
-          <Link href={`/admin/eventos/${id}/jornada`} className="underline font-medium">Ver configuração</Link>
+          <strong>{diasPreparacao.length} dia(s) de preparação</strong> além do dia do evento.
+          Neles a entrada e a saída são livres e o meio abre 4h depois da entrada de cada pessoa;
+          no dia do evento valem os horários configurados.{' '}
+          <Link href={`/admin/eventos/${id}/editar`} className="underline font-medium">Ver os dias</Link>
         </Aviso>
       )}
 
