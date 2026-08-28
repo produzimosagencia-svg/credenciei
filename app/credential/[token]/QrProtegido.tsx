@@ -1,90 +1,31 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { EyeOff, ShieldAlert, RefreshCw, Loader2 } from 'lucide-react'
-import { renovarQrCredencial } from '@/lib/actions'
+import { useEffect, useState } from 'react'
+import { EyeOff, ShieldAlert } from 'lucide-react'
 
 /**
  * O QR Code da credencial, com as proteções que a plataforma web permite.
  *
- * ─── O QUE REALMENTE PROTEGE ────────────────────────────────────────────────
+ * ─── SEJA HONESTO SOBRE O QUE ISTO FAZ ──────────────────────────────────────
  *
- * O código dentro do QR tem prazo e é renovado enquanto esta tela estiver
- * aberta (ver lib/credencial-qr.ts). Essa é a única defesa que funciona de
- * verdade: nenhum navegador consegue impedir um print, e mesmo que
- * conseguisse, sempre dá para fotografar a tela com um segundo celular. O que
- * dá para fazer é a imagem capturada PARAR DE VALER.
- *
- * ─── O QUE APENAS DIFICULTA ─────────────────────────────────────────────────
+ * O que está aqui ATRAPALHA a captura, não impede:
  *
  * - salvar/copiar a imagem: menu de contexto, arrastar e seleção bloqueados;
  * - impressão: o QR some no `@media print`, então Ctrl+P não leva nada;
- * - tela em segundo plano: some e volta só com um toque, o que atrapalha
- *   gravação de tela e quem passa o aparelho para outra pessoa.
+ * - tela em segundo plano: o QR some e só volta com um toque, o que atrapalha
+ *   gravação de tela e quem passa o aparelho desbloqueado para outra pessoa.
  *
- * O navegador NÃO avisa quando alguém tira um print — não existe API para
- * isso em iOS nem em Android. Sair de foco é o sinal mais próximo disponível,
- * e é o que este componente usa.
+ * Nenhuma dessas travas para quem quer mesmo: o navegador NÃO avisa quando
+ * alguém tira um print — não existe API para isso em iOS nem em Android — e,
+ * mesmo que existisse, dá para fotografar a tela com um segundo celular.
+ *
+ * O código dentro do QR não expira (decisão do cliente), então um print
+ * continua valendo. A defesa que resta contra crachá emprestado é humana e já
+ * existe no fluxo: o scanner mostra NOME, empresa e função de quem está sendo
+ * lido, e quem credencia vê na hora se confere com a pessoa à sua frente.
  */
 
-type Props = {
-  token: string
-  /** Primeiro código, já renderizado no servidor — a tela nunca abre vazia. */
-  inicial: { dataUrl: string; expiraEm: number }
-}
-
-/** Renova com folga: um terço do tempo restante dá três chances antes de expirar. */
-function proximaRenovacaoMs(expiraEm: number): number {
-  const restante = expiraEm - Date.now()
-  return Math.max(30_000, Math.floor(restante / 3))
-}
-
-export default function QrProtegido({ token, inicial }: Props) {
-  const [dataUrl, setDataUrl] = useState(inicial.dataUrl)
-  const [expiraEm, setExpiraEm] = useState(inicial.expiraEm)
+export default function QrProtegido({ dataUrl }: { dataUrl: string }) {
   const [oculto, setOculto] = useState(false)
-  const [renovando, setRenovando] = useState(false)
-  const [semRede, setSemRede] = useState(false)
-  const [expirado, setExpirado] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const renovar = useCallback(async () => {
-    setRenovando(true)
-    try {
-      const r = await renovarQrCredencial(token)
-      if (r.dataUrl && r.expiraEm) {
-        setDataUrl(r.dataUrl)
-        setExpiraEm(r.expiraEm)
-        setSemRede(false)
-        setExpirado(false)
-      } else {
-        setSemRede(true)
-      }
-    } catch {
-      // Falhar aqui não apaga o código atual: ele ainda vale por alguns
-      // minutos, e derrubar o QR por uma oscilação de rede seria pior que a
-      // renovação atrasada.
-      setSemRede(true)
-    } finally {
-      setRenovando(false)
-    }
-  }, [token])
-
-  // Ciclo de renovação. Reagenda a cada código novo, sempre com folga.
-  useEffect(() => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => { void renovar() }, proximaRenovacaoMs(expiraEm))
-    return () => { if (timer.current) clearTimeout(timer.current) }
-  }, [expiraEm, renovar])
-
-  // Marca o código como vencido quando o prazo passa sem renovação — sem isso
-  // a tela mostraria um QR que o scanner vai recusar, e a pessoa só
-  // descobriria no portão.
-  useEffect(() => {
-    const restante = expiraEm - Date.now()
-    if (restante <= 0) { setExpirado(true); return }
-    const t = setTimeout(() => setExpirado(true), restante)
-    return () => clearTimeout(t)
-  }, [expiraEm])
 
   // Esconde quando a tela sai de foco. É o sinal mais próximo de "alguém está
   // capturando" que a web oferece, e cobre também o caso de passar o aparelho
@@ -92,10 +33,7 @@ export default function QrProtegido({ token, inicial }: Props) {
   useEffect(() => {
     const esconder = () => setOculto(true)
     const aoTrocarVisibilidade = () => {
-      if (document.visibilityState === 'hidden') { esconder(); return }
-      // Voltou: se o código está perto de vencer, renova antes de a pessoa
-      // chegar no portão em vez de deixá-la descobrir lá que expirou.
-      if (expiraEm - Date.now() < 60_000) void renovar()
+      if (document.visibilityState === 'hidden') esconder()
     }
     document.addEventListener('visibilitychange', aoTrocarVisibilidade)
     window.addEventListener('blur', esconder)
@@ -103,9 +41,7 @@ export default function QrProtegido({ token, inicial }: Props) {
       document.removeEventListener('visibilitychange', aoTrocarVisibilidade)
       window.removeEventListener('blur', esconder)
     }
-  }, [expiraEm, renovar])
-
-  const mostrar = () => { setOculto(false); if (expirado) void renovar() }
+  }, [])
 
   return (
     <div className="text-center" data-tutorial="cred-qr">
@@ -123,29 +59,25 @@ export default function QrProtegido({ token, inicial }: Props) {
           draggable={false}
           onDragStart={e => e.preventDefault()}
           // print:hidden — o QR não sai em impressão nem em "salvar como PDF".
-          className={`w-full h-full print:hidden transition-all ${oculto || expirado ? 'blur-xl scale-110' : ''}`}
+          className={`w-full h-full print:hidden transition-all ${oculto ? 'blur-xl scale-110' : ''}`}
           style={{ pointerEvents: 'none' }}
         />
 
-        {(oculto || expirado) && (
+        {oculto && (
           <button
-            onClick={mostrar}
+            onClick={() => setOculto(false)}
             className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-slate-900/80 text-white px-3"
           >
-            {renovando ? <Loader2 className="w-6 h-6 animate-spin" /> : oculto ? <EyeOff className="w-6 h-6" /> : <ShieldAlert className="w-6 h-6" />}
-            <span className="font-bold text-xs">
-              {oculto ? 'QR ocultado por segurança' : 'Código expirado'}
-            </span>
-            <span className="text-white/70 text-2xs leading-tight">
-              {oculto ? 'Toque para mostrar de novo' : 'Toque para gerar um código novo'}
-            </span>
+            <EyeOff className="w-6 h-6" />
+            <span className="font-bold text-xs">QR ocultado por segurança</span>
+            <span className="text-white/70 text-2xs leading-tight">Toque para mostrar de novo</span>
           </button>
         )}
 
         {/* Substitui o QR no papel, para o print sair sem nada aproveitável. */}
         <div className="hidden print:flex absolute inset-0 items-center justify-center text-center px-4 border border-dashed border-slate-300 rounded-xl">
           <span className="text-slate-500 text-xs">
-            O QR Code não pode ser impresso. Ele muda a cada poucos minutos e só vale ao vivo, na tela.
+            O QR Code não pode ser impresso. Apresente a tela do celular no credenciamento.
           </span>
         </div>
       </div>
@@ -156,19 +88,8 @@ export default function QrProtegido({ token, inicial }: Props) {
 
       <p className="text-slate-400 text-2xs mt-1.5 flex items-center justify-center gap-1">
         <ShieldAlert className="w-3 h-3 shrink-0" />
-        Este código muda sozinho. Print não funciona — mostre a tela ao vivo.
+        Esta credencial é pessoal. Emprestar o QR é uso indevido.
       </p>
-
-      {semRede && (
-        <button
-          onClick={() => void renovar()}
-          disabled={renovando}
-          className="mt-2 inline-flex items-center gap-1.5 text-amber-600 text-2xs font-medium disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3 h-3 ${renovando ? 'animate-spin' : ''}`} />
-          Sem conexão para atualizar o código. Tocar para tentar de novo.
-        </button>
-      )}
     </div>
   )
 }

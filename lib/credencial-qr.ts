@@ -1,39 +1,38 @@
 // O conteúdo do QR Code da credencial — assinado e com prazo.
 //
-// ─── POR QUE NÃO É MAIS O TOKEN CRU ──────────────────────────────────────────
+// ─── O QUE ESTE CÓDIGO FAZ, E O QUE NÃO FAZ ─────────────────────────────────
 //
-// Antes o QR carregava o `qr_token` puro. Um print daquela tela valia para
-// sempre: bastava mandar a imagem no grupo do WhatsApp e outra pessoa passava
-// o crachá por você. Nenhum bloqueio de screenshot resolve isso — sempre dá
-// para fotografar a tela com um segundo celular.
+// O QR carrega um código ASSINADO em vez do `qr_token` puro. A assinatura
+// (HMAC) impede que alguém forje um QR a partir de um token adivinhado:
+// conhecer o formato não basta, é preciso a chave, que nunca sai do servidor.
 //
-// O que resolve é a imagem PARAR DE VALER. O QR passa a carregar um código
-// assinado com prazo curto, que a tela renova sozinha enquanto estiver aberta.
-// O print continua sendo possível; ele só não serve mais alguns minutos depois.
+// ⚠️ O código NÃO EXPIRA — decisão do cliente, tomada sabendo do custo.
 //
-// A assinatura (HMAC) é o que impede alguém de forjar um código: conhecer o
-// formato não basta, é preciso a chave, que nunca sai do servidor.
+// Isso significa, sem rodeios: um print desta tela continua funcionando para
+// sempre. As travas visuais da credencial (bloquear salvar, arrastar,
+// imprimir, e esconder o QR quando a tela sai de foco) atrapalham a captura
+// casual, mas não impedem ninguém — sempre dá para fotografar a tela com um
+// segundo celular, e nenhum navegador consegue bloquear isso.
 //
-// ─── O PREÇO, EXPLÍCITO ──────────────────────────────────────────────────────
+// A defesa que resta contra crachá emprestado é humana e já existe no fluxo:
+// o scanner mostra NOME, empresa e função de quem está sendo lido, então quem
+// credencia vê na hora se a pessoa na frente dele confere. Vale reforçar isso
+// com a equipe do credenciamento.
 //
-// Uma credencial aberta há muito tempo, sem internet para renovar, para de ser
-// aceita. O prazo é generoso de propósito (cinco minutos, renovando a cada
-// noventa segundos) e a saída para esse caso já existe e é melhor: o registro
-// assistido, em que o supervisor localiza a pessoa e bate por ela com foto.
+// Se um dia voltar a valer a pena expirar, o caminho é curto: o `expira` já
+// viaja dentro do código e já é coberto pela assinatura — basta voltar a
+// compará-lo com o relógio em `lerCodigoQR`.
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-/** Quanto tempo um código continua válido depois de gerado. */
-export const VALIDADE_CODIGO_S = 5 * 60
-
 /**
- * De quanto em quanto tempo a tela pede um código novo.
+ * Prazo gravado dentro do código.
  *
- * Bem menor que a validade de propósito: dá três tentativas de renovação antes
- * de o código atual expirar, então uma falha de rede isolada não derruba o QR
- * na mão de quem está na fila.
+ * Fica de propósito num horizonte longo em vez de zero: o campo continua
+ * assinado e verificável, então religar a expiração é trocar uma linha em
+ * `lerCodigoQR`, sem invalidar nada do que já está em circulação.
  */
-export const INTERVALO_RENOVACAO_S = 90
+export const VALIDADE_CODIGO_S = 10 * 365 * 24 * 60 * 60
 
 const PREFIXO = 'c1'
 
@@ -60,7 +59,7 @@ function assinar(token: string, expira: number): string {
 
 export type CodigoQR = { codigo: string; expiraEm: number }
 
-/** Um código novo, válido por VALIDADE_CODIGO_S segundos a partir de agora. */
+/** Um código novo para aquela credencial. */
 export function gerarCodigoQR(token: string, agora = Date.now()): CodigoQR {
   const expira = Math.floor(agora / 1000) + VALIDADE_CODIGO_S
   return {
@@ -100,9 +99,14 @@ export function lerCodigoQR(bruto: string, agora = Date.now()): LeituraQR {
     return { ok: false, erro: 'QR Code inválido. Este código não foi emitido por este sistema.' }
   }
 
-  if (expira * 1000 < agora) {
-    return { ok: false, erro: 'QR Code expirado — provavelmente é um print antigo. Peça para a pessoa abrir a credencial ao vivo.' }
-  }
+  /*
+   * NÃO checa o prazo, de propósito (ver o cabeçalho): o cliente pediu que o
+   * QR não expire. `agora` continua no parâmetro porque religar a expiração é
+   * só descomentar a comparação abaixo.
+   *
+   *   if (expira * 1000 < agora) return { ok: false, erro: 'QR Code expirado.' }
+   */
+  void agora
 
   return { ok: true, token }
 }

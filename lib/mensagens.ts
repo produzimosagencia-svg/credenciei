@@ -16,6 +16,7 @@ import {
   type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
+import { registrarEstadoWhatsApp } from './saude'
 import { formatCpf } from './format'
 import { formatarNumeroWhatsApp, enviarWhatsApp, estadoDaInstancia, ESPACAMENTO_MS, type ResultadoEnvio } from './whatsapp'
 import { renderizarMensagem } from './mensagens-modelos'
@@ -421,6 +422,9 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
    * mensagens — elas ficam `pendente` esperando a conexão voltar.
    */
   const canal = await estadoDaInstancia()
+  // Grava SEMPRE, conectada ou não: é o "sinal de vida" que a tela lê para
+  // avisar tanto que o WhatsApp caiu quanto que o worker parou de rodar.
+  await registrarEstadoWhatsApp(canal.conectada, canal.estado)
   if (!canal.conectada) {
     console.warn(`[mensagens] instância desconectada (${canal.estado}) — nada enviado, fila preservada`)
     return { processadas: 0 }

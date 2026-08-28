@@ -32,7 +32,7 @@ import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
 import { sincronizarAgendamentos, agendarCredenciaisSupervisor, agendarBoasVindasFuncionario, agendarMeioAposEntrada } from './mensagens'
 import { enderecoAproximado } from './geocoding'
-import { gerarCodigoQR, lerCodigoQR } from './credencial-qr'
+import { lerCodigoQR } from './credencial-qr'
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
@@ -1505,14 +1505,24 @@ async function resolverRegistro(
     if (!janela) {
       return { ok: false, erro: 'Registre primeiro a sua entrada. O horário do meio é contado a partir dela.' }
     }
-    const veredito = dentroDaJanela(janela.inicio, janela.fim, agora, 'meio')
-    if (!veredito.ok) {
-      // Em dia de preparação a recusa precisa dizer de onde saiu o horário,
-      // senão "abre às 12:00" parece um horário que caiu do céu.
+
+    /*
+     * O meio ABRE num horário, mas não FECHA.
+     *
+     * O ponto dele é o horário ficar gravado — é o que permite conferir a
+     * jornada com a pessoa depois. Fechar a janela criaria um beco sem saída:
+     * como a saída exige o meio, quem passasse do horário não conseguiria nem
+     * registrar o meio nem ir embora, e ficaria dependendo do supervisor para
+     * bater o cartão às onze da noite.
+     *
+     * Chegar atrasado não some do relatório: a tela de pendências e o
+     * histórico comparam o horário feito com o esperado e mostram a diferença.
+     */
+    if (agora.getTime() < new Date(janela.inicio).getTime()) {
       const porque = dia?.tipo === 'principal' || !entrada
         ? ''
         : ` Ele abre ${HORAS_ATE_MEIO}h depois da sua entrada, que foi às ${formatarBR(entrada.em, 'hora')}.`
-      return { ok: false, erro: `${veredito.erro}${porque}` }
+      return { ok: false, erro: `O registro do meio ainda não abriu.${porque}` }
     }
   } else {
     const veredito = avaliarEntradaSaida(evento, dia, momento, dataRef, agora)
@@ -1541,7 +1551,7 @@ async function resolverRegistro(
       if (!temMeio?.length) {
         return {
           ok: false,
-          erro: 'Falta o registro do meio deste dia. Sem ele a saída não pode ser registrada — procure o credenciamento para regularizar.',
+          erro: 'Registre o meio antes de sair. Abra sua credencial, tire a selfie do meio e volte aqui — a saída libera na hora.',
         }
       }
     }
@@ -1796,34 +1806,6 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     funcionario: funcInfo,
     momento,
   }
-}
-
-/**
- * Emite um QR novo para a credencial que está aberta na tela.
- *
- * Chamada de tempos em tempos pela própria página do funcionário. É pública —
- * o `qr_token` é o segredo que identifica a pessoa, igual ao resto da tela —,
- * por isso tem teto de chamadas: renovando a cada 90s, ninguém legítimo passa
- * de ~40 por hora.
- */
-export async function renovarQrCredencial(
-  token: string
-): Promise<{ codigo?: string; dataUrl?: string; expiraEm?: number; error?: string }> {
-  const limpo = String(token ?? '').trim()
-  if (!limpo) return { error: 'Credencial inválida' }
-  if (!podePassar(`qrcod:${limpo}`, 120, 60 * 60 * 1000)) {
-    return { error: 'Muitas renovações seguidas. Aguarde um instante.' }
-  }
-
-  // Confere que a credencial existe antes de assinar: assinar qualquer string
-  // transformaria esta ação num gerador de códigos para tokens inventados.
-  const { data: func } = await supabaseAdmin
-    .from('funcionarios').select('id').eq('qr_token', limpo).single()
-  if (!func) return { error: 'Credencial não encontrada' }
-
-  const { codigo, expiraEm } = gerarCodigoQR(limpo)
-  const { default: QRCode } = await import('qrcode')
-  return { codigo, expiraEm, dataUrl: await QRCode.toDataURL(codigo, { width: 260, margin: 1 }) }
 }
 
 /**

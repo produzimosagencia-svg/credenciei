@@ -2,10 +2,10 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
   CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Search, X,
-  TrendingUp, Activity, Radio, UserCheck, Clock,
-} from 'lucide-react'
+  TrendingUp, Activity, Radio, UserCheck, Clock, AlertTriangle } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
+import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -311,6 +311,35 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // divergência de fuso pra suprimir na hidratação.
   const dataPorExtenso = extensoBR(agora, { weekday: 'long', day: 'numeric', month: 'long' })
 
+  /*
+   * O WhatsApp caiu?
+   *
+   * Duas falhas diferentes com a mesma consequência prática — ninguém recebe
+   * nada — e por isso os dois viram aviso:
+   *   1. a instância desconectou (celular desligado, sessão derrubada, banido);
+   *   2. o worker parou de reportar, ou seja, a fila não está sendo processada.
+   *
+   * Lê o último estado GRAVADO, nunca consulta a Evolution aqui: perguntar ao
+   * vivo penduraria o Painel por até dez segundos justamente quando a VPS
+   * estivesse fora do ar — a hora em que se quer ver o aviso.
+   */
+  const saude = veTodosEventos(perfil.role) || podeGerenciarEventos(perfil.role)
+    ? await estadoWhatsAppSalvo()
+    : null
+  const alertaWhatsApp = !saude
+    ? null
+    : saude.semNoticia
+      ? {
+          titulo: 'A fila de WhatsApp parou de rodar',
+          detalhe: `Sem notícia há ${saude.minutosAtras} minutos. Nenhum lembrete está sendo enviado — verifique o worker na VPS.`,
+        }
+      : !saude.conectada
+        ? {
+            titulo: 'WhatsApp desconectado',
+            detalhe: `A instância respondeu "${saude.estado}" na última verificação, ${formatarBR(saude.em, 'curto')}. As mensagens estão paradas na fila até a conexão voltar — leia o QR da Evolution de novo.`,
+          }
+        : null
+
   /**
    * Os eventos abrem a tela.
    *
@@ -441,6 +470,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="space-y-5">
+      {/* Aviso de canal caído. Fica ACIMA do título de propósito: é a única
+          coisa da tela que exige ação imediata, e enterrá-la no meio dos
+          indicadores faria o produtor descobrir no dia do evento que a equipe
+          não recebeu lembrete nenhum. */}
+      {alertaWhatsApp && (
+        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-red-700 text-sm font-semibold">{alertaWhatsApp.titulo}</p>
+            <p className="text-red-600 text-xs mt-0.5">{alertaWhatsApp.detalhe}</p>
+          </div>
+        </div>
+      )}
+
       <PageHeader
         titulo="Painel"
         descricao={dataPorExtenso}

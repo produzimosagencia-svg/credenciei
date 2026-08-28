@@ -31,7 +31,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'cred-identidade', titulo: 'Esta é a sua credencial', posicao: 'bottom',
       descricao: 'Guarde este link no celular — é ele que você vai usar durante todo o evento. Vale só para você e para este evento.' },
     { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
-      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. Ele muda sozinho a cada poucos minutos, por segurança: print não funciona, precisa ser a tela ao vivo.' },
+      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. Esta credencial é sua: emprestar o QR para outra pessoa é uso indevido.' },
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
       descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
@@ -158,11 +158,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   })
 
   /*
-   * Primeiro código já pronto no servidor: a tela nunca abre sem QR, nem
-   * mesmo por um instante, o que na fila do portão seria péssimo. Daí em
-   * diante quem renova é o componente do cliente.
+   * O conteúdo do QR é um código ASSINADO, não o token cru: assinar impede que
+   * alguém forje um crachá a partir de um token adivinhado. Ele não expira —
+   * ver lib/credencial-qr.ts.
    */
-  const { codigo, expiraEm } = gerarCodigoQR(token)
+  const { codigo } = gerarCodigoQR(token)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 
   return (
@@ -188,7 +188,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
 
-              <QrProtegido token={token} inicial={{ dataUrl: qrDataUrl, expiraEm }} />
+              <QrProtegido dataUrl={qrDataUrl} />
 
               <div data-tutorial="cred-etapas">
                 <CheckinPresenca token={token} momentos={momentos} />
