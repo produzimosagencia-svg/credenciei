@@ -1,7 +1,5 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { Building2, Plus, CalendarDays, User, CheckCircle2, PauseCircle } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
@@ -120,7 +118,7 @@ export default async function OrganizacoesPage() {
                             {sufixoPeriodo(org.valor_cobrado_periodo)}
                           </span>
                         )}
-                        <span>desde {format(new Date(org.created_at), 'dd/MM/yyyy', { locale: ptBR })}</span>
+                        <span>desde {formatarBR(org.created_at, 'data')}</span>
                       </div>
                     </div>
                   </div>

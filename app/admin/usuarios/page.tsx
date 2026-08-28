@@ -2,7 +2,6 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X } from 'lucide-react'
-import { format } from 'date-fns'
 import { podeGerenciarUsuarios, ehMaster, podeExcluir, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -10,6 +9,7 @@ import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
+import { formatarBR } from '@/lib/tz'
 
 export const revalidate = 0
 
@@ -230,7 +230,7 @@ export default async function UsuariosPage({
                     </span>
                     <span className="flex items-center gap-1">
                       <CalendarDays className="w-3 h-3 shrink-0" />
-                      {format(new Date(u.criadoEm), 'dd/MM/yyyy')}
+                      {formatarBR(u.criadoEm, 'data')}
                     </span>
                   </div>
                 </div>

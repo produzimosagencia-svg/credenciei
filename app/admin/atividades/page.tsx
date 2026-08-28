@@ -228,7 +228,10 @@ export default async function AtividadesPage({
   const sairam = quemFez('fim')
 
   const ativos = (equipe ?? []).filter(f => f.ativo !== false)
-  const hojeStr = new Date().toDateString()
+  // O dia em BRASÍLIA, não o do relógio do servidor.
+  // A Vercel roda em UTC: das 21:00 à meia-noite de Brasília lá já é o dia
+  // seguinte, então "batidas hoje" zerava justamente no auge do evento.
+  const hojeStr = diaBRT(agoraDoRender)
 
   const linhasNaTela = linhas
   const doFiltro = filtroEtapa ? linhasNaTela.filter(l => l.etapa === filtroEtapa) : linhasNaTela
@@ -251,7 +254,7 @@ export default async function AtividadesPage({
 
   const totalEquipe = ativos.length
   const jaSairam = sairam.size
-  const batidasHoje = meus.filter(r => new Date(r.created_at as string).toDateString() === hojeStr).length
+  const batidasHoje = meus.filter(r => diaBRT(r.created_at as string) === hojeStr).length
 
   /** Preserva o evento ao trocar de filtro, e vice-versa. */
   const url = (mudanca: { evento?: string; etapa?: string | null }) => {

@@ -5,6 +5,7 @@ import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, Aviso } from '@/components/ui/Superficie'
 import { somarDias, type BlocoJornada, type Jornada } from '@/lib/jornada'
+import { diaBRT } from '@/lib/janelas'
 import JornadaForm from './JornadaForm'
 import DiasGerados from './DiasGerados'
 
@@ -38,7 +39,9 @@ export default async function JornadaPage({ params }: { params: Promise<{ id: st
     .order('data')
     .order('turno')
 
-  const hojeISO = new Date().toISOString().slice(0, 10)
+  // Em Brasília. Em UTC, depois das 21:00 o dia de hoje já apareceria
+  // riscado como "passado" na lista de dias gerados.
+  const hojeISO = diaBRT()
   const doEvento = (d: string | null) => (d ? String(d).slice(0, 10) : '')
 
   /*

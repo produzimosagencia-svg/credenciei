@@ -11,8 +11,6 @@ import {
   atualizarValorNaPlanilha,
   garantirPastaCliente,
 } from './google-sheets'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import {
   podeGerenciarUsuarios,
   podeGerenciarEventos,
@@ -1132,7 +1130,14 @@ export async function sincronizarRegistroNaPlanilha(
     if (!func || !evento?.spreadsheet_id) return
 
     const fornecedor = func.fornecedores as any
-    const horario = format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR })
+    /*
+      * Horário de Brasília, não o do servidor.
+      *
+      * `format` do date-fns usa o fuso do runtime, e a Vercel roda em UTC: a
+      * batida das 17:00 ia parar na planilha do cliente como 20:00. É o número
+      * que o produtor usa pra conferir jornada e pagar — não podia estar errado.
+      */
+     const horario = formatarBR(new Date().toISOString(), 'completo')
 
     await registrarPresencaNaPlanilha(
       evento.spreadsheet_id,
@@ -1190,7 +1195,9 @@ export async function salvarJornada(eventoId: string, jornada: Jornada, modo: Mo
   const dias = gerarDias({ ...jornada, blocos: blocosValidos })
   if (!dias.length) throw new Error('Essa configuração não gera nenhum dia. Confira o período e os dias da semana.')
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  // Dia em Brasília. Em UTC, salvar a jornada depois das 21:00 tratava HOJE
+  // como dia passado e o expediente de hoje era descartado da regeração.
+  const hoje = diaBRT()
   const corte = modo === 'proximos' ? hoje : jornada.dataInicio
 
   // Preserva os dias que o responsável cancelou à mão antes de regerar.
