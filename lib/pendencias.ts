@@ -13,7 +13,7 @@
 // sistema — que é o pior tipo de erro nesse contexto: o que faz duvidar dos dois.
 
 import { createClient } from '@supabase/supabase-js'
-import { janelaMeio, horariosEsperados, diaBRT, type EventoJanelas, type DiaDaJornada } from './janelas'
+import { janelaDoMeio, horariosEsperados, diaBRT, type EventoJanelas, type DiaDaJornada } from './janelas'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -80,11 +80,16 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
     .single()
   if (!evento) return []
 
+  /*
+   * Quem ainda está credenciado. Quem já foi descredenciado cumpriu o evento e
+   * foi embora — cobrar dele a saída de amanhã seria cobrar de quem terminou.
+   */
   let equipeQuery = supabase
     .from('funcionarios')
     .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
+    .is('descredenciado_em', null)
     .order('nome')
   if (fornecedorId) equipeQuery = equipeQuery.eq('fornecedor_id', fornecedorId)
 
@@ -103,21 +108,22 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
   const feitos = new Map<string, string>() // "funcId:etapa" → created_at
   for (const r of registros ?? []) feitos.set(`${r.funcionario_id}:${r.tipo}`, r.created_at as string)
 
-  // O dia da jornada, quando existe, é o horário ESPERADO daquele dia.
+  /*
+   * O dia de trabalho. Se aquela data não é dia de trabalho deste evento, não
+   * existe pendência nenhuma: ninguém era esperado, então ninguém faltou.
+   */
   const { data: diasJornada } = await supabase
     .from('jornada_dias')
-    .select('entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .select('tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
     .eq('evento_id', eventoId)
     .eq('data', data)
-    .eq('cancelado', false)
     .order('turno')
     .limit(1)
 
-  const esperados = horariosEsperados(
-    evento as EventoJanelas,
-    data,
-    (diasJornada?.[0] as DiaDaJornada | undefined) ?? null
-  )
+  const dia = (diasJornada?.[0] as DiaDaJornada | undefined) ?? null
+  if (!dia || dia.cancelado) return []
+
+  const esperados = horariosEsperados(evento as EventoJanelas, data, dia)
 
   const lista: Pendencia[] = []
 
@@ -148,10 +154,10 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
     // informação que importa — a de que essa pessoa não apareceu.
     if (!entradaEm) continue
 
-    // ── Meio: a janela é individual e já fechou sem registro ────────────────
+    // ── Meio: horário fixo no dia principal, individual nos de preparação ───
     if (etapas.includes('meio') && !feitos.has(`${f.id}:meio`)) {
-      const j = janelaMeio(entradaEm)
-      if (agora > new Date(j.fim).getTime()) {
+      const j = janelaDoMeio(evento as EventoJanelas, dia, entradaEm)
+      if (j && agora > new Date(j.fim).getTime()) {
         lista.push({ ...comum, etapa: 'meio', esperadoEm: j.inicio, realizadoEm: entradaEm })
       }
     }

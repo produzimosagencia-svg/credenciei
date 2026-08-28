@@ -104,7 +104,7 @@ async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<D
   const hoje = diaBRT()
   const { data: dias } = await supabase
     .from('jornada_dias')
-    .select('data, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .select('data, tipo, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
     .eq('evento_id', evento.id)
     .eq('cancelado', false)
     .gte('data', hoje)
@@ -115,10 +115,12 @@ async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<D
     return dias.map(d => ({ data: d.data as string, jornadaDia: d as DiaDaJornada }))
   }
 
+  // Evento antigo, de antes de os dias serem materializados: o dia principal
+  // continua sendo a data de início.
   const periodo = periodoDoEvento(evento)
   if (!periodo) return []
   const principal = periodo.primeiro
-  return principal >= hoje ? [{ data: principal, jornadaDia: null }] : []
+  return principal >= hoje ? [{ data: principal, jornadaDia: { tipo: 'principal' as const } }] : []
 }
 
 /**
@@ -148,6 +150,8 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     .select('id, telefone, fornecedor_id, fornecedores!inner(evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
+    // Quem ja foi descredenciado cumpriu o evento: nao recebe mais lembrete.
+    .is('descredenciado_em', null)
   if (!funcionarios?.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]

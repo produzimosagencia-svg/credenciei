@@ -22,10 +22,12 @@ const TUTORIAL: TutorialConfig = {
       descricao: 'O dia principal é a data de INÍCIO do evento — o dia que tem portaria e horário combinado com o cliente. Só nele estes horários travam a entrada e a saída. Nos outros dias do período a equipe bate ponto a qualquer hora.' },
     { alvo: 'evt-novo-janela-entrada', titulo: 'Entrada do dia principal', posicao: 'right',
       descricao: 'Período de credenciamento na chegada, no dia principal. Dê folga: se a equipe chega às 14h, abra às 13h e feche às 15h, senão quem atrasar fica travado. Deixe em branco para que a entrada seja livre também neste dia.' },
+    { alvo: 'evt-novo-janela-meio', titulo: 'Meio do dia principal', posicao: 'right',
+      descricao: 'A hora em que a equipe confirma que continua no posto, no dia do evento. Aqui não tem QR: o próprio funcionário abre a credencial e tira uma selfie. Nos dias de preparação este horário não vale — lá o meio abre 4h depois da entrada de cada pessoa.' },
     { alvo: 'evt-novo-janela-fim', titulo: 'Saída do dia principal', posicao: 'right',
-      descricao: 'Descredenciamento na saída, no dia principal. É o que fecha o ciclo e permite conferir quem cumpriu o turno inteiro.' },
-    { alvo: 'evt-novo-janelas', titulo: 'E o meio do turno?', posicao: 'right',
-      descricao: 'O meio não tem horário aqui: ele é calculado por pessoa, 4 horas depois da hora em que ela bateu a entrada, e fica aberto por 2 horas. Quem entrou às 08:00 faz o meio das 12:00 às 14:00; quem entrou às 10:30 faz das 14:30 às 16:30.' },
+      descricao: 'Descredenciamento na saída. Quem bate a saída no dia principal é automaticamente descredenciado do evento — sai das listas, mas continua na base e com todo o histórico.' },
+    { alvo: 'evt-novo-janelas', titulo: 'E os dias de montagem?', posicao: 'right',
+      descricao: 'Depois de criar o evento, abra "Editar evento" e marque os dias de preparação. Neles a entrada e a saída são livres, e o meio é contado 4 horas depois da entrada de cada pessoa.' },
     { alvo: 'evt-novo-submit', titulo: 'Criar o evento', posicao: 'top',
       descricao: 'Depois de criar, o próximo passo é abrir o evento e cadastrar os setores (fornecedores). Cada setor gera um link próprio pra equipe se cadastrar sozinha.' },
   ],
@@ -122,10 +124,11 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
 
 function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
   const janelas = [
-    // Sem o "meio": ele deixou de ter horário fixo e passou a ser a entrada
-    // real de cada pessoa + 4h. Manter o campo aqui faria o produtor preencher
-    // um horário que o sistema ignora, que é pior que não ter campo nenhum.
+    // Os três valem só no DIA PRINCIPAL. Nos dias de preparação (marcados
+    // depois, na tela de edição) entrada e saída são livres e o meio é a
+    // entrada real de cada pessoa + 4h.
     { key: 'entrada', label: 'Entrada', cor: 'text-green-600' },
+    { key: 'meio', label: 'Meio', cor: 'text-blue-600' },
     { key: 'fim', label: 'Saída', cor: 'text-brand-600' },
   ] as const
   return (
@@ -133,9 +136,9 @@ function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
       <div>
         <p className="text-sm font-semibold text-slate-700">Horários do dia principal</p>
         <p className="text-xs text-slate-400">
-          Valem só no dia de início do evento. Nos demais dias do período, entrada e saída são
-          livres a qualquer hora. Em branco, também ficam livres no dia principal. O meio do
-          turno não entra aqui: ele abre 4h depois da entrada de cada pessoa.
+          Entrada, meio e saída do DIA DO EVENTO. Os dias de montagem e desmontagem são
+          marcados depois, em "Editar evento" — neles a entrada e a saída são livres, e o meio
+          abre 4h depois da entrada de cada pessoa.
         </p>
       </div>
       {janelas.map(j => (

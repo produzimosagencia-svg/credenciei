@@ -23,8 +23,8 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import { gerarDias, type Jornada } from './jornada'
 import {
-  diaBRT, janelaMeio, dentroDaJanela, avaliarEntradaSaida,
-  HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas,
+  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida,
+  HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
 import { normalizarUsuario, validarUsuario, usuarioParaEmail } from './usuario'
@@ -1270,6 +1270,126 @@ export async function removerJornada(eventoId: string) {
   return { ok: true as const }
 }
 
+// ─── Dias de trabalho do evento ───────────────────────────────────────────────
+
+export type DiaDoEvento = {
+  data: string
+  tipo: 'principal' | 'preparacao'
+  cancelado: boolean
+  /** Já tem batida registrada — não pode ser desmarcado sem perder a prova. */
+  temBatidas: boolean
+}
+
+/**
+ * Os dias de trabalho de um evento, na ordem.
+ *
+ * O dia principal sempre aparece, mesmo que ninguém tenha marcado dia nenhum:
+ * ele é a data do próprio evento.
+ */
+export async function diasDoEvento(eventoId: string): Promise<DiaDoEvento[]> {
+  const { data: dias } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id, data, tipo, cancelado')
+    .eq('evento_id', eventoId)
+    .order('data')
+
+  if (!dias?.length) return []
+
+  // Quais desses dias já têm batida. Uma consulta só, em vez de uma por dia.
+  const { data: comBatida } = await supabaseAdmin
+    .from('registros')
+    .select('data_ref')
+    .eq('evento_id', eventoId)
+    .in('data_ref', dias.map(d => d.data as string))
+  const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+
+  return dias.map(d => ({
+    data: d.data as string,
+    tipo: (d.tipo as 'principal' | 'preparacao') ?? 'preparacao',
+    cancelado: d.cancelado === true,
+    temBatidas: batidos.has(d.data as string),
+  }))
+}
+
+/**
+ * Salva quais dias este evento tem trabalho.
+ *
+ * O dia principal não entra na lista: ele é a data do evento e é mantido em
+ * sincronia com ela aqui mesmo — se o produtor mudar a data do evento, o dia
+ * principal se muda junto, senão o sistema ficaria cobrando ponto num dia que
+ * não existe mais.
+ *
+ * Dia que já tem batida NUNCA é removido, mesmo que o produtor desmarque. A
+ * linha é a prova de que aquele dia foi de trabalho; apagá-la transformaria a
+ * ausência de alguém em "esse dia nem existia" no fechamento do pagamento.
+ */
+export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, data_inicio').eq('id', eventoId).single()
+  if (!evento?.data_inicio) throw new Error('Este evento ainda não tem data definida.')
+
+  const principal = diaBRT(evento.data_inicio as string)
+  const escolhidos = [...new Set((datas ?? []).map(d => String(d).slice(0, 10)))]
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== principal)
+    .sort()
+
+  // ── O dia principal, sempre exatamente um e na data do evento ────────────
+  const { data: principaisAtuais } = await supabaseAdmin
+    .from('jornada_dias').select('id, data').eq('evento_id', eventoId).eq('tipo', 'principal')
+
+  for (const antigo of principaisAtuais ?? []) {
+    if (antigo.data === principal) continue
+    // A data do evento mudou. Vira dia de preparação em vez de sumir: se
+    // houve batida naquele dia, ela precisa continuar tendo um dia ao qual
+    // pertencer.
+    await supabaseAdmin.from('jornada_dias').update({ tipo: 'preparacao' }).eq('id', antigo.id)
+  }
+
+  await supabaseAdmin.from('jornada_dias').upsert(
+    [{ evento_id: eventoId, jornada_id: null, data: principal, turno: 0, tipo: 'principal', cancelado: false }],
+    { onConflict: 'evento_id,data,turno' },
+  )
+
+  // ── Os dias de preparação escolhidos ────────────────────────────────────
+  if (escolhidos.length) {
+    await supabaseAdmin.from('jornada_dias').upsert(
+      escolhidos.map(data => ({
+        evento_id: eventoId, jornada_id: null, data, turno: 0, tipo: 'preparacao', cancelado: false,
+      })),
+      { onConflict: 'evento_id,data,turno' },
+    )
+  }
+
+  // ── Os desmarcados ──────────────────────────────────────────────────────
+  const { data: todos } = await supabaseAdmin
+    .from('jornada_dias').select('id, data').eq('evento_id', eventoId).eq('tipo', 'preparacao')
+  const paraRemover = (todos ?? []).filter(d => !escolhidos.includes(d.data as string))
+
+  let preservados = 0
+  if (paraRemover.length) {
+    const { data: comBatida } = await supabaseAdmin
+      .from('registros').select('data_ref')
+      .eq('evento_id', eventoId)
+      .in('data_ref', paraRemover.map(d => d.data as string))
+    const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+
+    const removiveis = paraRemover.filter(d => !batidos.has(d.data as string))
+    preservados = paraRemover.length - removiveis.length
+    if (removiveis.length) {
+      await supabaseAdmin.from('jornada_dias').delete().in('id', removiveis.map(d => d.id))
+    }
+  }
+
+  // Os dias mudaram, então os lembretes daquele evento mudam junto.
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath(`/admin/eventos/${eventoId}/editar`)
+  return { ok: true as const, dias: escolhidos.length + 1, preservados }
+}
+
 // ─── Presença: QR (entrada/saída) + foto (meio) ───────────────────────────────
 //
 // Regra do fluxo: QR CODE escaneado na ENTRADA, FOTO tirada pelo próprio
@@ -1313,22 +1433,37 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
   }
 }
 
-/** O dia da jornada correspondente a uma data, quando o evento tem jornada configurada. */
-async function jornadaDiaDe(eventoId: string, dataRef: string): Promise<string | null> {
-  const { data } = await supabaseAdmin
+type DiaDeTrabalho = DiaDaJornada & { id: string; data: string }
+
+/**
+ * O dia de trabalho do evento naquela data — ou `null` se aquele dia não foi
+ * marcado como dia de trabalho.
+ *
+ * É o `null` que faz o relatório de fechamento existir: sem ele, qualquer data
+ * seria dia de trabalho e "estava escalado para 5 dias e veio em 4" não teria
+ * como ser respondido.
+ */
+async function diaDeTrabalho(eventoId: string, data: string): Promise<DiaDeTrabalho | null> {
+  const { data: dias } = await supabaseAdmin
     .from('jornada_dias')
-    .select('id')
+    .select('id, data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
     .eq('evento_id', eventoId)
-    .eq('data', dataRef)
-    .eq('cancelado', false)
+    .eq('data', data)
     .order('turno')
     .limit(1)
-  return (data?.[0]?.id as string | undefined) ?? null
+  return (dias?.[0] as DiaDeTrabalho | undefined) ?? null
 }
 
 type Resolucao =
   | { ok: false; erro: string }
-  | { ok: true; dataRef: string; jornadaDiaId: string | null; jaEm: string | null }
+  | {
+      ok: true
+      dataRef: string
+      jornadaDiaId: string | null
+      /** Dia principal do evento — é o que dispara o descredenciamento na saída. */
+      diaPrincipal: boolean
+      jaEm: string | null
+    }
 
 /**
  * Onde o registro vai cair e se ele pode ser feito agora.
@@ -1353,34 +1488,63 @@ async function resolverRegistro(
   const hoje = diaBRT(agora)
   let dataRef = hoje
 
+  /*
+   * A entrada em aberto define o DIA de tudo que vem depois dela.
+   *
+   * É assim que o turno da madrugada fecha no dia certo: quem entrou 22:00 do
+   * dia 5 e sai 04:00 do dia 6 fecha o dia 5, em vez de abrir um dia novo às
+   * quatro da manhã.
+   */
+  const entrada = momento === 'entrada' ? null : await entradaDoTurno(funcionarioId, evento.id, agora)
+  if (entrada) dataRef = entrada.dataRef
+
+  const dia = await diaDeTrabalho(evento.id, dataRef)
+
   if (momento === 'meio') {
-    /*
-     * O meio não tem horário próprio: ele é a entrada + 4h. Sem entrada não há
-     * o que calcular, e recusar dizendo isso é mais útil que "fora do horário"
-     * — a pessoa descobre que o problema é a etapa anterior.
-     */
-    const entrada = await entradaDoTurno(funcionarioId, evento.id, agora)
-    if (!entrada) {
+    const janela = janelaDoMeio(evento, dia, entrada?.em ?? null)
+    if (!janela) {
       return { ok: false, erro: 'Registre primeiro a sua entrada. O horário do meio é contado a partir dela.' }
     }
-    dataRef = entrada.dataRef
-    const janela = janelaMeio(entrada.em)
     const veredito = dentroDaJanela(janela.inicio, janela.fim, agora, 'meio')
     if (!veredito.ok) {
-      return {
-        ok: false,
-        erro: `${veredito.erro} Ele abre ${HORAS_ATE_MEIO}h depois da sua entrada, que foi às ${formatarBR(entrada.em, 'hora')}.`,
-      }
+      // Em dia de preparação a recusa precisa dizer de onde saiu o horário,
+      // senão "abre às 12:00" parece um horário que caiu do céu.
+      const porque = dia?.tipo === 'principal' || !entrada
+        ? ''
+        : ` Ele abre ${HORAS_ATE_MEIO}h depois da sua entrada, que foi às ${formatarBR(entrada.em, 'hora')}.`
+      return { ok: false, erro: `${veredito.erro}${porque}` }
     }
   } else {
-    // A saída pertence ao dia da entrada que a antecede — é assim que o turno
-    // da madrugada fecha no dia certo em vez de abrir um dia novo às 04:00.
-    if (momento === 'fim') {
-      const entrada = await entradaDoTurno(funcionarioId, evento.id, agora)
-      if (entrada) dataRef = entrada.dataRef
-    }
-    const veredito = avaliarEntradaSaida(evento, momento, dataRef, agora)
+    const veredito = avaliarEntradaSaida(evento, dia, momento, dataRef, agora)
     if (!veredito.ok) return { ok: false, erro: veredito.erro }
+
+    /*
+     * Saída exige o meio.
+     *
+     * Pedido explicitamente: o horário do meio precisa estar gravado pra ser
+     * possível justificar a jornada com a pessoa depois. Deixar sair sem ele
+     * deixaria um buraco no meio do turno que ninguém consegue reconstruir.
+     *
+     * Quando a pessoa perdeu o meio de verdade, quem resolve é o supervisor
+     * pelo registro assistido — ele grava a etapa pendente com foto e
+     * auditoria, e aí a saída destrava.
+     */
+    if (momento === 'fim') {
+      const { data: temMeio } = await supabaseAdmin
+        .from('registros')
+        .select('id')
+        .eq('funcionario_id', funcionarioId)
+        .eq('evento_id', evento.id)
+        .eq('tipo', 'meio')
+        .eq('data_ref', dataRef)
+        .limit(1)
+      if (!temMeio?.length) {
+        return {
+          ok: false,
+          erro: 'Falta o registro do meio deste dia. Sem ele a saída não pode ser registrada — procure o credenciamento para regularizar.',
+        }
+      }
+    }
   }
 
   const { data: jaExiste } = await supabaseAdmin
@@ -1395,7 +1559,8 @@ async function resolverRegistro(
   return {
     ok: true,
     dataRef,
-    jornadaDiaId: await jornadaDiaDe(evento.id, dataRef),
+    jornadaDiaId: dia?.id ?? null,
+    diaPrincipal: dia?.tipo === 'principal',
     jaEm: (jaExiste?.[0]?.created_at as string | undefined) ?? null,
   }
 }
@@ -1446,13 +1611,54 @@ async function diaDeReferencia(evento: { id: string; data_inicio?: string | null
   const agora = new Date()
   const entrada = await entradaDoTurno(funcionarioId, evento.id, agora)
   const dataRef = entrada?.dataRef ?? diaBRT(agora)
-  return { dataRef, jornadaDiaId: await jornadaDiaDe(evento.id, dataRef) }
+  const dia = await diaDeTrabalho(evento.id, dataRef)
+  return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal: dia?.tipo === 'principal' }
 }
 /** Preenche o endereço aproximado (geocoding reverso) em background — cosmético, sem retry. */
 async function sincronizarEndereco(registroId: string, lat: number, lng: number) {
   const endereco = await enderecoAproximado(lat, lng)
   if (!endereco) return
   await supabaseAdmin.from('registros').update({ endereco_aproximado: endereco }).eq('id', registroId)
+}
+
+/**
+ * Encerra o vínculo da pessoa com AQUELE evento.
+ *
+ * ⚠️ Descredenciar NÃO apaga ninguém. A linha em `funcionarios` é o que mantém
+ * a pessoa na base geral (que é agregada por CPF a partir dela) e o que segura
+ * o histórico de batidas pelo `funcionario_id`. Apagar aqui destruiria o
+ * histórico do evento junto — inclusive o que sustenta o pagamento.
+ *
+ * O que muda é só um carimbo de data: a pessoa sai das listas de credenciados
+ * daquele evento e o QR dela para de ser aceito ali. Ela continua na base,
+ * continua com todo o histórico, e pode ser credenciada em outro evento
+ * amanhã — o vínculo é por evento, não global.
+ */
+async function descredenciar(funcionarioId: string, perfilId: string | null) {
+  const { error } = await supabaseAdmin
+    .from('funcionarios')
+    .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfilId })
+    .eq('id', funcionarioId)
+    .is('descredenciado_em', null) // idempotente: não reescreve a data original
+  if (error) console.error('[descredenciar] falhou:', error)
+}
+
+/**
+ * Recoloca alguém no evento depois de um descredenciamento indevido.
+ *
+ * Existe porque a saída no dia principal descredencia sozinha: se o operador
+ * escaneou a pessoa errada, ou ela precisou voltar ao posto, sem isto o único
+ * jeito de desfazer seria mexer no banco à mão.
+ */
+export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const { error } = await supabaseAdmin
+    .from('funcionarios')
+    .update({ descredenciado_em: null, descredenciado_por: null })
+    .eq('id', funcionarioId)
+  if (error) throw new Error('Não foi possível recredenciar esta pessoa. Tente de novo.')
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const }
 }
 
 export type ResultadoScan = {
@@ -1494,7 +1700,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, telefone, ativo, fornecedor_id, fornecedores(evento_id)')
+    .select('id, nome, empresa, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
@@ -1505,6 +1711,15 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   }
   if (func.ativo === false) {
     return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do setor antes de registrar.', funcionario: funcInfo }
+  }
+  // Já cumpriu o evento e saiu: o crachá não vale mais aqui. O histórico
+  // continua inteiro — o que acabou foi o vínculo com ESTE evento.
+  if (func.descredenciado_em) {
+    return {
+      success: false,
+      message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do setor.`,
+      funcionario: funcInfo,
+    }
   }
 
   // Supervisor de setor só escaneia funcionários do próprio setor (fornecedor)
@@ -1561,9 +1776,23 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     )
   }
 
+  /*
+   * Saída no DIA PRINCIPAL fecha o ciclo da pessoa no evento.
+   *
+   * Só no dia principal: nos dias de preparação a pessoa sai e volta no dia
+   * seguinte, e descredenciar ali a impediria de bater o ponto na montagem do
+   * dia seguinte.
+   */
+  const encerrou = momento === 'fim' && resolucao.diaPrincipal
+  if (encerrou) await descredenciar(func.id, perfil.id)
+
   return {
     success: true,
-    message: momento === 'entrada' ? 'Entrada registrada!' : 'Saída registrada!',
+    message: momento === 'entrada'
+      ? 'Entrada registrada!'
+      : encerrou
+        ? 'Saída registrada. Descredenciado do evento!'
+        : 'Saída registrada!',
     funcionario: funcInfo,
     momento,
   }
@@ -2219,6 +2448,11 @@ export async function registrarPresencaAssistida(
       }).catch(console.error)
     )
   }
+  // Mesma regra do scanner: a saída do dia principal fecha o vínculo.
+  if (pendente.momento === 'fim' && refAssistido.diaPrincipal) {
+    await descredenciar(func.id, perfil.id)
+  }
+
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
   return { ok: true, nome: func.nome, etapa: pendente.rotulo }
 }

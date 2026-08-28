@@ -10,26 +10,26 @@
 //
 // O modelo agora é outro:
 //
-//   ENTRADA e SAÍDA  → livres, o dia inteiro, em qualquer dia do período do
-//                      evento. A exceção é o DIA PRINCIPAL (a data de início
-//                      do evento), onde as janelas configuradas continuam
-//                      valendo como trava — é o dia que tem portaria, fila e
-//                      horário combinado com o cliente.
+// Um evento tem DOIS tipos de dia, e a regra de cada um é diferente:
 //
-//   MEIO             → deixa de ter horário fixo. Passa a ser calculado a
-//                      partir da ENTRADA REAL de cada pessoa: quatro horas
-//                      depois de quando ela bateu. Quem entrou 08:00 faz o
-//                      meio 12:00; quem entrou 10:30 faz 14:30.
+//   DIA PRINCIPAL      → o dia do evento. Entrada, MEIO e saída seguem os
+//                        horários que o produtor configurou (eventos.janela_*).
+//                        É o dia que tem portaria, fila e horário combinado
+//                        com o cliente.
 //
-// A consequência prática é que a janela do meio é individual. Duas pessoas do
-// mesmo setor que entraram com uma hora de diferença têm meios diferentes, e é
-// isso que se quer: o meio existe pra confirmar que a pessoa continua no posto
-// no meio do TURNO DELA, não no meio do relógio.
+//   DIAS DE PREPARAÇÃO → montagem, organização, desmontagem. Entrada e saída
+//                        LIVRES — a pessoa bate quando de fato começa e quando
+//                        de fato termina. O meio é a entrada REAL dela + 4h.
 //
-// As jornadas recorrentes (`jornada_dias`) continuam existindo, mas com outro
-// papel: os horários de lá deixam de ser trava e viram EXPECTATIVA — é o que
-// alimenta "horário esperado" nas listas de pendência e nos lembretes. Quem
-// trava é só o dia principal.
+// Nos dias de preparação a janela do meio é INDIVIDUAL: duas pessoas do mesmo
+// setor que começaram com uma hora de diferença têm meios diferentes, e é isso
+// que se quer — o meio confirma que a pessoa continua no posto no meio do
+// TURNO DELA, não no meio do relógio.
+//
+// Quem decide o tipo do dia é a tabela `jornada_dias` (uma linha por data de
+// trabalho do evento). Dia que não está lá NÃO é dia de trabalho: a batida é
+// recusada, e é isso que permite o relatório dizer "estava escalado para 5
+// dias e veio em 4".
 
 /** Distância entre a entrada real e a abertura do meio. */
 export const HORAS_ATE_MEIO = 4
@@ -111,6 +111,28 @@ export function ehDiaPrincipal(evento: EventoJanelas, dia: string): boolean {
 
 // ─── A janela do meio, individual ────────────────────────────────────────────
 
+/**
+ * A janela do meio para uma pessoa, naquele dia.
+ *
+ * No DIA PRINCIPAL vale o horário que o produtor configurou — todo mundo faz o
+ * meio na mesma hora, porque no dia do evento a operação é sincronizada.
+ * Em DIA DE PREPARAÇÃO não há horário configurado e a conta é individual:
+ * a entrada real da pessoa + 4h.
+ *
+ * Devolve `null` quando é dia de preparação e a pessoa ainda não bateu a
+ * entrada — não há de onde contar as quatro horas.
+ */
+export function janelaDoMeio(
+  evento: EventoJanelas,
+  dia: DiaDaJornada | null,
+  entradaEm: string | null
+): { inicio: string; fim: string } | null {
+  if (dia?.tipo === 'principal' && evento.janela_meio_inicio && evento.janela_meio_fim) {
+    return { inicio: evento.janela_meio_inicio, fim: evento.janela_meio_fim }
+  }
+  return entradaEm ? janelaMeio(entradaEm) : null
+}
+
 /** Entrada às 08:00 → meio das 12:00 às 14:00. */
 export function janelaMeio(entradaEm: string | Date): { inicio: string; fim: string } {
   const base = (typeof entradaEm === 'string' ? new Date(entradaEm) : entradaEm).getTime()
@@ -156,28 +178,34 @@ export function dentroDaJanela(
 /**
  * Entrada ou saída podem ser registradas neste dia?
  *
- * Só duas coisas travam: estar fora do período do evento e, no dia principal,
- * estar fora da janela configurada. Em qualquer outro dia do período a etapa é
- * livre — que é exatamente a mudança pedida.
+ * O DIA é quem manda, não o período do evento:
+ *
+ * - dia que não foi marcado como dia de trabalho → recusa. É o que sustenta
+ *   "estava escalado para 5 dias e veio em 4" no fechamento;
+ * - dia de preparação → livre, a pessoa bate quando começa e quando termina;
+ * - dia principal → vale a janela configurada pelo produtor.
  */
 export function avaliarEntradaSaida(
   evento: EventoJanelas,
+  dia: DiaDaJornada | null,
   momento: 'entrada' | 'fim',
-  dia: string,
+  data: string,
   agora: Date
 ): Veredito {
-  const periodo = periodoDoEvento(evento)
   const etapa = momento === 'entrada' ? 'entrada' : 'saída'
 
-  if (!periodo) return { ok: false, erro: 'Este evento ainda não tem data definida.' }
-  if (dia < periodo.primeiro) {
-    return { ok: false, erro: `O evento só começa em ${diaBR(periodo.primeiro)}. Ainda não dá para registrar ${etapa}.` }
+  if (!dia) {
+    return {
+      ok: false,
+      erro: `${diaBR(data)} não está marcado como dia de trabalho deste evento. Fale com o organizador para incluir o dia.`,
+    }
   }
-  if (dia > periodo.ultimo) {
-    return { ok: false, erro: `O evento terminou em ${diaBR(periodo.ultimo)}. Não é mais possível registrar ${etapa}.` }
+  if (dia.cancelado) {
+    return { ok: false, erro: `O trabalho de ${diaBR(data)} foi cancelado pelo organizador.` }
   }
 
-  if (!ehDiaPrincipal(evento, dia)) return { ok: true }
+  // Dia de preparação: entrada e saída são livres, o dia inteiro.
+  if (dia.tipo !== 'principal') return { ok: true }
 
   return dentroDaJanela(
     evento[`janela_${momento}_inicio`],
@@ -208,11 +236,23 @@ export const LIMITE_PADRAO_SAIDA = '23:59'
 /** Entrada presumida quando o dia não tem horário nenhum configurado. */
 export const ENTRADA_PADRAO = '08:00'
 
+export type TipoDia = 'principal' | 'preparacao'
+
+/**
+ * Um dia de trabalho do evento, como vem de `jornada_dias`.
+ *
+ * Os horários são opcionais porque dia de preparação não tem horário — é
+ * exatamente o que "entrada livre" significa. Quando existem (vieram de uma
+ * jornada recorrente), valem como EXPECTATIVA: alimentam o horário esperado
+ * das listas de pendência e dos lembretes, sem recusar batida nenhuma.
+ */
 export type DiaDaJornada = {
-  entrada_inicio: string
-  entrada_fim: string
-  saida_inicio: string
-  saida_fim: string
+  tipo?: TipoDia
+  cancelado?: boolean
+  entrada_inicio?: string | null
+  entrada_fim?: string | null
+  saida_inicio?: string | null
+  saida_fim?: string | null
 }
 
 export type HorariosEsperados = {
@@ -242,9 +282,9 @@ export function horariosEsperados(
   dia: string,
   jornadaDia?: DiaDaJornada | null
 ): HorariosEsperados {
-  // No dia principal a janela configurada continua sendo a referência — é o
-  // único dia em que ela ainda trava, então também é o que se espera.
-  const principal = ehDiaPrincipal(evento, dia)
+  // No dia principal a janela configurada é a referência — é o único dia em
+  // que ela trava, então também é o que se espera.
+  const principal = jornadaDia?.tipo === 'principal' || (!jornadaDia && ehDiaPrincipal(evento, dia))
   const doEvento = (campo: keyof EventoJanelas) => (principal ? (evento[campo] ?? null) : null)
 
   const entrada = jornadaDia?.entrada_inicio ?? doEvento('janela_entrada_inicio')
@@ -255,7 +295,15 @@ export function horariosEsperados(
     entradaLimite: jornadaDia?.entrada_fim ?? doEvento('janela_entrada_fim') ?? instanteBRT(dia, LIMITE_PADRAO_ENTRADA),
     fim,
     fimLimite: jornadaDia?.saida_fim ?? doEvento('janela_fim_fim') ?? instanteBRT(dia, LIMITE_PADRAO_SAIDA),
-    meioAlerta: new Date(
+    /*
+     * No dia principal o meio tem horário próprio, então cobrar é simples:
+     * logo depois de a janela configurada fechar. Nos dias de preparação a
+     * janela é individual, e o que dá pra fazer é olhar seis horas depois da
+     * entrada esperada — quando a janela de quem chegou no horário se fecha
+     * (4h para abrir + 2h de duração). Quem chegou mais tarde ainda está
+     * dentro da própria janela e por isso não entra na lista.
+     */
+    meioAlerta: doEvento('janela_meio_fim') ?? new Date(
       new Date(entrada ?? instanteBRT(dia, ENTRADA_PADRAO)).getTime() +
       (HORAS_ATE_MEIO + DURACAO_JANELA_MEIO_H) * H_MS
     ).toISOString(),
