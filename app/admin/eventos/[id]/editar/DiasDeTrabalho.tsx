@@ -88,7 +88,7 @@ export default function DiasDeTrabalho({
       try {
         const r = await salvarDiasDeTrabalho(eventoId, [...marcados])
         setFeito(
-          `${r.dias} dia(s) de trabalho salvos.` +
+          `${r.dias} dia(s) de preparação salvos, além do dia do evento.` +
           (r.preservados > 0
             ? ` ${r.preservados} dia(s) desmarcado(s) foram mantidos porque já têm batidas registradas.`
             : ''),
@@ -182,7 +182,12 @@ export default function DiasDeTrabalho({
           em mais nada da tela. */}
       <button type="button" onClick={salvar} disabled={pendente} className="btn btn-secundario">
         <Save className="w-3.5 h-3.5 shrink-0" />
-        {pendente ? 'Salvando…' : `Salvar dias de trabalho (${marcados.size + 1})`}
+        {/* Conta só os dias de PREPARAÇÃO. Somar o dia do evento aqui fazia o
+            número não bater com o que o produtor acabou de marcar — e ele é o
+            único dia desta tela que não é "desenvolvimento". */}
+        {pendente
+          ? 'Salvando…'
+          : `Salvar ${marcados.size} dia${marcados.size === 1 ? '' : 's'} de preparação`}
       </button>
     </div>
   )

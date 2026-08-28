@@ -310,6 +310,36 @@ export function horariosEsperados(
   }
 }
 
+// ─── A fase da operação ──────────────────────────────────────────────────────
+
+/**
+ * Em que momento da operação aquele dia está.
+ *
+ * Um evento tem três fases, e cada uma fala com a equipe de um jeito:
+ *
+ *   montagem    — antes do dia do evento. Estrutura sendo levantada. Aviso
+ *                 curto e objetivo: o pessoal já sabe o que vai fazer.
+ *   evento      — o dia. É o único que exige explicação completa: horário de
+ *                 portaria, QR Code, as três etapas. Quem erra aqui erra na
+ *                 frente do cliente.
+ *   desmontagem — depois. A operação inverte e o tom muda junto.
+ *
+ * O corte é o DIA DO EVENTO, não a data de fim: qualquer dia depois dele já é
+ * desmontagem, mesmo que o evento tecnicamente termine na madrugada seguinte.
+ * É como a operação fala — "amanhã é desmonte" —, e usar `data_fim` faria o
+ * dia seguinte de um evento que vira a noite cair na fase errada.
+ */
+export type FaseDoDia = 'montagem' | 'evento' | 'desmontagem'
+
+export function faseDoDia(dia: string, diaPrincipal: string): FaseDoDia {
+  if (!diaPrincipal) return 'montagem'
+  if (dia === diaPrincipal) return 'evento'
+  return dia < diaPrincipal ? 'montagem' : 'desmontagem'
+}
+
+/** Hora em que o aviso do dia sai, nos dias de montagem e desmontagem. */
+export const HORA_AVISO_DIA = '07:00'
+
 // ─── Liberação do QR ─────────────────────────────────────────────────────────
 
 /**

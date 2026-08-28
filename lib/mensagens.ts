@@ -12,7 +12,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { formatarBR } from './tz'
 import {
-  diaBRT, janelaMeio, horariosEsperados, periodoDoEvento,
+  diaBRT, janelaMeio, horariosEsperados, periodoDoEvento, faseDoDia, HORA_AVISO_DIA,
   type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
@@ -57,6 +57,8 @@ export type TipoMensagem =
   | 'confirmacao_escala'
   | 'aviso_dia_evento'
   | 'boas_vindas_funcionario'
+  | 'aviso_montagem'
+  | 'aviso_desmontagem'
 
 const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
@@ -101,6 +103,8 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   credenciais_supervisor: 'credenciais_supervisor',
   aviso_dia_evento: 'aviso_dia_evento',
   boas_vindas_funcionario: 'boas_vindas_funcionario',
+  aviso_montagem: 'aviso_montagem',
+  aviso_desmontagem: 'aviso_desmontagem',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -244,6 +248,26 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     }
 
     for (const dia of dias) {
+      /*
+       * O aviso do dia, em cada dia de preparação.
+       *
+       * Sem ele os dias de montagem e desmontagem ficavam mudos: eles não têm
+       * horário, e todo o resto do agendamento parte de um horário. A equipe
+       * simplesmente não era avisada de que hoje tinha trabalho.
+       *
+       * O texto muda com a FASE porque o que a pessoa precisa saber muda:
+       * montar não é desmontar, e nenhum dos dois é o dia do evento.
+       */
+      const fase = faseDoDia(dia.data, diaPrincipal)
+      if (fase !== 'evento') {
+        agendarFunc(
+          func.id, func.telefone,
+          fase === 'montagem' ? 'aviso_montagem' : 'aviso_desmontagem',
+          dia.data,
+          new Date(`${dia.data}T${HORA_AVISO_DIA}:00-03:00`).toISOString(),
+        )
+      }
+
       const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
 
       // Lembrete quando se espera a pessoa; reforço pouco antes de ela virar
@@ -764,13 +788,40 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     }
   }
 
-  // Aviso do dia do evento: 2h antes do credenciamento, resume o horário de
-  // entrada e lembra do check-in do meio e do descredenciamento.
+  // Aviso do dia do evento: o texto completo, com as três etapas e horários.
   if (msg.tipo === 'aviso_dia_evento') {
     if (!msg.funcionario_id) return null
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
-      supabase.from('eventos').select('nome, janela_entrada_inicio, janela_entrada_fim').eq('id', msg.evento_id).single(),
+      supabase.from('eventos')
+        .select('nome, local, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_fim_inicio, janela_fim_fim')
+        .eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+    const h = (v: unknown) => (v ? formatarBR(v as string, 'hora') : 'a definir')
+
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome,
+        h(evento.janela_entrada_inicio),
+        h(evento.janela_entrada_fim),
+        h(evento.janela_meio_inicio),
+        h(evento.janela_fim_inicio),
+        h(evento.janela_fim_fim),
+        evento.local?.trim() || 'a confirmar',
+        `${SITE_URL}/credential/${func.qr_token}`,
+      ],
+    }
+  }
+
+  // Avisos de montagem e desmontagem: curtos, sem horário — esses dias não têm.
+  if (msg.tipo === 'aviso_montagem' || msg.tipo === 'aviso_desmontagem') {
+    if (!msg.funcionario_id) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome, local').eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
 
@@ -779,8 +830,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       params: [
         func.nome,
         evento.nome,
-        evento.janela_entrada_inicio ? formatarBR(evento.janela_entrada_inicio, 'hora') : 'a definir',
-        evento.janela_entrada_fim ? formatarBR(evento.janela_entrada_fim, 'hora') : 'a definir',
+        evento.local?.trim() || 'a confirmar',
         `${SITE_URL}/credential/${func.qr_token}`,
       ],
     }

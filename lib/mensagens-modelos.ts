@@ -68,19 +68,94 @@ ${link}
 
 Corre lá! 🏃`,
 
-  aviso_dia_evento: ([nome, evento, abre, fecha, link]) =>
-`🎉 Bom dia, ${nome}! Hoje é dia de *${evento}*!
+  /*
+   * O DIA DO EVENTO. É o único que recebe explicação completa.
+   *
+   * Nos dias de montagem a equipe já está no ritmo e um aviso curto basta.
+   * No dia do evento tem portaria, fila, horário combinado com o cliente e
+   * gente que só aparece nesse dia — quem erra aqui erra na frente de todo
+   * mundo. Por isso as três etapas vêm escritas, com horário e o que fazer.
+   */
+  aviso_dia_evento: ([nome, evento, abre, fecha, meio, saidaAbre, saidaFecha, local, link]) =>
+`🎉 *HOJE É O GRANDE DIA!*
 
-🕐 O credenciamento abre às *${abre}* e fecha às *${fecha}*.
+${nome}, hoje é o *${evento}*. Segue tudo o que você precisa saber 👇
 
-📌 Chegue com folga e vá ao credenciamento para registrar o QR Code da sua credencial.
+📍 Local: ${local}
 
-Lembrando que *4 horas depois da sua entrada* você faz o registro por selfie 🤳, e mostra o QR Code de novo na saída 👋
+━━━━━━━━━━━━━━━━━━
+
+*1️⃣ ENTRADA — das ${abre} às ${fecha}*
+
+Vá ao *credenciamento* e mostre o QR Code da sua credencial. É ele que registra sua entrada oficial no evento.
+
+⚠️ Chegue com folga: fora desse horário o sistema não aceita, e aí só o responsável consegue liberar.
+
+*2️⃣ MEIO — às ${meio}*
+
+Você mesmo faz, pelo celular: abra sua credencial, toque no cartão do meio e tire uma selfie com a *localização ligada*.
+
+⚠️ Sem o meio registrado, a saída não libera.
+
+*3️⃣ SAÍDA — das ${saidaAbre} às ${saidaFecha}*
+
+Volte ao credenciamento e mostre o QR Code de novo. É isso que fecha o seu dia e libera o seu pagamento.
+
+━━━━━━━━━━━━━━━━━━
+
+🔗 *Sua credencial:*
+${link}
+
+🔐 Ela é pessoal — o credenciamento confere seu nome na leitura.
+
+Qualquer problema, procure o responsável pelo credenciamento. Bom evento! 💪`,
+
+  /*
+   * MONTAGEM — os dias antes do evento.
+   *
+   * Curto de propósito: quem trabalha na montagem já sabe o que vai fazer, e
+   * um textão diário vira ruído que ninguém lê (e volume de texto repetido é
+   * o que faz o número ser marcado como robô). Formal e explícito, sem
+   * explicar de novo o que já foi explicado no cadastro.
+   */
+  aviso_montagem: ([nome, evento, local, link]) =>
+`🔧 Bom dia, ${nome}!
+
+Hoje é dia de *desenvolvimento* do *${evento}* — montagem e preparação da operação.
+
+📍 Local: ${local}
+
+⏰ Hoje o horário é livre: registre a *entrada* quando começar e a *saída* quando terminar.
+🤳 *4 horas depois da sua entrada*, abra a credencial e tire a selfie do meio.
+
+⚠️ A saída só libera depois que o meio estiver registrado — é assim que suas horas ficam comprovadas.
 
 🔗 Sua credencial:
 ${link}
 
 Bom trabalho! 💪`,
+
+  /*
+   * DESMONTAGEM — os dias depois do evento. Mesma estrutura da montagem, tom
+   * diferente: a operação inverte e o pessoal precisa saber que é a última
+   * etapa, não mais um dia igual aos outros.
+   */
+  aviso_desmontagem: ([nome, evento, local, link]) =>
+`📦 Bom dia, ${nome}!
+
+Hoje é dia de *desmontagem* do *${evento}*. A estrutura sai e a operação encerra.
+
+📍 Local: ${local}
+
+⏰ Horário livre: registre a *entrada* quando começar e a *saída* quando terminar.
+🤳 *4 horas depois da sua entrada*, abra a credencial e tire a selfie do meio.
+
+⚠️ Não esqueça de registrar a saída no fim — é ela que fecha o seu dia e comprova as horas trabalhadas.
+
+🔗 Sua credencial:
+${link}
+
+Obrigado pelo trabalho! 🙏`,
 
   confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link]) =>
 `📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.

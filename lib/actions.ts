@@ -1270,7 +1270,9 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   revalidatePath(`/admin/eventos/${eventoId}/editar`)
-  return { ok: true as const, dias: escolhidos.length + 1, preservados }
+  // Só os dias de preparação: o dia principal não é escolha do produtor, ele
+  // é a data do evento, e contá-lo aqui faria o número divergir da tela.
+  return { ok: true as const, dias: escolhidos.length, preservados }
 }
 
 // ─── Presença: QR (entrada/saída) + foto (meio) ───────────────────────────────
