@@ -27,6 +27,22 @@ const supabase = createClient(
 )
 
 const ANTECEDENCIA_REFORCO_MINUTOS = 2
+
+/**
+ * Quanto uma mensagem pode atrasar e ainda valer a pena enviar.
+ *
+ * O worker pode ficar horas fora do ar (VPS reiniciando, instância
+ * desconectada, número derrubado). Quando ele volta, a fila inteira está
+ * vencida — e sem este teto ele despejaria de uma vez todo o acúmulo: gente
+ * recebendo "chegou a hora de bater o ponto" de madrugada, para um horário que
+ * passou, tudo no mesmo minuto. É o padrão exato que faz o número ser banido,
+ * e ainda por cima com conteúdo errado.
+ *
+ * Três horas cobre uma queda longa sem perder o lembrete do próprio turno.
+ * Mensagem mais velha que isso é cancelada, não enviada: o horário dela já
+ * passou e o assunto morreu junto.
+ */
+const ATRASO_MAXIMO_MIN = 3 * 60
 const BATCH_SIZE_PADRAO = 10
 const PACING_MS_MIN = 1000
 const PACING_MS_MAX = 2000
@@ -233,15 +249,32 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       // Lembrete quando se espera a pessoa; reforço pouco antes de ela virar
       // pendência. Sem horário esperado (dia livre sem jornada) não há o que
       // lembrar — cobrar horário que ninguém combinou só gera ruído.
+      /*
+       * Sem horário ESPERADO, não há o que lembrar nem o que cobrar.
+       *
+       * `entradaLimite` e `fimLimite` sempre têm um valor — caem num padrão
+       * genérico (12:00 / 23:59) quando o dia não tem horário configurado.
+       * Usar esse padrão para agendar cobrança era o erro: num dia em que a
+       * entrada é livre, ninguém está atrasado às 12:00, e mesmo assim a
+       * equipe inteira recebia "sua presença ainda não foi registrada".
+       *
+       * O padrão continua servindo para classificar pendência na tela do
+       * supervisor, que é olhar passivo. Mandar mensagem é ativo, e ativo só
+       * quando existe um horário combinado de verdade.
+       */
       agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
-      agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
-        new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
-        'sem_registro')
+      if (esperado.entrada) {
+        agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
+          new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
+          'sem_registro')
+      }
 
       agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
-      agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
-        new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
-        'sem_registro')
+      if (esperado.fim) {
+        agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
+          new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
+          'sem_registro')
+      }
     }
   }
 
@@ -490,10 +523,45 @@ type MensagemClaimada = {
   max_tentativas: number
 }
 
-/** Pra reforços condicionais: só envia se o funcionário AINDA não tiver o registro daquela batida. */
+/**
+ * Esta mensagem ainda faz sentido no momento do envio?
+ *
+ * Duas guardas, e a primeira é a que impede o erro mais caro do sistema.
+ *
+ * ─── 1. MEIO E SAÍDA SÓ VALEM PARA QUEM ENTROU ─────────────────────────────
+ *
+ * Cobrar a saída de quem nunca bateu a entrada é acusar alguém de não ter
+ * fechado um turno que ela não começou. Aconteceu de verdade: um dia de
+ * trabalho configurado a mais fez 49 pessoas receberem "sua presença ainda não
+ * foi registrada, corre lá" às 23:57 de um dia em que ninguém trabalhou.
+ *
+ * A condição `sem_registro` sozinha não pegava isso — ela só olhava se a
+ * batida daquela etapa existe, e num dia sem trabalho nenhum ela realmente não
+ * existe. O que faltava era a pergunta anterior: essa pessoa chegou a entrar?
+ *
+ * Vale para lembrete E reforço, com ou sem condição declarada: um dia mal
+ * configurado não pode virar mensagem para ninguém.
+ *
+ * ─── 2. MENSAGEM VELHA NÃO SAI ─────────────────────────────────────────────
+ *
+ * Ver ATRASO_MAXIMO_MIN.
+ */
 async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
-  if (msg.condicao !== 'sem_registro') return true
   const momento = MOMENTO_POR_TIPO[msg.tipo]
+
+  if ((momento === 'meio' || momento === 'fim') && msg.funcionario_id) {
+    const { data: entrou } = await supabase
+      .from('registros')
+      .select('id')
+      .eq('funcionario_id', msg.funcionario_id)
+      .eq('evento_id', msg.evento_id)
+      .eq('tipo', 'entrada')
+      .eq('data_ref', msg.data_ref)
+      .limit(1)
+    if (!entrou?.length) return false
+  }
+
+  if (msg.condicao !== 'sem_registro') return true
   if (!momento || !msg.funcionario_id) return true
   // Do DIA da mensagem, nao do evento: sem o filtro, a batida de ontem
   // cancelaria o reforco de hoje e a pessoa nunca mais seria lembrada.
@@ -533,7 +601,10 @@ async function limiteDaEtapa(
 
   const { data: dia } = await supabase
     .from('jornada_dias')
-    .select('entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    // `tipo` faz parte do resultado: sem ele o dia principal chega aqui como
+    // se fosse dia de preparação, e o prazo da mensagem sai como o padrão
+    // genérico em vez da janela que o produtor configurou.
+    .select('tipo, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
     .eq('evento_id', msg.evento_id)
     .eq('data', msg.data_ref)
     .eq('cancelado', false)
@@ -718,7 +789,56 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   return null
 }
 
-async function enviarUma(msg: MensagemClaimada): Promise<void> {
+/**
+ * O texto EXATO que uma mensagem agendada vai enviar, sem enviar nada.
+ *
+ * Ensaio antes do disparo. Passa pelo mesmo `montarEnvioTemplate` e pelo mesmo
+ * renderizador do envio de verdade — se fosse uma segunda implementação "só
+ * para conferir", ela divergiria da real no primeiro ajuste e a conferência
+ * passaria a mentir, que é pior do que não conferir.
+ *
+ * Também aplica a condição: reforço para quem já bateu o ponto aparece como
+ * cancelado aqui, igual apareceria no envio.
+ */
+export async function previsualizarMensagem(id: string): Promise<{
+  id: string
+  tipo: string
+  telefone: string
+  agendadoPara: string
+  dataRef: string
+  destino: string
+  texto: string | null
+  motivoCancelamento?: string
+}> {
+  const { data } = await supabase.from('mensagens_agendadas').select('*').eq('id', id).single()
+  const msg = data as MensagemClaimada & { agendado_para: string }
+  const base = {
+    id, tipo: msg.tipo, telefone: msg.telefone,
+    agendadoPara: msg.agendado_para, dataRef: msg.data_ref,
+    destino: msg.perfil_id ? 'supervisor' : 'funcionário',
+  }
+
+  if (!(await devoEnviar(msg))) {
+    return { ...base, texto: null, motivoCancelamento: 'condição não vale mais (a pessoa já registrou)' }
+  }
+  const envio = await montarEnvioTemplate(msg)
+  if (!envio) return { ...base, texto: null, motivoCancelamento: 'sem conteúdo para montar' }
+  return { ...base, texto: renderizarMensagem(envio.template, envio.params) }
+}
+
+async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Promise<void> {
+  // Atrasada demais: o horário dela passou e o assunto morreu junto.
+  const atrasoMin = msg.agendado_para
+    ? (Date.now() - new Date(msg.agendado_para).getTime()) / 60_000
+    : 0
+  if (atrasoMin > ATRASO_MAXIMO_MIN) {
+    await supabase.from('mensagens_agendadas').update({
+      status: 'cancelado',
+      erro: `Cancelada por atraso: ${Math.round(atrasoMin)} min depois do horário (teto: ${ATRASO_MAXIMO_MIN}).`,
+    }).eq('id', msg.id)
+    return
+  }
+
   if (!(await devoEnviar(msg))) {
     await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
     return

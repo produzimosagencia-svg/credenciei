@@ -310,6 +310,67 @@ export function horariosEsperados(
   }
 }
 
+// ─── Liberação do QR ─────────────────────────────────────────────────────────
+
+/**
+ * Quando o QR Code deve aparecer para a pessoa.
+ *
+ * O QR fica embaçado até pouco antes da hora de bater, e a folga é o que o
+ * produtor configurou (`tolerancia_qr_min`). A razão não é estética: hoje dá
+ * para mandar o print no grupo com dias de antecedência e alguém entrar no seu
+ * lugar. Amarrando a liberação ao horário, a janela em que aquela imagem serve
+ * para alguma coisa encolhe para os minutos em que a própria pessoa deveria
+ * estar no portão.
+ *
+ * Só as etapas de QR contam (entrada e saída) — o meio é selfie, não usa QR.
+ *
+ * Devolve `liberaEm: null` quando não há horário nenhum a esperar: dia livre
+ * sem expectativa configurada. Nesse caso o QR aparece, porque embaçar para
+ * sempre impediria a pessoa de trabalhar.
+ */
+export function liberacaoDoQR(
+  evento: EventoJanelas,
+  dia: DiaDaJornada | null,
+  agora: Date,
+  toleranciaMin = 15
+): { liberado: boolean; liberaEm: string | null } {
+  if (!dia || dia.cancelado) return { liberado: false, liberaEm: null }
+
+  const principal = dia.tipo === 'principal'
+  // No dia principal manda a janela configurada; nos dias de preparação, a
+  // expectativa da jornada, quando existir.
+  const janelas: [string | null | undefined, string | null | undefined][] = principal
+    ? [[evento.janela_entrada_inicio, evento.janela_entrada_fim],
+       [evento.janela_fim_inicio, evento.janela_fim_fim]]
+    : [[dia.entrada_inicio, dia.entrada_fim], [dia.saida_inicio, dia.saida_fim]]
+
+  const validas = janelas.filter(([i]) => !!i) as [string, string | null | undefined][]
+  // Dia sem horário nenhum: entrada e saída são livres, então o QR também é.
+  if (!validas.length) return { liberado: true, liberaEm: null }
+
+  const t = agora.getTime()
+  const folga = Math.max(0, toleranciaMin) * 60_000
+
+  // Já dentro de alguma janela (ou na folga antes dela): mostra.
+  for (const [inicio, fim] of validas) {
+    const abre = new Date(inicio).getTime() - folga
+    // Sem fim configurado a etapa não fecha, então uma vez aberta segue aberta.
+    const fecha = fim ? new Date(fim).getTime() + folga : Infinity
+    if (t >= abre && t <= fecha) return { liberado: true, liberaEm: null }
+  }
+
+  // Ainda não: diz QUANDO abre, para a tela poder mostrar o horário e se
+  // desbloquear sozinha na hora certa, sem a pessoa precisar recarregar.
+  const futuras = validas
+    .map(([inicio]) => new Date(inicio).getTime() - folga)
+    .filter(x => x > t)
+    .sort((a, b) => a - b)
+
+  return futuras.length
+    ? { liberado: false, liberaEm: new Date(futuras[0]).toISOString() }
+    : { liberado: false, liberaEm: null } // o dia já passou
+}
+
 /** "2026-08-28" → "28/08". Só para as mensagens de recusa. */
 function diaBR(dia: string): string {
   const [, mes, d] = dia.split('-')
