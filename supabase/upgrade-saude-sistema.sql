@@ -24,3 +24,4 @@ create table if not exists sistema_estado (
 );
 
 alter table sistema_estado enable row level security;
+c

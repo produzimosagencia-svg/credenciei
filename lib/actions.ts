@@ -26,10 +26,10 @@ import {
   HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
-import { normalizarUsuario, validarUsuario, usuarioParaEmail } from './usuario'
+import { normalizarCpf, cpfParaEmail, SENHA_PADRAO_SUPERVISOR } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
-import { sincronizarAgendamentos, agendarCredenciaisSupervisor, agendarBoasVindasFuncionario, agendarMeioAposEntrada } from './mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarAcessoSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR } from './credencial-qr'
 
@@ -372,24 +372,31 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   const nome = ((formData.get('nome') as string) ?? '').trim()
   const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
-  const senha = formData.get('senha') as string
   const ativo = formData.get('ativo') !== 'false'
 
   /*
-   * Supervisor entra por NOME DE USUÁRIO, não por e-mail.
+   * Supervisor entra por CPF.
    *
-   * Quem trabalha no portão muitas vezes não tem e-mail à mão, e o organizador
-   * acabava inventando um endereço — que precisava ser único na plataforma
-   * inteira e travava o cadastro na hora errada. O nome de usuário vira um
-   * endereço num domínio interno, que ninguém possui e que nunca recebe nada.
+   * Já foi e-mail (o organizador inventava um endereço) e já foi nome de
+   * usuário (que ele precisava lembrar ter criado). O CPF resolve os dois: a
+   * pessoa sabe o dela de cor e ninguém inventa nada. Por baixo, vira um
+   * endereço num domínio interno que ninguém possui e que nunca recebe nada.
    */
-  const usuario = normalizarUsuario((formData.get('usuario') as string) ?? '')
-  const erroUsuario = validarUsuario(usuario)
-  if (erroUsuario) throw new Error(erroUsuario)
-  const email = usuarioParaEmail(usuario)
+  const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
+  if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
+  const email = cpfParaEmail(cpf)
+
+  /*
+   * Senha fixa para todos, a pedido do cliente.
+   *
+   * O custo foi dito e aceito: quem souber o CPF de um supervisor entra como
+   * ele — e o CPF da equipe é visível dentro do próprio sistema. Fica como
+   * constante em vez de espalhada pelo código para o dia em que virar código
+   * por WhatsApp ser uma troca só.
+   */
+  const senha = SENHA_PADRAO_SUPERVISOR
 
   const admin = getAdminSupabase()
-  if (!senha || senha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
 
   const { data: user, error } = await admin.auth.admin.createUser({
     email,
@@ -400,7 +407,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     // O Auth fala em "e-mail"; aqui quem existe é o nome de usuário.
     const jaExiste = /already|exist|registered/i.test(error.message)
     throw new Error(jaExiste
-      ? `O nome de usuário "${usuario}" já está em uso. Escolha outro — por exemplo, ${usuario}.2 ou ${usuario}.bar.`
+      ? `Já existe um supervisor com o CPF ${cpf}. Se for a mesma pessoa em outro setor, edite o acesso dela em vez de criar outro.`
       : mensagemAuth(error.message))
   }
 
@@ -421,6 +428,10 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     email,
     telefone,
     ativo,
+    // O CPF fica no perfil, e não só escondido dentro do e-mail interno: é
+    // por ele que a tela de acessos mostra quem é quem, e é o que a pessoa
+    // digita para entrar.
+    cpf,
     role: 'supervisor',
     organizacao_id: organizacaoId,
     fornecedor_id: fornecedorId,
@@ -434,26 +445,47 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     throw new Error(mensagemAmigavel(erroPerfil))
   }
 
-  // Envia as credenciais de acesso por WhatsApp (não bloqueia; sobrevive ao serverless)
+  /*
+   * As credenciais NÃO vão por WhatsApp — e não é limitação, é decisão.
+   *
+   * A Meta classifica mensagem com usuário e senha como AUTHENTICATION, uma
+   * categoria que só aceita código de uso único num formato fixo: usuário,
+   * senha e links não cabem lá. Três tentativas de aprovar um template para
+   * isso foram rejeitadas.
+   *
+   * E o caminho certo era esse desde o início: a SENHA É DIGITADA por quem
+   * cria o supervisor, nesta mesma tela. Mandá-la de volta por WhatsApp era
+   * contar ao destinatário algo que o remetente já sabia, deixando a senha
+   * gravada para sempre no histórico de conversa dele.
+   *
+   * Agora a tela mostra usuário e senha para quem criou, que repassa pelo
+   * canal que quiser.
+   */
+  revalidatePath('/admin/usuarios')
+  revalidatePath(`/admin/eventos/${eventoId}`)
+
+  // Avisa o supervisor por WhatsApp: como entrar e o link do formulário da
+  // equipe. A senha não vai no texto — ela é a mesma para todos e está dita
+  // no próprio template.
   if (telefone) {
-    after(() => agendarCredenciaisSupervisor({
+    after(() => agendarAcessoSupervisor({
       eventoId,
       perfilId: user.user!.id,
       telefone,
       nome,
       setorNome: fornecedor.nome,
       eventoNome: eventoDoFornecedor?.nome ?? '',
-      dataEvento: formatarBR(eventoDoFornecedor?.data_inicio, 'data'),
-      // O supervisor entra com o USUÁRIO; o endereço interno nunca aparece
-      // pra ele.
-      email: usuario,
-      senha,
       linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
     }).catch(console.error))
   }
 
-  revalidatePath('/admin/usuarios')
-  revalidatePath(`/admin/eventos/${eventoId}`)
+  return {
+    ok: true as const,
+    usuario: cpf,
+    senha,
+    login: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/login`,
+    linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
+  }
 }
 
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
@@ -474,10 +506,9 @@ export async function editarSupervisor(id: string, formData: FormData) {
   const novaSenha = (formData.get('senha') as string) || ''
   if (novaSenha && novaSenha.length < 6) throw new Error('Senha muito curta. Use ao menos 6 caracteres.')
 
-  const usuario = normalizarUsuario((formData.get('usuario') as string) ?? '')
-  const erroUsuario = validarUsuario(usuario)
-  if (erroUsuario) throw new Error(erroUsuario)
-  const email = usuarioParaEmail(usuario)
+  const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
+  if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
+  const email = cpfParaEmail(cpf)
 
   const { error: authErr } = await admin.auth.admin.updateUserById(id, {
     email,
@@ -485,7 +516,7 @@ export async function editarSupervisor(id: string, formData: FormData) {
   })
   if (authErr) {
     const jaExiste = /already|exist|registered/i.test(authErr.message)
-    throw new Error(jaExiste ? `O nome de usuário "${usuario}" já está em uso.` : mensagemAuth(authErr.message))
+    throw new Error(jaExiste ? `Já existe um supervisor com o CPF ${cpf}.` : mensagemAuth(authErr.message))
   }
 
   await admin.from('perfis').update({ nome, email, telefone, ativo }).eq('id', id)

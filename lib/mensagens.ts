@@ -59,6 +59,7 @@ export type TipoMensagem =
   | 'boas_vindas_funcionario'
   | 'aviso_montagem'
   | 'aviso_desmontagem'
+  | 'disparo_manual'
 
 const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
@@ -100,14 +101,43 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   alerta_supervisor_meio: 'alerta_supervisor_pendencia',
   alerta_supervisor_fim: 'alerta_supervisor_pendencia',
   confirmacao_escala: 'confirmacao_escala',
-  credenciais_supervisor: 'credenciais_supervisor',
+  credenciais_supervisor: 'supervisor_acesso',
   aviso_dia_evento: 'aviso_dia_evento',
   boas_vindas_funcionario: 'boas_vindas_funcionario',
   aviso_montagem: 'aviso_montagem',
   aviso_desmontagem: 'aviso_desmontagem',
+  // Resolvido na hora do envio: o template vem escolhido a mão pelo painel.
+  disparo_manual: '',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
+
+/**
+ * O link da credencial daquela pessoa — ou `null`, que cancela o envio.
+ *
+ * ⚠️ Nunca devolve algo "quase certo". Sem o token, a interpolação produziria
+ * `.../credential/undefined`, que a mensagem entregaria como se fosse um link
+ * de verdade: a pessoa clica, cai numa página de erro e conclui que o sistema
+ * está quebrado. Mensagem que não sai é um problema visível no log; link
+ * quebrado é um problema invisível na mão de quem precisa trabalhar.
+ *
+ * O `https://` também é conferido: `NEXT_PUBLIC_SITE_URL` já esteve apontando
+ * para `http://localhost:3000` numa configuração real, e nesse dia todo mundo
+ * teria recebido um endereço que não abre fora da máquina do desenvolvedor.
+ */
+function linkDaCredencial(qrToken: unknown, contexto: string): string | null {
+  const token = typeof qrToken === 'string' ? qrToken.trim() : ''
+  if (!token) {
+    console.error(`[mensagens] ${contexto}: funcionário sem qr_token — envio cancelado`)
+    return null
+  }
+  const url = `${SITE_URL}/credential/${token}`
+  if (!url.startsWith('https://')) {
+    console.error(`[mensagens] ${contexto}: NEXT_PUBLIC_SITE_URL não é https (${SITE_URL}) — envio cancelado`)
+    return null
+  }
+  return url
+}
 
 /** Teto de dias agendados de uma vez. Além disso a fila cresce sem necessidade. */
 const HORIZONTE_DIAS = 45
@@ -402,25 +432,22 @@ export async function agendarBoasVindasFuncionario(params: {
 }
 
 /**
- * Agenda o envio (imediato) das credenciais de acesso pro supervisor
- * recém-criado. Chamado uma vez, direto de criarSupervisor. Não repete: se
- * já existe uma linha pra esse perfil (por qualquer motivo), não duplica.
+ * Avisa o supervisor recém-criado de como entrar no sistema.
  *
- * Diferente dos outros tipos, os parâmetros aqui (principalmente a senha em
- * texto puro) não existem em lugar nenhum do banco depois deste momento —
- * por isso ficam salvos como JSON na própria coluna `mensagem`, em vez de
- * recalculados na hora do envio.
+ * A SENHA NÃO VAI AQUI. Ela é a mesma para todos e está escrita no próprio
+ * template — mandar credencial variável por WhatsApp foi rejeitado quatro
+ * vezes pela Meta, que classifica isso como AUTHENTICATION, uma categoria que
+ * só aceita código de uso único num formato fixo.
+ *
+ * Não repete: se já existe uma linha para esse perfil, não duplica.
  */
-export async function agendarCredenciaisSupervisor(params: {
+export async function agendarAcessoSupervisor(params: {
   eventoId: string
   perfilId: string
   telefone: string
   nome: string
   setorNome: string
   eventoNome: string
-  dataEvento: string
-  email: string
-  senha: string
   linkFormulario: string
 }): Promise<void> {
   const { data: existe } = await supabase
@@ -435,9 +462,6 @@ export async function agendarCredenciaisSupervisor(params: {
     params.nome,
     params.setorNome,
     params.eventoNome,
-    params.dataEvento,
-    params.email,
-    params.senha,
     `${SITE_URL}/login`,
     params.linkFormulario,
   ]
@@ -446,11 +470,12 @@ export async function agendarCredenciaisSupervisor(params: {
     evento_id: params.eventoId,
     perfil_id: params.perfilId,
     tipo: 'credenciais_supervisor',
+    data_ref: new Date().toISOString().slice(0, 10),
     agendado_para: new Date().toISOString(),
     telefone: params.telefone,
     mensagem: JSON.stringify(templateParams),
   }])
-  if (error && error.code !== '23505') throw error // 23505 = unique_violation (corrida rara), ignora
+  if (error && error.code !== '23505') throw error
 }
 
 /**
@@ -647,6 +672,21 @@ async function limiteDaEtapa(
 async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[] } | null> {
   const template = TEMPLATE_POR_TIPO[msg.tipo]
 
+  /*
+   * Disparo manual do painel: o master escolheu o template e os parâmetros na
+   * hora. Diferente dos automáticos, isto NÃO é recalculável depois — não há
+   * regra de onde deduzir o conteúdo —, então viaja gravado no agendamento.
+   */
+  if (msg.tipo === 'disparo_manual') {
+    try {
+      const escolha = JSON.parse(msg.mensagem) as { template?: string; parametros?: string[] }
+      if (!escolha?.template) return null
+      return { template: escolha.template, params: escolha.parametros ?? [] }
+    } catch {
+      return null
+    }
+  }
+
   // Credenciais do supervisor: parâmetros já foram capturados no agendamento
   // (a senha em texto puro não existe em nenhum outro lugar do banco).
   if (msg.tipo === 'credenciais_supervisor') {
@@ -673,15 +713,24 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!func || !evento) return null
 
     const horarioLimiteISO = await limiteDaEtapa(msg, momento, evento as EventoJanelas)
+    const credencial = linkDaCredencial(func.qr_token, msg.tipo)
+    if (!credencial) return null
 
+    /*
+     * Montado por NOME, nunca pela ordem das colunas do banco.
+     *
+     * A ordem aqui é a do texto aprovado na Meta: {{1}} nome, {{2}} evento,
+     * {{3}} etapa pendente, {{4}} prazo, {{5}} link. Trocar duas posições não
+     * dá erro em lugar nenhum — a mensagem só chega dizendo a coisa errada.
+     */
     return {
       template,
       params: [
-        func.nome,
-        evento.nome as string,
-        INSTRUCAO_ETAPA[momento],
-        horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : 'a definir',
-        `${SITE_URL}/credential/${func.qr_token}`,
+        func.nome,                                                              // {{1}} nome
+        evento.nome as string,                                                  // {{2}} evento
+        INSTRUCAO_ETAPA[momento],                                               // {{3}} etapa pendente
+        horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : 'a definir',  // {{4}} prazo
+        credencial,                                                             // {{5}} link
       ],
     }
   }
@@ -750,6 +799,9 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const dataLocal = `dia ${evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar'}${evento.local ? `, em ${evento.local}` : ''}`
     const instrucoes = evento.msg_pre_evento_instrucoes?.trim() || 'Fique atento aos horários da sua escala.'
 
+    const credencial = linkDaCredencial(func.qr_token, 'confirmacao_escala')
+    if (!credencial) return null
+
     return {
       template,
       params: [
@@ -759,7 +811,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         fornecedor?.nome ?? 'seu setor',
         dataLocal,
         instrucoes,
-        `${SITE_URL}/credential/${func.qr_token}`,
+        credencial,
       ],
     }
   }
@@ -775,6 +827,9 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!func || !evento) return null
     const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
 
+    const credencial = linkDaCredencial(func.qr_token, 'boas_vindas_funcionario')
+    if (!credencial) return null
+
     return {
       template,
       params: [
@@ -783,7 +838,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         fornecedor?.nome ?? 'seu setor',
         evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
         evento.local?.trim() || 'a confirmar',
-        `${SITE_URL}/credential/${func.qr_token}`,
+        credencial,
       ],
     }
   }
@@ -800,6 +855,9 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!func || !evento) return null
     const h = (v: unknown) => (v ? formatarBR(v as string, 'hora') : 'a definir')
 
+    const credencial = linkDaCredencial(func.qr_token, 'aviso_dia_evento')
+    if (!credencial) return null
+
     return {
       template,
       params: [
@@ -811,7 +869,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         h(evento.janela_meio_inicio),
         h(evento.janela_fim_inicio),
         h(evento.janela_fim_fim),
-        `${SITE_URL}/credential/${func.qr_token}`,
+        credencial,
       ],
     }
   }
@@ -825,13 +883,16 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     ])
     if (!func || !evento) return null
 
+    const credencial = linkDaCredencial(func.qr_token, 'aviso_montagem/desmontagem')
+    if (!credencial) return null
+
     return {
       template,
       params: [
         func.nome,
         evento.nome,
         evento.local?.trim() || 'a confirmar',
-        `${SITE_URL}/credential/${func.qr_token}`,
+        credencial,
       ],
     }
   }
@@ -938,6 +999,28 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
     destinatario_telefone: msg.telefone,
     tipo: msg.tipo,
   })
+
+  if (resultado.ok && texto) {
+    /*
+     * Grava a mensagem no histórico do chat.
+     *
+     * O texto só existe neste instante: ele é renderizado do template com
+     * dados frescos e não fica em lugar nenhum depois. Sem gravar aqui, o
+     * chat mostraria "boas_vindas_funcionario" no lugar do que a pessoa leu.
+     */
+    await supabase.from('whatsapp_eventos').insert({
+      direcao: 'enviada',
+      wa_message_id: resultado.messageId ?? null,
+      telefone: numero,
+      tipo: 'text',
+      texto,
+      ocorrido_em: new Date().toISOString(),
+      evento_id: msg.evento_id,
+      funcionario_id: msg.funcionario_id,
+    }).then(({ error }) => {
+      if (error && error.code !== '23505') console.error('[fila] não gravei a enviada:', error.message)
+    })
+  }
 
   if (resultado.ok) {
     await supabase.from('mensagens_agendadas').update({

@@ -29,10 +29,6 @@ const TUTORIAL: TutorialConfig = {
       descricao: 'Entrada e saída são o QR Code lido no credenciamento. A do meio é o próprio funcionário tirando uma selfie com a localização ligada. Este horário vale só no dia do evento — nos dias de preparação o meio abre 4 horas depois da entrada de cada pessoa.' },
     { alvo: 'edt-dias', titulo: 'Dias de montagem e desmontagem', posicao: 'top', icone: 'CalendarDays',
       descricao: 'O evento não acontece só no dia do evento. Marque aqui os dias em que a equipe trabalha na preparação: neles a entrada e a saída são livres, e o meio é contado 4 horas depois da entrada de cada pessoa. Dia não marcado não é dia de trabalho — ninguém bate ponto nele.' },
-    { alvo: 'edt-msg-envio', titulo: 'Quando enviar a confirmação', posicao: 'right', icone: 'MessageCircle',
-      descricao: 'Data e hora em que a equipe recebe a confirmação de escala no WhatsApp. Deixe em branco para não enviar essa mensagem.' },
-    { alvo: 'edt-msg-texto', titulo: 'Instruções do evento', posicao: 'top', icone: 'MessageCircle',
-      descricao: 'Texto livre que entra na confirmação de escala, junto com função, setor, data e local. Use para o que é específico deste evento: uniforme, documento, ponto de encontro.' },
     { alvo: 'edt-salvar', titulo: 'Salvar', posicao: 'top', icone: 'Save',
       descricao: 'Ao salvar, as mudanças valem na hora para toda a equipe — inclusive para quem já está com a credencial aberta no celular.' },
   ],
@@ -150,32 +146,6 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             icon={CalendarRange}
           />
           <DiasDeTrabalho eventoId={id} diaPrincipal={diaPrincipal} iniciais={dias} />
-        </div>
-
-        {/* Mensagem pré-evento */}
-        <div className="p-6 sm:p-8 space-y-4 border-t border-slate-100">
-          <SectionTitle
-            title="Mensagem pré-evento (WhatsApp)"
-            subtitle="Confirmação de escala enviada aos funcionários antes do evento, com instruções personalizadas"
-            icon={MessageCircle}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Enviar em" tutorial="edt-msg-envio">
-              <DateTimePicker name="msg_pre_evento_envio" defaultValue={fmt(evento.msg_pre_evento_envio)} />
-            </Field>
-          </div>
-          <Field label="Instruções do evento (opcional)" tutorial="edt-msg-texto">
-            <textarea
-              name="msg_pre_evento_instrucoes"
-              rows={3}
-              defaultValue={evento.msg_pre_evento_instrucoes ?? ''}
-              placeholder="Ex: Leve seu documento com foto e esteja com o uniforme da sua empresa."
-              className="input resize-none"
-            />
-            <p className="text-2xs text-slate-400 mt-1">
-              Este texto entra na mensagem de confirmação de escala, junto com função, setor, data e local. Deixe o horário em branco para não enviar.
-            </p>
-          </Field>
         </div>
 
         {/* Ação */}

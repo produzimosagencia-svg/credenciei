@@ -1,10 +1,11 @@
 /**
- * Nome de usuário do supervisor.
+ * Identificação do supervisor no login.
  *
- * O supervisor entra com um NOME DE USUÁRIO ("juan.bar"), não com e-mail. O
- * motivo é prático: quem trabalha no portão de um evento muitas vezes não tem
- * e-mail à mão, e o organizador acabava inventando um endereço qualquer — que
- * precisava ser único no sistema inteiro e travava o cadastro na hora errada.
+ * O supervisor entra com o CPF, não com e-mail nem nome de usuário. Já foi
+ * e-mail (o organizador inventava um endereço qualquer) e já foi nome de
+ * usuário ("joao.bar" — que o organizador precisava lembrar ter criado e o
+ * supervisor precisava decorar). O CPF resolve os dois lados: a pessoa sabe o
+ * dela de cor e ninguém precisa inventar nada.
  *
  * Por baixo, o Supabase Auth só sabe autenticar por e-mail. Então o nome de
  * usuário vira um endereço interno num domínio reservado, que nunca recebe
@@ -51,6 +52,29 @@ export function usuarioParaEmail(usuario: string): string {
   return `${usuario}@${DOMINIO_INTERNO}`
 }
 
+/** A senha de todo supervisor. Decisão do cliente — ver upgrade-supervisor-cpf.sql. */
+export const SENHA_PADRAO_SUPERVISOR = '123456'
+
+/** Só os dígitos. "123.456.789-00" e "12345678900" viram a mesma coisa. */
+export function normalizarCpf(bruto: string): string {
+  return (bruto ?? '').replace(/\D/g, '')
+}
+
+/** É um CPF (11 dígitos) e não um nome de usuário? */
+export function pareceCpf(bruto: string): boolean {
+  return normalizarCpf(bruto).length === 11
+}
+
+/**
+ * "123.456.789-00" → "12345678900@supervisor.credenciei"
+ *
+ * O e-mail interno usa só os dígitos: assim tanto faz o supervisor digitar com
+ * ponto e traço ou sem, e os dois caem na mesma conta.
+ */
+export function cpfParaEmail(cpf: string): string {
+  return `${normalizarCpf(cpf)}@${DOMINIO_INTERNO}`
+}
+
 /** O contrário. Devolve null quando o e-mail é de verdade (admin/master). */
 export function emailParaUsuario(email: string | null | undefined): string | null {
   const e = (email ?? '').trim().toLowerCase()
@@ -67,7 +91,14 @@ export function emailParaUsuario(email: string | null | undefined): string | nul
  */
 export function identificadorParaEmail(digitado: string): string {
   const v = (digitado ?? '').trim()
-  return v.includes('@') ? v.toLowerCase() : usuarioParaEmail(normalizarUsuario(v))
+  // Com "@" é e-mail de admin/master.
+  if (v.includes('@')) return v.toLowerCase()
+  // Só dígitos e 11 deles: CPF de supervisor, o formato atual.
+  if (pareceCpf(v)) return cpfParaEmail(v)
+  // Sobrou o nome de usuário do formato anterior. Continua valendo para quem
+  // foi cadastrado antes da troca — tirar isso trancaria supervisores que já
+  // existem para fora do sistema, sem aviso.
+  return usuarioParaEmail(normalizarUsuario(v))
 }
 
 /** Como o identificador aparece na interface: usuário puro ou e-mail real. */

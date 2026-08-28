@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles, IdCard,
-  Activity, ClipboardCheck,
+  Activity, ClipboardCheck, MessageCircle,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, type Role,
@@ -66,6 +66,9 @@ function gruposPara(role: string): Grupo[] {
         // A base regional é serviço vendido à parte: quem consulta e atribui
         // gente ao evento de um cliente é o dono da plataforma, não o cliente.
         { href: '/admin/encontrar', label: 'Encontre colaborador', icon: UserSearch },
+        // O canal de WhatsApp é da plataforma, não de um evento: quem dispara
+        // em massa e responde conversa é o dono, nunca o produtor de um cliente.
+        { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
       ],
     })
   }

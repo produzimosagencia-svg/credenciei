@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
-import { agendarCredenciaisSupervisor } from '@/lib/mensagens'
+import { agendarAcessoSupervisor } from '@/lib/mensagens'
 import { registrarAuditoriaIA } from '../auditoria'
 import {
   ferramenta, resolverSetor, podeGerenciarUsuariosIA, urlBase,
@@ -156,16 +156,13 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         }])
 
         if (fone) {
-          agendarCredenciaisSupervisor({
+          agendarAcessoSupervisor({
             eventoId: r.setor.evento_id,
             perfilId: user.user.id,
             telefone: fone,
             nome: String(nome).trim(),
             setorNome: r.setor.nome,
             eventoNome: evento?.nome ?? '',
-            dataEvento: formatarBR(evento?.data_inicio, 'data'),
-            email: emailLimpo,
-            senha,
             linkFormulario: `${urlBase()}/form/${r.setor.token_formulario}`,
           }).catch(console.error)
         }
