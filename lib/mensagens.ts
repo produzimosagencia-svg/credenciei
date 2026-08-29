@@ -61,7 +61,40 @@ export type TipoMensagem =
   | 'aviso_desmontagem'
   | 'disparo_manual'
 
+/**
+ * A que horas sai o aviso do dia do evento.
+ *
+ * Horário FIXO, não derivado da abertura do credenciamento.
+ *
+ * Era duas horas antes da entrada abrir, e isso amarrava o aviso a um número
+ * que o produtor configura pensando em portaria, não em mensagem: uma entrada
+ * às 07:00 mandava WhatsApp para a equipe inteira às 05:00 da manhã. Acordar
+ * mil pessoas de madrugada é ruim por si só, e ainda derrota o propósito — às
+ * 8h a mensagem já está enterrada sob as outras do grupo.
+ *
+ * Nove da manhã pega quase todo mundo acordado e deixa o dia inteiro para
+ * resolver problema: quem perdeu a credencial, quem trocou de número, quem não
+ * sabia que trabalhava hoje.
+ */
+const HORA_AVISO_DIA_EVENTO = '09:00'
+
+/**
+ * Antecedência mínima quando o evento abre CEDO.
+ *
+ * Nove da manhã não serve para um evento cujo credenciamento abre às 06:00 —
+ * o aviso chegaria depois de a pessoa já ter entrado, ou nem chegaria. Nesse
+ * caso o horário fixo cede e volta a ser relativo à entrada, que é o único
+ * jeito de o aviso ainda cumprir a função.
+ */
 const ANTECEDENCIA_AVISO_DIA_HORAS = 2
+
+/** Quando o aviso do dia do evento deve sair, para aquele dia e aquela entrada. */
+function quandoAvisarDoDia(diaPrincipal: string, entradaAbreEm: string): string {
+  const noveDaManha = new Date(`${diaPrincipal}T${HORA_AVISO_DIA_EVENTO}:00-03:00`)
+  const duasHorasAntes = new Date(new Date(entradaAbreEm).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
+  // O que vier primeiro: o aviso nunca pode chegar depois de o portão abrir.
+  return (noveDaManha < duasHorasAntes ? noveDaManha : duasHorasAntes).toISOString()
+}
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
 
@@ -295,9 +328,16 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     if (evento.msg_pre_evento_envio) {
       agendarFunc(func.id, func.telefone, 'confirmacao_escala', diaPrincipal, evento.msg_pre_evento_envio as string)
     }
+    /*
+     * Continua exigindo a janela de entrada configurada: o texto da mensagem é
+     * feito dos horários dela. Sem isso a equipe receberia "ENTRADA — das a
+     * definir às a definir", que é pior do que não receber nada.
+     */
     if (evento.janela_entrada_inicio && !desligado(fluxos, 'aviso_dia_evento')) {
-      const quando = new Date(new Date(evento.janela_entrada_inicio as string).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
-      agendarFunc(func.id, func.telefone, 'aviso_dia_evento', diaPrincipal, quando.toISOString())
+      agendarFunc(
+        func.id, func.telefone, 'aviso_dia_evento', diaPrincipal,
+        quandoAvisarDoDia(diaPrincipal, evento.janela_entrada_inicio as string),
+      )
     }
 
     for (const dia of dias) {
