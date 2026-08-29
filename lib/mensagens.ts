@@ -79,21 +79,45 @@ export type TipoMensagem =
 const HORA_AVISO_DIA_EVENTO = '09:00'
 
 /**
- * Antecedência mínima quando o evento abre CEDO.
+ * Antecedência usada quando o credenciamento inteiro acontece antes das 9h.
  *
- * Nove da manhã não serve para um evento cujo credenciamento abre às 06:00 —
- * o aviso chegaria depois de a pessoa já ter entrado, ou nem chegaria. Nesse
- * caso o horário fixo cede e volta a ser relativo à entrada, que é o único
- * jeito de o aviso ainda cumprir a função.
+ * Um evento cujo credenciamento abre 06:00 e FECHA 08:00 não pode ser avisado
+ * às 9h — a mensagem chegaria com a portaria já fechada. Nesse caso o horário
+ * fixo cede e o aviso volta a ser relativo à abertura.
  */
 const ANTECEDENCIA_AVISO_DIA_HORAS = 2
 
-/** Quando o aviso do dia do evento deve sair, para aquele dia e aquela entrada. */
-function quandoAvisarDoDia(diaPrincipal: string, entradaAbreEm: string): string {
+/**
+ * Quando o aviso do dia do evento deve sair.
+ *
+ * A regra olha o FECHAMENTO da entrada, não a abertura — e essa distinção é a
+ * correção de um erro meu que chegou a produção.
+ *
+ * A primeira versão antecipava sempre que a entrada ABRIA cedo. No Kleber
+ * Andrade a entrada abre 07:00 e fica aberta até 23:55, para um show às 18:30:
+ * a antecipação disparou e as 56 mensagens foram parar às 05:00 da manhã —
+ * exatamente o que o horário fixo existia para evitar.
+ *
+ * Abrir cedo não é problema: se a janela segue aberta às 9h, a mensagem ainda
+ * serve, e a equipe de um evento noturno chega à tarde. O que torna as 9h
+ * inúteis é a janela inteira já ter terminado.
+ */
+function quandoAvisarDoDia(
+  diaPrincipal: string,
+  entradaAbreEm: string,
+  entradaFechaEm: string | null,
+): string {
   const noveDaManha = new Date(`${diaPrincipal}T${HORA_AVISO_DIA_EVENTO}:00-03:00`)
-  const duasHorasAntes = new Date(new Date(entradaAbreEm).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
-  // O que vier primeiro: o aviso nunca pode chegar depois de o portão abrir.
-  return (noveDaManha < duasHorasAntes ? noveDaManha : duasHorasAntes).toISOString()
+
+  // A janela ainda estará aberta às 9h? Então 9h, e ponto.
+  if (!entradaFechaEm || noveDaManha.getTime() < new Date(entradaFechaEm).getTime()) {
+    return noveDaManha.toISOString()
+  }
+
+  // A janela inteira acontece antes das 9h: avisa antes de ela abrir.
+  return new Date(
+    new Date(entradaAbreEm).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000,
+  ).toISOString()
 }
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
@@ -336,7 +360,11 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     if (evento.janela_entrada_inicio && !desligado(fluxos, 'aviso_dia_evento')) {
       agendarFunc(
         func.id, func.telefone, 'aviso_dia_evento', diaPrincipal,
-        quandoAvisarDoDia(diaPrincipal, evento.janela_entrada_inicio as string),
+        quandoAvisarDoDia(
+          diaPrincipal,
+          evento.janela_entrada_inicio as string,
+          (evento.janela_entrada_fim as string | null) ?? null,
+        ),
       )
     }
 
