@@ -8,11 +8,9 @@ import { mensagemAmigavel } from '@/lib/erros'
 export default function NovoFuncionarioModal({
   fornecedorId,
   eventoId,
-  empresaPadrao,
 }: {
   fornecedorId: string
   eventoId: string
-  empresaPadrao: string
 }) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -67,9 +65,6 @@ export default function NovoFuncionarioModal({
               </Field>
               <Field label="Telefone *">
                 <TelefoneInput name="telefone" required placeholder="(11) 99999-9999" className="input" />
-              </Field>
-              <Field label="Empresa *">
-                <NomeInput name="empresa" required defaultValue={empresaPadrao} className="input" />
               </Field>
               <Field label="Cargo *">
                 <NomeInput name="cargo" required placeholder="Ex: Segurança, Garçom..." className="input" />

@@ -11,7 +11,6 @@ const initialForm = {
   nome: '',
   cpf: '',
   telefone: '',
-  empresa: '',
   cargo: '',
   cidade: '',
   chavePix: '',
@@ -63,7 +62,6 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
    * sair errado.
    */
   const campoNome = useCampoFormatado(titleCaseNome, v => set('nome', v))
-  const campoEmpresa = useCampoFormatado(titleCaseNome, v => set('empresa', v))
   const campoCargo = useCampoFormatado(titleCaseNome, v => set('cargo', v))
   const campoCidade = useCampoFormatado(titleCaseNome, v => set('cidade', v))
 
@@ -85,7 +83,6 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         ...f,
         nome: f.nome || dados.nome,
         telefone: f.telefone || formatTelefone(dados.telefone),
-        empresa: f.empresa || dados.empresa,
         cargo: f.cargo || dados.cargo,
         cidade: f.cidade || (dados.cidade ?? ''),
         chavePix: f.chavePix || (dados.chavePix ?? ''),
@@ -117,7 +114,6 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       nome: form.nome,
       cpf: form.cpf,
       telefone: form.telefone,
-      empresa: form.empresa,
       cargo: form.cargo,
       cidade: form.cidade,
       consentimento,
@@ -194,9 +190,6 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
       </Field>
       <Field label="Telefone *" tutorial="form-telefone">
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
-      </Field>
-      <Field label="Empresa *">
-        <input required value={form.empresa} {...campoEmpresa} placeholder="Nome da sua empresa" className="input" />
       </Field>
       <Field label="Cargo *">
         <input required value={form.cargo} {...campoCargo} placeholder="Ex: Segurança, Garçom..." className="input" />

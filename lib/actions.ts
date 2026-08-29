@@ -945,7 +945,6 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
     nome: (formData.get('nome') as string).trim(),
     cpf,
     telefone: (formData.get('telefone') as string).replace(/\D/g, ''),
-    empresa: (formData.get('empresa') as string).trim(),
     cargo: ((formData.get('cargo') as string) || '').trim(),
     ativo: await estaDentroDoTeto(fornecedorId),
   }]).select('id').single()
@@ -993,7 +992,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
 
   const [{ data: base }, { data: setor }] = await Promise.all([
     db.from('funcionarios')
-      .select('nome, cpf, telefone, empresa, cargo, cidade, chave_pix')
+      .select('nome, cpf, telefone, cargo, cidade, chave_pix')
       .eq('cpf', cpf)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -1024,9 +1023,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
     nome: pessoa.nome,
     cpf,
     telefone: pessoa.telefone ?? '',
-    // A empresa passa a ser o setor de destino: ela descreve onde a pessoa
     // trabalha NESTE evento, não onde trabalhou no anterior.
-    empresa: setor.nome,
     cargo: pessoa.cargo ?? '',
     cidade: pessoa.cidade ?? null,
     chave_pix: pessoa.chave_pix ?? null,
@@ -1173,7 +1170,6 @@ export async function sincronizarFuncionarioNaPlanilha(funcionarioId: string) {
       nome: func.nome,
       cpf: func.cpf,
       telefone: func.telefone,
-      empresa: func.empresa,
       cargo: func.cargo,
       valorReceber: func.valor_receber,
       chavePix: func.chave_pix,
@@ -1628,7 +1624,7 @@ export async function recredenciarFuncionario(funcionarioId: string, fornecedorI
 export type ResultadoScan = {
   success: boolean
   message: string
-  funcionario?: { nome: string; empresa: string; cargo: string | null }
+  funcionario?: { nome: string; cargo: string | null }
   momento?: MomentoPresenca
   /** Já havia registro desta etapa no dia — nada foi gravado agora. */
   jaRegistrado?: boolean
@@ -1667,12 +1663,12 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
+    .select('id, nome, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
-  const funcInfo = { nome: func.nome, empresa: func.empresa, cargo: func.cargo ?? null }
+  const funcInfo = { nome: func.nome, cargo: func.cargo ?? null }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
   }
@@ -1838,11 +1834,11 @@ export async function registrarPresencaFoto(
 /**
  * Insere um funcionário a partir do formulário público. O token do formulário já
  * foi validado ao abrir a página; aqui revalidamos o fornecedor no servidor.
- * Formulário curto: nome, CPF, telefone e empresa.
+ * Formulário curto: nome, CPF, telefone, função e cidade.
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; empresa: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string }
+  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -1925,7 +1921,6 @@ export async function cadastrarFuncionarioPublico(
     nome: dados.nome.trim(),
     cpf,
     telefone: dados.telefone.replace(/\D/g, ''),
-    empresa: dados.empresa.trim(),
     cargo: dados.cargo.trim(),
     chave_pix: dados.chavePix?.trim() || null,
     cidade,
@@ -2075,7 +2070,6 @@ export type FuncionarioLocalizado = {
   nome: string
   cpf: string
   cargo: string | null
-  empresa: string | null
   ativo: boolean
   fotoUrl: string | null
   setorId: string
@@ -2282,7 +2276,6 @@ async function fichaDoFuncionario(
       nome: func.nome,
       cpf: func.cpf,
       cargo: func.cargo,
-      empresa: func.empresa,
       ativo: func.ativo !== false,
       fotoUrl,
       setorId: func.fornecedor_id,

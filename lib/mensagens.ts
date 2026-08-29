@@ -54,7 +54,6 @@ export type TipoMensagem =
   | 'lembrete_entrada' | 'lembrete_meio' | 'lembrete_fim'
   | 'alerta_supervisor_entrada' | 'alerta_supervisor_meio' | 'alerta_supervisor_fim'
   | 'reforco_entrada' | 'reforco_meio' | 'reforco_fim'
-  | 'credenciais_supervisor'
   | 'confirmacao_escala'
   | 'aviso_dia_evento'
   | 'boas_vindas_funcionario'
@@ -102,7 +101,6 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   alerta_supervisor_meio: 'alerta_supervisor_pendencia',
   alerta_supervisor_fim: 'alerta_supervisor_pendencia',
   confirmacao_escala: 'confirmacao_escala',
-  credenciais_supervisor: 'supervisor_acesso',
   aviso_dia_evento: 'aviso_dia_evento',
   boas_vindas_funcionario: 'boas_vindas_funcionario',
   aviso_montagem: 'aviso_montagem',
@@ -704,17 +702,6 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     }
   }
 
-  // Credenciais do supervisor: parâmetros já foram capturados no agendamento
-  // (a senha em texto puro não existe em nenhum outro lugar do banco).
-  if (msg.tipo === 'credenciais_supervisor') {
-    try {
-      const params = JSON.parse(msg.mensagem)
-      return Array.isArray(params) ? { template, params } : null
-    } catch {
-      return null
-    }
-  }
-
   // Lembrete e reforço: mesma estrutura de parâmetros, só muda a instrução da etapa.
   if (msg.tipo.startsWith('lembrete_') || msg.tipo.startsWith('reforco_')) {
     if (!msg.funcionario_id) return null
@@ -1051,7 +1038,17 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
     return
   }
 
-  const esgotou = tentativa >= msg.max_tentativas
+  /*
+   * Erro PERMANENTE não merece retry.
+   *
+   * 132001 (template não existe) e 132000 (número de parâmetros errado) não
+   * mudam por tentar de novo — o template foi apagado da Meta ou o código está
+   * mandando a lista errada. Gastar as três tentativas só atrasa o diagnóstico
+   * e enche o log com a mesma falha repetida.
+   */
+  const codigo = (resultado.resposta as { error?: { code?: number } } | null)?.error?.code
+  const permanente = codigo === 132000 || codigo === 132001 || codigo === 132005 || codigo === 131009
+  const esgotou = permanente || tentativa >= msg.max_tentativas
   const backoffMin = BACKOFF_MINUTOS[Math.min(tentativa - 1, BACKOFF_MINUTOS.length - 1)]
   await supabase.from('mensagens_agendadas').update({
     status: esgotou ? 'falhou' : 'pendente',

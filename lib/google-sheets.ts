@@ -27,11 +27,24 @@ function getAuth() {
 }
 
 // Colunas alinhadas ao formulário de cadastro atual (nome, CPF, telefone,
-// empresa, cargo, chave PIX — sem e-mail). "Valor por Funcionário" é
+// cargo, chave PIX — sem e-mail e sem empresa). "Valor por Funcionário" é
 // preenchido depois pelo supervisor do setor (não faz parte do cadastro).
 // Entrada/Saída saíram: a presença hoje é feita por QR (entrada/fim) + foto/GPS
 // (meio), acompanhada direto no painel — a planilha não tenta mais espelhar isso.
-const HEADERS = ['Nome', 'CPF', 'Telefone', 'Empresa', 'Cargo', 'Chave PIX', 'Valor por Funcionário', 'QR Code', 'Cadastro']
+/*
+ * As colunas, na ordem. A posição importa: tudo aqui é escrito por letra de
+ * coluna, não por nome de cabeçalho.
+ *
+ * "Empresa" saiu — o formulário não pergunta mais. E a saída dela corrigiu um
+ * desencontro que existia: o cabeçalho terminava em "Cadastro" na coluna I, e
+ * o registro de ENTRADA escrevia também na I, apagando a data de cadastro da
+ * pessoa toda vez que ela batia o ponto. Agora Entrada e Saída têm coluna
+ * própria e declarada.
+ */
+const HEADERS = [
+  'Nome', 'CPF', 'Telefone', 'Cargo', 'Chave PIX',
+  'Valor por Funcionário', 'QR Code', 'Cadastro', 'Entrada', 'Saída',
+]
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
 
 const CREDENCIEI_FOLDER_NAME = 'Credenciei'
@@ -97,7 +110,7 @@ export async function criarPlanilhaEvento(nomeEvento: string, clienteFolderId?: 
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Geral!A1:I1',
+    range: 'Geral!A1:J1',
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -130,7 +143,7 @@ export async function garantirAbaFornecedor(
     // (colunas antigas como E-mail/Entrada/Saída saíram do layout).
     try {
       const [headerRes, dadosRes] = await Promise.all([
-        sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A1:I1` }),
+        sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A1:J1` }),
         sheets.spreadsheets.values.get({ spreadsheetId, range: `${fornecedorNome}!A2` }),
       ])
       const header = headerRes.data.values?.[0] ?? []
@@ -139,7 +152,7 @@ export async function garantirAbaFornecedor(
       if (headerDesatualizado && !temDados) {
         await sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${fornecedorNome}!A1:I1`,
+          range: `${fornecedorNome}!A1:J1`,
           valueInputOption: 'RAW',
           requestBody: { values: [HEADERS] },
         })
@@ -162,7 +175,7 @@ export async function garantirAbaFornecedor(
   // Adiciona cabeçalho
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${fornecedorNome}!A1:I1`,
+    range: `${fornecedorNome}!A1:J1`,
     valueInputOption: 'RAW',
     requestBody: { values: [HEADERS] },
   })
@@ -179,7 +192,6 @@ export async function adicionarFuncionarioNaPlanilha(
     nome: string
     cpf: string
     telefone: string
-    empresa: string
     cargo: string
     chavePix?: string | null
     valorReceber?: number
@@ -200,26 +212,25 @@ export async function adicionarFuncionarioNaPlanilha(
 
   await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${fornecedorNome}!A:I`,
+    range: `${fornecedorNome}!A:J`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
       values: [[
-        funcionario.nome,
-        cpfFormatado,
-        telFormatado,
-        funcionario.empresa,
-        funcionario.cargo,
-        funcionario.chavePix || '', // Chave PIX (col F)
-        valor,    // Valor por Funcionário (col G)
-        qrLink,   // QR Code (col H)
-        cadastro, // Cadastro (col I)
+        funcionario.nome,           // A
+        cpfFormatado,               // B
+        telFormatado,               // C
+        funcionario.cargo,          // D
+        funcionario.chavePix || '', // E
+        valor,                      // F  valor por funcionário
+        qrLink,                     // G
+        cadastro,                   // H
       ]],
     },
   })
 }
 
-/** Atualiza o "Valor por Funcionário" (col G) da linha do funcionário, pelo nome. */
+/** Atualiza o "Valor por Funcionário" (col F) da linha do funcionário, pelo nome. */
 export async function atualizarValorNaPlanilha(
   spreadsheetId: string,
   fornecedorNome: string,
@@ -243,7 +254,7 @@ export async function atualizarValorNaPlanilha(
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${fornecedorNome}!G${rowNum}`,
+    range: `${fornecedorNome}!F${rowNum}`,
     valueInputOption: 'RAW',
     requestBody: { values: [[valorFormatado]] },
   })
@@ -262,14 +273,15 @@ export async function registrarPresencaNaPlanilha(
   // Busca todas as linhas para encontrar o funcionário pelo nome
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `${fornecedorNome}!A:I`,
+    range: `${fornecedorNome}!A:J`,
   })
 
   const rows = res.data.values ?? []
   const rowIndex = rows.findIndex((row, i) => i > 0 && row[0] === funcionarioNome)
   if (rowIndex === -1) return
 
-  // Coluna I (index 8) = Entrada, J (index 9) = Saída
+  // Coluna I = Entrada, J = Saída — agora com cabeçalho próprio, em vez de
+  // sobrescrever a data de cadastro como acontecia antes.
   const col = tipo === 'entrada' ? 'I' : 'J'
   const rowNum = rowIndex + 1 // 1-based
 

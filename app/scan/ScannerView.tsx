@@ -7,7 +7,7 @@ type Evento = { id: string; nome: string }
 type ScanResult = {
   success: boolean
   message: string
-  funcionario?: { nome: string; empresa: string; cargo: string | null }
+  funcionario?: { nome: string; cargo: string | null }
   momento?: 'entrada' | 'meio' | 'fim'
 }
 
@@ -153,8 +153,7 @@ export default function ScannerView({
               <>
                 <p className="text-xl font-semibold mt-4 opacity-90">{result.funcionario.nome}</p>
                 <p className="text-base opacity-70 mt-1">
-                  {result.funcionario.cargo ? `${result.funcionario.cargo} • ` : ''}{result.funcionario.empresa}
-                </p>
+                  {result.funcionario.cargo ? `${result.funcionario.cargo} • ` : ''}                </p>
               </>
             )}
           </div>

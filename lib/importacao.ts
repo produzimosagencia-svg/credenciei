@@ -68,7 +68,7 @@ export async function importarFuncionarios(
 
   // Prepara os registros com CPF e telefone limpos. O funcionário já fica
   // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
-  // vira só o campo "empresa" — não cria setores novos).
+  // (a coluna de setor da planilha não cria setores novos).
   const preparados = linhas.map(f => {
     const valor = parseFloat(String(f.valor ?? '').replace(',', '.'))
     return {
@@ -76,7 +76,6 @@ export async function importarFuncionarios(
       cpf: String(f.cpf ?? '').replace(/\D/g, ''),
       telefone: String(f.telefone ?? '').replace(/\D/g, ''),
       chave_pix: f.chavePix?.trim() || null,
-      empresa: f.empresa?.trim() || fornecedor.nome,
       cargo: f.cargo?.trim() ?? '',
       cidade: f.cidade?.trim() || null,
       valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
@@ -152,7 +151,7 @@ export async function importarFuncionarios(
   const { data: inseridos, error } = await supabaseAdmin
     .from('funcionarios')
     .insert(payload)
-    .select('id, nome, cpf, telefone, empresa, cargo, chave_pix, valor_receber, qr_token')
+    .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, qr_token')
 
   if (error) {
     return { ok: false, status: 500, error: mensagemAmigavel(error) }
@@ -170,7 +169,6 @@ export async function importarFuncionarios(
             nome: f.nome,
             cpf: f.cpf,
             telefone: f.telefone,
-            empresa: f.empresa,
             cargo: f.cargo,
             chavePix: f.chave_pix,
             valorReceber: f.valor_receber,

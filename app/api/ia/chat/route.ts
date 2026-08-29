@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
   const planilha: LinhaPlanilha[] | undefined = Array.isArray(corpo.planilha)
     ? corpo.planilha.map(l => ({
         nome: texto(l?.nome), cpf: texto(l?.cpf), telefone: texto(l?.telefone),
-        chavePix: texto(l?.chavePix), empresa: texto(l?.empresa),
         cargo: texto(l?.cargo), cidade: texto(l?.cidade), valor: texto(l?.valor),
+        chavePix: texto(l?.chavePix),
       }))
     : undefined
 
