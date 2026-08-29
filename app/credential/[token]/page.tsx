@@ -144,10 +144,26 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         }
       }
       const j = janelaMeio(entrada.em)
+      const aberto = agora >= new Date(j.inicio)
+      const atrasado = aberto && agora > new Date(j.fim)
       return {
         ...base, inicio: j.inicio, fim: j.fim,
-        status: statusPorRelogio(j.inicio, j.fim, agora),
-        janelaTexto: `${formatarBR(j.inicio, 'hora')} às ${formatarBR(j.fim, 'hora')}`,
+        /*
+         * O meio ABRE e não FECHA — igual ao servidor, que é quem manda.
+         *
+         * Aqui o cartão sumia depois do fim da janela, e isso criava um beco
+         * sem saída que o servidor faz questão de evitar: como a saída exige o
+         * meio, quem se atrasasse não conseguia nem registrar o meio nem ir
+         * embora, e ficava dependendo do supervisor bater o cartão por ele.
+         * Com equipe grande, isso vira fila no portão.
+         *
+         * Chegar tarde não fica escondido: o horário real é gravado, e a tela
+         * de pendências e o histórico comparam com o previsto.
+         */
+        status: aberto ? ('disponivel' as const) : ('aguardando' as const),
+        janelaTexto: atrasado
+          ? `Em atraso — o previsto era até ${formatarBR(j.fim, 'hora')}`
+          : `${formatarBR(j.inicio, 'hora')} às ${formatarBR(j.fim, 'hora')}`,
       }
     }
 
