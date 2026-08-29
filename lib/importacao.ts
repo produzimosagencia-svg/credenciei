@@ -2,7 +2,7 @@ import { after } from 'next/server'
 import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster, type Role } from '@/lib/permissions'
-import { sincronizarAgendamentos } from '@/lib/mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
 import { mensagemAmigavel } from '@/lib/erros'
 import type { LinhaPlanilha } from '@/lib/planilha'
@@ -176,6 +176,36 @@ export async function importarFuncionarios(
           })
         } catch (e) {
           console.error('[importacao] Erro ao sincronizar planilha:', e)
+        }
+      }
+    })
+  }
+
+  /*
+   * Boas-vindas a quem entrou pela planilha.
+   *
+   * Antes só quem se cadastrava pelo formulário recebia o link da credencial —
+   * quem vinha por importação ficava com um QR Code que nunca soube que
+   * existia, e aparecia no evento sem credencial nenhuma.
+   *
+   * Em background e uma por pessoa: a fila cuida do espaçamento entre envios.
+   * Mandar aqui num laço faria 100 chamadas na mesma requisição, que é
+   * exatamente o que estoura o tempo da função no meio da importação.
+   *
+   * Sem telefone válido não agenda — `agendarBoasVindasFuncionario` já ignora
+   * e a pessoa fica no relatório de importação para o produtor corrigir.
+   */
+  if (inseridos?.length) {
+    after(async () => {
+      for (const f of inseridos) {
+        try {
+          await agendarBoasVindasFuncionario({
+            eventoId,
+            funcionarioId: f.id,
+            telefone: f.telefone ?? '',
+          })
+        } catch (e) {
+          console.error('[importacao] não consegui agendar as boas-vindas:', e)
         }
       }
     })
