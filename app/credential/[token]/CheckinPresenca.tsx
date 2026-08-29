@@ -156,6 +156,62 @@ function emNavegadorEmbutido(): boolean {
   return /;\s*wv\)|WhatsApp|FB_IAB|FBAN|FBAV|Instagram|Line\/|MicroMessenger/i.test(ua)
 }
 
+/** Uma batida pronta que ainda não conseguiu subir. */
+type Pendente = { base64: string; lat: number; lng: number; em: number }
+
+const chavePendente = (token: string) => `credenciei:meio-pendente:${token}`
+
+/**
+ * Por quanto tempo uma batida guardada ainda vale.
+ *
+ * Existe por causa do horário. Quem carimba é o servidor, na hora em que
+ * RECEBE — então uma batida que sobe muito depois entra no relatório com o
+ * horário errado, contra a pessoa, justo no dado que serve para justificar a
+ * jornada com ela.
+ *
+ * Meia hora cobre com folga o que isto foi feito para resolver: rede saturada
+ * de evento, que volta em segundos ou minutos. O que passar disso é descartado
+ * com aviso para refazer — melhor perder a foto do que gravar hora errada.
+ */
+const VALIDADE_MS = 30 * 60 * 1000
+
+function lerPendente(token: string): { pendente: Pendente | null; venceu: boolean } {
+  try {
+    const cru = localStorage.getItem(chavePendente(token))
+    if (!cru) return { pendente: null, venceu: false }
+    const p = JSON.parse(cru) as Pendente
+    if (!p?.base64 || typeof p.em !== 'number') throw new Error('formato')
+    if (Date.now() - p.em > VALIDADE_MS) {
+      localStorage.removeItem(chavePendente(token))
+      return { pendente: null, venceu: true }
+    }
+    return { pendente: p, venceu: false }
+  } catch {
+    // Armazenamento indisponível ou conteúdo corrompido: seguir sem pendência
+    // é sempre seguro — a pessoa refaz a batida.
+    try { localStorage.removeItem(chavePendente(token)) } catch {}
+    return { pendente: null, venceu: false }
+  }
+}
+
+function guardarPendente(token: string, p: Pendente) {
+  try { localStorage.setItem(chavePendente(token), JSON.stringify(p)) } catch {}
+}
+
+function limparPendente(token: string) {
+  try { localStorage.removeItem(chavePendente(token)) } catch {}
+}
+
+/**
+ * O servidor recusou porque a etapa JÁ está registrada?
+ *
+ * Isso acontece quando o envio chegou e só a resposta se perdeu no caminho: o
+ * reenvio bate na guarda de duplicidade. Para a pessoa é sucesso — a batida
+ * existe. Mostrar "já registrou" como erro faria ela achar que deu errado e
+ * tentar de novo.
+ */
+const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
+
 export default function CheckinPresenca({ token, momentos }: { token: string; momentos: MomentoInfo[] }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -167,9 +223,30 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
    * abrir, e chutar aqui daria divergência de hidratação.
    */
   const [embutido, setEmbutido] = useState(false)
-  useEffect(() => setEmbutido(emNavegadorEmbutido()), [])
+  const [pendente, setPendente] = useState<Pendente | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const localRef = useRef<Localizacao | null>(null)
+  // Impede dois envios ao mesmo tempo (o automático e o manual, por exemplo).
+  const enviandoRef = useRef(false)
+
+  useEffect(() => {
+    /*
+     * Depois da pintura, não durante. Estas duas leituras só existem no
+     * navegador (userAgent e armazenamento local), então não dá para resolvê-las
+     * na renderização — o servidor não as tem, e chutar daria divergência de
+     * hidratação. Adiar um tique também evita a cascata de re-render que o
+     * React reclama quando o estado muda em cima da montagem.
+     */
+    const id = setTimeout(() => {
+      setEmbutido(emNavegadorEmbutido())
+      // Recupera uma batida que ficou para trás — inclusive de uma visita
+      // anterior, se a pessoa fechou a tela sem conseguir enviar.
+      const { pendente: guardada, venceu } = lerPendente(token)
+      if (guardada) setPendente(guardada)
+      if (venceu) setErro('Sua batida guardada passou de meia hora e foi descartada para não gravar horário errado. Tire a foto de novo, por favor.')
+    }, 0)
+    return () => clearTimeout(id)
+  }, [token])
 
   // Fluxo da etapa MEIO: câmera e localização ao mesmo tempo.
   // IMPORTANTE: fileRef.current.click() precisa rodar SÍNCRONO, direto no
@@ -185,6 +262,66 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
     fileRef.current?.click()
     localRef.current = iniciarLocalizacao()
   }
+
+  /**
+   * Entrega a batida — e, se a rede não deixar, guarda para reenviar.
+   *
+   * A distinção que sustenta tudo aqui é entre o servidor DIZER NÃO e o
+   * servidor NÃO RESPONDER:
+   *
+   *   - resposta com erro é uma decisão (fora da janela, cadastro inativo).
+   *     Insistir não muda nada, então descarta e explica.
+   *   - exceção é transporte: a rede caiu, o pedido não chegou. Aí guardar e
+   *     tentar de novo é exatamente o certo — e evita a pior parte do
+   *     problema antigo, que era a pessoa ter de TIRAR A FOTO DE NOVO.
+   */
+  const entregar = async (p: Pendente) => {
+    if (enviandoRef.current) return
+    enviandoRef.current = true
+    try {
+      const r = await registrarPresencaFoto(token, p.base64, p.lat, p.lng)
+      limparPendente(token)
+      setPendente(null)
+      if (r.ok || ehDuplicata(r.error)) {
+        // Duplicata é sucesso: o envio anterior chegou, só a resposta se
+        // perdeu. Dizer "já registrou" aqui faria a pessoa achar que falhou.
+        setErro(null)
+        router.refresh()
+      } else {
+        setErro(r.error ?? 'Não foi possível registrar. Tente de novo.')
+      }
+    } catch {
+      guardarPendente(token, p)
+      setPendente(p)
+      setErro(null)
+    } finally {
+      enviandoRef.current = false
+    }
+  }
+
+  /*
+   * Enquanto houver batida guardada, seguimos tentando: assim que a conexão
+   * voltar e, de tempos em tempos, porque o evento `online` nem sempre dispara
+   * quando o sinal oscila sem cair de vez — que é o normal em estádio cheio.
+   */
+  useEffect(() => {
+    if (!pendente) return
+    const tentar = () => {
+      // Venceu enquanto a tela estava aberta: descarta em vez de gravar hora
+      // errada. A mesma checagem existe na leitura, para quem reabre depois.
+      if (Date.now() - pendente.em > VALIDADE_MS) {
+        limparPendente(token)
+        setPendente(null)
+        setErro('Sua batida guardada passou de meia hora e foi descartada para não gravar horário errado. Tire a foto de novo, por favor.')
+        return
+      }
+      void entregar(pendente)
+    }
+    const id = setInterval(tentar, 15_000)
+    window.addEventListener('online', tentar)
+    return () => { clearInterval(id); window.removeEventListener('online', tentar) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendente, token])
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -218,23 +355,15 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       setFase('enviando')
 
       /*
-       * Sem teto de tempo, de propósito.
+       * O ENVIO não tem teto de tempo, de propósito.
        *
        * Havia um limite de 15s aqui, e ele fazia mal: desistir de ESPERAR não
        * cancela o envio. Na rede saturada de um evento, a foto subia em 20s, o
        * registro era gravado — e a pessoa já tinha visto "Demorou demais" e
        * tentava de novo. Erro falso em cima de sucesso confunde mais do que uma
        * espera longa, porque leva a pessoa a duvidar de uma batida que existe.
-       *
-       * O botão continua saindo de "Registrando…" de qualquer forma: o
-       * `finally` abaixo roda mesmo se isto falhar.
        */
-      const resultado = await registrarPresencaFoto(token, base64, coords.lat, coords.lng)
-      if (resultado.ok) {
-        router.refresh()
-      } else {
-        setErro(resultado.error ?? 'Não foi possível registrar. Tente de novo.')
-      }
+      await entregar({ base64, lat: coords.lat, lng: coords.lng, em: Date.now() })
     } catch (err) {
       /*
        * Cada falha tem a sua saída. Antes tudo virava "ative o GPS", inclusive
@@ -268,6 +397,27 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       {erro && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
           <p className="text-red-600 text-xs font-medium">{erro}</p>
+        </div>
+      )}
+
+      {/*
+        * A batida guardada precisa ser VISÍVEL.
+        *
+        * Sem isto, quem ficou sem rede vê a tela igual à de antes de tirar a
+        * foto e conclui que perdeu a batida — aí tira outra, ou vai reclamar
+        * no credenciamento. Dizer que está guardada e subindo sozinha resolve
+        * a dúvida sem ninguém sair do posto.
+        */}
+      {pendente && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+          <div className="min-w-0">
+            <p className="text-amber-900 text-xs font-semibold">Batida guardada — enviando</p>
+            <p className="text-amber-700 text-xs mt-0.5">
+              A internet oscilou, mas sua foto está salva e sobe sozinha assim que o sinal
+              voltar. Pode deixar a tela aberta.
+            </p>
+          </div>
         </div>
       )}
 
