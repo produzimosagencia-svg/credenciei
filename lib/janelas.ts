@@ -410,3 +410,102 @@ function diaBR(dia: string): string {
   const [, mes, d] = dia.split('-')
   return `${d}/${mes}`
 }
+
+// ─── Conferência dos horários configurados ───────────────────────────────────
+//
+// Existe porque a configuração de horário é o ponto do sistema onde um erro de
+// digitação sai caro e silencioso. Aconteceu de verdade: a saída do evento no
+// Kleber Andrade ficou marcada para 01:30–08:00 do dia 5, quando o show só
+// começava às 18:30 daquele dia e a equipe só ia embora na madrugada do dia 6.
+// Os HORÁRIOS estavam certos; o que estava errado era o DIA.
+//
+// Ninguém percebe isso olhando a tela: "01:30 às 08:00" parece perfeitamente
+// razoável. O erro só aparece na madrugada do evento, quando mil pessoas
+// tentam bater a saída e o sistema recusa todas — o pior momento possível.
+//
+// É o tipo de engano que se previne na entrada, não se descobre na saída.
+
+export type ProblemaDeJanela = {
+  mensagem: string
+  /** `true` impede salvar; `false` é só um alerta para conferir. */
+  bloqueia: boolean
+}
+
+/** Aceita ISO ou o valor cru de um `datetime-local`. Comparações relativas. */
+const ms = (v: string | null | undefined): number | null => {
+  if (!v) return null
+  const t = new Date(v).getTime()
+  return Number.isNaN(t) ? null : t
+}
+
+const H24 = 24 * 60 * 60 * 1000
+
+/**
+ * O que está impossível ou suspeito nos horários de um evento.
+ *
+ * Separa BLOQUEIO de ALERTA de propósito. Bloqueio é para o que não pode
+ * existir — terminar antes de começar, fechar antes de abrir. Alerta é para o
+ * que é estranho mas pode ser real: um credenciamento que abre no dia
+ * anterior é raro, e mesmo assim legítimo em operação grande. Bloquear o
+ * estranho junto com o impossível transformaria a conferência em obstáculo, e
+ * a primeira coisa que alguém faz com um obstáculo é procurar como contorná-lo.
+ */
+export function conferirHorariosDoEvento(dados: {
+  data_inicio?: string | null
+  data_fim?: string | null
+  janela_entrada_inicio?: string | null
+  janela_entrada_fim?: string | null
+  janela_fim_inicio?: string | null
+  janela_fim_fim?: string | null
+}): ProblemaDeJanela[] {
+  const p: ProblemaDeJanela[] = []
+  const inicio = ms(dados.data_inicio)
+  const fim = ms(dados.data_fim)
+  const entAbre = ms(dados.janela_entrada_inicio)
+  const entFecha = ms(dados.janela_entrada_fim)
+  const saiAbre = ms(dados.janela_fim_inicio)
+  const saiFecha = ms(dados.janela_fim_fim)
+
+  // ── O impossível ────────────────────────────────────────────────────────
+  if (inicio !== null && fim !== null && fim < inicio) {
+    p.push({ bloqueia: true, mensagem: 'O evento está terminando antes de começar. Confira a data de término.' })
+  }
+  if (entAbre !== null && entFecha !== null && entFecha < entAbre) {
+    p.push({ bloqueia: true, mensagem: 'O credenciamento está fechando antes de abrir. Confira o horário de entrada.' })
+  }
+  if (saiAbre !== null && saiFecha !== null && saiFecha < saiAbre) {
+    p.push({ bloqueia: true, mensagem: 'A saída está fechando antes de abrir. Confira o horário de saída.' })
+  }
+
+  /*
+   * O erro do Kleber Andrade: a janela inteira de saída antes de o evento
+   * começar. Ninguém pode ir embora de um evento que ainda não aconteceu, e
+   * quando o evento vira a madrugada a saída pertence ao DIA SEGUINTE — que é
+   * exatamente o campo que o seletor de data não muda sozinho.
+   */
+  if (saiFecha !== null && inicio !== null && saiFecha < inicio) {
+    p.push({
+      bloqueia: true,
+      mensagem: 'A saída termina antes de o evento começar — ninguém conseguiria bater o ponto. Se o evento vira a madrugada, a saída é no DIA SEGUINTE.',
+    })
+  }
+  if (entAbre !== null && fim !== null && entAbre > fim) {
+    p.push({ bloqueia: true, mensagem: 'O credenciamento abre depois de o evento já ter terminado. Confira a data de entrada.' })
+  }
+
+  // ── O suspeito ──────────────────────────────────────────────────────────
+  if (saiAbre !== null && inicio !== null && saiAbre < inicio) {
+    p.push({ bloqueia: false, mensagem: 'A saída abre antes de o evento começar. Confira se a data está certa.' })
+  }
+  if (entAbre !== null && entFecha !== null && entFecha - entAbre > H24) {
+    p.push({ bloqueia: false, mensagem: 'O credenciamento fica aberto mais de 24 horas. Costuma ser sinal de data trocada.' })
+  }
+  if (saiAbre !== null && saiFecha !== null && saiFecha - saiAbre > H24) {
+    p.push({ bloqueia: false, mensagem: 'A saída fica aberta mais de 24 horas. Costuma ser sinal de data trocada.' })
+  }
+  if (entAbre !== null && inicio !== null && inicio - entAbre > 2 * H24) {
+    p.push({ bloqueia: false, mensagem: 'O credenciamento abre mais de dois dias antes do evento. Confira a data.' })
+  }
+
+  return p
+}

@@ -4,6 +4,7 @@ import { editarEvento, diasDoEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
+import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
@@ -179,7 +180,8 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         </div>
 
         {/* Ação */}
-        <div className="p-6 sm:p-8 pt-6 border-t border-slate-100">
+        <div className="p-6 sm:p-8 pt-6 border-t border-slate-100 space-y-4">
+          <ConferenciaDeHorarios />
           <button
             type="submit"
             data-tutorial="edt-salvar"

@@ -1,4 +1,5 @@
 import { criarEvento } from '@/lib/actions'
+import ConferenciaDeHorarios from '../ConferenciaDeHorarios'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil, licencasDeEventoRestantes, supabaseAdmin } from '@/lib/supabase-server'
@@ -113,6 +114,9 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
       </Field>
 
       <JanelasHorario defaults={defaults} />
+
+      {/* Logo acima do botão: é onde o olho vai antes de salvar. */}
+      <ConferenciaDeHorarios />
 
       <button type="submit" data-tutorial="evt-novo-submit" className="w-full btn btn-primario btn-lg">
         {submitLabel}

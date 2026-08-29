@@ -24,7 +24,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia,
+  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia, conferirHorariosDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
@@ -82,6 +82,23 @@ async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | nu
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
 function getAdminSupabase() {
   return supabaseAdmin
+}
+
+/**
+ * Recusa horários impossíveis antes de gravar.
+ *
+ * A conferência também roda no navegador, enquanto a pessoa preenche — que é
+ * onde ela ajuda de verdade. Esta aqui é a regra: JavaScript desligado, aba
+ * antiga, requisição montada à mão, tudo passa por este ponto. Sem ela, a
+ * validação do formulário seria uma sugestão.
+ *
+ * Só o que é IMPOSSÍVEL bloqueia. Os alertas de "confira este ponto" ficam na
+ * tela e não impedem nada: são casos raros mas legítimos, e barrá-los aqui
+ * deixaria o produtor sem saída num evento fora do padrão.
+ */
+function exigirHorariosCoerentes(dados: Parameters<typeof conferirHorariosDoEvento>[0]) {
+  const impossivel = conferirHorariosDoEvento(dados).filter(p => p.bloqueia)
+  if (impossivel.length) throw new Error(impossivel.map(p => p.mensagem).join(' '))
 }
 
 async function exigirGestorDeEventos() {
@@ -672,6 +689,8 @@ export async function criarEvento(formData: FormData) {
     ...preEventoDoForm(formData),
   }
 
+  exigirHorariosCoerentes(data)
+
   const db = supabaseAdmin
   const { data: novo, error } = await db.from('eventos').insert([data]).select('id').single()
   if (error) throw new Error('Não foi possível criar o evento. Confira os dados e tente de novo.')
@@ -704,6 +723,8 @@ export async function editarEvento(id: string, formData: FormData) {
     ...janelasDoForm(formData),
     ...preEventoDoForm(formData),
   }
+  exigirHorariosCoerentes(data)
+
   await db.from('eventos').update(data).eq('id', id)
   await garantirDiaPrincipal(id, data.data_inicio)
   after(() => sincronizarAgendamentos(id).catch(console.error))
