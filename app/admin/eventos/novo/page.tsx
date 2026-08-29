@@ -124,11 +124,9 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
 
 function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
   const janelas = [
-    // Os três valem só no DIA PRINCIPAL. Nos dias de preparação (marcados
-    // depois, na tela de edição) entrada e saída são livres e o meio é a
-    // entrada real de cada pessoa + 4h.
+    // Só entrada e saída: o meio é sempre a entrada real de cada pessoa + 4h,
+    // e por isso não tem o que configurar.
     { key: 'entrada', label: 'Entrada', cor: 'text-green-600' },
-    { key: 'meio', label: 'Meio', cor: 'text-blue-600' },
     { key: 'fim', label: 'Saída', cor: 'text-brand-600' },
   ] as const
   return (
@@ -136,9 +134,8 @@ function JanelasHorario({ defaults }: { defaults?: EventoDefaults }) {
       <div>
         <p className="text-sm font-semibold text-slate-700">Horários do dia principal</p>
         <p className="text-xs text-slate-400">
-          Entrada, meio e saída do DIA DO EVENTO. Os dias de montagem e desmontagem são
-          marcados depois, em "Editar evento" — neles a entrada e a saída são livres, e o meio
-          abre 4h depois da entrada de cada pessoa.
+          Quando a equipe pode bater entrada e saída no dia do evento. O meio não entra aqui:
+          o sistema pede a batida por foto 4 horas depois da entrada de cada pessoa.
         </p>
       </div>
       {janelas.map(j => (

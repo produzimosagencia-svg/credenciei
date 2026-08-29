@@ -25,9 +25,9 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'edt-duracao', titulo: 'Duração do evento', posicao: 'right', icone: 'CalendarDays',
       descricao: 'Quando o evento começa e termina. Este período delimita tudo: fora dele ninguém bate ponto. Dentro dele, entrada e saída são livres em qualquer dia.' },
     { alvo: 'edt-janelas', titulo: 'Horários do dia principal', posicao: 'right', icone: 'LogIn',
-      descricao: 'Entrada, meio e saída do DIA DO EVENTO. Nos dias de preparação, marcados mais abaixo, estes horários não valem: lá a entrada e a saída são livres. Mudar um horário aqui reagenda os lembretes de WhatsApp da equipe inteira, inclusive de quem já foi avisado.' },
-    { alvo: 'edt-janela-meio', titulo: 'A do meio é diferente', posicao: 'right', icone: 'Camera',
-      descricao: 'Entrada e saída são o QR Code lido no credenciamento. A do meio é o próprio funcionário tirando uma selfie com a localização ligada. Este horário vale só no dia do evento — nos dias de preparação o meio abre 4 horas depois da entrada de cada pessoa.' },
+      descricao: 'Quando a equipe pode bater entrada e saída no dia do evento. Mudar um horário aqui reagenda os lembretes de WhatsApp da equipe inteira, inclusive de quem já foi avisado.' },
+    { alvo: 'edt-janelas', titulo: 'E o meio?', posicao: 'right', icone: 'Camera',
+      descricao: 'Não tem horário para configurar. O sistema pede a batida por foto 4 horas depois da entrada de CADA pessoa — quem entra às 08:00 registra às 12:00, quem entra às 10:30 registra às 14:30. É pedido uma vez só. A equipe não entra junta, então um horário fixo cobraria a selfie de quem acabou de chegar.' },
     { alvo: 'edt-dias', titulo: 'Dias de montagem e desmontagem', posicao: 'top', icone: 'CalendarDays',
       descricao: 'O evento não acontece só no dia do evento. Marque aqui os dias em que a equipe trabalha na preparação: neles a entrada e a saída são livres, e o meio é contado 4 horas depois da entrada de cada pessoa. Dia não marcado não é dia de trabalho — ninguém bate ponto nele.' },
     { alvo: 'edt-salvar', titulo: 'Salvar', posicao: 'top', icone: 'Save',
@@ -57,16 +57,15 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
   const fmt = (d: string | null | undefined) => isoParaInput(d)
 
   /*
-   * Os três horários valem SÓ no dia principal.
+   * Só ENTRADA e SAÍDA têm horário.
    *
-   * O "meio" está de volta aqui depois de ter saído: nos dias de preparação
-   * ele continua sendo a entrada real + 4h, mas no dia do evento a operação é
-   * sincronizada e o produtor precisa marcar a hora em que todo mundo confirma
-   * presença de uma vez.
+   * O meio não tem, e não é omissão: ele é sempre a entrada real de cada
+   * pessoa + 4h. No estádio a equipe não entra junta, e um horário fixo
+   * cobraria a selfie de quem chegou às 15:00 no mesmo instante em que cobra
+   * de quem chegou às 11:00. A caixa azul abaixo explica isso na tela.
    */
   const janelas = [
     { key: 'entrada', label: 'Entrada', icon: LogIn, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
-    { key: 'meio', label: 'Meio', icon: Camera, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
@@ -116,7 +115,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-janelas">
           <SectionTitle
             title="Horários do dia principal"
-            subtitle="Entrada, meio e saída do dia do evento. Nos dias de preparação, entrada e saída são livres e o meio abre 4h depois da entrada de cada pessoa."
+            subtitle="Quando a equipe pode bater entrada e saída no dia do evento"
           />
           <div className="space-y-3">
             {janelas.map(j => (
@@ -137,6 +136,27 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* O meio perdeu o campo, mas NÃO pode perder a explicação.
+              Sem esta caixa, o produtor vê "Entrada" e "Saída" e conclui que o
+              meio deixou de existir — quando na verdade ele virou automático. */}
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <Camera className="w-3.5 h-3.5 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-700">Meio — automático</p>
+              <p className="text-slate-600 text-xs mt-0.5">
+                O sistema solicita a batida por foto <strong>4 horas depois da entrada</strong> de
+                cada pessoa. Quem entrar às 08:00 registra às 12:00; quem entrar às 10:30 registra
+                às 14:30.
+              </p>
+              <p className="text-slate-500 text-2xs mt-1">
+                É pedido uma vez só, e não tem horário para configurar — a equipe não entra junta,
+                e um horário fixo cobraria de quem acabou de chegar.
+              </p>
+            </div>
           </div>
         </div>
 

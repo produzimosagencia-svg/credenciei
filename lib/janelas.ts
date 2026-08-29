@@ -114,22 +114,23 @@ export function ehDiaPrincipal(evento: EventoJanelas, dia: string): boolean {
 /**
  * A janela do meio para uma pessoa, naquele dia.
  *
- * No DIA PRINCIPAL vale o horário que o produtor configurou — todo mundo faz o
- * meio na mesma hora, porque no dia do evento a operação é sincronizada.
- * Em DIA DE PREPARAÇÃO não há horário configurado e a conta é individual:
- * a entrada real da pessoa + 4h.
+ * SEMPRE a entrada real dela + 4h — inclusive no dia do evento. O produtor não
+ * configura mais horário de meio em lugar nenhum.
  *
- * Devolve `null` quando é dia de preparação e a pessoa ainda não bateu a
- * entrada — não há de onde contar as quatro horas.
+ * O motivo é operacional: no estádio a equipe não entra junta. Um horário fixo
+ * para todos cobraria a selfie de quem chegou às 15:00 no mesmo instante em que
+ * cobra de quem chegou às 11:00 — para um deles seria o meio do turno, para o
+ * outro seria a primeira hora de trabalho. Contando da entrada de cada pessoa,
+ * "meio" quer dizer a mesma coisa para todo mundo.
+ *
+ * Devolve `null` quando a pessoa ainda não bateu a entrada: não há de onde
+ * contar as quatro horas.
  */
 export function janelaDoMeio(
-  evento: EventoJanelas,
-  dia: DiaDaJornada | null,
+  _evento: EventoJanelas,
+  _dia: DiaDaJornada | null,
   entradaEm: string | null
 ): { inicio: string; fim: string } | null {
-  if (dia?.tipo === 'principal' && evento.janela_meio_inicio && evento.janela_meio_fim) {
-    return { inicio: evento.janela_meio_inicio, fim: evento.janela_meio_fim }
-  }
   return entradaEm ? janelaMeio(entradaEm) : null
 }
 
@@ -303,7 +304,10 @@ export function horariosEsperados(
      * (4h para abrir + 2h de duração). Quem chegou mais tarde ainda está
      * dentro da própria janela e por isso não entra na lista.
      */
-    meioAlerta: doEvento('janela_meio_fim') ?? new Date(
+    // Sem `janela_meio_fim`: o meio não tem mais horário configurado em lugar
+    // nenhum. Seis horas depois da entrada esperada é quando a janela de quem
+    // chegou no horário se fecha (4h para abrir + 2h de duração).
+    meioAlerta: new Date(
       new Date(entrada ?? instanteBRT(dia, ENTRADA_PADRAO)).getTime() +
       (HORAS_ATE_MEIO + DURACAO_JANELA_MEIO_H) * H_MS
     ).toISOString(),
