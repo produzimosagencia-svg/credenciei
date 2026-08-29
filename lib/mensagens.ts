@@ -140,6 +140,29 @@ function linkDaCredencial(qrToken: unknown, contexto: string): string | null {
   return url
 }
 
+/**
+ * Quais avisos automáticos estão ligados, do painel.
+ *
+ * Lido AQUI e não importado de `whatsapp-painel.ts` porque este arquivo roda
+ * também no worker da VPS, fora do Next.js — importar de lá arrastaria
+ * `supabase-server`, que depende de cookies do framework.
+ *
+ * Sem configuração salva, tudo ligado: é o comportamento que o sistema sempre
+ * teve, e emudecer por omissão seria a pior falha possível aqui.
+ */
+async function fluxosLigados(): Promise<Record<string, boolean>> {
+  try {
+    const { data } = await supabase
+      .from('sistema_estado').select('valor').eq('chave', 'fluxos').maybeSingle()
+    return (data?.valor ?? {}) as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+/** Um fluxo só está desligado quando o painel disse explicitamente `false`. */
+const desligado = (fluxos: Record<string, boolean>, chave: string) => fluxos[chave] === false
+
 /** Teto de dias agendados de uma vez. Além disso a fila cresce sem necessidade. */
 const HORIZONTE_DIAS = 45
 
@@ -240,6 +263,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
 
   const agora = Date.now()
   const PLACEHOLDER = '(gerado no momento do envio)'
+  const fluxos = await fluxosLigados()
   const dias = await diasDaOperacao(evento as EventoJanelas & { id: string })
   const diaPrincipal = diaBRT(evento.data_inicio as string)
 
@@ -273,7 +297,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     if (evento.msg_pre_evento_envio) {
       agendarFunc(func.id, func.telefone, 'confirmacao_escala', diaPrincipal, evento.msg_pre_evento_envio as string)
     }
-    if (evento.janela_entrada_inicio) {
+    if (evento.janela_entrada_inicio && !desligado(fluxos, 'aviso_dia_evento')) {
       const quando = new Date(new Date(evento.janela_entrada_inicio as string).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000)
       agendarFunc(func.id, func.telefone, 'aviso_dia_evento', diaPrincipal, quando.toISOString())
     }
@@ -290,7 +314,8 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        * montar não é desmontar, e nenhum dos dois é o dia do evento.
        */
       const fase = faseDoDia(dia.data, diaPrincipal)
-      if (fase !== 'evento') {
+      const chaveFase = fase === 'montagem' ? 'aviso_montagem' : 'aviso_desmontagem'
+      if (fase !== 'evento' && !desligado(fluxos, chaveFase)) {
         agendarFunc(
           func.id, func.telefone,
           fase === 'montagem' ? 'aviso_montagem' : 'aviso_desmontagem',
@@ -317,15 +342,19 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        * supervisor, que é olhar passivo. Mandar mensagem é ativo, e ativo só
        * quando existe um horário combinado de verdade.
        */
-      agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
-      if (esperado.entrada) {
+      if (!desligado(fluxos, 'lembrete')) {
+        agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
+      }
+      if (esperado.entrada && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
           new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
       }
 
-      agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
-      if (esperado.fim) {
+      if (!desligado(fluxos, 'lembrete')) {
+        agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
+      }
+      if (esperado.fim && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
           new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
@@ -336,6 +365,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   // Alerta ao supervisor: UMA mensagem por setor, etapa e DIA. O conteúdo (quem
   // está faltando) só dá pra saber na hora do envio; aqui só marca o gatilho.
   for (const dia of dias) {
+    if (desligado(fluxos, 'alerta_supervisor')) break
     const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
     const gatilhos: [TipoMensagem, string][] = [
       ['alerta_supervisor_entrada', esperado.entradaLimite],
@@ -383,6 +413,8 @@ export async function agendarMeioAposEntrada(params: {
 }): Promise<void> {
   const telefone = (params.telefone ?? '').replace(/\D/g, '')
   if (!telefone) return
+  const fluxos = await fluxosLigados()
+  if (desligado(fluxos, 'lembrete') && desligado(fluxos, 'reforco')) return
 
   const janela = janelaMeio(params.entradaEm)
   const reforco = new Date(new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString()
@@ -420,6 +452,7 @@ export async function agendarBoasVindasFuncionario(params: {
 }): Promise<void> {
   const telefone = params.telefone.replace(/\D/g, '')
   if (!telefone) return
+  if (desligado(await fluxosLigados(), 'boas_vindas_funcionario')) return
 
   const { error } = await supabase.from('mensagens_agendadas').insert([{
     evento_id: params.eventoId,
