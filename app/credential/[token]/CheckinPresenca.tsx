@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut } from 'lucide-react'
 import { registrarPresencaFoto } from '@/lib/actions'
@@ -62,50 +62,98 @@ function comprimir(file: File): Promise<string> {
 
 type Coords = { lat: number; lng: number }
 
-/** Uma tentativa de GPS, já com teto de tempo próprio. */
-function tentarGps(opcoes: PositionOptions): Promise<Coords | GeolocationPositionError> {
-  return new Promise(resolve => {
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      err => resolve(err),
-      opcoes
-    )
-  })
+type Localizacao = {
+  /** A melhor posição que já chegou, se alguma chegou. Leitura instantânea. */
+  agora: () => Coords | null
+  /** Resolve na primeira posição que chegar; null quando todas falham. */
+  pronta: Promise<Coords | null>
+  /** Alguma tentativa foi barrada por permissão negada. */
+  negada: () => boolean
 }
 
 /**
- * Localização em duas tentativas.
+ * Começa a procurar a localização — sem prender ninguém.
  *
- * O teto de tempo tinha sido removido daqui porque desistir em 15s dava a
- * mensagem errada — "ative o GPS" para quem estava com o GPS ligado, só
- * demorando. Só que SEM teto o padrão da especificação é espera infinita: num
- * galpão, com alta precisão, o aparelho pode não fixar nunca e não chamar
- * callback nenhum. A tela ficava em "Registrando…" para sempre, sem erro e sem
- * saída. Foi o que travou a batida no Manos da Vila.
+ * Chamada no TOQUE do botão, não depois da foto. É a diferença entre o
+ * registro levar quase um minuto e não levar nada: enquanto a pessoa abre a
+ * câmera, enquadra e tira a selfie passam de cinco a vinte segundos que antes
+ * eram jogados fora e agora são exatamente o tempo que o aparelho gasta para
+ * se localizar. Quando a foto fica pronta, a posição quase sempre já chegou.
  *
- * Então: teto existe, mas desistir da PRECISÃO não é desistir da localização.
- * Primeiro tenta o GPS fino; se ele não fixa a tempo, cai para a localização
- * aproximada (torre/wi-fi), que é justamente a que funciona sob laje. Uma
- * posição grosseira responde a pergunta que importa — a pessoa está no evento?
- * — muito melhor do que posição nenhuma.
+ * As duas tentativas correm JUNTAS, não em fila:
  *
- * Só a fase de localização tem teto. O envio da foto continua sem nenhum, de
- * propósito: lá, desistir de esperar não cancela o upload e faria a pessoa
- * duvidar de uma batida que existe.
+ *   - aproximada (torre/wi-fi) responde em segundos e funciona sob laje;
+ *   - fina (satélite) demora mais e às vezes não fixa dentro de um galpão.
+ *
+ * Em fila, a fina segurava a aproximada e o pior caso somava os dois tetos.
+ * Em paralelo vale a primeira que chegar — e a fina ainda melhora o registro
+ * se chegar depois, sem custar espera a ninguém.
+ *
+ * Nenhuma falha aqui interrompe nada: quem decide o que fazer sem posição é
+ * quem chamou, na hora de enviar.
  */
-async function localizar(): Promise<Coords> {
-  // Fina: o que dá o melhor registro quando o céu está visível.
-  const fina = await tentarGps({ enableHighAccuracy: true, timeout: 25_000, maximumAge: 60_000 })
-  if ('lat' in fina) return fina
+function iniciarLocalizacao(): Localizacao {
+  let melhor: Coords | null = null
+  let precisao = Infinity
+  let recusada = false
+  let avisar: ((c: Coords | null) => void) | null = null
+  let pendentes = 2
 
-  // Negada é decisão da pessoa, não lentidão: insistir não muda nada.
-  if (fina.code === fina.PERMISSION_DENIED) throw new Error('permissao')
+  const pronta = new Promise<Coords | null>(r => { avisar = r })
 
-  // Aproximada: sem exigir satélite, costuma responder onde o GPS não fixa.
-  const grossa = await tentarGps({ enableHighAccuracy: false, timeout: 20_000, maximumAge: 300_000 })
-  if ('lat' in grossa) return grossa
-  if (grossa.code === grossa.PERMISSION_DENIED) throw new Error('permissao')
-  throw new Error('semsinal')
+  const aceitar = (pos: GeolocationPosition) => {
+    // A mais precisa vence, venha ela primeiro ou depois.
+    if (pos.coords.accuracy < precisao) {
+      precisao = pos.coords.accuracy
+      melhor = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+    }
+    avisar?.(melhor)
+  }
+
+  const desistir = (err: GeolocationPositionError) => {
+    if (err.code === err.PERMISSION_DENIED) recusada = true
+    // Só desiste de verdade quando as duas falharam e nada chegou.
+    if (--pendentes === 0 && !melhor) avisar?.(null)
+  }
+
+  navigator.geolocation.getCurrentPosition(aceitar, desistir,
+    { enableHighAccuracy: false, timeout: 15_000, maximumAge: 120_000 })
+  navigator.geolocation.getCurrentPosition(aceitar, desistir,
+    { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 })
+
+  return { agora: () => melhor, pronta, negada: () => recusada }
+}
+
+/** Espera curta, para não deixar ninguém preso quando a posição atrasa. */
+const aposMs = (ms: number) => new Promise<null>(r => setTimeout(() => r(null), ms))
+
+/**
+ * Quanto ainda esperamos DEPOIS que a foto ficou pronta.
+ *
+ * Curto de propósito. A busca começou lá atrás, no toque do botão; se mesmo
+ * assim não chegou nada até aqui, é porque não vai chegar — e é melhor dizer
+ * isso rápido do que segurar a pessoa na fila do credenciamento.
+ */
+const GRACA_MS = 6_000
+
+/**
+ * A pessoa está no navegador embutido de outro aplicativo?
+ *
+ * O link chega pelo WhatsApp, e tocar nele abre um navegador de dentro do
+ * próprio WhatsApp. No Android esse navegador é uma WebView que não recebe a
+ * permissão de localização do sistema: `getCurrentPosition` simplesmente não
+ * responde — nem sucesso, nem erro. Foi o que travou o registro no Manos da
+ * Vila, e é por isso que pelo navegador de verdade vai rápido.
+ *
+ * Não dá para consertar isso de dentro da página: a permissão é do aplicativo
+ * hospedeiro. O que dá é reconhecer onde estamos e dizer à pessoa o caminho —
+ * antes de ela perder tempo tentando.
+ */
+function emNavegadorEmbutido(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  // `; wv` marca WebView no Android; os demais são os apps que mais aparecem.
+  return /;\s*wv\)|WhatsApp|FB_IAB|FBAN|FBAV|Instagram|Line\/|MicroMessenger/i.test(ua)
 }
 
 export default function CheckinPresenca({ token, momentos }: { token: string; momentos: MomentoInfo[] }) {
@@ -114,9 +162,16 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
   // Em que ponto estamos: a espera fica longa e sem isto a tela parece travada.
   const [fase, setFase] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  /*
+   * Só depois de montar. O servidor não sabe em que navegador a página vai
+   * abrir, e chutar aqui daria divergência de hidratação.
+   */
+  const [embutido, setEmbutido] = useState(false)
+  useEffect(() => setEmbutido(emNavegadorEmbutido()), [])
   const fileRef = useRef<HTMLInputElement>(null)
+  const localRef = useRef<Localizacao | null>(null)
 
-  // Fluxo da etapa MEIO: câmera primeiro, GPS depois.
+  // Fluxo da etapa MEIO: câmera e localização ao mesmo tempo.
   // IMPORTANTE: fileRef.current.click() precisa rodar SÍNCRONO, direto no
   // clique do usuário — se passar por qualquer await antes (ex: esperar o
   // GPS), o navegador (principalmente celular) recusa abrir a câmera com
@@ -124,7 +179,11 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
   // change do input nunca dispara, travando o botão pra sempre.
   const abrirCamera = () => {
     setErro(null)
+    // A câmera primeiro, ainda dentro do gesto. A localização logo atrás, em
+    // segundo plano: o tempo da foto passa a ser o tempo da localização, em
+    // vez de os dois se somarem.
     fileRef.current?.click()
+    localRef.current = iniciarLocalizacao()
   }
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +200,21 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         setErro('Seu aparelho não permite pegar a localização.')
         return
       }
-      const coords = await localizar()
+      const local = localRef.current
+      if (!local) throw new Error('semsinal')
+
+      /*
+       * Comprimir e localizar ao mesmo tempo. A compressão não depende da
+       * posição — encadear as duas só somaria espera.
+       */
+      const [base64, posicao] = await Promise.all([
+        comprimir(file),
+        // Já chegou? segue na hora. Senão, espera pouco e desiste.
+        local.agora() ?? Promise.race([local.pronta, aposMs(GRACA_MS)]),
+      ])
+
+      if (!posicao) throw new Error(local.negada() ? 'permissao' : 'semsinal')
+      const coords = posicao
       setFase('enviando')
 
       /*
@@ -156,7 +229,6 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
        * O botão continua saindo de "Registrando…" de qualquer forma: o
        * `finally` abaixo roda mesmo se isto falhar.
        */
-      const base64 = await comprimir(file)
       const resultado = await registrarPresencaFoto(token, base64, coords.lat, coords.lng)
       if (resultado.ok) {
         router.refresh()
@@ -170,12 +242,18 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
        * mexer numa configuração que já estava certa.
        */
       const causa = err instanceof Error ? err.message : ''
+      const semPosicao = causa === 'permissao' || causa === 'semsinal'
       setErro(
-        causa === 'permissao'
-          ? 'Precisamos da sua localização. Permita o acesso à localização para este site e toque de novo.'
-          : causa === 'semsinal'
-            ? 'Não conseguimos pegar sua localização aqui dentro. Vá para perto de uma porta ou área aberta e tente de novo — se continuar, procure o credenciamento.'
-            : 'Não foi possível processar a foto. Tente de novo.'
+        // Dentro do navegador do WhatsApp a localização não funciona, e a
+        // culpa não é do GPS da pessoa — mandá-la "ir para perto da porta"
+        // seria fazê-la perder tempo com o problema errado.
+        semPosicao && embutido
+          ? 'Você abriu pelo WhatsApp, e por ali a localização não funciona. Toque nos três pontinhos no topo e escolha "Abrir no navegador" — depois é só tirar a foto.'
+          : causa === 'permissao'
+            ? 'Precisamos da sua localização. Permita o acesso à localização para este site e toque de novo.'
+            : causa === 'semsinal'
+              ? 'Não conseguimos pegar sua localização. Vá para perto de uma porta ou área aberta e tente de novo — se continuar, procure o credenciamento.'
+              : 'Não foi possível processar a foto. Tente de novo.'
       )
     } finally {
       setBusy(false)
@@ -190,6 +268,27 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       {erro && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
           <p className="text-red-600 text-xs font-medium">{erro}</p>
+        </div>
+      )}
+
+      {/*
+        * Avisa ANTES, não depois de falhar.
+        *
+        * Quem abre o link direto do WhatsApp cai numa WebView que não repassa
+        * a permissão de localização, e a etapa da foto não tem como funcionar
+        * ali. Descobrir isso só depois de tirar a selfie e esperar custa o
+        * dobro do tempo — e no meio do evento esse tempo é fila.
+        *
+        * Só aparece quando existe etapa de foto a fazer: nas outras, o
+        * navegador embutido dá conta e o aviso seria ruído.
+        */}
+      {embutido && momentos.some(m => m.momento === 'meio' && m.status === 'disponivel') && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-amber-900 text-xs font-semibold">Abra no navegador para registrar</p>
+          <p className="text-amber-700 text-xs mt-1">
+            Pelo WhatsApp a localização não funciona. Toque nos três pontinhos no
+            topo da tela e escolha <strong>Abrir no navegador</strong> — depois é só tirar a foto.
+          </p>
         </div>
       )}
 
