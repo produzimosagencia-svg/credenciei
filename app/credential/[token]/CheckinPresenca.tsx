@@ -98,17 +98,20 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         )
       })
 
-      // Trava de segurança: não importa o que aconteça (foto que o navegador
-      // não consegue decodificar, rede do evento travando o envio, etc.), a
-      // tela NUNCA fica presa em "Registrando..." pra sempre — no máximo 15s
-      // ela desiste e deixa a pessoa tentar de novo.
-      const resultado = await Promise.race([
-        (async () => {
-          const base64 = await comprimir(file)
-          return registrarPresencaFoto(token, base64, coords.lat, coords.lng)
-        })(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
-      ])
+      /*
+       * Sem teto de tempo, de propósito.
+       *
+       * Havia um limite de 15s aqui, e ele fazia mal: desistir de ESPERAR não
+       * cancela o envio. Na rede saturada de um evento, a foto subia em 20s, o
+       * registro era gravado — e a pessoa já tinha visto "Demorou demais" e
+       * tentava de novo. Erro falso em cima de sucesso confunde mais do que uma
+       * espera longa, porque leva a pessoa a duvidar de uma batida que existe.
+       *
+       * O botão continua saindo de "Registrando…" de qualquer forma: o
+       * `finally` abaixo roda mesmo se isto falhar.
+       */
+      const base64 = await comprimir(file)
+      const resultado = await registrarPresencaFoto(token, base64, coords.lat, coords.lng)
       if (resultado.ok) {
         router.refresh()
       } else {
@@ -118,9 +121,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       setErro(
         err instanceof Error && err.message === 'geo'
           ? 'Precisamos da sua localização. Ative o GPS e permita o acesso, depois tente de novo.'
-          : err instanceof Error && err.message === 'timeout'
-            ? 'Demorou demais para processar. Verifique sua internet e tente de novo.'
-            : 'Não foi possível processar a foto. Tente de novo.'
+          : 'Não foi possível processar a foto. Tente de novo.'
       )
     } finally {
       setBusy(false)
