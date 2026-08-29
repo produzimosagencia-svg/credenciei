@@ -43,3 +43,7 @@ next-env.d.ts
 
 # Gravações e transcrições de reuniões com cliente (dados pessoais)
 ReuniãoCliente/
+
+# Referencia local do agente, nao faz parte do app
+skills/
+Escopo Do sistema/
