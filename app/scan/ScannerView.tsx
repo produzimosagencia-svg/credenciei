@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { registrarPresencaQR } from '@/lib/actions'
+import ConferenciaCpf from './ConferenciaCpf'
 import { ScanLine, LogIn, LogOut } from 'lucide-react'
 
 type Evento = { id: string; nome: string }
@@ -8,6 +9,7 @@ type ScanResult = {
   success: boolean
   message: string
   funcionario?: { nome: string; cargo: string | null }
+  faseErrada?: { doQR: string; deHoje: string }
   momento?: 'entrada' | 'meio' | 'fim'
 }
 
@@ -22,6 +24,7 @@ export default function ScannerView({
   const [momento, setMomento] = useState<'entrada' | 'fim'>('entrada')
   const [result, setResult] = useState<ScanResult | null>(null)
   const [show, setShow] = useState(false)
+  const [conferindo, setConferindo] = useState(false)
   const scanningRef = useRef(false)
   const scannerRef = useRef<any>(null)
   // Refs para o callback do scanner (que captura o estado do primeiro render)
@@ -34,15 +37,25 @@ export default function ScannerView({
     if (scanningRef.current) return
     scanningRef.current = true
 
+    // Validação e registro acontecem no servidor (service role)
+    let resultado: ScanResult | null = null
     try {
-      // Validação e registro acontecem no servidor (service role)
-      const res = await registrarPresencaQR(eventoIdRef.current, data, momentoRef.current)
-      setResult(res)
-      setShow(true)
+      resultado = await registrarPresencaQR(eventoIdRef.current, data, momentoRef.current)
     } catch {
-      setResult({ success: false, message: 'Erro ao processar QR Code' })
-      setShow(true)
+      resultado = { success: false, message: 'Erro ao processar QR Code' }
     }
+    setResult(resultado)
+    setShow(true)
+
+    /*
+     * Crachá de outra etapa NÃO some sozinho.
+     *
+     * Nos outros resultados o aviso passar em 2,5s é o certo: a fila anda e o
+     * próximo já está com o celular na mão. Aqui não — há uma decisão a tomar
+     * com a pessoa parada na frente, e apagar a tela no meio dela devolveria o
+     * operador ao escuro, sem saber o que fazer com quem está ali.
+     */
+    if (resultado?.faseErrada) return
 
     setTimeout(() => {
       setShow(false)
@@ -51,6 +64,13 @@ export default function ScannerView({
         scanningRef.current = false
       }, 400)
     }, 2500)
+  }
+
+  /** Volta a ler QR. Usado pelos botões da recusa por etapa. */
+  const retomar = () => {
+    setConferindo(false)
+    setShow(false)
+    setTimeout(() => { setResult(null); scanningRef.current = false }, 300)
   }
 
   useEffect(() => {
@@ -156,8 +176,40 @@ export default function ScannerView({
                   {result.funcionario.cargo ? `${result.funcionario.cargo} • ` : ''}                </p>
               </>
             )}
+
+            {/*
+              * Crachá de outra etapa: o operador precisa DECIDIR, não só ler.
+              *
+              * Os dois caminhos ficam à vista. "Pedir o CPF" é o que resolve
+              * de verdade — diz se a pessoa está na lista. "Voltar a ler" cobre
+              * o caso inocente e mais comum: ela só precisa recarregar a tela.
+              */}
+            {result.faseErrada && (
+              <div className="mt-8 space-y-3 max-w-xs mx-auto">
+                <button
+                  onClick={() => setConferindo(true)}
+                  className="w-full bg-white text-red-700 font-bold rounded-2xl py-4 text-lg shadow-lg"
+                >
+                  Pedir o CPF e conferir
+                </button>
+                <button
+                  onClick={retomar}
+                  className="w-full border-2 border-white/60 text-white font-semibold rounded-2xl py-3"
+                >
+                  Voltar a ler QR Code
+                </button>
+              </div>
+            )}
           </div>
         </div>
+      )}
+
+      {conferindo && result?.faseErrada && (
+        <ConferenciaCpf
+          eventoId={eventoId}
+          aviso={`O QR apresentado é da ${result.faseErrada.doQR}, e hoje é ${result.faseErrada.deHoje}. Confirme pelo CPF se esta pessoa está credenciada.`}
+          aoFechar={retomar}
+        />
       )}
     </div>
   )

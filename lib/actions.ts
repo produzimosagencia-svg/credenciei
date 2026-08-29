@@ -34,7 +34,7 @@ import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
-import { lerCodigoQR, faseConfere } from './credencial-qr'
+import { lerCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 
 /** "12345678900" → "123.456.789-00". Só para leitura humana na mensagem. */
@@ -1676,6 +1676,92 @@ export type ResultadoScan = {
   momento?: MomentoPresenca
   /** Já havia registro desta etapa no dia — nada foi gravado agora. */
   jaRegistrado?: boolean
+  /**
+   * O crachá é de OUTRA etapa do evento.
+   *
+   * Sinalizado à parte da mensagem porque exige uma ação, não só um aviso: a
+   * pessoa está de pé no portão com um QR que não serve, e quem credencia
+   * precisa decidir na hora se ela entra. A tela usa isto para oferecer a
+   * conferência pelo CPF.
+   */
+  faseErrada?: { doQR: string; deHoje: string }
+}
+
+/** O que a conferência por CPF devolve para quem está no portão. */
+export type ConferenciaCpf = {
+  /** Existe cadastro com este CPF NESTE evento. */
+  credenciado: boolean
+  nome?: string
+  cargo?: string | null
+  setor?: string | null
+  /** Cadastrado mas ainda não liberado para trabalhar. */
+  inativo?: boolean
+  /** Já encerrou o vínculo com este evento. */
+  descredenciadoEm?: string | null
+  /** O que essa pessoa já bateu hoje. */
+  batidasHoje?: string[]
+  erro?: string
+}
+
+/**
+ * "Esta pessoa está credenciada neste evento?" — a pergunta do portão.
+ *
+ * Existe para o caso em que o QR não serve: crachá de outra etapa, tela que
+ * não abre, celular sem bateria. Sem esta saída, a única resposta possível
+ * seria mandar a pessoa embora ou deixar entrar sem conferir — e das duas, a
+ * segunda é a que acontece na prática quando a fila aperta.
+ *
+ * NÃO registra ponto. Só responde se o cadastro existe, e é de propósito: a
+ * decisão de liberar a entrada é de quem está lá, com a pessoa na frente. O
+ * registro continua sendo pelo QR ou pelo registro assistido, que grava quem
+ * autorizou.
+ */
+export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: string): Promise<ConferenciaCpf> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil.role)) return { credenciado: false, erro: 'Sem permissão' }
+  if (!(await podeEscanearEvento(perfil, eventoId))) {
+    return { credenciado: false, erro: 'Sem acesso a este evento' }
+  }
+
+  const cpf = (cpfBruto ?? '').replace(/\D/g, '')
+  if (cpf.length !== 11) return { credenciado: false, erro: 'Digite os 11 dígitos do CPF.' }
+  if (!validarCpf(cpf)) return { credenciado: false, erro: 'Este CPF não é válido. Confira os números.' }
+
+  const { data: achados } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cargo, ativo, descredenciado_em, fornecedor_id, fornecedores!inner(nome, evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .limit(1)
+
+  const f = achados?.[0]
+  // Sem cadastro NESTE evento. A tela transforma isto no alerta forte — é o
+  // caso de alguém tentando entrar sem estar na lista.
+  if (!f) return { credenciado: false }
+
+  const setor = (f.fornecedores as unknown as { nome: string } | null)?.nome ?? null
+
+  // Supervisor confere só a própria equipe, igual ao resto do sistema.
+  if (perfil.role === 'supervisor' && perfil.fornecedor_id && f.fornecedor_id !== perfil.fornecedor_id) {
+    return { credenciado: false, erro: `Esta pessoa é do setor ${setor ?? 'outro'}, fora do seu. Chame o credenciamento do evento.` }
+  }
+
+  const { data: hoje } = await supabaseAdmin
+    .from('registros')
+    .select('tipo')
+    .eq('funcionario_id', f.id)
+    .eq('evento_id', eventoId)
+    .eq('data_ref', diaBRT())
+
+  return {
+    credenciado: true,
+    nome: f.nome as string,
+    cargo: (f.cargo as string | null) ?? null,
+    setor,
+    inativo: f.ativo === false,
+    descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
+    batidasHoje: (hoje ?? []).map(r => r.tipo as string),
+  }
 }
 
 /**
@@ -1719,7 +1805,22 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   const inicioDoEvento = (evento as { data_inicio?: string | null }).data_inicio
   const faseDeHoje = faseDoDia(diaBRT(), inicioDoEvento ? diaBRT(inicioDoEvento) : '')
   const etapa = faseConfere(leitura.fase, faseDeHoje)
-  if (!etapa.ok) return { success: false, message: etapa.erro }
+  if (!etapa.ok) {
+    /*
+     * A recusa por etapa não é só um aviso — é uma decisão a tomar.
+     *
+     * A pessoa está de pé no portão com um crachá que não serve para hoje.
+     * Isso pode ser inocente (abriu a tela de ontem, não recarregou) ou não
+     * (pegou o print da montagem de alguém). Quem credencia não tem como saber
+     * pelo QR, então a tela oferece a conferência pelo CPF em vez de deixar a
+     * escolha entre barrar e liberar no escuro.
+     */
+    return {
+      success: false,
+      message: `Este QR Code não é do dia do evento — é da ${NOME_DA_FASE[leitura.fase ?? 'montagem']}. Confira se esta pessoa está credenciada: peça o CPF dela.`,
+      faseErrada: { doQR: NOME_DA_FASE[leitura.fase ?? 'montagem'], deHoje: NOME_DA_FASE[faseDeHoje] },
+    }
+  }
   // Isolamento: master → qualquer evento; admin → só da org; supervisor → só vinculado
   if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { success: false, message: 'Sem acesso a este evento' }
