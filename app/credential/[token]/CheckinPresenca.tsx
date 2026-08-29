@@ -94,7 +94,16 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         navigator.geolocation.getCurrentPosition(
           pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
           () => reject(new Error('geo')),
-          { enableHighAccuracy: true, timeout: 15000 }
+          /*
+           * Sem teto de tempo: em ginásio, galpão ou subsolo o aparelho pode
+           * levar bem mais de 15s para fixar, e desistir cedo transformava um
+           * GPS lento em "ative o GPS" — mensagem errada, que faz a pessoa
+           * mexer numa configuração que já estava certa.
+           *
+           * `maximumAge` aceita uma posição obtida no último minuto. Reduz a
+           * espera sem afrouxar a conferência: ninguém sai do posto em 60s.
+           */
+          { enableHighAccuracy: true, maximumAge: 60_000 }
         )
       })
 
