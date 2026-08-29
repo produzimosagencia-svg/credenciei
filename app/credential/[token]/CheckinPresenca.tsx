@@ -60,9 +60,59 @@ function comprimir(file: File): Promise<string> {
   })
 }
 
+type Coords = { lat: number; lng: number }
+
+/** Uma tentativa de GPS, já com teto de tempo próprio. */
+function tentarGps(opcoes: PositionOptions): Promise<Coords | GeolocationPositionError> {
+  return new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      err => resolve(err),
+      opcoes
+    )
+  })
+}
+
+/**
+ * Localização em duas tentativas.
+ *
+ * O teto de tempo tinha sido removido daqui porque desistir em 15s dava a
+ * mensagem errada — "ative o GPS" para quem estava com o GPS ligado, só
+ * demorando. Só que SEM teto o padrão da especificação é espera infinita: num
+ * galpão, com alta precisão, o aparelho pode não fixar nunca e não chamar
+ * callback nenhum. A tela ficava em "Registrando…" para sempre, sem erro e sem
+ * saída. Foi o que travou a batida no Manos da Vila.
+ *
+ * Então: teto existe, mas desistir da PRECISÃO não é desistir da localização.
+ * Primeiro tenta o GPS fino; se ele não fixa a tempo, cai para a localização
+ * aproximada (torre/wi-fi), que é justamente a que funciona sob laje. Uma
+ * posição grosseira responde a pergunta que importa — a pessoa está no evento?
+ * — muito melhor do que posição nenhuma.
+ *
+ * Só a fase de localização tem teto. O envio da foto continua sem nenhum, de
+ * propósito: lá, desistir de esperar não cancela o upload e faria a pessoa
+ * duvidar de uma batida que existe.
+ */
+async function localizar(): Promise<Coords> {
+  // Fina: o que dá o melhor registro quando o céu está visível.
+  const fina = await tentarGps({ enableHighAccuracy: true, timeout: 25_000, maximumAge: 60_000 })
+  if ('lat' in fina) return fina
+
+  // Negada é decisão da pessoa, não lentidão: insistir não muda nada.
+  if (fina.code === fina.PERMISSION_DENIED) throw new Error('permissao')
+
+  // Aproximada: sem exigir satélite, costuma responder onde o GPS não fixa.
+  const grossa = await tentarGps({ enableHighAccuracy: false, timeout: 20_000, maximumAge: 300_000 })
+  if ('lat' in grossa) return grossa
+  if (grossa.code === grossa.PERMISSION_DENIED) throw new Error('permissao')
+  throw new Error('semsinal')
+}
+
 export default function CheckinPresenca({ token, momentos }: { token: string; momentos: MomentoInfo[] }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
+  // Em que ponto estamos: a espera fica longa e sem isto a tela parece travada.
+  const [fase, setFase] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -85,27 +135,14 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
     if (!file) return
 
     setBusy(true)
+    setFase('local')
     try {
       if (!('geolocation' in navigator)) {
         setErro('Seu aparelho não permite pegar a localização.')
         return
       }
-      const coords = await new Promise<{ lat: number; lng: number }>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => reject(new Error('geo')),
-          /*
-           * Sem teto de tempo: em ginásio, galpão ou subsolo o aparelho pode
-           * levar bem mais de 15s para fixar, e desistir cedo transformava um
-           * GPS lento em "ative o GPS" — mensagem errada, que faz a pessoa
-           * mexer numa configuração que já estava certa.
-           *
-           * `maximumAge` aceita uma posição obtida no último minuto. Reduz a
-           * espera sem afrouxar a conferência: ninguém sai do posto em 60s.
-           */
-          { enableHighAccuracy: true, maximumAge: 60_000 }
-        )
-      })
+      const coords = await localizar()
+      setFase('enviando')
 
       /*
        * Sem teto de tempo, de propósito.
@@ -127,13 +164,22 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         setErro(resultado.error ?? 'Não foi possível registrar. Tente de novo.')
       }
     } catch (err) {
+      /*
+       * Cada falha tem a sua saída. Antes tudo virava "ative o GPS", inclusive
+       * quando o GPS estava ligado e o problema era o lugar — mandava a pessoa
+       * mexer numa configuração que já estava certa.
+       */
+      const causa = err instanceof Error ? err.message : ''
       setErro(
-        err instanceof Error && err.message === 'geo'
-          ? 'Precisamos da sua localização. Ative o GPS e permita o acesso, depois tente de novo.'
-          : 'Não foi possível processar a foto. Tente de novo.'
+        causa === 'permissao'
+          ? 'Precisamos da sua localização. Permita o acesso à localização para este site e toque de novo.'
+          : causa === 'semsinal'
+            ? 'Não conseguimos pegar sua localização aqui dentro. Vá para perto de uma porta ou área aberta e tente de novo — se continuar, procure o credenciamento.'
+            : 'Não foi possível processar a foto. Tente de novo.'
       )
     } finally {
       setBusy(false)
+      setFase(null)
     }
   }
 
@@ -149,7 +195,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
 
       {momentos.map(m => (
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`}>
-          <Cartao info={m} busy={busy} onFoto={abrirCamera} />
+          <Cartao info={m} busy={busy} fase={fase} onFoto={abrirCamera} />
         </div>
       ))}
 
@@ -160,7 +206,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
   )
 }
 
-function Cartao({ info, busy, onFoto }: { info: MomentoInfo; busy: boolean; onFoto: () => void }) {
+function Cartao({ info, busy, fase, onFoto }: { info: MomentoInfo; busy: boolean; fase: 'local' | 'enviando' | null; onFoto: () => void }) {
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
@@ -192,8 +238,16 @@ function Cartao({ info, busy, onFoto }: { info: MomentoInfo; busy: boolean; onFo
             {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
           </div>
           <div className="min-w-0 text-left">
-            <p className="font-bold text-sm">{busy ? 'Registrando...' : 'Registrar meio com foto'}</p>
-            <p className="text-brand-100 text-xs">Tire uma foto agora • {janela}</p>
+            <p className="font-bold text-sm">
+              {!busy ? 'Registrar meio com foto' : fase === 'local' ? 'Pegando sua localização...' : 'Enviando...'}
+            </p>
+            <p className="text-brand-100 text-xs">
+              {!busy
+                ? `Tire uma foto agora • ${janela}`
+                : fase === 'local'
+                  ? 'Pode levar alguns segundos. Não feche a tela.'
+                  : 'Quase lá — não feche a tela.'}
+            </p>
           </div>
         </button>
       )
