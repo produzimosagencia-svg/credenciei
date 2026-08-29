@@ -1,13 +1,14 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, diasDoEvento } from '@/lib/actions'
+import { editarEvento } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
-import { diaBRT } from '@/lib/janelas'
-import DiasDeTrabalho from './DiasDeTrabalho'
+// Desligado junto com a seção de dias de preparação, mais abaixo.
+// import { diaBRT } from '@/lib/janelas'
+// import DiasDeTrabalho from './DiasDeTrabalho'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, MapPin, LogIn, LogOut, Camera, CalendarRange, Save, MessageCircle } from 'lucide-react'
+import { CalendarDays, MapPin, LogIn, LogOut, Camera, Save } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -69,8 +70,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const dias = await diasDoEvento(id)
-  const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
+  // Desligado junto com a seção de dias de preparação, mais abaixo.
+  // const dias = await diasDoEvento(id)
+  // const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
@@ -138,7 +140,18 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
-        {/* Dias trabalhados para desenvolvimento do evento */}
+        {/*
+          DIAS TRABALHADOS PARA DESENVOLVIMENTO DO EVENTO — desligado a pedido.
+
+          A operação por ora usa só o dia do evento: montagem e desmontagem não
+          entram. O bloco fica comentado, e não apagado, porque a regra por trás
+          dele continua inteira e testada — `jornada_dias` com `tipo`, entrada e
+          saída livres nos dias de preparação, meio contado da entrada de cada
+          pessoa. Reativar é descomentar isto.
+
+          Os avisos de montagem e desmontagem também estão desligados, no painel
+          de WhatsApp → Fluxos automáticos.
+
         <div className="p-6 sm:p-8 space-y-4 border-t border-slate-100" data-tutorial="edt-dias">
           <SectionTitle
             title="Dias trabalhados para desenvolvimento do evento"
@@ -147,6 +160,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           />
           <DiasDeTrabalho eventoId={id} diaPrincipal={diaPrincipal} iniciais={dias} />
         </div>
+        */}
 
         {/* Ação */}
         <div className="p-6 sm:p-8 pt-6 border-t border-slate-100">
