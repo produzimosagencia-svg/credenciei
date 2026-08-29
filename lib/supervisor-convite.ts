@@ -9,6 +9,10 @@ const VALIDADE_MS = 24 * 60 * 60 * 1000
 type EstadoConvite = {
   perfil_id: string
   nome: string
+  /* O CPF viaja no convite para a tela poder DIZER qual é o login.
+     Sem ele, a pessoa cria a senha e vai para o login sem saber o que
+     digitar no primeiro campo — que foi exatamente o que aconteceu. */
+  cpf?: string
   evento_id: string
   evento: string
   setor: string
@@ -19,9 +23,18 @@ type EstadoConvite = {
 export type ConviteSupervisorPublico = {
   valido: boolean
   nome?: string
+  /** Já formatado para leitura: 123.456.789-00. É o login da pessoa. */
+  cpf?: string
   evento?: string
   setor?: string
   motivo?: 'invalido' | 'expirado' | 'usado'
+}
+
+/** "12345678900" → "123.456.789-00". Vazio quando o convite é antigo. */
+function formatarCpf(bruto: string | undefined): string | undefined {
+  const d = (bruto ?? '').replace(/\D/g, '')
+  if (d.length !== 11) return undefined
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`
 }
 
 function hashToken(token: string): string {
@@ -49,6 +62,7 @@ async function buscarEstado(token: string): Promise<{ chave: string; estado: Est
 export async function criarConviteSenhaSupervisor(params: {
   perfilId: string
   nome: string
+  cpf?: string
   eventoId: string
   evento: string
   setor: string
@@ -58,6 +72,7 @@ export async function criarConviteSenhaSupervisor(params: {
   const estado: EstadoConvite = {
     perfil_id: params.perfilId,
     nome: params.nome,
+    cpf: params.cpf,
     evento_id: params.eventoId,
     evento: params.evento,
     setor: params.setor,
@@ -81,6 +96,7 @@ export async function consultarConviteSenhaSupervisor(token: string): Promise<Co
   return {
     valido: true,
     nome: convite.estado.nome,
+    cpf: formatarCpf(convite.estado.cpf),
     evento: convite.estado.evento,
     setor: convite.estado.setor,
   }

@@ -47,6 +47,23 @@ export default async function CriarSenhaSupervisorPage({
                 <p className="text-slate-200 font-medium">{convite.evento}</p>
                 <p className="text-slate-500 text-xs mt-1">Setor: {convite.setor}</p>
               </div>
+
+              {/* O login vem ANTES do formulário, e destacado.
+                  Sem isso a pessoa cria a senha, chega no login e não sabe o
+                  que digitar no primeiro campo — foi o que aconteceu. Dizer
+                  aqui é o único momento em que ela está olhando a tela certa. */}
+              {convite.cpf && (
+                <div className="mb-5 rounded-xl border border-brand-400/30 bg-brand-500/10 px-4 py-3">
+                  <p className="text-brand-200 text-2xs font-semibold uppercase tracking-wide">
+                    Seu login é o CPF
+                  </p>
+                  <p className="text-white text-lg font-bold tabular-nums mt-0.5">{convite.cpf}</p>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Guarde este número: é ele que você digita para entrar, junto com a senha que
+                    vai criar agora.
+                  </p>
+                </div>
+              )}
               <FormCriarSenha token={token} />
             </>
           ) : (

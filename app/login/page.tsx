@@ -75,13 +75,16 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-300">Usuário ou e-mail</label>
+              {/* O supervisor entra com o CPF; admin e master com e-mail. A
+                  mesma tela atende os dois, então a dica evita a pessoa
+                  descobrir por tentativa. */}
+              <label className="text-sm font-medium text-slate-300">CPF ou e-mail</label>
               <input
                 type="text"
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="seu usuário ou e-mail"
+                placeholder="CPF (supervisor) ou e-mail"
                 autoComplete="username"
                 className="w-full bg-slate-50 border border-transparent rounded-xl px-4 py-3 text-slate-800 text-sm outline-none focus:ring-2 focus:ring-brand-400 transition-shadow"
               />

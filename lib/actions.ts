@@ -495,6 +495,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   try {
     const linkSenha = await criarConviteSenhaSupervisor({
+      cpf,
       perfilId: user.user!.id,
       nome,
       eventoId,
