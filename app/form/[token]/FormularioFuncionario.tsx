@@ -3,6 +3,8 @@ import { useRef, useState } from 'react'
 import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
+import SeletorLista from '@/components/SeletorLista'
+import { CIDADES_ES } from '@/lib/cidades'
 import { useCampoFormatado } from '@/components/inputs'
 
 const initialForm = {
@@ -200,14 +202,18 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         <input required value={form.cargo} {...campoCargo} placeholder="Ex: Segurança, Garçom..." className="input" />
       </Field>
       <Field label="Cidade onde você mora *">
-        {/* Serve pra você ser chamado pra trabalhar em eventos perto de onde
-            mora — é o filtro que o organizador usa pra montar equipe. */}
-        <input
-          required
-          value={form.cidade}
-          {...campoCidade}
-          placeholder="Ex: Vitória, Vila Velha, Serra..."
-          className="input"
+        {/* Lista em vez de texto livre.
+            Digitado à mão, 56 cadastros viraram 10 "cidades" para 7 reais —
+            "Vitória" e "Vitoria", "Vila Velha" e "Vila Velhas". Cada variação
+            some da busca por cidade, que é justamente como o organizador acha
+            quem consegue chegar ao local. A lista mata o problema na origem. */}
+        <SeletorLista
+          opcoes={CIDADES_ES.map(c => ({ valor: c, rotulo: c }))}
+          valor={form.cidade}
+          onChange={v => set('cidade', v)}
+          placeholder="Escolher a cidade…"
+          titulo="Cidade onde você mora"
+          busca
         />
       </Field>
       <Field label="Chave PIX (opcional)" tutorial="form-pix">

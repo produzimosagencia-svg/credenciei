@@ -10,6 +10,7 @@ import { Secao, PageHeader, EmptyState, Aviso, Badge } from '@/components/ui/Sup
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
+import { normalizarCidade, chaveCidade } from '@/lib/cidades'
 
 export const revalidate = 0
 
@@ -114,7 +115,14 @@ export default async function EncontrarPage({
   const digitos = busca.replace(/\D/g, '')
   if (digitos.length >= 3) consulta.like('cpf', `%${digitos}%`)
   else if (busca) consulta.ilike('nome', `%${busca}%`)
-  if (cidade) consulta.ilike('cidade', `%${cidade}%`)
+  /*
+   * A cidade NÃO entra na consulta do banco.
+   *
+   * `ilike` compara acento com acento: procurar "Vitória" perderia os
+   * cadastros gravados como "Vitoria". O filtro acontece em memória, sobre a
+   * chave normalizada — o volume aqui é de centenas, e um índice sem acento
+   * exigiria uma coluna gerada só para isso.
+   */
 
   const [{ data: cadastros }, { count: semAceite }] = await Promise.all([
     consulta,
@@ -139,14 +147,14 @@ export default async function EncontrarPage({
       cpf: c.cpf,
       nome: c.nome,                 // o mais recente: a consulta vem ordenada
       telefone: c.telefone,
-      cidade: c.cidade,
+      cidade: normalizarCidade(c.cidade) || null,
       cargos: new Map<string, number>(),
       eventos: new Set<string>(),
       organizacoes: new Set<string>(),
       compareceu: 0,
       ultimo: c.created_at,
     }
-    if (!p.cidade && c.cidade) p.cidade = c.cidade
+    if (!p.cidade && c.cidade) p.cidade = normalizarCidade(c.cidade) || null
     if (c.cargo?.trim()) p.cargos.set(c.cargo.trim(), (p.cargos.get(c.cargo.trim()) ?? 0) + 1)
     if (rel?.evento_id) p.eventos.add(rel.evento_id)
     if (rel?.eventos?.organizacao_id) p.organizacoes.add(rel.eventos.organizacao_id)
@@ -160,14 +168,20 @@ export default async function EncontrarPage({
    * recentemente. Ordenar por nome deixaria a lista alfabética e inútil — a
    * pergunta aqui é "em quem eu confio pra chamar", não "onde está o fulano".
    */
-  const pessoas = [...porCpf.values()].sort((a, b) =>
-    b.compareceu - a.compareceu ||
-    b.eventos.size - a.eventos.size ||
-    b.ultimo.localeCompare(a.ultimo)
-  )
+  const pessoas = [...porCpf.values()]
+    // Filtro de cidade sobre a chave normalizada: "Vitoria" digitado na busca
+    // acha quem se cadastrou como "Vitória", e vice-versa.
+    .filter(p => !cidade || chaveCidade(p.cidade).includes(chaveCidade(cidade)))
+    .sort((a, b) =>
+      b.compareceu - a.compareceu ||
+      b.eventos.size - a.eventos.size ||
+      b.ultimo.localeCompare(a.ultimo)
+    )
 
   // Cidades da base, pra sugerir no filtro sem a pessoa ter que adivinhar.
-  const cidades = [...new Set((cadastros ?? []).map(c => c.cidade).filter((v): v is string => !!v?.trim()))]
+  const cidades = [...new Set(
+    (cadastros ?? []).map(c => normalizarCidade(c.cidade)).filter(v => !!v)
+  )].sort()
     .sort((a, b) => a.localeCompare(b, 'pt-BR'))
     .slice(0, 40)
 

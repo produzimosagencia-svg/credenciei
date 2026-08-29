@@ -26,6 +26,7 @@ import {
   HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
+import { normalizarCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, SENHA_PADRAO_SUPERVISOR } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
