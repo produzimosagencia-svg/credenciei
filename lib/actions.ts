@@ -43,6 +43,41 @@ function formatarCpfExibicao(cpf: string): string {
   return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : d
 }
 
+/**
+ * Garante que o evento tenha o DIA PRINCIPAL materializado.
+ *
+ * Sem essa linha ninguém bate ponto: a validação pergunta "esta data é dia de
+ * trabalho deste evento?" e, não achando nada, recusa com "não está marcado
+ * como dia de trabalho". Foi exatamente o que aconteceu — o evento nasceu
+ * vazio e a equipe ficou parada no portão.
+ *
+ * Antes quem criava essa linha era a tela de dias de preparação, que saiu do
+ * ar a pedido. O dia principal não pode depender dela: ele é a data do próprio
+ * evento, não uma escolha do produtor.
+ *
+ * Chamada também ao EDITAR: mudar a data do evento move o dia principal junto,
+ * senão o sistema seguiria cobrando ponto num dia que não existe mais.
+ */
+async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | null) {
+  if (!dataInicioISO) return
+  const dia = diaBRT(dataInicioISO)
+
+  // A data mudou? O dia antigo vira preparação em vez de sumir: se houve
+  // batida nele, ela precisa continuar tendo um dia ao qual pertencer.
+  await supabaseAdmin
+    .from('jornada_dias')
+    .update({ tipo: 'preparacao' })
+    .eq('evento_id', eventoId)
+    .eq('tipo', 'principal')
+    .neq('data', dia)
+
+  const { error } = await supabaseAdmin.from('jornada_dias').upsert(
+    [{ evento_id: eventoId, jornada_id: null, data: dia, turno: 0, tipo: 'principal', cancelado: false }],
+    { onConflict: 'evento_id,data,turno' },
+  )
+  if (error) console.error('[evento] não consegui materializar o dia principal:', error.message)
+}
+
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
 function getAdminSupabase() {
@@ -641,6 +676,10 @@ export async function criarEvento(formData: FormData) {
   const { data: novo, error } = await db.from('eventos').insert([data]).select('id').single()
   if (error) throw new Error('Não foi possível criar o evento. Confira os dados e tente de novo.')
 
+  // Antes da planilha e de qualquer outra coisa: sem o dia principal, o evento
+  // nasce inutilizável — ninguém consegue bater ponto nele.
+  await garantirDiaPrincipal(novo.id, data.data_inicio)
+
   // Cria planilha na pasta da organização no Drive
   try {
     const spreadsheetId = await criarPlanilhaEvento(nome, driveFolder)
@@ -666,6 +705,7 @@ export async function editarEvento(id: string, formData: FormData) {
     ...preEventoDoForm(formData),
   }
   await db.from('eventos').update(data).eq('id', id)
+  await garantirDiaPrincipal(id, data.data_inicio)
   after(() => sincronizarAgendamentos(id).catch(console.error))
   revalidatePath(`/admin/eventos/${id}`)
   redirect(`/admin/eventos/${id}`)
@@ -1378,7 +1418,31 @@ async function diaDeTrabalho(eventoId: string, data: string): Promise<DiaDeTraba
     .eq('data', data)
     .order('turno')
     .limit(1)
-  return (dias?.[0] as DiaDeTrabalho | undefined) ?? null
+  if (dias?.[0]) return dias[0] as DiaDeTrabalho
+
+  /*
+   * Rede de segurança: o dia principal se conserta sozinho.
+   *
+   * Se a data pedida é a data do próprio evento e mesmo assim não existe linha
+   * de jornada, o evento nasceu incompleto — e a pessoa está no portão agora,
+   * com o QR na mão, ouvindo que hoje "não é dia de trabalho deste evento".
+   * Materializar aqui custa uma consulta no caminho de falha e evita que uma
+   * lacuna de cadastro vire equipe parada.
+   *
+   * Só vale para o dia do evento. Qualquer outra data continua sendo recusada:
+   * é o que impede bater ponto num dia que ninguém marcou.
+   */
+  const { data: ev } = await supabaseAdmin
+    .from('eventos').select('data_inicio').eq('id', eventoId).single()
+  if (!ev?.data_inicio || diaBRT(ev.data_inicio) !== data) return null
+
+  console.warn(`[jornada] evento ${eventoId} estava sem o dia principal ${data}; criando agora`)
+  await garantirDiaPrincipal(eventoId, ev.data_inicio)
+  const { data: novo } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id, data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+    .eq('evento_id', eventoId).eq('data', data).order('turno').limit(1)
+  return (novo?.[0] as DiaDeTrabalho | undefined) ?? null
 }
 
 type Resolucao =
