@@ -147,14 +147,27 @@ function Linha({ dia }: { dia: DiaDoHistorico }) {
         {formatarBR(`${dia.data}T12:00:00-03:00`, 'data')}
       </td>
       <td>
+        {/* A ETAPA, não só "preparação": no fechamento importa saber se o dia
+            foi montagem ou desmontagem — são contratos e diárias diferentes. */}
         {dia.cancelado
           ? <Badge tom="neutro">Cancelado</Badge>
           : dia.tipo === 'principal'
             ? <Badge tom="marca">Dia do evento</Badge>
-            : <span className="text-slate-500 text-xs">Preparação</span>}
+            : <span className="text-slate-500 text-xs">
+                {dia.fase === 'desmontagem' ? 'Desmontagem' : 'Montagem'}
+              </span>}
       </td>
       <td className="text-slate-600 text-xs"><Celula batida={dia.entrada} /></td>
-      <td className="text-slate-600 text-xs"><Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} /></td>
+      <td className="text-slate-600 text-xs">
+        <Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} />
+        {/* O esperado ao lado do realizado: sem ele, "12:15" não diz se foi no
+            horário. Some quando não houve entrada — não havia de onde contar. */}
+        {dia.meioEsperadoEm && (
+          <span className="block text-slate-400 text-2xs tabular-nums">
+            previsto {formatarBR(dia.meioEsperadoEm, 'hora')}
+          </span>
+        )}
+      </td>
       <td className="text-slate-600 text-xs">
         <Celula batida={dia.fim} />
         {dia.fim && dia.tipo === 'principal' && (

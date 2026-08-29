@@ -7,9 +7,9 @@ import QrProtegido from './QrProtegido'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
-import { gerarCodigoQR } from '@/lib/credencial-qr'
+import { gerarCodigoQR, NOME_DA_FASE } from '@/lib/credencial-qr'
 import {
-  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio,
+  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio, faseDoDia,
   TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
@@ -31,7 +31,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'cred-identidade', titulo: 'Esta é a sua credencial', posicao: 'bottom',
       descricao: 'Guarde este link no celular — é ele que você vai usar durante todo o evento. Vale só para você e para este evento.' },
     { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
-      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. O código muda todo dia: o de hoje não vale amanhã, e o de ontem não vale hoje. Por isso mostre sempre a tela ao vivo, nunca um print.' },
+      descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. O crachá da montagem é diferente do crachá do dia do evento — a tela troca sozinha quando chega o dia. Mostre sempre a tela ao vivo, nunca um print.' },
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
       descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
@@ -193,17 +193,20 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   })
 
   /*
-   * O QR é um código ASSINADO e amarrado ao DIA DE HOJE.
+   * O QR é um código ASSINADO e amarrado à ETAPA do evento.
    *
-   * O link da credencial é sempre o mesmo — a pessoa não recebe mensagem nova
-   * —, mas a imagem muda a cada dia. Um print de ontem não passa hoje, que é o
-   * que impede o crachá de circular no grupo. Ver lib/credencial-qr.ts.
+   * O link da credencial é sempre o mesmo — a pessoa nunca recebe mensagem
+   * nova —, e dentro de uma etapa o código também é o mesmo todos os dias. O
+   * que troca o código é virar de etapa: montagem, dia do evento e desmontagem
+   * têm crachás diferentes, e o da montagem não entra no dia do evento.
+   * Ver lib/credencial-qr.ts.
    *
-   * Note que é `hoje`, não `dataRef`: num turno que vira a madrugada o registro
-   * pertence a ontem, mas o crachá na mão da pessoa tem que ser o de hoje, que
+   * A etapa vem de `hoje`, não de `dataRef`: num turno que vira a madrugada o
+   * registro pertence a ontem, mas o crachá na mão da pessoa é o de hoje, que
    * é o que o scanner confere.
    */
-  const { codigo } = gerarCodigoQR(token, hoje)
+  const faseHoje = faseDoDia(hoje, evento?.data_inicio ? diaBRT(evento.data_inicio) : '')
+  const { codigo } = gerarCodigoQR(token, faseHoje)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 
   return (
@@ -229,7 +232,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
 
-              <QrProtegido dataUrl={qrDataUrl} dia={hoje} />
+              <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} />
 
               <div data-tutorial="cred-etapas">
                 <CheckinPresenca token={token} momentos={momentos} />

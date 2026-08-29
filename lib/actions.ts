@@ -24,7 +24,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida,
+  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
@@ -34,7 +34,7 @@ import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
-import { lerCodigoQR } from './credencial-qr'
+import { lerCodigoQR, faseConfere } from './credencial-qr'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 
 /** "12345678900" → "123.456.789-00". Só para leitura humana na mensagem. */
@@ -1704,6 +1704,22 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     .eq('id', eventoId)
     .single()
   if (!evento) return { success: false, message: 'Evento não encontrado' }
+
+  /*
+   * A ETAPA do crachá tem que bater com a etapa de hoje.
+   *
+   * É aqui, e não dentro do leitor, porque a etapa depende do evento: o mesmo
+   * instante é "montagem" para um evento e "dia do evento" para outro. O leitor
+   * confere a assinatura (o código é nosso?); esta linha confere a validade (o
+   * código serve para hoje?).
+   *
+   * É o que impede o crachá que circulou a semana toda na montagem de entrar
+   * no dia do evento.
+   */
+  const inicioDoEvento = (evento as { data_inicio?: string | null }).data_inicio
+  const faseDeHoje = faseDoDia(diaBRT(), inicioDoEvento ? diaBRT(inicioDoEvento) : '')
+  const etapa = faseConfere(leitura.fase, faseDeHoje)
+  if (!etapa.ok) return { success: false, message: etapa.erro }
   // Isolamento: master → qualquer evento; admin → só da org; supervisor → só vinculado
   if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { success: false, message: 'Sem acesso a este evento' }

@@ -116,6 +116,9 @@ export default function DiasDeTrabalho({
           const ehPrincipal = dia === diaPrincipal
           const marcado = marcados.has(dia)
           const travado = travados.has(dia)
+          // Montagem antes, desmontagem depois. Cada uma tem o seu QR Code, e
+          // a cor é o que deixa isso legível de relance na grade.
+          const desmonte = dia > diaPrincipal
 
           return (
             <button
@@ -134,7 +137,9 @@ export default function DiasDeTrabalho({
                 ehPrincipal
                   ? 'bg-brand-500 border-brand-500 text-white cursor-default'
                   : marcado
-                    ? 'bg-brand-50 border-brand-300 text-brand-700'
+                    ? desmonte
+                      ? 'bg-amber-50 border-amber-300 text-amber-800'
+                      : 'bg-brand-50 border-brand-300 text-brand-700'
                     : 'bg-white border-slate-200 text-slate-500 hover:border-brand-300'
               } ${travado ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
@@ -152,15 +157,24 @@ export default function DiasDeTrabalho({
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5">
         <p className="text-slate-600 text-xs">
-          <span className="inline-block w-2.5 h-2.5 rounded bg-brand-500 align-middle mr-1.5" />
-          <strong>Dia principal</strong> — usa os horários de entrada, meio e saída configurados acima.
-        </p>
-        <p className="text-slate-600 text-xs">
           <span className="inline-block w-2.5 h-2.5 rounded bg-brand-50 border border-brand-300 align-middle mr-1.5" />
-          <strong>Dia de preparação</strong> — entrada e saída livres. O meio é calculado para cada
+          <strong>Montagem</strong> (antes) — entrada e saída livres. O meio é calculado para cada
           pessoa, 4 horas depois da entrada dela.
         </p>
-        <p className="text-slate-400 text-2xs pt-0.5">
+        <p className="text-slate-600 text-xs">
+          <span className="inline-block w-2.5 h-2.5 rounded bg-brand-500 align-middle mr-1.5" />
+          <strong>Dia do evento</strong> — usa os horários de entrada e saída configurados acima.
+        </p>
+        <p className="text-slate-600 text-xs">
+          <span className="inline-block w-2.5 h-2.5 rounded bg-amber-50 border border-amber-300 align-middle mr-1.5" />
+          <strong>Desmontagem</strong> (depois) — mesma regra da montagem.
+        </p>
+        <p className="text-slate-500 text-2xs pt-1 border-t border-slate-200 mt-1.5">
+          Cada etapa tem o <strong>seu próprio QR Code</strong>, e a credencial troca sozinha na
+          virada do dia — a equipe não recebe mensagem nova. O crachá da montagem não entra no dia
+          do evento.
+        </p>
+        <p className="text-slate-400 text-2xs">
           Dia não marcado não é dia de trabalho: ninguém consegue bater ponto nele, e ninguém é
           cobrado por não ter aparecido.
         </p>

@@ -18,7 +18,7 @@
 // fechamento — "estava escalado para 5 dias e veio em 4".
 
 import { supabaseAdmin } from './supabase-server'
-import { janelaDoMeio, type EventoJanelas, type DiaDaJornada, type TipoDia } from './janelas'
+import { janelaDoMeio, faseDoDia, diaBRT, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
 
 export type Batida = {
   em: string
@@ -30,6 +30,15 @@ export type Batida = {
 export type DiaDoHistorico = {
   data: string
   tipo: TipoDia
+  /**
+   * A ETAPA do evento a que este dia pertence.
+   *
+   * Derivada da data contra o dia do evento, não guardada no banco: montagem é
+   * qualquer dia de trabalho ANTES do dia do evento, desmontagem é qualquer um
+   * DEPOIS. Guardar seria criar uma segunda verdade que pode divergir quando a
+   * data do evento muda — e ela muda.
+   */
+  fase: FaseDoDia
   cancelado: boolean
   entrada: Batida | null
   meio: Batida | null
@@ -133,6 +142,17 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
 
   const metaPorData = new Map((diasBrutos ?? []).map(d => [d.data as string, d as DiaDaJornada]))
 
+  /*
+   * O dia do evento — a régua que separa montagem de desmontagem.
+   *
+   * Vem da linha marcada como principal em `jornada_dias`, com a data do evento
+   * como reserva: se a data do evento mudou e a jornada ainda não acompanhou, a
+   * linha marcada é a que a operação de fato usou.
+   */
+  const diaPrincipal =
+    (diasBrutos ?? []).find(d => d.tipo === 'principal')?.data as string | undefined
+    ?? (evento.data_inicio ? diaBRT(evento.data_inicio) : '')
+
   const dias: DiaDoHistorico[] = [...datas].sort().map(data => {
     const meta = metaPorData.get(data) ?? null
     const batidas = porDia.get(data)
@@ -144,6 +164,7 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     return {
       data,
       tipo: (meta?.tipo as TipoDia) ?? 'preparacao',
+      fase: faseDoDia(data, diaPrincipal),
       cancelado: meta?.cancelado === true,
       entrada, meio, fim,
       meioEsperadoEm: janela?.inicio ?? null,

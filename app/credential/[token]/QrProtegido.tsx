@@ -25,15 +25,20 @@ import { EyeOff, ShieldAlert } from 'lucide-react'
  * lido, e quem credencia vê na hora se confere com a pessoa à sua frente.
  */
 
-export default function QrProtegido({ dataUrl, dia }: { dataUrl: string; dia: string }) {
+export default function QrProtegido(
+  { dataUrl, dia, faseLabel }: { dataUrl: string; dia: string; faseLabel: string }
+) {
   const [oculto, setOculto] = useState(false)
 
   /*
    * Recarrega sozinho na virada do dia, em Brasília.
    *
-   * O QR vale só no dia em que foi gerado. Quem deixa a credencial aberta a
-   * noite toda — o caso normal de quem trabalha na madrugada — acordaria com o
-   * código de ontem na tela e seria recusado no portão sem entender por quê.
+   * O código não muda mais todo dia — muda quando vira a ETAPA. Só que a etapa
+   * vira exatamente na virada do dia: a última madrugada de montagem termina e
+   * começa o dia do evento. Quem deixa a credencial aberta a noite toda — o
+   * caso normal de quem trabalha na madrugada — acordaria com o crachá da
+   * montagem na tela e seria recusado na portaria do evento sem entender por
+   * quê. Por isso a recarga na virada continua.
    */
   useEffect(() => {
     const agora = Date.now()
@@ -105,7 +110,9 @@ export default function QrProtegido({ dataUrl, dia }: { dataUrl: string; dia: st
 
       <p className="text-slate-400 text-2xs mt-1.5 flex items-center justify-center gap-1">
         <ShieldAlert className="w-3 h-3 shrink-0" />
-        Este QR vale só hoje e muda amanhã. A credencial é pessoal — emprestar é uso indevido.
+        {/* Dizer de QUAL etapa é o código evita a confusão previsível: a pessoa
+            mostra o crachá da montagem no dia do evento e não entende a recusa. */}
+        Este é o seu QR da {faseLabel}. A credencial é pessoal — emprestar é uso indevido.
       </p>
     </div>
   )
