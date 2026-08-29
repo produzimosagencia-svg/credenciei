@@ -215,6 +215,28 @@ ${formulario}
 No sistema você acompanha quem já se cadastrou ✅, escaneia o QR Code na entrada e na saída 📷, e vê quem está com presença pendente ⏰
 
 Bom evento! 🎉`,
+
+  cadastro_supervisor_evento: ([nome, setor, evento, link]) =>
+`Olá, ${nome}. Sua participação como supervisor do setor *${setor}* no evento *${evento}* foi confirmada.
+
+Consulte as orientações e os próximos passos neste endereço individual:
+${link}
+
+Este endereço é pessoal. Se você não reconhece esta confirmação, ignore a mensagem.`,
+
+  supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
+`Olá, ${nome}. Sua designação como supervisor foi atualizada.
+
+Evento: *${evento}*
+Setor: ${setor}
+Data: ${data}
+Local: ${local}
+
+Consulte os detalhes da operação no sistema: ${login}
+
+Cadastro da equipe: ${formulario}
+
+Até lá.`,
 }
 
 /**

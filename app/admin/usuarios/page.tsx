@@ -20,7 +20,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'usr-resumo', titulo: 'Quem tem acesso ao sistema', posicao: 'bottom', icone: 'Users',
       descricao: 'Esta lista mostra todas as pessoas da sua organização que conseguem entrar no sistema. Não confunda com a equipe do evento: quem só trabalha no dia aparece dentro do setor, não aqui.' },
     { alvo: 'usr-novo', titulo: 'Criar um acesso', posicao: 'left', icone: 'Plus',
-      descricao: 'Use para dar acesso a um supervisor. Ele recebe e-mail e senha por WhatsApp e passa a enxergar apenas o setor que você escolher.' },
+      descricao: 'Use para dar acesso a um supervisor. Se for novo, ele recebe um link seguro para criar a senha; se já existir, recebe apenas a nova escala.' },
     { alvo: 'usr-abas', titulo: 'Filtrar por situação', posicao: 'bottom', icone: 'Users',
       descricao: 'Ativo entra normalmente. Inativo é bloqueado no login sem perder o histórico — use quando alguém sai da equipe mas você quer manter os registros antigos.' },
     { alvo: 'usr-papel', titulo: 'Papel', posicao: 'bottom', icone: 'ShieldCheck',

@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { criarSupervisor } from '@/lib/actions'
-import { NomeInput, TelefoneInput } from '@/components/inputs'
+import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -87,16 +87,14 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
         <NomeInput name="nome" required placeholder="Nome da pessoa" className="input" />
       </div>
       <div className="space-y-1.5">
-        <label className="text-sm font-medium text-slate-700">E-mail *</label>
-        <input name="email" type="email" required placeholder="email@exemplo.com" className="input" />
+        <label className="text-sm font-medium text-slate-700">CPF *</label>
+        <CpfInput name="cpf" required placeholder="000.000.000-00" className="input" />
+        <p className="text-xs text-slate-500">O supervisor usará o CPF para entrar no sistema.</p>
       </div>
       <div className="space-y-1.5" data-tutorial="novo-usr-telefone">
-        <label className="text-sm font-medium text-slate-700">Telefone</label>
-        <TelefoneInput name="telefone" placeholder="(11) 99999-9999" className="input" />
-      </div>
-      <div className="space-y-1.5" data-tutorial="novo-usr-senha">
-        <label className="text-sm font-medium text-slate-700">Senha *</label>
-        <input name="senha" type="password" required placeholder="Mínimo 6 caracteres" minLength={6} className="input" />
+        <label className="text-sm font-medium text-slate-700">WhatsApp *</label>
+        <TelefoneInput name="telefone" required placeholder="(11) 99999-9999" className="input" />
+        <p className="text-xs text-slate-500">Supervisor novo recebe o link para criar a senha. Quem já tem cadastro recebe a nova escala.</p>
       </div>
       <div className="space-y-1.5" data-tutorial="novo-usr-status">
         <label className="text-sm font-medium text-slate-700">Status</label>

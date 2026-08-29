@@ -63,9 +63,10 @@ export async function enviarMensagem(params: {
   template: string
   parametros: string[]
   texto: string
+  phoneNumberId?: string
 }): Promise<ResultadoEnvio> {
   return provedor() === 'meta'
-    ? enviarTemplate(params.numero, params.template, params.parametros)
+    ? enviarTemplate(params.numero, params.template, params.parametros, params.phoneNumberId)
     : enviarTextoEvolution(params.numero, params.texto)
 }
 

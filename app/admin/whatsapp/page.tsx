@@ -1,8 +1,8 @@
 import Link from 'next/link'
-import { CheckCircle2, XCircle, AlertTriangle, FileText, Send, MessagesSquare, Gauge } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, FileText, Send, MessagesSquare, Gauge, CircleDollarSign } from 'lucide-react'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { estadoDaInstancia, provedor } from '@/lib/whatsapp'
-import { templatesAprovados } from '@/lib/whatsapp-painel'
+import { resumoFinanceiroWhatsApp, templatesAprovados } from '@/lib/whatsapp-painel'
 import { formatarBR } from '@/lib/tz'
 import { Secao, Badge, Aviso, EmptyState } from '@/components/ui/Superficie'
 import StatCard from '@/components/StatCard'
@@ -18,6 +18,7 @@ export const revalidate = 0
  */
 export default async function WhatsAppPage() {
   const [canal, templates] = await Promise.all([estadoDaInstancia(), templatesAprovados()])
+  const financeiro = await resumoFinanceiroWhatsApp(templates)
 
   const hoje = new Date()
   hoje.setUTCHours(3, 0, 0, 0) // 00:00 em Brasília
@@ -59,6 +60,24 @@ export default async function WhatsAppPage() {
         <StatCard label="Falhas hoje" value={falhasHoje ?? 0} icon={XCircle} tom={falhasHoje ? 'erro' : 'neutro'} />
         <StatCard label="Na fila" value={fila ?? 0} icon={MessagesSquare} tom="info" />
         <StatCard label="Templates aprovados" value={aprovados.length} icon={FileText} tom="acento" />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatCard
+          label="Mensagens disparadas"
+          value={financeiro.enviados}
+          sub="Total enviado no histórico do canal"
+          icon={Send}
+          tom="info"
+        />
+        <StatCard
+          label="Custo aproximado"
+          value={financeiro.custoEstimado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          sub={`${financeiro.porCategoria.AUTHENTICATION.enviados} autenticação · ${financeiro.porCategoria.MARKETING.enviados} marketing · ${financeiro.porCategoria.UTILITY.enviados} utilidade`}
+          icon={CircleDollarSign}
+          tom="aviso"
+          small
+        />
       </div>
 
       <Secao
@@ -156,8 +175,8 @@ export default async function WhatsAppPage() {
       </Secao>
 
       <p className="text-slate-500 text-xs">
-        Para disparar para uma equipe inteira, use{' '}
-        <Link href="/admin/whatsapp/disparo" className="text-brand-500 hover:underline">Disparo em massa</Link>.
+        Para criar uma campanha, use{' '}
+        <Link href="/admin/whatsapp/disparo" className="text-brand-500 hover:underline">Novo disparo</Link>.
       </p>
     </div>
   )

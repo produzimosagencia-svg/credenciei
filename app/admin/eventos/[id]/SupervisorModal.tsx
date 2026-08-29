@@ -3,14 +3,14 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, Pencil, X, Trash2 } from 'lucide-react'
 import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
-import { NomeInput, TelefoneInput } from '@/components/inputs'
+import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
 
 type Props =
   | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string }
-  | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; telefone: string | null; ativo: boolean } }
+  | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean } }
 
 export default function SupervisorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -105,40 +105,31 @@ export default function SupervisorModal(props: Props) {
               <Field label="Nome completo *">
                 <NomeInput name="nome" required defaultValue={isEditar ? props.supervisor.nome : ''} placeholder="Nome do supervisor" className="input" />
               </Field>
-              {/* Nome de usuário, não e-mail: quem trabalha no portão nem sempre
-                  tem endereço à mão, e inventar um travava o cadastro quando o
-                  endereço já existia na plataforma. */}
-              <Field label="Nome de usuário *">
-                <input
-                  name="usuario"
+              <Field label="CPF *">
+                <CpfInput
+                  name="cpf"
                   required
-                  minLength={3}
-                  maxLength={32}
-                  defaultValue={isEditar ? exibirIdentificador(props.supervisor.email) : ''}
-                  placeholder="Ex: juan.bar"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
+                  defaultValue={isEditar ? (props.supervisor.cpf ?? exibirIdentificador(props.supervisor.email)) : ''}
+                  placeholder="000.000.000-00"
                   className="input"
                 />
                 <p className="text-slate-500 text-xs mt-1.5">
-                  É com isto que o supervisor entra no sistema — sem e-mail. Letras, números e ponto.
-                  Ele recebe o usuário e a senha pelo WhatsApp.
+                  O CPF identifica o cadastro e será usado no login. Supervisor novo recebe no WhatsApp
+                  um link individual para criar a própria senha.
                 </p>
               </Field>
-              <Field label="Telefone">
-                <TelefoneInput name="telefone" defaultValue={isEditar ? (props.supervisor.telefone ?? '') : ''} placeholder="(11) 99999-9999" className="input" />
+              <Field label="WhatsApp *">
+                <TelefoneInput name="telefone" required defaultValue={isEditar ? (props.supervisor.telefone ?? '') : ''} placeholder="(11) 99999-9999" className="input" />
               </Field>
-              <Field label={isEditar ? 'Nova senha (opcional)' : 'Senha de acesso *'}>
+              {isEditar && <Field label="Nova senha (opcional)">
                 <input
                   name="senha"
                   type="password"
-                  required={!isEditar}
                   minLength={6}
-                  placeholder={isEditar ? 'Deixe em branco para manter' : 'Mín. 6 caracteres'}
+                  placeholder="Deixe em branco para manter"
                   className="input"
                 />
-              </Field>
+              </Field>}
               <Field label="Status">
                 <select name="ativo" defaultValue={isEditar ? String(props.supervisor.ativo) : 'true'} className="input">
                   <option value="true">Ativo</option>

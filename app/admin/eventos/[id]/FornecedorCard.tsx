@@ -19,7 +19,7 @@ type Fornecedor = {
   funcionarios: { count: number }[]
 }
 
-type Supervisor = { id: string; nome: string; email: string; telefone: string | null; ativo: boolean }
+type Supervisor = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 

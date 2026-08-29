@@ -22,6 +22,15 @@
 const VERSAO = 'v21.0'
 const IDIOMA = 'pt_BR'
 
+// Os templates de autenticação aprovados pela Meta possuem um botão URL
+// "Copiar código". A Cloud API exige que o mesmo código do corpo seja enviado
+// também como parâmetro desse botão; mandar apenas o body resulta em erro de
+// quantidade de parâmetros, embora a prévia do template pareça correta.
+const TEMPLATES_AUTENTICACAO = new Set([
+  'acesso_supervisor_auth',
+  'credenciais_supervisor_auth',
+])
+
 export type ResultadoEnvio = {
   ok: boolean
   statusHttp: number
@@ -61,12 +70,12 @@ export function formatarNumeroWhatsApp(telefone: string): string | null {
   return null
 }
 
-async function chamar(corpo: unknown): Promise<ResultadoEnvio> {
+async function chamar(corpo: unknown, phoneNumberId?: string): Promise<ResultadoEnvio> {
   const cfg = configuracao()
   if (!cfg.ok) return { ok: false, statusHttp: 0, resposta: { erro: cfg.erro } }
 
   try {
-    const res = await fetch(`https://graph.facebook.com/${VERSAO}/${cfg.phoneId}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/${VERSAO}/${phoneNumberId ?? cfg.phoneId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.token}` },
       body: JSON.stringify(corpo),
@@ -95,7 +104,23 @@ export async function enviarTemplate(
   numero: string,
   template: string,
   params: string[],
+  phoneNumberId?: string,
 ): Promise<ResultadoEnvio> {
+  const parametrosBody = params.map(p => ({ type: 'text', text: String(p ?? '') }))
+  const componentes = params.length
+    ? [
+        { type: 'body', parameters: parametrosBody },
+        ...(TEMPLATES_AUTENTICACAO.has(template) && params[0]
+          ? [{
+              type: 'button',
+              sub_type: 'url',
+              index: '0',
+              parameters: [{ type: 'text', text: String(params[0]) }],
+            }]
+          : []),
+      ]
+    : []
+
   return chamar({
     messaging_product: 'whatsapp',
     to: numero,
@@ -105,11 +130,9 @@ export async function enviarTemplate(
       language: { code: IDIOMA },
       // Sem `components` quando o template não tem variável: mandar um body
       // vazio faz a Meta recusar com "number of parameters does not match".
-      ...(params.length
-        ? { components: [{ type: 'body', parameters: params.map(p => ({ type: 'text', text: String(p ?? '') })) }] }
-        : {}),
+      ...(componentes.length ? { components: componentes } : {}),
     },
-  })
+  }, phoneNumberId)
 }
 
 /**

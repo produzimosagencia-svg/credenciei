@@ -10,6 +10,7 @@
 // parâmetros {{1}}, {{2}}...) é montado na hora do envio, com dados frescos
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
 import { createClient } from '@supabase/supabase-js'
+import { randomUUID } from 'node:crypto'
 import { formatarBR } from './tz'
 import {
   diaBRT, janelaMeio, horariosEsperados, periodoDoEvento, faseDoDia, HORA_AVISO_DIA,
@@ -432,50 +433,33 @@ export async function agendarBoasVindasFuncionario(params: {
 }
 
 /**
- * Avisa o supervisor recém-criado de como entrar no sistema.
- *
- * A SENHA NÃO VAI AQUI. Ela é a mesma para todos e está escrita no próprio
- * template — mandar credencial variável por WhatsApp foi rejeitado quatro
- * vezes pela Meta, que classifica isso como AUTHENTICATION, uma categoria que
- * só aceita código de uso único num formato fixo.
- *
- * Não repete: se já existe uma linha para esse perfil, não duplica.
+ * Coloca uma comunicação de supervisor na fila oficial, com retry, histórico
+ * e status de entrega iguais aos demais disparos. `perfil_id` fica nulo para
+ * permitir novas escalas da mesma pessoa em eventos diferentes.
  */
-export async function agendarAcessoSupervisor(params: {
+export async function agendarTemplateSupervisor(params: {
   eventoId: string
-  perfilId: string
   telefone: string
-  nome: string
-  setorNome: string
-  eventoNome: string
-  linkFormulario: string
+  template: 'cadastro_supervisor_evento' | 'supervisor_escalado_evento'
+  parametros: string[]
 }): Promise<void> {
-  const { data: existe } = await supabase
-    .from('mensagens_agendadas')
-    .select('id')
-    .eq('perfil_id', params.perfilId)
-    .eq('tipo', 'credenciais_supervisor')
-    .limit(1)
-  if (existe?.length) return
-
-  const templateParams = [
-    params.nome,
-    params.setorNome,
-    params.eventoNome,
-    `${SITE_URL}/login`,
-    params.linkFormulario,
-  ]
-
-  const { error } = await supabase.from('mensagens_agendadas').insert([{
+  const telefone = params.telefone.replace(/\D/g, '')
+  if (!telefone) return
+  const agora = new Date()
+  const { error } = await supabase.from('mensagens_agendadas').insert({
     evento_id: params.eventoId,
-    perfil_id: params.perfilId,
-    tipo: 'credenciais_supervisor',
-    data_ref: new Date().toISOString().slice(0, 10),
-    agendado_para: new Date().toISOString(),
-    telefone: params.telefone,
-    mensagem: JSON.stringify(templateParams),
-  }])
-  if (error && error.code !== '23505') throw error
+    tipo: 'disparo_manual',
+    data_ref: agora.toISOString().slice(0, 10),
+    agendado_para: agora.toISOString(),
+    telefone,
+    mensagem: JSON.stringify({
+      campanhaId: `supervisor-${randomUUID()}`,
+      origem: 'automatico',
+      template: params.template,
+      parametros: params.parametros,
+    }),
+  })
+  if (error) throw new Error(`Não foi possível agendar a mensagem do supervisor: ${error.message}`)
 }
 
 /**
@@ -669,7 +653,7 @@ async function limiteDaEtapa(
  * pré-computado no agendamento. Retorna null quando a mensagem deve ser
  * cancelada (ex.: alerta ao supervisor sem ninguém pendente).
  */
-async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[] } | null> {
+async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[]; phoneNumberId?: string } | null> {
   const template = TEMPLATE_POR_TIPO[msg.tipo]
 
   /*
@@ -679,9 +663,9 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
    */
   if (msg.tipo === 'disparo_manual') {
     try {
-      const escolha = JSON.parse(msg.mensagem) as { template?: string; parametros?: string[] }
+      const escolha = JSON.parse(msg.mensagem) as { template?: string; parametros?: string[]; phoneNumberId?: string }
       if (!escolha?.template) return null
-      return { template: escolha.template, params: escolha.parametros ?? [] }
+      return { template: escolha.template, params: escolha.parametros ?? [], phoneNumberId: escolha.phoneNumberId }
     } catch {
       return null
     }
@@ -987,6 +971,7 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
           template: envio.template,
           parametros: envio.params,
           texto,
+          phoneNumberId: envio.phoneNumberId,
         })
 
   await supabase.from('mensagens_log').insert({

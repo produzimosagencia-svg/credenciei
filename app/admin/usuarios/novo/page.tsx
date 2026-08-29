@@ -17,8 +17,6 @@ const TUTORIAL: TutorialConfig = {
       descricao: 'O supervisor fica preso a um único setor: ele enxerga apenas a equipe desse setor e só consegue escanear essas pessoas. Se a pessoa precisa cuidar de dois setores, crie dois acessos.' },
     { alvo: 'novo-usr-telefone', titulo: 'Telefone', posicao: 'bottom', icone: 'MessageCircle',
       descricao: 'É por aqui que ele recebe, no WhatsApp, o próprio login e o link de cadastro pra mandar no grupo da equipe. Também é onde chegam os alertas de quem está com presença pendente.' },
-    { alvo: 'novo-usr-senha', titulo: 'Senha', posicao: 'bottom', icone: 'KeyRound',
-      descricao: 'Você define a senha inicial, com no mínimo 6 caracteres. Ela é enviada junto com o login no WhatsApp — anote se precisar repassar por outro canal.' },
     { alvo: 'novo-usr-status', titulo: 'Status', posicao: 'top', icone: 'ShieldCheck',
       descricao: 'Deixe Ativo pra ele entrar já. Inativo cria o acesso bloqueado — útil pra deixar tudo pronto antes do evento e liberar só no dia.' },
   ],

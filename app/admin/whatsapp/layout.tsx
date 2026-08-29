@@ -17,7 +17,7 @@ import AbasWhatsApp from './AbasWhatsApp'
 
 export const ABAS = [
   { href: '/admin/whatsapp', label: 'Visão geral', icone: MessageCircle },
-  { href: '/admin/whatsapp/disparo', label: 'Disparo em massa', icone: Send },
+  { href: '/admin/whatsapp/disparo', label: 'Novo disparo', icone: Send },
   { href: '/admin/whatsapp/fluxos', label: 'Fluxos automáticos', icone: Workflow },
   { href: '/admin/whatsapp/conversas', label: 'Conversas', icone: MessagesSquare },
 ]

@@ -52,9 +52,6 @@ export function usuarioParaEmail(usuario: string): string {
   return `${usuario}@${DOMINIO_INTERNO}`
 }
 
-/** A senha de todo supervisor. Decisão do cliente — ver upgrade-supervisor-cpf.sql. */
-export const SENHA_PADRAO_SUPERVISOR = '123456'
-
 /** Só os dígitos. "123.456.789-00" e "12345678900" viram a mesma coisa. */
 export function normalizarCpf(bruto: string): string {
   return (bruto ?? '').replace(/\D/g, '')

@@ -1,6 +1,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
+import { randomBytes } from 'node:crypto'
 import { getPerfil, supabaseAdmin, podeEscanearEvento } from './supabase-server'
 import { redirect } from 'next/navigation'
 import {
@@ -27,12 +28,13 @@ import {
 } from './janelas'
 import { validarCpf } from './format'
 import { normalizarCidade } from './cidades'
-import { normalizarCpf, cpfParaEmail, SENHA_PADRAO_SUPERVISOR } from './usuario'
+import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
-import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarAcessoSupervisor } from './mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR } from './credencial-qr'
+import { criarConviteSenhaSupervisor } from './supervisor-convite'
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
@@ -361,10 +363,11 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, token_formulario, eventos(organizacao_id, nome, data_inicio)')
+    .select('id, evento_id, nome, token_formulario, eventos(organizacao_id, nome, data_inicio, local)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) throw new Error('Setor não encontrado')
+  if (fornecedor.evento_id !== eventoId) throw new Error('Este setor não pertence ao evento informado')
   const eventoDoFornecedor = fornecedor.eventos as any
   const organizacaoId = eventoDoFornecedor?.organizacao_id
   if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
@@ -374,6 +377,10 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   const nome = ((formData.get('nome') as string) ?? '').trim()
   const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
   const ativo = formData.get('ativo') !== 'false'
+  if (!nome) throw new Error('Informe o nome do supervisor.')
+  if (telefone.length < 10 || telefone.length > 13) {
+    throw new Error('Informe um telefone válido para enviar o acesso pelo WhatsApp.')
+  }
 
   /*
    * Supervisor entra por CPF.
@@ -387,21 +394,61 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
   const email = cpfParaEmail(cpf)
 
-  /*
-   * Senha fixa para todos, a pedido do cliente.
-   *
-   * O custo foi dito e aceito: quem souber o CPF de um supervisor entra como
-   * ele — e o CPF da equipe é visível dentro do próprio sistema. Fica como
-   * constante em vez de espalhada pelo código para o dia em que virar código
-   * por WhatsApp ser uma troca só.
-   */
-  const senha = SENHA_PADRAO_SUPERVISOR
-
   const admin = getAdminSupabase()
+
+  /*
+   * CPF identifica a pessoa, setor identifica a escala atual.
+   * Se a conta já existe na mesma organização, não criamos outro usuário nem
+   * mexemos na senha: apenas atualizamos a designação e avisamos por WhatsApp.
+   */
+  const { data: existente } = await admin
+    .from('perfis')
+    .select('id, nome, role, organizacao_id')
+    .eq('cpf', cpf)
+    .maybeSingle()
+  if (existente) {
+    if (existente.role !== 'supervisor') {
+      throw new Error('Este CPF já pertence a outro tipo de acesso no sistema.')
+    }
+    if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
+      throw new Error('Este CPF já está cadastrado em outra organização.')
+    }
+
+    const { error: erroAtualizacao } = await admin.from('perfis').update({
+      nome,
+      telefone,
+      ativo,
+      organizacao_id: organizacaoId,
+      fornecedor_id: fornecedorId,
+    }).eq('id', existente.id)
+    if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
+
+    const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
+    await agendarTemplateSupervisor({
+      eventoId,
+      telefone,
+      template: 'supervisor_escalado_evento',
+      parametros: [
+        nome,
+        eventoDoFornecedor?.nome ?? 'Evento',
+        fornecedor.nome,
+        eventoDoFornecedor?.data_inicio ? formatarBR(eventoDoFornecedor.data_inicio, 'completo') : 'a confirmar',
+        eventoDoFornecedor?.local?.trim() || 'a confirmar',
+        `${site}/login`,
+        `${site}/form/${fornecedor.token_formulario}`,
+      ],
+    })
+
+    revalidatePath('/admin/usuarios')
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true as const, novo: false as const, usuario: cpf }
+  }
 
   const { data: user, error } = await admin.auth.admin.createUser({
     email,
-    password: senha,
+    // A senha inicial nunca é mostrada nem enviada. Ela só mantém a conta
+    // inacessível até o próprio supervisor usar o convite individual.
+    password: randomBytes(32).toString('base64url'),
     email_confirm: true,
   })
   if (error) {
@@ -446,46 +493,35 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     throw new Error(mensagemAmigavel(erroPerfil))
   }
 
-  /*
-   * As credenciais NÃO vão por WhatsApp — e não é limitação, é decisão.
-   *
-   * A Meta classifica mensagem com usuário e senha como AUTHENTICATION, uma
-   * categoria que só aceita código de uso único num formato fixo: usuário,
-   * senha e links não cabem lá. Três tentativas de aprovar um template para
-   * isso foram rejeitadas.
-   *
-   * E o caminho certo era esse desde o início: a SENHA É DIGITADA por quem
-   * cria o supervisor, nesta mesma tela. Mandá-la de volta por WhatsApp era
-   * contar ao destinatário algo que o remetente já sabia, deixando a senha
-   * gravada para sempre no histórico de conversa dele.
-   *
-   * Agora a tela mostra usuário e senha para quem criou, que repassa pelo
-   * canal que quiser.
-   */
+  try {
+    const linkSenha = await criarConviteSenhaSupervisor({
+      perfilId: user.user!.id,
+      nome,
+      eventoId,
+      evento: eventoDoFornecedor?.nome ?? 'Evento',
+      setor: fornecedor.nome,
+    })
+    await agendarTemplateSupervisor({
+      eventoId,
+      telefone,
+      template: 'cadastro_supervisor_evento',
+      parametros: [nome, fornecedor.nome, eventoDoFornecedor?.nome ?? 'Evento', linkSenha],
+    })
+  } catch (erro) {
+    // Cadastro sem convite deixaria uma conta inacessível. Desfazemos tudo
+    // para o responsável poder corrigir o WhatsApp e tentar novamente.
+    await admin.from('perfis').delete().eq('id', user.user!.id)
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    throw erro
+  }
+
   revalidatePath('/admin/usuarios')
   revalidatePath(`/admin/eventos/${eventoId}`)
 
-  // Avisa o supervisor por WhatsApp: como entrar e o link do formulário da
-  // equipe. A senha não vai no texto — ela é a mesma para todos e está dita
-  // no próprio template.
-  if (telefone) {
-    after(() => agendarAcessoSupervisor({
-      eventoId,
-      perfilId: user.user!.id,
-      telefone,
-      nome,
-      setorNome: fornecedor.nome,
-      eventoNome: eventoDoFornecedor?.nome ?? '',
-      linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
-    }).catch(console.error))
-  }
-
   return {
     ok: true as const,
+    novo: true as const,
     usuario: cpf,
-    senha,
-    login: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/login`,
-    linkFormulario: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'}/form/${fornecedor.token_formulario}`,
   }
 }
 

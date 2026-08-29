@@ -5,7 +5,12 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Rotas públicas: sai imediatamente, sem tocar no Supabase
-  if (pathname.startsWith('/form/') || pathname.startsWith('/credential/') || pathname === '/login') {
+  if (
+    pathname.startsWith('/form/') ||
+    pathname.startsWith('/credential/') ||
+    pathname.startsWith('/supervisor/criar-senha/') ||
+    pathname === '/login'
+  ) {
     return NextResponse.next({ request })
   }
 

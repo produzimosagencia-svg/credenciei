@@ -83,9 +83,9 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   // Supervisores vinculados a cada setor (fornecedor) deste evento
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
   const { data: supervisoresRows } = fornecedorIds.length
-    ? await supabase.from('perfis').select('id, nome, email, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
+    ? await supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
     : { data: [] as any[] }
-  const supervisoresPorFornecedor: Record<string, { id: string; nome: string; email: string; telefone: string | null; ativo: boolean }[]> = {}
+  const supervisoresPorFornecedor: Record<string, { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]> = {}
   for (const s of supervisoresRows ?? []) {
     (supervisoresPorFornecedor[s.fornecedor_id] ??= []).push(s)
   }

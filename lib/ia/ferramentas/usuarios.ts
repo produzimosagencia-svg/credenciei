@@ -1,10 +1,10 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
-import { formatarBR } from '@/lib/tz'
-import { agendarAcessoSupervisor } from '@/lib/mensagens'
+import { criarSupervisor } from '@/lib/actions'
+import { normalizarCpf } from '@/lib/usuario'
 import { registrarAuditoriaIA } from '../auditoria'
 import {
-  ferramenta, resolverSetor, podeGerenciarUsuariosIA, urlBase,
+  ferramenta, resolverSetor, podeGerenciarUsuariosIA,
   type ContextoIA, type PedirConfirmacao, type PerfilIA, type Resolucao,
 } from './base'
 
@@ -86,104 +86,66 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
     ferramenta({
       nome: 'criar_supervisor',
       descricao:
-        'Cria um supervisor com acesso ao sistema, preso a UM setor. A senha é gerada pelo sistema e enviada por WhatsApp junto com o login — você não escolhe a senha e não deve inventar uma. ' +
+        'Cria ou escala um supervisor com acesso ao sistema, preso a UM setor. Supervisor novo recebe no WhatsApp um link individual para criar a senha; quem já possui o CPF cadastrado recebe apenas o aviso da nova escala. ' +
         'Precisa de confirmação, porque cria uma conta de acesso de verdade.',
       parametros: {
         type: 'object',
         properties: {
           fornecedor_id: { type: 'string', description: 'setor que ele vai supervisionar' },
           nome: { type: 'string' },
-          email: { type: 'string', description: 'e-mail de login' },
-          telefone: { type: 'string', description: 'WhatsApp — é por onde ele recebe login e senha' },
+          cpf: { type: 'string', description: 'CPF usado para identificar a conta e entrar no sistema' },
+          telefone: { type: 'string', description: 'WhatsApp que recebe o convite ou a nova escala' },
         },
-        required: ['fornecedor_id', 'nome', 'email'],
+        required: ['fornecedor_id', 'nome', 'cpf', 'telefone'],
       },
-      executar: async ({ fornecedor_id, nome, email, telefone }) => {
+      executar: async ({ fornecedor_id, nome, cpf, telefone }) => {
         if (!gerencia) return 'Seu papel não cria usuários. Isso é do administrador da organização.'
         const r = await resolverSetor(perfil, fornecedor_id)
         if (!r.ok) return r.erro
 
-        const emailLimpo = String(email).trim().toLowerCase()
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailLimpo)) return 'E-mail inválido. Confira o endereço.'
+        const cpfLimpo = normalizarCpf(String(cpf))
+        if (cpfLimpo.length !== 11) return 'CPF inválido. Informe os 11 dígitos.'
         const fone = String(telefone ?? '').replace(/\D/g, '')
+        if (fone.length < 10 || fone.length > 13) return 'WhatsApp inválido. Confira DDD e número.'
 
-        const { data: jaExiste } = await supabaseAdmin
-          .from('perfis').select('id, nome').eq('email', emailLimpo).limit(1)
-        if (jaExiste?.length) return `Este e-mail já é usado por ${jaExiste[0].nome}. Use outro.`
-
-        const operacao = `criar_supervisor:${emailLimpo}:${fornecedor_id}`
+        const operacao = `criar_supervisor:${cpfLimpo}:${fornecedor_id}`
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
             `Criar acesso de supervisor para ${nome} no setor ${r.setor.nome}`,
             {
-              email: emailLimpo,
+              cpf: cpfLimpo,
               setor: r.setor.nome,
               acesso: 'ele passa a enxergar apenas a equipe deste setor',
-              senha: fone
-                ? 'gerada pelo sistema e enviada por WhatsApp'
-                : 'SEM TELEFONE — a senha vai aparecer aqui no chat uma única vez',
+              WhatsApp: 'recebe o link de criação de senha ou, se a conta já existir, o aviso da escala',
             },
-            'que uma conta de acesso será criada e como ele recebe a senha',
+            'que uma conta será criada ou uma conta existente será escalada para este setor',
             'criar'
           ))
         }
 
-        const senha = senhaInicial()
-        const { data: user, error } = await supabaseAdmin.auth.admin.createUser({
-          email: emailLimpo,
-          password: senha,
-          email_confirm: true,
-        })
-        if (error || !user?.user) {
-          return error?.message?.toLowerCase().includes('already')
-            ? 'Este e-mail já tem conta no sistema. Use outro endereço.'
-            : 'Não foi possível criar o acesso. Confira o e-mail e tente pela tela de Usuários.'
-        }
+        const form = new FormData()
+        form.set('nome', String(nome).trim())
+        form.set('cpf', cpfLimpo)
+        form.set('telefone', fone)
+        form.set('ativo', 'true')
+        const resultado = await criarSupervisor(fornecedor_id, r.setor.evento_id, form)
+        const { data: supervisor } = await supabaseAdmin.from('perfis').select('id').eq('cpf', cpfLimpo).single()
 
-        const { data: evento } = await supabaseAdmin
-          .from('eventos').select('nome, data_inicio').eq('id', r.setor.evento_id).single()
-
-        await supabaseAdmin.from('perfis').insert([{
-          id: user.user.id,
-          nome: String(nome).trim(),
-          email: emailLimpo,
-          telefone: fone,
-          ativo: true,
-          role: 'supervisor',
-          organizacao_id: perfil.organizacao_id,
-          fornecedor_id,
-        }])
-
-        if (fone) {
-          agendarAcessoSupervisor({
-            eventoId: r.setor.evento_id,
-            perfilId: user.user.id,
-            telefone: fone,
-            nome: String(nome).trim(),
-            setorNome: r.setor.nome,
-            eventoNome: evento?.nome ?? '',
-            linkFormulario: `${urlBase()}/form/${r.setor.token_formulario}`,
-          }).catch(console.error)
-        }
-
-        // A senha nunca é auditada — o log guarda que a conta foi criada, não
-        // como entrar nela.
         await registrarAuditoriaIA(perfil, 'criar_supervisor', {
-          perfil_id: user.user.id, nome, email: emailLimpo, fornecedor_id, setor: r.setor.nome,
+          perfil_id: supervisor?.id, nome, cpf: cpfLimpo, fornecedor_id, setor: r.setor.nome, novo: resultado.novo,
         })
 
         return JSON.stringify({
           ok: true,
-          perfil_id: user.user.id,
+          perfil_id: supervisor?.id,
           nome,
-          email: emailLimpo,
+          cpf: cpfLimpo,
           setor: r.setor.nome,
-          senha_enviada_por_whatsapp: !!fone,
-          senha: fone ? null : senha,
-          observacao: fone
-            ? 'Login e senha saíram no WhatsApp dele. Não repita a senha no chat — você não a tem.'
-            : 'Ele não tem telefone cadastrado, então a senha não pôde ser enviada. Passe esta senha para ele agora, por um canal seguro: ela não fica guardada em lugar nenhum.',
+          novo: resultado.novo,
+          observacao: resultado.novo
+            ? 'O convite para criar a senha foi colocado na fila do WhatsApp.'
+            : 'A conta já existia; a nova escala foi colocada na fila do WhatsApp e a senha foi mantida.',
         })
       },
     }),
@@ -328,4 +290,3 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
     }),
   ]
 }
-

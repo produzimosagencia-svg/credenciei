@@ -135,20 +135,20 @@ export async function POST(request: NextRequest) {
 
   if (linhas.length) {
     /*
-     * INSERT simples, com a duplicata tratada aqui.
+     * Cada evento é inserido separadamente. A Meta pode reenviar um status já
+     * gravado no MESMO POST em que entrega uma mensagem nova. Num INSERT do
+     * lote inteiro, a duplicata gera 23505 e o Postgres desfaz também a linha
+     * nova — exatamente a situação que deixa "Conversas" vazia mesmo com o
+     * webhook ativo. Isolar as linhas faz a duplicata morrer sozinha.
      *
-     * O caminho óbvio seria `upsert` com `onConflict`, e ele NÃO funciona: o
-     * índice de dedupe é PARCIAL (só vale quando wa_message_id não é nulo), e
-     * o PostgREST não consegue mirar um índice parcial no ON CONFLICT — a
-     * inserção falhava com "no unique or exclusion constraint matching", em
-     * silêncio, porque esta rota nunca devolve erro.
-     *
-     * 23505 é violação de unicidade: a Meta reenviando um evento que já
-     * gravamos. É o comportamento esperado dela, não um problema.
+     * Não usamos upsert porque o índice de dedupe é parcial e o PostgREST não
+     * consegue mirá-lo de forma confiável no ON CONFLICT.
      */
-    const { error } = await supabase.from('whatsapp_eventos').insert(linhas)
-    if (error && error.code !== '23505') {
-      console.error('[webhook] falha ao gravar:', error.code, error.message)
+    for (const linha of linhas) {
+      const { error } = await supabase.from('whatsapp_eventos').insert(linha)
+      if (error && error.code !== '23505') {
+        console.error('[webhook] falha ao gravar:', error.code, error.message)
+      }
     }
   }
 
