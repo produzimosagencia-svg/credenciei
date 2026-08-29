@@ -40,7 +40,9 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   // Supervisor não gerencia o evento inteiro — só o próprio setor (via /scan → Minha equipe)
   const perfil = await getPerfil()
-  if (perfil?.role === 'supervisor') redirect('/scan')
+  // O supervisor não vê a tela do evento inteiro — ele cuida de um setor.
+  // Ia para /scan, que agora o expulsa; o Painel já lista o setor dele.
+  if (perfil?.role === 'supervisor') redirect('/admin')
 
   // Todas dependem apenas do id → uma única wave em paralelo
   const [{ data: evento }, { data: fornecedores }, { data: registros }, todosRegistros] = await Promise.all([

@@ -8,7 +8,7 @@ import {
   Activity, ClipboardCheck, MessageCircle,
 } from 'lucide-react'
 import {
-  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, type Role,
+  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -45,8 +45,14 @@ function gruposPara(role: string): Grupo[] {
    * do Painel, e o item levaria pra mesma tela em que a pessoa já está.
    */
   const principal: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
+  // Escanear QR fica só com quem credencia. O supervisor cuida da equipe, não
+  // do portão — mesma separação que as mensagens já dizem à equipe.
   if (podeEscanear(role)) {
     principal.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })
+  }
+  // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
+  // em relação à própria equipe.
+  if (podeAcompanhar(role)) {
     principal.push({ href: '/admin/localizar', label: 'Registrar ponto', icon: ClipboardCheck })
     principal.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }

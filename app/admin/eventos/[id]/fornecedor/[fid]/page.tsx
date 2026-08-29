@@ -1,5 +1,5 @@
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeExcluir } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluir, podeEscanear } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } from 'lucide-react'
@@ -19,8 +19,6 @@ const TUTORIAL: TutorialConfig = {
   tela: 'setor-equipe',
   versao: 1,
   passos: [
-    { alvo: 'setor-scan', titulo: 'Escanear QR', posicao: 'bottom',
-      descricao: 'No dia do evento, use aqui para ler o QR Code da equipe na entrada e na saída.' },
     { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
       descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
     { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
@@ -232,9 +230,14 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
               <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
             </Link>
-            <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
-              <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
-            </Link>
+            {/* O supervisor não credencia: quem lê o QR é o posto de
+                credenciamento. Mostrar o botão para ele levaria a uma tela que
+                o expulsa — pior que não ter botão. */}
+            {podeEscanear(perfil.role) && (
+              <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
+                <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
+              </Link>
+            )}
           </>
         }
       />

@@ -19,6 +19,7 @@ import {
   podeExcluirEventos,
   podeExcluir,
   podeEscanear,
+  podeAcompanhar,
   ehMaster,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
@@ -2112,7 +2113,7 @@ export async function localizarFuncionario(
   termo: string
 ): Promise<{ funcionario?: FuncionarioLocalizado; candidatos?: CandidatoLocalizado[]; error?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
 
   const busca = termo.trim()
   const digitos = busca.replace(/\D/g, '')
@@ -2185,7 +2186,7 @@ export async function abrirFuncionarioLocalizado(
   funcionarioId: string
 ): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
@@ -2305,7 +2306,7 @@ export async function registrarPresencaAssistida(
   dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string }
 ): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeEscanear(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
+  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
 
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return { error: 'A foto da pessoa é obrigatória — é ela que comprova que o colaborador estava presente.' }

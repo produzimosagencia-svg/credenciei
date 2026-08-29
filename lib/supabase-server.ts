@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
-import { ehMaster, podeGerenciarEventos, podeEscanear } from './permissions'
+import { ehMaster, podeGerenciarEventos, podeEscanear, podeAcompanhar } from './permissions'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -93,7 +93,7 @@ export async function meuSetor(perfil: any): Promise<{ id: string; nome: string;
 
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nome: string }[]> {
-  if (!perfil || !podeEscanear(perfil.role)) return []
+  if (!perfil || !podeAcompanhar(perfil.role)) return []
 
   if (ehMaster(perfil.role)) {
     const { data } = await admin

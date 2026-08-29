@@ -2,7 +2,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { LogIn, Camera, LogOut, CheckCircle2, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
-import { veTodosEventos, podeEscanear } from '@/lib/permissions'
+import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf } from '@/lib/format'
 import { diaBRT, periodoDoEvento, type EventoJanelas } from '@/lib/janelas'
@@ -55,7 +55,7 @@ export default async function PendenciasPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeEscanear(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil.role)) redirect('/admin')
 
   const { id: eventoId } = await params
   const { dia: diaParam } = await searchParams
@@ -71,7 +71,7 @@ export default async function PendenciasPage({
   // organização, supervisor só o evento do setor dele.
   let setorDoSupervisor: string | undefined
   if (perfil.role === 'supervisor') {
-    if (!perfil.fornecedor_id) redirect('/scan')
+    if (!perfil.fornecedor_id) redirect('/admin')
     const { data: setor } = await supabaseAdmin
       .from('fornecedores').select('id, evento_id').eq('id', perfil.fornecedor_id).single()
     if (!setor || setor.evento_id !== eventoId) redirect('/admin')

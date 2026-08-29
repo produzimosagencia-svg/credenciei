@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Activity, QrCode, Camera, UserCheck, Clock, MapPin, ShieldCheck } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
-import { veTodosEventos, podeEscanear } from '@/lib/permissions'
+import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
 import { formatCpf } from '@/lib/format'
@@ -69,7 +69,7 @@ export default async function AtividadesPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeEscanear(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil.role)) redirect('/admin')
 
   const { evento: eventoParam, etapa: etapaParam } = await searchParams
 
@@ -88,10 +88,10 @@ export default async function AtividadesPage({
     .order('data_inicio', { ascending: false })
 
   if (perfil.role === 'supervisor') {
-    if (!perfil.fornecedor_id) redirect('/scan')
+    if (!perfil.fornecedor_id) redirect('/admin')
     const { data: setor } = await supabaseAdmin
       .from('fornecedores').select('id, evento_id').eq('id', perfil.fornecedor_id).single()
-    if (!setor) redirect('/scan')
+    if (!setor) redirect('/admin')
     setorDoSupervisor = setor.id
     listaQuery.eq('id', setor.evento_id)
   } else if (!veTodosEventos(perfil.role)) {

@@ -54,6 +54,25 @@ export const podeExcluir = (role?: string) => role === 'master'
 /** @deprecated Use `podeExcluir`. Mantido porque já é chamado em algumas telas. */
 export const podeExcluirEventos = podeExcluir
 
-/** Pode usar o scanner (todos os papéis autenticados podem). */
+/**
+ * Pode LER o QR e registrar presença pelo scanner.
+ *
+ * O supervisor ficou de fora a pedido. Quem credencia é o posto de
+ * credenciamento — o supervisor cuida da equipe, não do portão. É a mesma
+ * separação que as mensagens já dizem à equipe ("vá ao credenciamento", e não
+ * "procure seu supervisor"), agora valendo também no sistema.
+ */
 export const podeEscanear = (role?: string) =>
-  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente' || role === 'supervisor'
+  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente'
+
+/**
+ * Pode ACOMPANHAR a operação: atividades, pendências, histórico e a tela de
+ * localizar funcionário.
+ *
+ * Separado de `podeEscanear` porque são coisas diferentes: uma é registrar
+ * presença, a outra é olhar quem já registrou. Tirar o scanner do supervisor
+ * não pode cegá-lo em relação à própria equipe — é justamente disso que ele
+ * cuida.
+ */
+export const podeAcompanhar = (role?: string) =>
+  podeEscanear(role) || role === 'supervisor'

@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
-import { veTodosEventos, podeEscanear } from '@/lib/permissions'
+import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf } from '@/lib/format'
 import { historicoDoFuncionario, type DiaDoHistorico } from '@/lib/historico'
@@ -22,7 +22,7 @@ export const revalidate = 0
 export default async function HistoricoPage({ params }: { params: Promise<{ id: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeEscanear(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil.role)) redirect('/admin')
 
   const { id } = await params
   const h = await historicoDoFuncionario(id)

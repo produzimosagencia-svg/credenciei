@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { getPerfil } from '@/lib/supabase-server'
-import { podeEscanear, ehMaster } from '@/lib/permissions'
+import { podeAcompanhar, ehMaster } from '@/lib/permissions'
 import LocalizarFuncionario from './LocalizarFuncionario'
 import { PageHeader } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -28,7 +28,7 @@ const TUTORIAL: TutorialConfig = {
 export default async function LocalizarPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeEscanear(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil.role)) redirect('/admin')
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
