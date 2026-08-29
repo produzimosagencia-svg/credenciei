@@ -24,7 +24,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import {
   diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida,
-  HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
+  TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { validarCpf } from './format'
 import { normalizarCidade } from './cidades'
@@ -1469,10 +1469,17 @@ async function resolverRegistro(
      * histórico comparam o horário feito com o esperado e mostram a diferença.
      */
     if (agora.getTime() < new Date(janela.inicio).getTime()) {
-      const porque = dia?.tipo === 'principal' || !entrada
-        ? ''
-        : ` Ele abre ${HORAS_ATE_MEIO}h depois da sua entrada, que foi às ${formatarBR(entrada.em, 'hora')}.`
-      return { ok: false, erro: `O registro do meio ainda não abriu.${porque}` }
+      /*
+       * A recusa não diz a conta.
+       *
+       * "Abre 4h depois da entrada" ensina a burlar: bastaria bater a entrada,
+       * sair e voltar no minuto certo. O horário exato aparece só para quem
+       * administra; para a pessoa, o sistema avisa quando chegar a hora.
+       */
+      return {
+        ok: false,
+        erro: 'O registro do meio ainda não abriu. Você será avisado no WhatsApp quando chegar a hora.',
+      }
     }
   } else {
     const veredito = avaliarEntradaSaida(evento, dia, momento, dataRef, agora)

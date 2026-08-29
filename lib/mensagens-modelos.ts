@@ -128,7 +128,7 @@ Hoje é dia de *desenvolvimento* do *${evento}* — montagem e preparação da o
 📍 Local: ${local}
 
 ⏰ Hoje o horário é livre: registre a *entrada* quando começar e a *saída* quando terminar.
-🤳 *4 horas depois da sua entrada*, abra a credencial e tire a selfie do meio.
+🤳 Durante o turno avisamos por aqui a hora de abrir a credencial e tirar a selfie do meio.
 
 ⚠️ A saída só libera depois que o meio estiver registrado — é assim que suas horas ficam comprovadas.
 
@@ -150,7 +150,7 @@ Hoje é dia de *desmontagem* do *${evento}*. A estrutura sai e a operação ence
 📍 Local: ${local}
 
 ⏰ Horário livre: registre a *entrada* quando começar e a *saída* quando terminar.
-🤳 *4 horas depois da sua entrada*, abra a credencial e tire a selfie do meio.
+🤳 Durante o turno avisamos por aqui a hora de abrir a credencial e tirar a selfie do meio.
 
 ⚠️ Não esqueça de registrar a saída no fim — é ela que fecha o seu dia e comprova as horas trabalhadas.
 

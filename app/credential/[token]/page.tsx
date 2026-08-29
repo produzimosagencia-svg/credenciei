@@ -10,7 +10,7 @@ import type { TutorialConfig } from '@/components/tutorial/types'
 import { gerarCodigoQR } from '@/lib/credencial-qr'
 import {
   diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio,
-  HORAS_ATE_MEIO, TETO_TURNO_H, type EventoJanelas,
+  TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
 
@@ -35,11 +35,11 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
       descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
-      descricao: `Quatro horas depois da sua entrada, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada.` },
+      descricao: 'Durante o turno, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada. Avisamos no WhatsApp quando chegar a hora — não precisa ficar olhando.' },
     { alvo: 'cred-etapa-fim', titulo: '3. Saída', posicao: 'top',
       descricao: 'Na hora de ir embora, volte ao credenciamento e mostre o QR Code de novo. Isso fecha o seu ciclo no dia.' },
     { alvo: 'cred-etapas', titulo: 'Um ciclo por dia', posicao: 'top',
-      descricao: 'Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo: amanhã os três cartões voltam do zero. O horário do meio é contado a partir da hora em que você bateu a entrada naquele dia.' },
+      descricao: 'Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo: amanhã os três cartões voltam do zero.' },
   ],
 }
 
@@ -132,7 +132,15 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       if (!entrada) {
         return {
           ...base, inicio: null, fim: null, status: 'aguardando' as const,
-          janelaTexto: `Abre ${HORAS_ATE_MEIO}h depois da sua entrada`,
+          /*
+           * NÃO dizer quando abre.
+           *
+           * A hora do meio é derivada da entrada, e contar a fórmula ensina a
+           * burlar: bastaria bater a entrada, ir embora e voltar no minuto
+           * certo. O sistema avisa por WhatsApp quando chegar a hora — a
+           * pessoa não precisa saber a conta para cumprir a etapa.
+           */
+          janelaTexto: 'Você será avisado no WhatsApp quando chegar a hora',
         }
       }
       const j = janelaMeio(entrada.em)
