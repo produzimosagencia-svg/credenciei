@@ -31,24 +31,36 @@ import { conferirHorariosDoEvento, type ProblemaDeJanela } from '@/lib/janelas'
  *      listeners do React continuar a mesma; interceptar o clique não depende
  *      de nada. O `submit` continua barrado como reserva, para a tecla Enter.
  */
+/** Mesma lista de problemas? Evita re-render a cada tique da releitura. */
+const mesmos = (a: ProblemaDeJanela[], b: ProblemaDeJanela[]) =>
+  a.length === b.length && a.every((x, i) => x.mensagem === b[i].mensagem && x.bloqueia === b[i].bloqueia)
+
 export default function ConferenciaDeHorarios() {
   const ancora = useRef<HTMLDivElement>(null)
   const [problemas, setProblemas] = useState<ProblemaDeJanela[]>([])
   const [modalAberto, setModalAberto] = useState(false)
-  /*
-   * Os listeners são criados uma vez e enxergariam para sempre o valor do
-   * primeiro render. Por isso o veredito vive numa ref, não no estado.
-   */
-  const bloqueadoresRef = useRef<ProblemaDeJanela[]>([])
 
   useEffect(() => {
     const form = ancora.current?.closest('form')
     if (!form) return
 
-    const revisar = () => {
+    /*
+     * Lê o formulário AGORA. Nunca de um veredito guardado.
+     *
+     * Foi assim que esta tela travou de verdade: o DateTimePicker grava num
+     * input escondido controlado pelo React, e React escreve a propriedade
+     * `value` direto — nenhum evento `input` ou `change` chega ao formulário.
+     * O veredito ficava congelado no que foi calculado na carga da página, com
+     * os valores antigos do banco. O produtor corrigia tudo certo e continuava
+     * barrado por uma resposta velha, sem nada na tela para explicar.
+     *
+     * Por isso a decisão de barrar recalcula na hora do clique, e não consulta
+     * cache nenhum. Se o formulário está correto no instante do clique, salva.
+     */
+    const conferir = (): ProblemaDeJanela[] => {
       const d = new FormData(form)
       const v = (k: string) => (d.get(k) as string | null) || null
-      const achados = conferirHorariosDoEvento({
+      return conferirHorariosDoEvento({
         data_inicio: v('data_inicio'),
         data_fim: v('data_fim'),
         janela_entrada_inicio: v('janela_entrada_inicio'),
@@ -56,8 +68,11 @@ export default function ConferenciaDeHorarios() {
         janela_fim_inicio: v('janela_fim_inicio'),
         janela_fim_fim: v('janela_fim_fim'),
       })
-      bloqueadoresRef.current = achados.filter(x => x.bloqueia)
-      setProblemas(achados)
+    }
+
+    const revisar = () => {
+      const achados = conferir()
+      setProblemas(anterior => (mesmos(anterior, achados) ? anterior : achados))
 
       /*
        * O botão já avisa antes do clique.
@@ -69,18 +84,21 @@ export default function ConferenciaDeHorarios() {
        */
       const botao = form.querySelector<HTMLElement>('button[type="submit"]')
       if (botao) {
-        const trava = bloqueadoresRef.current.length > 0
+        const trava = achados.some(p => p.bloqueia)
         botao.setAttribute('aria-disabled', String(trava))
         botao.style.opacity = trava ? '0.55' : ''
       }
     }
 
     const barrar = (e: Event) => {
-      if (!bloqueadoresRef.current.length) return
+      // Recalcula no instante do clique — ver a nota em `conferir`.
+      const impedem = conferir().filter(p => p.bloqueia)
+      if (!impedem.length) return
       e.preventDefault()
       e.stopPropagation()
       // Impede também os outros listeners já registrados no mesmo elemento.
       if ('stopImmediatePropagation' in e) (e as Event).stopImmediatePropagation()
+      setProblemas(conferir())
       setModalAberto(true)
     }
 
@@ -94,11 +112,24 @@ export default function ConferenciaDeHorarios() {
     form.addEventListener('submit', barrar, true) // reserva: tecla Enter
     form.addEventListener('input', revisar)
     form.addEventListener('change', revisar)
+
+    /*
+     * Os eventos cobrem os campos de texto comuns. O seletor de data não —
+     * ele escreve num input escondido controlado pelo React, sem emitir nada
+     * que chegue até aqui, e é justamente o campo que esta conferência existe
+     * para vigiar.
+     *
+     * Reler o formulário de tempos em tempos custa quase nada (seis campos,
+     * comparação de strings) e não depende de como cada componente da tela
+     * decide publicar o valor dele. `mesmos` evita re-render quando nada mudou.
+     */
+    const relogio = setInterval(revisar, 400)
     // Fora do render, para o estado inicial não cascatear em cima da montagem.
     const t = setTimeout(revisar, 0)
 
     return () => {
       clearTimeout(t)
+      clearInterval(relogio)
       form.removeEventListener('click', aoClicar, true)
       form.removeEventListener('submit', barrar, true)
       form.removeEventListener('input', revisar)
