@@ -7,7 +7,7 @@ import { NomeInput } from '@/components/inputs'
 
 type Props =
   | { mode: 'criar'; eventoId: string }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; quantidade_estimada: number | null; valor_combinado: number | null; cpfs_autorizados: string | null }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -16,9 +16,7 @@ export default function FornecedorModal(props: Props) {
 
   const isEditar = props.mode === 'editar'
   const defaultNome = isEditar ? (props as any).nome : ''
-  const defaultQtd = isEditar ? (props as any).quantidade_estimada ?? '' : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
-  const defaultCpfs = isEditar ? (props as any).cpfs_autorizados ?? '' : ''
 
   const handleAction = (formData: FormData) => {
     startTransition(async () => {
@@ -61,26 +59,11 @@ export default function FornecedorModal(props: Props) {
                 <NomeInput name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">Quantidade de funcionários</label>
-                <input name="quantidade_estimada" type="number" min="1" defaultValue={defaultQtd} placeholder="Ex: 20" className="input" />
-              </div>
-              <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Valor combinado por funcionário</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
                   <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9 tabular-nums" />
                 </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">Trava de CPFs autorizados (opcional)</label>
-                <textarea
-                  name="cpfs_autorizados"
-                  rows={3}
-                  defaultValue={defaultCpfs}
-                  placeholder={'Um CPF por linha. Se preenchido, SÓ estes CPFs\nconseguem se cadastrar pelo link do formulário.'}
-                  className="input resize-none font-mono text-xs"
-                />
-                <p className="text-2xs text-slate-400 mt-1">Deixe em branco para permitir qualquer pessoa com o link.</p>
               </div>
               <button type="submit" disabled={isPending} className="btn btn-primario w-full">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}

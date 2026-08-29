@@ -36,6 +36,12 @@ import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR } from './credencial-qr'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 
+/** "12345678900" → "123.456.789-00". Só para leitura humana na mensagem. */
+function formatarCpfExibicao(cpf: string): string {
+  const d = (cpf ?? '').replace(/\D/g, '')
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : d
+}
+
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
 // A autorização por organização é feita aqui, via getPerfil, antes de cada operação.
 function getAdminSupabase() {
@@ -109,40 +115,17 @@ function preEventoDoForm(formData: FormData) {
   }
 }
 
-/**
- * Normaliza a lista de CPFs pré-autorizados do setor (um por linha ou
- * separados por vírgula/;). Guarda só dígitos, um CPF por linha.
- * Lista vazia → null (trava desligada).
+/*
+ * O TETO DE ATIVAÇÃO por setor foi removido a pedido.
+ *
+ * O setor tinha um limite de quantas pessoas podiam estar ativas ao mesmo
+ * tempo; quem passasse disso entrava como excedente e ficava fora de tudo —
+ * sem mensagem, sem ponto, sem pagamento — até alguém ativar à mão. Na
+ * operação isso virava gente parada no portão porque ninguém lembrou.
+ *
+ * `funcionarios.ativo` continua existindo: todo cadastro nasce ativo, e
+ * desativar segue servindo para o caso pontual de quem desistiu.
  */
-function normalizarCpfsAutorizados(bruto: FormDataEntryValue | null): string | null {
-  const cpfs = ((bruto as string) || '')
-    .split(/[\n,;]+/)
-    .map(c => c.replace(/\D/g, ''))
-    .filter(c => c.length === 11)
-  return cpfs.length ? [...new Set(cpfs)].join('\n') : null
-}
-
-/**
- * Decide se um funcionário recém-cadastrado já entra ATIVADO: dentro do teto
- * (quantidade_estimada do setor) sim; acima do teto entra como excedente
- * (ativo=false), aguardando o produtor/supervisor ativar manualmente.
- * Sem teto definido, todo mundo entra ativado.
- */
-async function estaDentroDoTeto(fornecedorId: string): Promise<boolean> {
-  const { data: fornecedor } = await supabaseAdmin
-    .from('fornecedores')
-    .select('quantidade_estimada')
-    .eq('id', fornecedorId)
-    .single()
-  const teto = fornecedor?.quantidade_estimada
-  if (!teto || teto <= 0) return true
-  const { count } = await supabaseAdmin
-    .from('funcionarios')
-    .select('id', { count: 'exact', head: true })
-    .eq('fornecedor_id', fornecedorId)
-    .eq('ativo', true)
-  return (count ?? 0) < teto
-}
 
 /** Formatos aceitos pra foto de perfil de organização. */
 const TIPOS_FOTO_ACEITOS = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
@@ -505,8 +488,21 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     await agendarTemplateSupervisor({
       eventoId,
       telefone,
-      template: 'cadastro_supervisor_evento',
-      parametros: [nome, fornecedor.nome, eventoDoFornecedor?.nome ?? 'Evento', linkSenha],
+      template: 'cadastro_supervisor_cpf_link',
+      /*
+       * Ordem do texto aprovado na Meta:
+       *   {{1}} nome · {{2}} setor · {{3}} evento · {{4}} CPF · {{5}} link
+       *
+       * O CPF entra porque é o LOGIN da pessoa, e sem ele a mensagem mandava
+       * criar a senha sem dizer o que digitar no primeiro campo depois.
+       */
+      parametros: [
+        nome,
+        fornecedor.nome,
+        eventoDoFornecedor?.nome ?? 'Evento',
+        formatarCpfExibicao(cpf),
+        linkSenha,
+      ],
     })
   } catch (erro) {
     // Cadastro sem convite deixaria uma conta inacessível. Desfazemos tudo
@@ -812,14 +808,11 @@ function parseValor(v: FormDataEntryValue | null): number | null {
 export async function criarFornecedor(eventoId: string, formData: FormData) {
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
-  const qtd = formData.get('quantidade_estimada') as string
   const nomeFornecedor = formData.get('nome') as string
   const data = {
     evento_id: eventoId,
     nome: nomeFornecedor,
-    quantidade_estimada: qtd ? parseInt(qtd) : null,
     valor_combinado: parseValor(formData.get('valor_combinado')),
-    cpfs_autorizados: normalizarCpfsAutorizados(formData.get('cpfs_autorizados')),
   }
   await db.from('fornecedores').insert([data])
 
@@ -841,12 +834,9 @@ async function garantirAbaFornecedorAsync(eventoId: string, nomeFornecedor: stri
 export async function editarFornecedor(id: string, eventoId: string, formData: FormData) {
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
-  const qtd = formData.get('quantidade_estimada') as string
   await db.from('fornecedores').update({
     nome: formData.get('nome') as string,
-    quantidade_estimada: qtd ? parseInt(qtd) : null,
     valor_combinado: parseValor(formData.get('valor_combinado')),
-    cpfs_autorizados: normalizarCpfsAutorizados(formData.get('cpfs_autorizados')),
   }).eq('id', id)
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
@@ -946,7 +936,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
     cpf,
     telefone: (formData.get('telefone') as string).replace(/\D/g, ''),
     cargo: ((formData.get('cargo') as string) || '').trim(),
-    ativo: await estaDentroDoTeto(fornecedorId),
+    ativo: true,
   }]).select('id').single()
 
   if (error) throw new Error(mensagemAmigavel(error))
@@ -1027,7 +1017,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
     cargo: pessoa.cargo ?? '',
     cidade: pessoa.cidade ?? null,
     chave_pix: pessoa.chave_pix ?? null,
-    ativo: await estaDentroDoTeto(fornecedorId),
+    ativo: true,
   }]).select('id, ativo').single()
 
   if (error || !novo) throw new Error(mensagemAmigavel(error))
@@ -1092,7 +1082,7 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
 
-  // Pagamento só para quem está ativado (selecionado dentro do teto do setor)
+  // Pagamento só para quem está ativado
   if (pago) {
     const { data: func } = await db.from('funcionarios').select('ativo').eq('id', funcionarioId).single()
     if (func && func.ativo === false) {
@@ -1109,29 +1099,15 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
 }
 
 /**
- * Ativa/desativa um funcionário do setor. A ATIVAÇÃO respeita o teto
- * (quantidade_estimada): o cadastro pode passar do estimado, mas só até o
- * teto pode estar ativo ao mesmo tempo — é a trava de seleção pedida pelo
- * cliente (pagamento e presença só para os ativados).
+ * Ativa/desativa um funcionário do setor.
+ *
+ * Sem teto: o limite por setor saiu e todo cadastro nasce ativo. Isto segue
+ * servindo para o caso pontual — tirar quem desistiu, sem apagar o cadastro
+ * nem o histórico dela.
  */
 export async function alternarAtivacao(funcionarioId: string, fornecedorId: string, eventoId: string, ativo: boolean) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
-
-  if (ativo) {
-    const { data: fornecedor } = await db.from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).single()
-    const teto = fornecedor?.quantidade_estimada
-    if (teto && teto > 0) {
-      const { count } = await db
-        .from('funcionarios')
-        .select('id', { count: 'exact', head: true })
-        .eq('fornecedor_id', fornecedorId)
-        .eq('ativo', true)
-      if ((count ?? 0) >= teto) {
-        throw new Error(`O setor já tem ${teto} funcionários ativados (limite definido). Desative alguém antes de ativar este.`)
-      }
-    }
-  }
 
   const { error } = await db.from('funcionarios').update({ ativo }).eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível alterar a ativação desta pessoa. Tente de novo.')
@@ -1833,6 +1809,30 @@ export async function registrarPresencaFoto(
 
   after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
 
+  /*
+   * A selfie do meio vira a foto de perfil de quem ainda não tem.
+   *
+   * Quem não anexou foto no cadastro é justamente quem o supervisor mais
+   * precisa reconhecer no portão — e esta selfie é melhor que a do cadastro:
+   * foi tirada no dia, no local, com a roupa de trabalho.
+   *
+   * Duas travas de propósito:
+   *   • só quando está VAZIO — sobrescrever trocaria o retrato que a pessoa
+   *     escolheu por uma selfie de plantão, sem ela pedir;
+   *   • só a PRIMEIRA — atualizando todo dia, a foto de perfil viraria
+   *     "última selfie" e mudaria sozinha, confundindo quem confere.
+   *
+   * Em background: falhar aqui não pode derrubar uma batida já registrada.
+   */
+  after(async () => {
+    const { error } = await supabaseAdmin
+      .from('funcionarios')
+      .update({ foto_perfil_path: path })
+      .eq('id', func.id)
+      .is('foto_perfil_path', null)
+    if (error) console.error('[presenca] não consegui usar a selfie como perfil:', error.message)
+  })
+
   return { ok: true }
 }
 
@@ -1849,7 +1849,7 @@ export async function cadastrarFuncionarioPublico(
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, cpfs_autorizados')
+    .select('id, evento_id, nome')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
@@ -1892,15 +1892,6 @@ export async function cadastrarFuncionarioPublico(
     return { error: 'Você precisa autorizar o uso dos seus dados para concluir o cadastro.' }
   }
 
-  // Trava opcional do setor: se o organizador definiu uma lista de CPFs
-  // autorizados, só quem está nela consegue se cadastrar por este link.
-  if (fornecedor.cpfs_autorizados) {
-    const autorizados = new Set(fornecedor.cpfs_autorizados.split('\n'))
-    if (!autorizados.has(cpf)) {
-      return { error: 'Seu CPF não está na lista de pessoas autorizadas deste setor. Fale com o seu supervisor.' }
-    }
-  }
-
   // Foto é OPCIONAL — mas, quando enviada, o formato precisa ser válido.
   const match = dados.fotoBase64 ? dados.fotoBase64.match(/^data:(image\/\w+);base64,(.+)$/) : null
   if (dados.fotoBase64 && !match) return { error: 'Foto inválida. Tente novamente.' }
@@ -1933,7 +1924,7 @@ export async function cadastrarFuncionarioPublico(
     cidade,
     consentimento_base: true,
     consentimento_em: new Date().toISOString(),
-    ativo: await estaDentroDoTeto(fornecedorId),
+    ativo: true,
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }

@@ -86,9 +86,7 @@ export default function FornecedorCard({
             eventoId={eventoId}
             fornecedorId={f.id}
             nome={f.nome}
-            quantidade_estimada={f.quantidade_estimada}
             valor_combinado={f.valor_combinado}
-            cpfs_autorizados={f.cpfs_autorizados}
           />
           {podeExcluir && (
             <button

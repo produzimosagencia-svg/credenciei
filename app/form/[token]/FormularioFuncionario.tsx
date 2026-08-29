@@ -83,7 +83,14 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         ...f,
         nome: f.nome || dados.nome,
         telefone: f.telefone || formatTelefone(dados.telefone),
-        cargo: f.cargo || dados.cargo,
+        /*
+         * `cargo` fica DE FORA de propósito.
+         *
+         * A função muda de evento para evento: quem foi portaria no último
+         * pode ser bar neste. Preencher com a anterior faria a pessoa confirmar
+         * sem ler, e o setor receberia gente escalada na função errada — erro
+         * que só aparece no dia, com a equipe já no local.
+         */
         cidade: f.cidade || (dados.cidade ?? ''),
         chavePix: f.chavePix || (dados.chavePix ?? ''),
       }))
@@ -176,17 +183,17 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
         )}
         {erroFoto && <p className="text-red-500 text-xs mt-1">{erroFoto}</p>}
       </Field>
-      <Field label="Nome completo *">
-        <input required value={form.nome} {...campoNome} placeholder="Seu nome completo" className="input" />
-      </Field>
       <Field label="CPF *" tutorial="form-cpf">
         <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
         {erroCpf && <p className="text-red-500 text-xs mt-1">{erroCpf}</p>}
         {!erroCpf && autofill && (
           <p className="flex items-center gap-1 text-brand-600 text-xs mt-1">
-            <Sparkles className="w-3 h-3" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo.
+            <Sparkles className="w-3 h-3 shrink-0" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo e informe a função deste evento.
           </p>
         )}
+      </Field>
+      <Field label="Nome completo *">
+        <input required value={form.nome} {...campoNome} placeholder="Seu nome completo" className="input" />
       </Field>
       <Field label="Telefone *" tutorial="form-telefone">
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />

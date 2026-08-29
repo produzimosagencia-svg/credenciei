@@ -471,7 +471,7 @@ export async function agendarBoasVindasFuncionario(params: {
 export async function agendarTemplateSupervisor(params: {
   eventoId: string
   telefone: string
-  template: 'cadastro_supervisor_evento' | 'supervisor_escalado_evento'
+  template: 'cadastro_supervisor_cpf_link' | 'supervisor_escalado_evento'
   parametros: string[]
 }): Promise<void> {
   const telefone = params.telefone.replace(/\D/g, '')

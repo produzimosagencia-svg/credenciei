@@ -216,8 +216,15 @@ No sistema você acompanha quem já se cadastrou ✅, escaneia o QR Code na entr
 
 Bom evento! 🎉`,
 
-  cadastro_supervisor_evento: ([nome, setor, evento, link]) =>
-`Olá, ${nome}. Sua participação como supervisor do setor *${setor}* no evento *${evento}* foi confirmada.
+  /*
+   * Cópia fiel do texto aprovado na Meta, inclusive sem o negrito que a versão
+   * anterior tinha. Divergir aqui faria a prévia mostrar uma coisa e o
+   * WhatsApp entregar outra — e prévia que mente é pior que não ter prévia.
+   */
+  cadastro_supervisor_cpf_link: ([nome, setor, evento, cpf, link]) =>
+`Olá, ${nome}. Sua participação como supervisor do setor ${setor} no evento ${evento} foi confirmada.
+
+Use seu CPF no link abaixo (${cpf})
 
 Consulte as orientações e os próximos passos neste endereço individual:
 ${link}
