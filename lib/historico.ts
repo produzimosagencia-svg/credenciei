@@ -36,6 +36,18 @@ export type DiaDoHistorico = {
   fim: Batida | null
   /** Que horas era pra ter feito o meio — fixo no dia principal, entrada+4h nos outros. */
   meioEsperadoEm: string | null
+  /** Até que horas valia registrar o meio sem ficar em atraso. */
+  meioPrazoEm: string | null
+  /**
+   * Quantos minutos o meio passou do prazo. `null` quando foi no prazo ou
+   * quando não houve batida.
+   *
+   * O meio pode ser registrado depois do prazo de propósito — fechar a janela
+   * prenderia a pessoa, já que a saída exige o meio. Mas atrasar não pode sair
+   * de graça: é isto que faz o dia aparecer marcado no histórico, para o
+   * organizador cobrar a justificativa no acerto.
+   */
+  meioAtrasoMin: number | null
   /** Bateu pelo menos a entrada. */
   compareceu: boolean
   /** Cumpriu as três etapas. */
@@ -135,6 +147,10 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       cancelado: meta?.cancelado === true,
       entrada, meio, fim,
       meioEsperadoEm: janela?.inicio ?? null,
+      meioPrazoEm: janela?.fim ?? null,
+      meioAtrasoMin: meio && janela && new Date(meio.em) > new Date(janela.fim)
+        ? Math.round((new Date(meio.em).getTime() - new Date(janela.fim).getTime()) / 60_000)
+        : null,
       compareceu: !!entrada,
       completo: !!entrada && !!meio && !!fim,
       horas: entrada && fim

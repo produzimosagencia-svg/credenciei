@@ -1,5 +1,5 @@
 import { redirect, notFound } from 'next/navigation'
-import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut } from 'lucide-react'
+import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
@@ -100,13 +100,35 @@ export default async function HistoricoPage({ params }: { params: Promise<{ id: 
   )
 }
 
-/** "NÃO REALIZADA" precisa saltar aos olhos: é ela que muda o pagamento. */
-function Celula({ batida }: { batida: DiaDoHistorico['entrada'] }) {
+/**
+ * "NÃO REALIZADA" precisa saltar aos olhos: é ela que muda o pagamento.
+ *
+ * `atrasoMin` marca a batida feita FORA do prazo. Ela existe e vale — o meio
+ * pode ser registrado depois da hora de propósito, senão a pessoa ficaria
+ * presa, já que a saída exige o meio. Mas o organizador precisa reconhecer
+ * isso de relance no fechamento, porque é uma ausência do posto que a pessoa
+ * ainda vai ter que justificar.
+ */
+function Celula({ batida, atrasoMin }: { batida: DiaDoHistorico['entrada']; atrasoMin?: number | null }) {
   if (!batida) return <span className="text-erro-600 text-2xs font-semibold uppercase tracking-wide">não realizada</span>
+
+  const atrasada = typeof atrasoMin === 'number' && atrasoMin > 0
   return (
-    <span className="inline-flex items-center gap-1 tabular-nums">
-      <Check className="w-3 h-3 text-green-600 shrink-0" />
-      {formatarBR(batida.em, 'hora')}
+    <span className="inline-flex items-center gap-1 tabular-nums flex-wrap">
+      {atrasada
+        ? <AlertTriangle className="w-3 h-3 text-erro-600 shrink-0" />
+        : <Check className="w-3 h-3 text-green-600 shrink-0" />}
+      <span className={atrasada ? 'text-erro-700 font-semibold' : undefined}>
+        {formatarBR(batida.em, 'hora')}
+      </span>
+      {atrasada && (
+        <span className="text-erro-600 text-2xs font-semibold uppercase tracking-wide">
+          {/* Em horas quando passa disso: "312 min" não diz nada de relance. */}
+          {atrasoMin! >= 90
+            ? `atrasada ${String(Math.round((atrasoMin! / 60) * 10) / 10).replace('.', ',')} h`
+            : `atrasada ${atrasoMin} min`}
+        </span>
+      )}
       {/* Batida do supervisor no lugar da pessoa: precisa ficar visível no
           fechamento, porque é a que alguém pode querer contestar. */}
       {batida.assistido && <span className="text-amber-600 text-2xs">assistida</span>}
@@ -116,8 +138,11 @@ function Celula({ batida }: { batida: DiaDoHistorico['entrada'] }) {
 
 function Linha({ dia }: { dia: DiaDoHistorico }) {
   const faltou = !dia.compareceu && !dia.cancelado
+  // A linha inteira acende: quem confere o fechamento passa os olhos na
+  // coluna da data, não lê célula por célula.
+  const atrasou = (dia.meioAtrasoMin ?? 0) > 0
   return (
-    <tr className={faltou ? 'bg-erro-50/40' : undefined}>
+    <tr className={faltou || atrasou ? 'bg-erro-50/40' : undefined}>
       <td className="font-medium text-slate-800 tabular-nums">
         {formatarBR(`${dia.data}T12:00:00-03:00`, 'data')}
       </td>
@@ -129,7 +154,7 @@ function Linha({ dia }: { dia: DiaDoHistorico }) {
             : <span className="text-slate-500 text-xs">Preparação</span>}
       </td>
       <td className="text-slate-600 text-xs"><Celula batida={dia.entrada} /></td>
-      <td className="text-slate-600 text-xs"><Celula batida={dia.meio} /></td>
+      <td className="text-slate-600 text-xs"><Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} /></td>
       <td className="text-slate-600 text-xs">
         <Celula batida={dia.fim} />
         {dia.fim && dia.tipo === 'principal' && (

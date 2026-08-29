@@ -24,6 +24,8 @@ export type MomentoInfo = {
    * inicio/fim faria "livre" virar "horário não definido".
    */
   janelaTexto: string
+  /** Recado extra quando a etapa passou do prazo. Só o meio usa. */
+  avisoAtraso?: string | null
 }
 
 function horaBR(iso: string | null) {
@@ -443,8 +445,19 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       )}
 
       {momentos.map(m => (
-        <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`}>
+        <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao info={m} busy={busy} fase={fase} onFoto={abrirCamera} />
+          {/*
+            * Fora do cartão, e não dentro do botão: o botão precisa continuar
+            * curto e óbvio. Aqui cabe o recado inteiro — que ainda dá para
+            * registrar, e que o atraso vai ser cobrado.
+            */}
+          {m.status === 'disponivel' && m.avisoAtraso && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+              <Clock className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-red-700 text-xs">{m.avisoAtraso}</p>
+            </div>
+          )}
         </div>
       ))}
 

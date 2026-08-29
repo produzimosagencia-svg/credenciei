@@ -162,8 +162,19 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
          */
         status: aberto ? ('disponivel' as const) : ('aguardando' as const),
         janelaTexto: atrasado
-          ? `Em atraso — o previsto era até ${formatarBR(j.fim, 'hora')}`
+          ? `O prazo era até ${formatarBR(j.fim, 'hora')} — registre mesmo assim`
           : `${formatarBR(j.inicio, 'hora')} às ${formatarBR(j.fim, 'hora')}`,
+        /*
+         * Quem passou do prazo precisa saber DUAS coisas ao mesmo tempo: que
+         * ainda dá para registrar, e que isso não passa em branco.
+         *
+         * Só a primeira faria o atraso parecer sem consequência. Só a segunda
+         * faria a pessoa desistir e procurar o supervisor — que é justamente a
+         * fila que se quer evitar no portão.
+         */
+        avisoAtraso: atrasado
+          ? 'O tempo limite já passou, mas você ainda pode registrar — e deve. O horário fica gravado como atrasado, e o credenciamento vai pedir a justificativa da sua ausência no posto.'
+          : null,
       }
     }
 
