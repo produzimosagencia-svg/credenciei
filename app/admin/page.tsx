@@ -7,7 +7,7 @@ import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeGerenciarEventos, podeEscanear, podeExcluirEventos } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos } from '@/lib/permissions'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import { COR_ETAPA } from '@/components/charts'
 import { FluxoDoDia } from '@/components/charts-cliente'
@@ -90,18 +90,62 @@ type LinhaEvento = {
   presentes: number
 }
 
+/**
+ * Supervisor sem setor vinculado.
+ *
+ * Situação de cadastro incompleto: o perfil existe, mas ninguém apontou para
+ * qual setor. Ele não tem o que ver e não há para onde mandá-lo, então a tela
+ * diz quem resolve em vez de deixar a pessoa numa página vazia.
+ */
+function SemSetorVinculado() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center px-4">
+      <div className="max-w-sm text-center">
+        <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle className="w-6 h-6 text-amber-600" />
+        </div>
+        <h1 className="text-lg font-semibold text-slate-900">Seu acesso ainda não tem setor</h1>
+        <p className="text-sm text-slate-500 mt-2">
+          Peça ao organizador do evento para vincular você ao seu setor. Assim que
+          isso for feito, sua equipe aparece aqui.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Supervisor não gerencia nada: vai direto pro painel do próprio setor
-  // (ou pro scanner, se por algum motivo não tiver setor vinculado).
-  if (podeEscanear(perfil.role) && !podeGerenciarEventos(perfil.role)) {
+  /*
+   * Supervisor não administra: vai direto para o painel do PRÓPRIO SETOR.
+   *
+   * A condição olhava `podeEscanear`, que até ontem incluía o supervisor.
+   * Quando o scanner saiu do papel dele, esta porta abriu junto e ele passou a
+   * cair no painel do administrador — vendo todos os setores do evento, os
+   * números do evento inteiro e o menu de editar/encerrar. `podeAcompanhar` é
+   * o teste certo: acompanha a operação, não gerencia o evento.
+   *
+   * Sem setor vinculado não há nada a mostrar e nem scanner para oferecer, e
+   * mandar para cá de novo daria laço — então a tela diz o que fazer.
+   */
+  if (podeAcompanhar(perfil.role) && !podeGerenciarEventos(perfil.role)) {
     const setor = await meuSetor(perfil)
-    redirect(setor ? `/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}` : '/scan')
+    if (!setor) return <SemSetorVinculado />
+    redirect(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
   }
 
   const db = supabaseAdmin
   const podeExcluir = podeExcluirEventos(perfil.role)
+  /*
+   * O supervisor não administra o evento — ele cuida do setor dele.
+   *
+   * Editar, encerrar e excluir são do produtor. As actions já recusam o
+   * supervisor no servidor, então isto não é a tranca: é não oferecer o que
+   * não vai funcionar. Um menu que só devolve "sem permissão" quando clicado
+   * é pior do que menu nenhum.
+   */
+  const podeGerir = podeGerenciarEventos(perfil.role)
   const licencasRestantes = await licencasDeEventoRestantes(perfil)
   const podeCriarEvento = licencasRestantes > 0
 
@@ -423,7 +467,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
           <div className={`grid gap-3 ${linhasAtivas.length > 1 ? 'lg:grid-cols-2' : ''}`}>
             {linhasAtivas.map((e, i) => (
-              <EventoAoVivo key={e.id} evento={e} podeExcluir={podeExcluir} destacar={i === 0} />
+              <EventoAoVivo key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} destacar={i === 0} />
             ))}
           </div>
         </section>
@@ -437,7 +481,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           acoes={<span className="indicador-selo selo-neutro">{totalEncerradosCount}</span>}
         >
           <div className="divide-y divide-slate-100">
-            {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} />)}
+            {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} />)}
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50">
@@ -602,7 +646,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
  * número de presentes vira a métrica do cartão — durante o evento é a pergunta
  * que se repete no rádio a cada dez minutos.
  */
-function EventoAoVivo({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
+function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
   const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
 
   return (
@@ -638,10 +682,12 @@ function EventoAoVivo({ evento, podeExcluir, destacar }: { evento: LinhaEvento; 
           </div>
         </div>
 
-        {/* O menu vem com cores de tema claro; aqui ele herda o branco. */}
-        <div className="acoes-no-escuro shrink-0 -mr-1 -mt-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
-          <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
-        </div>
+        {podeGerir && (
+          /* O menu vem com cores de tema claro; aqui ele herda o branco. */
+          <div className="acoes-no-escuro shrink-0 -mr-1 -mt-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
+            <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
+          </div>
+        )}
       </div>
 
       {evento.equipe === 0 ? (
@@ -675,7 +721,7 @@ function EventoAoVivo({ evento, podeExcluir, destacar }: { evento: LinhaEvento; 
  * solto: dentro de uma seção com título, repetir borda e canto arredondado em
  * cada item cria caixa dentro de caixa e engorda a lista sem informar nada.
  */
-function EventoLinha({ evento, podeExcluir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; destacar?: boolean }) {
+function EventoLinha({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
   const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
 
   return (
@@ -737,9 +783,11 @@ function EventoLinha({ evento, podeExcluir, destacar }: { evento: LinhaEvento; p
         )}
       </div>
 
-      <div className="shrink-0 -mr-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
-        <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
-      </div>
+      {podeGerir && (
+        <div className="shrink-0 -mr-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
+          <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
@@ -42,7 +42,12 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   const perfil = await getPerfil()
   // O supervisor não vê a tela do evento inteiro — ele cuida de um setor.
   // Ia para /scan, que agora o expulsa; o Painel já lista o setor dele.
-  if (perfil?.role === 'supervisor') redirect('/admin')
+  if (perfil?.role === 'supervisor') {
+    // Direto para o setor dele. Mandar para /admin funcionaria (de lá ele é
+    // reenviado), mas seria um salto a mais e um piscar de tela no meio.
+    const setor = await meuSetor(perfil)
+    redirect(setor ? `/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}` : '/admin')
+  }
 
   // Todas dependem apenas do id → uma única wave em paralelo
   const [{ data: evento }, { data: fornecedores }, { data: registros }, todosRegistros] = await Promise.all([
