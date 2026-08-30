@@ -22,14 +22,30 @@ export type SetorParaCopiar = {
   token: string | null
 }
 
-/** Monta o texto final. Fora do componente para poder ser testado sozinho. */
+/**
+ * Monta o texto final.
+ *
+ * Uma LINHA EM BRANCO entre os setores, e o link embaixo do nome — não tudo
+ * numa linha corrida.
+ *
+ * A primeira versão colava um por linha, e com vinte setores virava um
+ * paredão: o WhatsApp quebra cada URL em duas ou três linhas, e sem respiro
+ * entre os itens não dá para saber onde um termina e o outro começa. Quem
+ * recebe precisa achar UM link no meio de vinte — a separação é o que torna
+ * isso possível de bater o olho.
+ *
+ * O nome vai em negrito do WhatsApp (`*Bar*`). Lá ele aparece destacado; em
+ * outros lugares os asteriscos ficam visíveis, e mesmo assim marcam onde cada
+ * item começa. É o único formato que serve razoavelmente aos dois destinos —
+ * e o WhatsApp é para onde isto vai em nove de cada dez vezes.
+ */
 export function montarTexto(setores: SetorParaCopiar[], origem: string): string {
   return setores
     // Setor sem link não entra: uma linha "Bar - " no meio da mensagem faria
     // quem recebe achar que o link se perdeu no caminho.
     .filter(s => s.token)
-    .map(s => `${s.nome} - ${origem}/form/${s.token}`)
-    .join('\n')
+    .map(s => `*${s.nome}*\n${origem}/form/${s.token}`)
+    .join('\n\n')
 }
 
 export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] }) {
@@ -128,7 +144,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
               <div className="min-w-0">
                 <h2 className="font-bold text-slate-900">Copiar links</h2>
                 <p className="text-slate-500 text-xs mt-0.5">
-                  Sai formatado como <span className="font-mono">Setor - link</span>, um por linha
+                  Nome do setor em negrito, link embaixo, um bloco por setor
                 </p>
               </div>
               <button
