@@ -125,9 +125,12 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
 
   return (
     <>
+      {/* Primário, e não secundário: é a ação que se faz nesta tela repetidas
+          vezes — mandar os links para as equipes —, e estava se perdendo entre
+          os botões cinzas de cada cartão. */}
       <button
         onClick={() => setAberto(true)}
-        className="btn btn-secundario btn-sm"
+        className="btn btn-primario btn-sm"
         title="Copiar os links de cadastro de vários setores de uma vez"
       >
         <ClipboardList className="w-3.5 h-3.5 shrink-0" />
