@@ -1,6 +1,6 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { LogIn, Camera, LogOut, CheckCircle2, CalendarDays } from 'lucide-react'
+import { LogIn, Camera, LogOut, CheckCircle2, CalendarDays, Activity } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
@@ -8,6 +8,7 @@ import { formatCpf } from '@/lib/format'
 import { diaBRT, periodoDoEvento, type EventoJanelas } from '@/lib/janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA, type EtapaPendente, type Pendencia } from '@/lib/pendencias'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
+import FeedDeAtividade from '../FeedDeAtividade'
 
 export const revalidate = 0
 
@@ -106,6 +107,28 @@ export default async function PendenciasPage({
   const porEtapa = (etapa: EtapaPendente) => pendencias.filter(p => p.etapa === etapa)
   const dataLegivel = formatarBR(`${diaEscolhido}T12:00:00-03:00`, 'data')
 
+  /*
+   * As leituras DO DIA ESCOLHIDO, não as últimas do evento.
+   *
+   * O feed veio da tela do evento, onde mostrava as vinte últimas de qualquer
+   * dia. Aqui ele precisa acompanhar o seletor de dia no topo: quem está
+   * conferindo a terça-feira não quer ver as batidas de hoje misturadas —
+   * ficaria impossível cruzar o feed com a lista de pendências ao lado.
+   */
+  const { data: atividade } = await supabaseAdmin
+    .from('registros')
+    .select('funcionario_id, tipo, created_at, funcionarios!inner(nome, empresa, fornecedor_id, fornecedores(nome))')
+    .eq('evento_id', eventoId)
+    .eq('data_ref', diaEscolhido)
+    .order('created_at', { ascending: false })
+    .limit(40)
+
+  // Supervisor vê só a própria equipe, aqui como em todo o resto do sistema.
+  const atividadeVisivel = setorDoSupervisor
+    ? (atividade ?? []).filter(r =>
+        (r.funcionarios as unknown as { fornecedor_id?: string } | null)?.fornecedor_id === setorDoSupervisor)
+    : (atividade ?? [])
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -142,6 +165,23 @@ export default async function PendenciasPage({
           })}
         </Secao>
       )}
+
+      {/*
+        * O feed fica ANTES das listas de pendência, e não depois.
+        *
+        * As duas coisas se leem juntas: "quem já bateu" e "quem falta". Quem
+        * abre esta tela no meio do evento olha o feed para saber se a operação
+        * está andando, e só então desce para cobrar quem falta.
+        */}
+      <Secao
+        tom="info"
+        icone={<Activity className="w-3.5 h-3.5" />}
+        titulo="Atividade do dia"
+        descricao="Cada leitura de QR ou check-in por foto deste dia aparece aqui"
+        corpoClassName={atividadeVisivel.length ? 'p-4 overflow-y-auto max-h-[22rem]' : ''}
+      >
+        <FeedDeAtividade registros={atividadeVisivel} />
+      </Secao>
 
       {ETAPAS.map(({ etapa, titulo, explicacao, icone, tom }) => {
         const lista = porEtapa(etapa)

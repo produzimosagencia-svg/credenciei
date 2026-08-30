@@ -3,9 +3,9 @@ import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-s
 import { veTodosEventos, podeGerenciarUsuarios, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, Activity, CalendarCheck, ClipboardList } from 'lucide-react'
+import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
-import FornecedorCard from './FornecedorCard'
+import ListaDeSetores from './ListaDeSetores'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -50,19 +50,15 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   }
 
   // Todas dependem apenas do id → uma única wave em paralelo
-  const [{ data: evento }, { data: fornecedores }, { data: registros }, todosRegistros] = await Promise.all([
+  // A consulta das últimas leituras saiu daqui junto com o feed: ela agora é
+  // feita na tela de pendências, que é quem mostra o resultado.
+  const [{ data: evento }, { data: fornecedores }, todosRegistros] = await Promise.all([
     supabase.from('eventos').select('*').eq('id', id).single(),
     supabase
       .from('fornecedores')
       .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
       .eq('evento_id', id)
       .order('created_at'),
-    supabase
-      .from('registros')
-      .select('funcionario_id, tipo, created_at, funcionarios(nome, empresa, fornecedor_id, fornecedores(nome))')
-      .eq('evento_id', id)
-      .order('created_at', { ascending: false })
-      .limit(20),
     supabase
       .from('registros')
       .select('funcionario_id, tipo')
@@ -146,10 +142,16 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           <Link href={`/admin/eventos/${id}/editar`} data-tutorial="evt-editar" className="btn btn-secundario">
             <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
           </Link>
-          {/* Mesma lista que o supervisor recebe no WhatsApp quando o horário
-              de cada etapa passa — aqui dá pra abrir qualquer dia. */}
-          <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
-            <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
+          {/*
+            * Mesma lista que o supervisor recebe no WhatsApp quando o horário
+            * de cada etapa passa — aqui dá pra abrir qualquer dia.
+            *
+            * Virou botão primário quando o feed de atividade se mudou para lá:
+            * é por aqui que se acompanha a operação acontecer, e um botão
+            * secundário no meio de outros cinco não anunciava isso.
+            */}
+          <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-primario">
+            <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências e atividade
           </Link>
           {evento.spreadsheet_id && (
             <a
@@ -207,69 +209,39 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         </Secao>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-start">
-        {/* Fornecedores */}
-        <div data-tutorial="evt-setores" className="md:col-span-3">
-          <Secao
-            tom="acento"
-            icone={<Users className="w-3.5 h-3.5" />}
-            titulo="Fornecedores e setores"
-            descricao="Cada setor gera um link próprio de cadastro para a equipe"
-            acoes={<FornecedorModal eventoId={id} mode="criar" />}
-            corpoClassName={fornecedores?.length ? 'p-3 space-y-3 overflow-y-auto max-h-[26rem]' : ''}
-          >
-            {!fornecedores?.length ? (
-              <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum fornecedor ainda" />
-            ) : (
-              fornecedores.map((f) => (
-                <FornecedorCard
-                  key={f.id}
-                  fornecedor={f}
-                  eventoId={id}
-                  supervisores={supervisoresPorFornecedor[f.id] ?? []}
-                  podeGerenciarSupervisores={podeGerenciarSupervisores}
-                  podeExcluir={podeExcluir(perfil?.role)}
-                />
-              ))
-            )}
-          </Secao>
-        </div>
-
-        {/* Feed de atividade */}
-        <div data-tutorial="evt-atividade" className="md:col-span-2">
-          <Secao
-            tom="info"
-            icone={<Activity className="w-3.5 h-3.5" />}
-            titulo="Atividade do evento"
-            descricao="Cada leitura de QR ou check-in por foto aparece aqui"
-            corpoClassName={registros?.length ? 'p-4 overflow-y-auto max-h-[26rem]' : ''}
-          >
-            {!registros?.length ? (
-              <EmptyState titulo="Nenhuma presença registrada" />
-            ) : (
-              <div className="space-y-3">
-                {registros.map((r) => {
-                  const func = r.funcionarios as any
-                  const forn = func?.fornecedores as any
-                  const etapa = r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Fim'
-                  const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
-                  return (
-                    <div key={r.created_at + r.funcionario_id} className="flex items-start gap-2.5">
-                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cor }} aria-hidden="true" />
-                      <div className="min-w-0">
-                        <p className="text-slate-800 text-xs font-medium truncate">{func?.nome}</p>
-                        <p className="text-slate-500 text-2xs truncate">{forn?.nome}{func?.empresa ? ` · ${func.empresa}` : ''}</p>
-                        <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
-                          {etapa} · {formatarBR(r.created_at, 'curto')}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </Secao>
-        </div>
+      {/*
+        * Os setores ocupam a largura inteira.
+        *
+        * Antes dividiam a tela com o feed de atividade, em três quintos — e
+        * com sete setores isso virava uma coluna estreita de cartões
+        * empilhados, cada um alto demais para o pouco que dizia. Com a largura
+        * toda, eles cabem lado a lado.
+        *
+        * O feed foi para as PENDÊNCIAS, que é onde ele responde à pergunta
+        * certa: quem abre esta tela está organizando o evento; quem abre as
+        * pendências está acompanhando a operação acontecer.
+        */}
+      <div data-tutorial="evt-setores">
+        <Secao
+          tom="acento"
+          icone={<Users className="w-3.5 h-3.5" />}
+          titulo="Fornecedores e setores"
+          descricao="Cada setor gera um link próprio de cadastro para a equipe"
+          acoes={<FornecedorModal eventoId={id} mode="criar" />}
+          corpoClassName={fornecedores?.length ? 'p-4' : ''}
+        >
+          {!fornecedores?.length ? (
+            <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum fornecedor ainda" />
+          ) : (
+            <ListaDeSetores
+              fornecedores={fornecedores}
+              eventoId={id}
+              supervisoresPorFornecedor={supervisoresPorFornecedor}
+              podeGerenciarSupervisores={podeGerenciarSupervisores}
+              podeExcluir={podeExcluir(perfil?.role)}
+            />
+          )}
+        </Secao>
       </div>
     </div>
     </TutorialProvider>
