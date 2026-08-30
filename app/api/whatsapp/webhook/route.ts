@@ -78,6 +78,15 @@ type Entrada = {
   }[]
 }
 
+/**
+ * Marca que a Meta recusou a ENTREGA de uma mensagem que ela já tinha aceitado.
+ *
+ * Exportado para a tela poder reconhecer sem repetir o texto: quem lê o campo
+ * `erro` procura por esta marca para saber que a falha é de entrega, e não de
+ * envio.
+ */
+export const MARCA_NAO_ENTREGUE = 'NÃO ENTREGUE —'
+
 export async function POST(request: NextRequest) {
   const corpoCru = await request.text()
 
@@ -150,6 +159,55 @@ export async function POST(request: NextRequest) {
         console.error('[webhook] falha ao gravar:', error.code, error.message)
       }
     }
+  }
+
+  /*
+   * O DESFECHO VOLTA PARA A FILA.
+   *
+   * A API da Meta responde 200 e `accepted` mesmo para número que não existe —
+   * ela só ecoa o que recebeu. A falha real chega aqui, segundos depois, como
+   * `failed · Message undeliverable`.
+   *
+   * Sem esta parte, a falha morria no registro do WhatsApp e a fila continuava
+   * dizendo "enviado". Foi o que aconteceu num teste de importação: três
+   * mensagens recusadas pela Meta, e a tela mostrando as três como enviadas —
+   * não havia como o produtor saber.
+   *
+   * Com 56 pessoas num evento, cinco números errados na planilha significam
+   * cinco pessoas chegando sem instrução nenhuma, e o organizador descobrindo
+   * no portão.
+   *
+   * Só `failed` volta. `sent`, `delivered` e `read` são o caminho normal e não
+   * mudam nada do que a fila precisa saber — gravá-los seria escrita a cada
+   * mensagem entregue, por informação que já está no registro do WhatsApp.
+   */
+  const falhas = linhas.filter(l => l.direcao === 'status' && l.tipo === 'failed' && l.wa_message_id)
+  for (const f of falhas) {
+    const { error } = await supabase
+      .from('mensagens_agendadas')
+      .update({
+        /*
+         * A falha vai no campo `erro`, e o status continua `enviado`.
+         *
+         * Um status novo seria mais direto de ler, e exigiria alterar a
+         * restrição do banco — mudança de schema em produção, na semana de um
+         * evento, por uma informação que cabe num campo que já existe.
+         *
+         * E `enviado` continua sendo verdade: o envio saiu, a Meta aceitou. O
+         * que falhou foi a ENTREGA, que é outro momento — e é exatamente essa
+         * distinção que o campo `erro` carrega.
+         *
+         * O prefixo é o que a tela procura para diferenciar de um erro de
+         * envio comum. Sem ele, seria preciso adivinhar pelo texto da Meta.
+         */
+        erro: `${MARCA_NAO_ENTREGUE} ${f.texto ?? 'a operadora não conseguiu entregar.'}`,
+      })
+      .eq('evolution_message_id', f.wa_message_id)
+      // Não mexe no que foi cancelado à mão: o produtor decidiu, e o desfecho
+      // tardio da Meta não pode desfazer a decisão dele.
+      .eq('status', 'enviado')
+
+    if (error) console.error('[webhook] não consegui marcar a falha:', error.message)
   }
 
   /*
