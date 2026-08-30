@@ -39,13 +39,25 @@ export type SetorParaCopiar = {
  * item começa. É o único formato que serve razoavelmente aos dois destinos —
  * e o WhatsApp é para onde isto vai em nove de cada dez vezes.
  */
+/**
+ * A linha que separa um setor do outro.
+ *
+ * Só a linha em branco não bastava: o WhatsApp quebra cada URL em duas ou três
+ * linhas, e o espaço vazio entre os itens fica igual ao espaço dentro deles —
+ * o olho não tem onde se apoiar numa lista de vinte.
+ *
+ * Traço leve, e não pesado. O separador precisa organizar sem competir com o
+ * nome do setor, que é o que a pessoa está procurando.
+ */
+const DIVISORIA = '──────────────'
+
 export function montarTexto(setores: SetorParaCopiar[], origem: string): string {
   return setores
     // Setor sem link não entra: uma linha "Bar - " no meio da mensagem faria
     // quem recebe achar que o link se perdeu no caminho.
     .filter(s => s.token)
-    .map(s => `*${s.nome}*\n${origem}/form/${s.token}`)
-    .join('\n\n')
+    .map(s => `*${s.nome.trim()}*\n${origem}/form/${s.token}`)
+    .join(`\n${DIVISORIA}\n`)
 }
 
 export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] }) {
