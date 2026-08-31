@@ -107,6 +107,20 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   }
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil?.role)
 
+  /*
+   * Quem já está credenciado em cada setor, para o "Criar Supervisor"
+   * oferecer nomes em vez de um formulário em branco — a pessoa promovida
+   * quase sempre já está na equipe, e digitar CPF de novo só multiplica
+   * chance de erro de digitação.
+   */
+  const { data: funcionariosRows } = fornecedorIds.length
+    ? await supabase.from('funcionarios').select('id, nome, cpf, telefone, fornecedor_id').in('fornecedor_id', fornecedorIds).order('nome')
+    : { data: [] as any[] }
+  const funcionariosPorFornecedor: Record<string, { id: string; nome: string; cpf: string; telefone: string }[]> = {}
+  for (const fu of funcionariosRows ?? []) {
+    (funcionariosPorFornecedor[fu.fornecedor_id] ??= []).push(fu)
+  }
+
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
   // Presença por foto: quantos funcionários já registraram cada etapa
@@ -268,6 +282,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               fornecedores={fornecedores}
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
+              funcionariosPorFornecedor={funcionariosPorFornecedor}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}
             />

@@ -20,6 +20,7 @@ type Fornecedor = {
 }
 
 type Supervisor = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
+type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -27,12 +28,15 @@ export default function FornecedorCard({
   fornecedor: f,
   eventoId,
   supervisores = [],
+  funcionariosDoSetor = [],
   podeGerenciarSupervisores = false,
   podeExcluir = false,
 }: {
   fornecedor: Fornecedor
   eventoId: string
   supervisores?: Supervisor[]
+  /** Quem já está credenciado neste setor — o "Criar Supervisor" oferece a lista em vez de um formulário em branco. */
+  funcionariosDoSetor?: FuncionarioDoSetor[]
   podeGerenciarSupervisores?: boolean
   /** Só o master exclui. O admin encerra o evento, que resolve sem destruir. */
   podeExcluir?: boolean
@@ -175,7 +179,7 @@ export default function FornecedorCard({
             <p className="flex items-center gap-1.5 text-slate-500 text-2xs font-semibold uppercase tracking-wide">
               <Shield className="w-3 h-3" /> Supervisores
             </p>
-            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} />
+            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} funcionariosDoSetor={funcionariosDoSetor} />
           </div>
           {!supervisores.length ? (
             <p className="text-slate-400 text-xs">Nenhum supervisor vinculado a este setor</p>
