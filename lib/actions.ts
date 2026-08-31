@@ -483,6 +483,47 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
       ],
     })
 
+    /*
+     * Um segundo aviso, com um link para (re)criar a senha.
+     *
+     * A mensagem acima manda "faça login" partindo do princípio de que a
+     * pessoa já sabe a senha — mas ela pode nunca ter chegado a criar uma
+     * (convite antigo expirado, conta de teste, escalada de outro evento
+     * há meses), e "faça login" não leva a lugar nenhum. Foi exatamente
+     * isso que aconteceu: reassinalar um CPF que já existia como supervisor
+     * mandava só o aviso, sem nenhum caminho de entrada.
+     *
+     * O link é de uso único e não força ninguém a trocar senha: quem já
+     * sabe a sua simplesmente ignora esta segunda mensagem.
+     */
+    try {
+      const linkSenha = await criarConviteSenhaSupervisor({
+        perfilId: existente.id,
+        nome,
+        cpf,
+        eventoId,
+        evento: eventoDoFornecedor?.nome ?? 'Evento',
+        setor: fornecedor.nome,
+      })
+      await agendarTemplateSupervisor({
+        eventoId,
+        telefone,
+        template: 'cadastro_supervisor_cpf_link',
+        parametros: [
+          nome,
+          fornecedor.nome,
+          eventoDoFornecedor?.nome ?? 'Evento',
+          formatarCpfExibicao(cpf),
+          linkSenha,
+        ],
+      })
+    } catch (erroConvite) {
+      // A realocação já foi salva e avisada; não travar por causa do link extra.
+      console.error('[criarSupervisor] falha ao enviar link de senha na realocação', {
+        fornecedorId, eventoId, erro: erroConvite,
+      })
+    }
+
     revalidatePath('/admin/usuarios')
     revalidatePath(`/admin/eventos/${eventoId}`)
     return { ok: true as const, novo: false as const, usuario: cpf }
