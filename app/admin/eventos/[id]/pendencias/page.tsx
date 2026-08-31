@@ -153,7 +153,17 @@ export default async function PendenciasPage({
           titulo="Dia da operação"
           corpoClassName="p-3 flex flex-wrap gap-1.5"
         >
-          {[...dias].reverse().map(d => {
+          {/*
+            * Ordem cronológica crescente, esquerda para direita — como um
+            * calendário se lê.
+            *
+            * Estava ao contrário (`.reverse()`, o mais recente primeiro):
+            * 09/09, 08/09, 07/09 … 28/08. Lido da esquerda pra direita isso
+            * anda para TRÁS no tempo, o oposto do que qualquer tira de datas
+            * costuma fazer. `dias` já vem crescente de `jornada_dias` — o
+            * reverse sobrava.
+            */}
+          {dias.map(d => {
             const ativo = d === diaEscolhido
             const [, mes, dd] = d.split('-')
             return (
