@@ -116,6 +116,48 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             title="Horários do dia principal"
             subtitle="Quando a equipe pode bater entrada e saída no dia do evento"
           />
+
+          {/*
+            * Batida livre — o interruptor vem ANTES dos horários.
+            *
+            * Ele muda o significado de tudo que vem abaixo: com ele ligado, os
+            * campos deixam de ser trava e viram referência. Colocá-lo depois
+            * faria o produtor preencher os horários acreditando que eles vão
+            * recusar alguém, e só então descobrir que não.
+            */}
+          <label
+            htmlFor="batida_livre"
+            className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
+                       hover:border-brand-300 transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="batida_livre"
+                name="batida_livre"
+                defaultChecked={evento.batida_livre === true}
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-slate-800 font-semibold text-sm">Batida livre no dia do evento</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  A equipe bate quando chega e quando sai, sem horário fixo — do mesmo jeito
+                  que já funciona nos dias de montagem.
+                </p>
+                <p className="text-slate-500 text-xs mt-1.5">
+                  Use quando a operação for por <strong>escala rotativa</strong>: em show grande a
+                  equipe entra a noite toda, em turnos, e uma janela fixa recusaria quem chega
+                  às três da manhã.
+                </p>
+                <p className="text-slate-400 text-2xs mt-1.5">
+                  Os horários abaixo continuam gravados e valendo como referência: são eles que
+                  a equipe recebe na mensagem do dia, e é por eles que o sistema calcula quem
+                  está atrasado. O que sai é só a recusa no portão.
+                </p>
+              </div>
+            </div>
+          </label>
+
           <div className="space-y-3">
             {janelas.map(j => (
               <div key={j.key} data-tutorial={`edt-janela-${j.key}`} className={`bg-white rounded-2xl border ${j.border} p-4 space-y-3`}>

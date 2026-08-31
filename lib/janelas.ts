@@ -78,6 +78,19 @@ export function diaBRT(instante: Date | string = new Date()): string {
 // ─── Período do evento ───────────────────────────────────────────────────────
 
 export type EventoJanelas = {
+  /**
+   * O dia do evento não trava horário: a pessoa bate quando chega e quando
+   * sai, como já acontece nos dias de montagem.
+   *
+   * Existe para show com escala rotativa. Numa operação em que a equipe entra
+   * a noite inteira, em turnos, uma janela fixa recusaria quem chega às três
+   * da manhã — e ser recusado no portão, com o show acontecendo, é o pior
+   * momento possível para descobrir que o horário estava apertado.
+   *
+   * Os horários configurados NÃO somem: continuam valendo como referência nas
+   * mensagens e no cálculo de quem está atrasado. O que sai é a recusa.
+   */
+  batida_livre?: boolean | null
   data_inicio?: string | null
   data_fim?: string | null
   janela_entrada_inicio?: string | null
@@ -208,6 +221,15 @@ export function avaliarEntradaSaida(
   // Dia de preparação: entrada e saída são livres, o dia inteiro.
   if (dia.tipo !== 'principal') return { ok: true }
 
+  /*
+   * Batida livre: o dia do evento passa a se comportar como um dia de
+   * montagem. É a mesma regra, ligada por escolha do produtor.
+   *
+   * Reusar o caminho dos dias de preparação, em vez de criar um terceiro
+   * comportamento, é o que garante que os dois nunca divirjam.
+   */
+  if (evento.batida_livre === true) return { ok: true }
+
   return dentroDaJanela(
     evento[`janela_${momento}_inicio`],
     evento[`janela_${momento}_fim`],
@@ -286,7 +308,18 @@ export function horariosEsperados(
   // No dia principal a janela configurada é a referência — é o único dia em
   // que ela trava, então também é o que se espera.
   const principal = jornadaDia?.tipo === 'principal' || (!jornadaDia && ehDiaPrincipal(evento, dia))
-  const doEvento = (campo: keyof EventoJanelas) => (principal ? (evento[campo] ?? null) : null)
+
+  /*
+   * Só os campos de HORÁRIO. `EventoJanelas` passou a ter `batida_livre`, que é
+   * booleano — sem esse recorte, o tipo aqui viraria `string | boolean` e um
+   * `true` poderia acabar sendo tratado como data mais adiante.
+   *
+   * E `batida_livre` não muda o que se ESPERA de horário: com ela ligada a
+   * pessoa pode bater a qualquer hora, mas continua sendo esperada no horário
+   * combinado — é assim que ela ainda aparece na lista de atrasados.
+   */
+  type CampoDeHorario = Exclude<keyof EventoJanelas, 'batida_livre'>
+  const doEvento = (campo: CampoDeHorario) => (principal ? (evento[campo] ?? null) : null)
 
   const entrada = jornadaDia?.entrada_inicio ?? doEvento('janela_entrada_inicio')
   const fim = jornadaDia?.saida_inicio ?? doEvento('janela_fim_inicio')

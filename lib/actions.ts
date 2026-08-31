@@ -151,6 +151,13 @@ async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) 
 function janelasDoForm(formData: FormData) {
   const g = (k: string) => inputParaISO(formData.get(k) as string)
   return {
+    /*
+     * Caixa desmarcada não é enviada pelo navegador — o campo simplesmente não
+     * aparece no formulário. Por isso a leitura é "veio marcado?", e não
+     * "qual o valor?": ler o valor faria desmarcar virar `null` em vez de
+     * `false`, e o evento continuaria travado sem ninguém entender por quê.
+     */
+    batida_livre: formData.get('batida_livre') === 'on',
     janela_entrada_inicio: g('janela_entrada_inicio'),
     janela_entrada_fim: g('janela_entrada_fim'),
     janela_meio_inicio: g('janela_meio_inicio'),
@@ -1390,7 +1397,7 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
 
 export type MomentoPresenca = 'entrada' | 'meio' | 'fim'
 
-const JANELA_SELECT = 'data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim'
+const JANELA_SELECT = 'data_inicio, data_fim, batida_livre, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim'
 
 /**
  * A entrada que ancora o turno atual desta pessoa.
