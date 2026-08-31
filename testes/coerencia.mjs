@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs'
 const ler = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 
 const C = {
+  proxy: ler('proxy.ts'),
   janelas: ler('lib/janelas.ts'),
   actions: ler('lib/actions.ts'),
   qr: ler('lib/credencial-qr.ts'),
@@ -72,7 +73,18 @@ confere('batida_livre vem depois dos dois',
   C.janelas.indexOf('batida_livre === true') > C.janelas.indexOf('dia.cancelado'), true)
 confere('e cala lembrete e reforço, que afirmariam prazo', /diaComTrava/.test(C.mensagens), true)
 
-grupo('6 · Montagem tem entrada e saída livres')
+grupo('6 · Toda tela sem login está liberada no proxy')
+/*
+ * Esquecer uma rota pública não dá erro no desenvolvimento — dá
+ * redirecionamento para o login em produção, e quem está do outro lado conclui
+ * que o sistema quebrou. Aconteceu com /portaria: a tela pronta, o QR gerado, e
+ * o cartaz mandando todo mundo para uma tela de senha.
+ */
+for (const rota of ['/form/', '/credential/', '/portaria/', '/supervisor/criar-senha/']) {
+  confere(`${rota} é pública`, C.proxy.includes(`pathname.startsWith('${rota}')`), true)
+}
+
+grupo('7 · Montagem tem entrada e saída livres')
 confere('o servidor libera', /if \(dia\.tipo !== 'principal'\) return \{ ok: true \}/.test(C.janelas), true)
 confere('nada é cobrado sem horário esperado', /esperado\.entrada && !desligado/.test(C.mensagens), true)
 

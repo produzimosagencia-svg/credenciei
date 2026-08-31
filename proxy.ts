@@ -4,10 +4,21 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Rotas públicas: sai imediatamente, sem tocar no Supabase
+  /*
+   * Rotas públicas: sai imediatamente, sem tocar no Supabase.
+   *
+   * Toda rota que uma pessoa SEM CONTA precisa abrir entra aqui. Esquecer uma
+   * não dá erro visível no desenvolvimento — dá um redirecionamento para o
+   * login em produção, e quem está do outro lado conclui que o sistema quebrou.
+   *
+   * `/portaria/` é o cartaz impresso na entrada do evento: quem escaneia não
+   * tem conta, não tem aplicativo, e está com fila atrás. Se esta linha sair,
+   * o cartaz para de funcionar e ninguém percebe até alguém apontar a câmera.
+   */
   if (
     pathname.startsWith('/form/') ||
     pathname.startsWith('/credential/') ||
+    pathname.startsWith('/portaria/') ||
     pathname.startsWith('/supervisor/criar-senha/') ||
     pathname === '/login'
   ) {
