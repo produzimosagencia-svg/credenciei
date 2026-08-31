@@ -37,12 +37,12 @@ ${link}
 *Como funciona no dia:*
 
 1️⃣ *CHEGADA* — vá ao credenciamento e mostre o QR Code da credencial.
-2️⃣ *4 HORAS DEPOIS* — abra o link e tire uma selfie, com a localização do celular ligada.
+2️⃣ *DURANTE O TURNO* — a gente te avisa por aqui na hora; abra o link e tire uma selfie, com a localização do celular ligada.
 3️⃣ *SAÍDA* — na hora de ir, volte ao credenciamento e mostre o QR Code de novo.
 
 🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
 
-🔐 O QR Code muda todo dia: o de hoje não vale amanhã. Mostre sempre a tela ao vivo, nunca um print.
+🔐 O crachá da montagem é diferente do crachá do dia do evento — a tela troca sozinha. Mostre sempre a tela ao vivo, nunca um print.
 
 ⏰ Pode ficar tranquilo: a gente te avisa por aqui na hora de cada etapa. 😉`,
 

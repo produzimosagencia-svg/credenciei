@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "coerencia": "node testes/coerencia.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",
