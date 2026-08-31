@@ -70,6 +70,7 @@ export default function FuncionarioTable({
   podeExcluir = false,
   outrosSetores = [],
   podeMoverDeSetor = false,
+  podeCriarSupervisor = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
@@ -82,6 +83,8 @@ export default function FuncionarioTable({
   outrosSetores?: { id: string; nome: string }[]
   /** Só admin/master: mover afeta a equipe de outro supervisor. */
   podeMoverDeSetor?: boolean
+  /** Mesma permissão que `criarSupervisor` exige no servidor. */
+  podeCriarSupervisor?: boolean
   /**
    * Só o master exclui. Para o supervisor/admin, DESATIVAR resolve o mesmo
    * problema do dia (a pessoa para de registrar presença) sem apagar as
@@ -268,6 +271,7 @@ export default function FuncionarioTable({
                     valorCombinado={valorCombinado}
                     outrosSetores={outrosSetores}
                     podeMoverDeSetor={podeMoverDeSetor}
+                    podeCriarSupervisor={podeCriarSupervisor}
                     trigger={
                       <div className="flex items-center gap-2.5 min-w-0 text-left">
                         <Avatar url={f.fotoUrl} nome={f.nome} />
@@ -347,6 +351,7 @@ export default function FuncionarioTable({
                       valorCombinado={valorCombinado}
                       outrosSetores={outrosSetores}
                       podeMoverDeSetor={podeMoverDeSetor}
+                      podeCriarSupervisor={podeCriarSupervisor}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />

@@ -1,5 +1,5 @@
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } from 'lucide-react'
@@ -290,6 +290,13 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            * supervisor sem ele estar envolvido na decisão.
            */
           podeMoverDeSetor={podeGerenciarEventos(perfil.role)}
+          /*
+           * A mesma permissão que `criarSupervisor` já exige no servidor —
+           * mostrar o botão para quem a action ia recusar de qualquer jeito é
+           * pior do que não mostrar: a pessoa clica, preenche, e só descobre
+           * que não podia depois de já ter tentado.
+           */
+          podeCriarSupervisor={podeGerenciarUsuarios(perfil.role)}
         />
       </div>
     </div>

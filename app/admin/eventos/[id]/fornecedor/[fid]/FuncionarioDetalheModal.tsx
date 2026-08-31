@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -40,6 +40,7 @@ export default function FuncionarioDetalheModal({
   trigger,
   outrosSetores = [],
   podeMoverDeSetor = false,
+  podeCriarSupervisor = false,
 }: {
   funcionario: Funcionario
   fornecedorId: string
@@ -52,6 +53,8 @@ export default function FuncionarioDetalheModal({
   outrosSetores?: { id: string; nome: string }[]
   /** Só admin/master: mover afeta a equipe de outro supervisor. */
   podeMoverDeSetor?: boolean
+  /** Mesma permissão que `criarSupervisor` exige no servidor. */
+  podeCriarSupervisor?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [aba, setAba] = useState<Aba>('dados')
@@ -83,6 +86,45 @@ export default function FuncionarioDetalheModal({
       } catch (e: any) {
         setErroMover(mensagemAmigavel(e))
         setConfirmandoMover(false)
+      }
+    })
+  }
+
+  // ── Tornar supervisor ─────────────────────────────────────────────────────
+  /*
+   * `criarSupervisor` já faz tudo: cria o login (Auth + `perfis`) se o CPF
+   * for novo, ou reaproveita/realoca se já existir, e dispara a mensagem de
+   * WhatsApp avisando a pessoa. `perfis` (login de supervisor) e
+   * `funcionarios` (credenciamento/pagamento) são tabelas independentes — a
+   * mesma pessoa pode estar nas duas, ligada só pelo CPF. Por isso este botão
+   * não precisa de nenhuma lógica nova: só chama a action existente com os
+   * dados que este funcionário já tem cadastrados.
+   */
+  const [telefoneSupervisor, setTelefoneSupervisor] = useState(f.telefone)
+  const [confirmandoSupervisor, setConfirmandoSupervisor] = useState(false)
+  const [erroSupervisor, setErroSupervisor] = useState<string | null>(null)
+  const [okSupervisor, setOkSupervisor] = useState<string | null>(null)
+  const [isPendingSupervisor, startTransitionSupervisor] = useTransition()
+
+  const tornarSupervisor = () => {
+    setErroSupervisor(null)
+    const dados = new FormData()
+    dados.set('nome', f.nome)
+    dados.set('cpf', f.cpf)
+    dados.set('telefone', telefoneSupervisor)
+    dados.set('ativo', 'true')
+    startTransitionSupervisor(async () => {
+      try {
+        const r = await criarSupervisor(fornecedorId, eventoId, dados)
+        setConfirmandoSupervisor(false)
+        setOkSupervisor(
+          r.novo
+            ? 'Supervisor criado e avisado por WhatsApp.'
+            : 'Login de supervisor associado a este setor e pessoa avisada por WhatsApp.'
+        )
+        router.refresh()
+      } catch (e: any) {
+        setErroSupervisor(mensagemAmigavel(e))
       }
     })
   }
@@ -283,6 +325,62 @@ export default function FuncionarioDetalheModal({
                       </div>
                     )}
                     {erroMover && <p className="text-red-500 text-xs mt-1.5">{erroMover}</p>}
+                  </div>
+                )}
+
+                {/*
+                  * Tornar supervisor — reaproveita nome/CPF já credenciados;
+                  * só o telefone fica editável, pra confirmar que é o WhatsApp
+                  * certo antes de disparar o convite.
+                  */}
+                {podeCriarSupervisor && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Supervisor</p>
+
+                    {!confirmandoSupervisor ? (
+                      <button
+                        onClick={() => { setOkSupervisor(null); setConfirmandoSupervisor(true) }}
+                        className="btn btn-secundario w-full"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> Tornar {f.nome.split(' ')[0]} supervisor(a) de {setorNome}
+                      </button>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
+                        <p className="text-amber-800 text-xs">
+                          {f.nome} passa a ter login de supervisor(a) de <strong>{setorNome}</strong>, entrando com o CPF já
+                          cadastrado. Ela recebe um WhatsApp avisando da escala e com um link para criar a senha. O
+                          credenciamento dela como funcionária continua igual, para efeito de pagamento.
+                        </p>
+                        <div>
+                          <p className="text-amber-700 text-2xs font-semibold uppercase tracking-wide mb-1">Telefone para o convite</p>
+                          <input
+                            type="tel"
+                            value={telefoneSupervisor}
+                            onChange={e => setTelefoneSupervisor(e.target.value.replace(/\D/g, ''))}
+                            className="input text-sm"
+                            placeholder="27999999999"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={tornarSupervisor}
+                            disabled={isPendingSupervisor || telefoneSupervisor.replace(/\D/g, '').length < 10}
+                            className="btn btn-primario btn-sm disabled:opacity-50"
+                          >
+                            {isPendingSupervisor ? 'Enviando…' : 'Confirmar'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmandoSupervisor(false)}
+                            disabled={isPendingSupervisor}
+                            className="btn btn-secundario btn-sm"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {erroSupervisor && <p className="text-red-500 text-xs mt-1.5">{erroSupervisor}</p>}
+                    {okSupervisor && <p className="text-green-600 text-xs mt-1.5">{okSupervisor}</p>}
                   </div>
                 )}
 
