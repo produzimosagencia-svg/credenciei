@@ -271,6 +271,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           funcionarios={funcionariosEnriquecidos}
           fornecedorId={fid}
           eventoId={id}
+          eventoNome={(fornecedor.eventos as any)?.nome ?? ''}
+          setorNome={fornecedor.nome}
           valorCombinado={fornecedor.valor_combinado ?? null}
           podeExcluir={podeExcluir(perfil.role)}
         />

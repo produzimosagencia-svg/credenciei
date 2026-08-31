@@ -1,10 +1,12 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
+import HistoricoBatidas from '@/components/HistoricoBatidas'
+import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -26,25 +28,60 @@ type Funcionario = {
   fim: Presenca
 }
 
+type Aba = 'dados' | 'historico'
+
 export default function FuncionarioDetalheModal({
   funcionario: f,
   fornecedorId,
   eventoId,
+  eventoNome,
+  setorNome,
   valorCombinado,
   trigger,
 }: {
   funcionario: Funcionario
   fornecedorId: string
   eventoId: string
+  eventoNome: string
+  setorNome: string
   valorCombinado: number | null
   trigger: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [aba, setAba] = useState<Aba>('dados')
   const [valor, setValor] = useState(String(f.valorReceber))
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [isPendingPagamento, startTransitionPagamento] = useTransition()
   const router = useRouter()
+
+  /*
+   * O histórico só é buscado quando a aba é aberta, e uma vez só.
+   *
+   * A lista de colaboradores pode ter dezenas de linhas; buscar o histórico
+   * completo de todo mundo ao carregar a tela multiplicaria a consulta por
+   * pessoa sem necessidade — a maioria dos cliques na lista nunca chega a
+   * abrir esta aba. `undefined` é "ainda não pedido", diferente de `null`
+   * (pedido, e deu erro) — a tela precisa diferenciar as duas coisas.
+   */
+  const [historico, setHistorico] = useState<HistoricoNoEvento | null | undefined>(undefined)
+  const [erroHistorico, setErroHistorico] = useState<string | null>(null)
+  const [carregandoHistorico, startCarregarHistorico] = useTransition()
+
+  const abrirAba = (a: Aba) => {
+    setAba(a)
+    if (a === 'historico' && historico === undefined && !carregandoHistorico) {
+      startCarregarHistorico(async () => {
+        const r = await obterHistoricoDoFuncionario(f.id)
+        if (r.historico) {
+          setHistorico(r.historico)
+        } else {
+          setErroHistorico(r.error ?? 'Não foi possível carregar o histórico.')
+          setHistorico(null)
+        }
+      })
+    }
+  }
 
   const handleSalvar = () => {
     setErro(null)
@@ -80,13 +117,25 @@ export default function FuncionarioDetalheModal({
       <button onClick={() => setOpen(true)} className="text-left">{trigger}</button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
           <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
-            className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            /*
+             * A aba "Histórico" precisa de mais largura que a de "Dados": a
+             * tabela tem sete colunas, e num modal de 448px ela viraria uma
+             * faixa amassada com rolagem lateral mesmo no notebook. A de
+             * "Dados" continua estreita — ela é só rótulo e valor.
+             *
+             * No celular as duas ocupam a tela inteira (sem cantos
+             * arredondados, sem margem): é a diferença entre modal e painel
+             * que a tela pequena pede.
+             */
+            className={`modal-pop-in relative bg-white sm:rounded-2xl shadow-xl w-full h-full sm:h-auto
+                        ${aba === 'historico' ? 'sm:max-w-3xl' : 'sm:max-w-md'}
+                        sm:max-h-[90vh] overflow-y-auto transition-[max-width] duration-200`}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3 min-w-0">
                 {f.fotoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -98,7 +147,9 @@ export default function FuncionarioDetalheModal({
                 )}
                 <div className="min-w-0">
                   <h2 className="text-slate-800 font-bold truncate">{f.nome}</h2>
-                  <p className="text-slate-400 text-xs mt-0.5 truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                  <p className="text-slate-400 text-xs mt-0.5 truncate">
+                    {eventoNome}{setorNome ? ` · ${setorNome}` : ''}
+                  </p>
                 </div>
               </div>
               <button onClick={() => setOpen(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0">
@@ -106,84 +157,119 @@ export default function FuncionarioDetalheModal({
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-slate-400 text-xs">CPF</p>
-                  <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs">Telefone</p>
-                  <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Presença</p>
-                <div className="space-y-1.5">
-                  <LinhaPresenca label="Entrada" p={f.entrada} />
-                  <LinhaPresenca label="Meio" p={f.meio} />
-                  <LinhaPresenca label="Fim" p={f.fim} />
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Financeiro</p>
-                  <button
-                    onClick={handleAlternarPagamento}
-                    disabled={isPendingPagamento}
-                    className={`btn-press flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:active:scale-100 ${
-                      f.pago ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
-                    title={f.pago && f.pagoEm ? `Pago em ${formatarBR(f.pagoEm, 'curto')} — clique para desfazer` : 'Marcar como pago'}
-                  >
-                    {f.pago ? <Check className="w-3.5 h-3.5" /> : null}
-                    {isPendingPagamento ? 'Salvando...' : f.pago ? 'PAGO' : 'Marcar como pago'}
-                  </button>
-                </div>
-                {valorCombinado != null && (
-                  <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
-                    <span className="text-slate-500">Valor combinado (setor)</span>
-                    <span className="text-slate-700 font-semibold tabular-nums">{brl(valorCombinado)}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 gap-2">
-                  <span className="text-slate-500 shrink-0">Chave PIX</span>
-                  <span className={`font-medium font-mono truncate ${f.chavePix ? 'text-slate-700' : 'text-slate-300'}`}>
-                    {f.chavePix || 'Não informada'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Valor a receber do setor</p>
-                <p className="text-slate-400 text-xs mb-2">
-                  Quanto este funcionário deve receber dos demais integrantes de {f.empresa || 'seu setor'}.
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={valor}
-                      onChange={e => setValor(e.target.value.replace(/^0+(?=\d)/, ''))}
-                      className="input pl-9 tabular-nums"
-                    />
-                  </div>
-                  <button
-                    onClick={handleSalvar}
-                    disabled={isPending}
-                    className="btn btn-primario shrink-0"
-                  >
-                    {isPending ? 'Salvando...' : 'Salvar'}
-                  </button>
-                </div>
-                {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
-              </div>
+            {/* As abas. "Dados" primeiro porque é o que se vem consultar mais
+                vezes — valor, PIX, se já foi pago; o histórico é uma consulta
+                mais rara, de fechamento. */}
+            <div className="flex gap-1 px-6 pt-3 border-b border-slate-100 sticky top-[73px] bg-white z-10">
+              {(['dados', 'historico'] as const).map(a => (
+                <button
+                  key={a}
+                  onClick={() => abrirAba(a)}
+                  className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                    aba === a
+                      ? 'border-brand-500 text-brand-600'
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {a === 'dados' ? 'Dados' : 'Histórico de batidas'}
+                </button>
+              ))}
             </div>
+
+            {aba === 'dados' ? (
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-slate-400 text-xs">CPF</p>
+                    <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 text-xs">Telefone</p>
+                    <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Presença hoje</p>
+                  <div className="space-y-1.5">
+                    <LinhaPresenca label="Entrada" p={f.entrada} />
+                    <LinhaPresenca label="Meio" p={f.meio} />
+                    <LinhaPresenca label="Fim" p={f.fim} />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Financeiro</p>
+                    <button
+                      onClick={handleAlternarPagamento}
+                      disabled={isPendingPagamento}
+                      className={`btn-press flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:active:scale-100 ${
+                        f.pago ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                      }`}
+                      title={f.pago && f.pagoEm ? `Pago em ${formatarBR(f.pagoEm, 'curto')} — clique para desfazer` : 'Marcar como pago'}
+                    >
+                      {f.pago ? <Check className="w-3.5 h-3.5" /> : null}
+                      {isPendingPagamento ? 'Salvando...' : f.pago ? 'PAGO' : 'Marcar como pago'}
+                    </button>
+                  </div>
+                  {valorCombinado != null && (
+                    <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
+                      <span className="text-slate-500">Valor combinado (setor)</span>
+                      <span className="text-slate-700 font-semibold tabular-nums">{brl(valorCombinado)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2 gap-2">
+                    <span className="text-slate-500 shrink-0">Chave PIX</span>
+                    <span className={`font-medium font-mono truncate ${f.chavePix ? 'text-slate-700' : 'text-slate-300'}`}>
+                      {f.chavePix || 'Não informada'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Valor a receber do setor</p>
+                  <p className="text-slate-400 text-xs mb-2">
+                    Quanto este funcionário deve receber dos demais integrantes de {f.empresa || 'seu setor'}.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={valor}
+                        onChange={e => setValor(e.target.value.replace(/^0+(?=\d)/, ''))}
+                        className="input pl-9 tabular-nums"
+                      />
+                    </div>
+                    <button
+                      onClick={handleSalvar}
+                      disabled={isPending}
+                      className="btn btn-primario shrink-0"
+                    >
+                      {isPending ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
+                  {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
+                </div>
+              </div>
+            ) : (
+              <div className="p-6">
+                {carregandoHistorico ? (
+                  <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-16">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Carregando histórico…
+                  </div>
+                ) : erroHistorico ? (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erroHistorico}
+                  </div>
+                ) : historico ? (
+                  <HistoricoBatidas h={historico} />
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       )}

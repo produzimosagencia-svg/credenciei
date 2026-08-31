@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
 import { getPerfil, supabaseAdmin, podeEscanearEvento } from './supabase-server'
+import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
   criarPlanilhaEvento,
@@ -2326,6 +2327,31 @@ const SELECT_LOCALIZAR =
 
 /** Teto de resultados por busca — lista maior que isso não se escolhe, se refina. */
 const MAX_CANDIDATOS = 25
+
+/**
+ * O histórico de batidas para a aba do modal do funcionário.
+ *
+ * O modal abre sem navegar — clique na lista, não link — então não há uma
+ * página server component pronta para buscar isto de antemão. Esta action é
+ * chamada pelo cliente só quando a pessoa clica na aba "Histórico", e não
+ * antes: buscar o histórico de todo mundo listado no setor a cada carga da
+ * tela multiplicaria a consulta por funcionário sem necessidade — a maioria
+ * dos cliques na lista nunca chega a abrir essa aba.
+ *
+ * Mesma verificação de acesso que a página cheia, pelo mesmo helper — ver o
+ * comentário em `podeVerHistoricoDe`.
+ */
+export async function obterHistoricoDoFuncionario(
+  funcionarioId: string,
+): Promise<{ historico: HistoricoNoEvento; error?: undefined } | { historico?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  if (!(await podeVerHistoricoDe(perfil, funcionarioId))) {
+    return { error: 'Sem permissão para ver o histórico deste funcionário.' }
+  }
+  const h = await historicoDoFuncionario(funcionarioId)
+  if (!h) return { error: 'Funcionário não encontrado.' }
+  return { historico: h }
+}
 
 export async function localizarFuncionario(
   termo: string

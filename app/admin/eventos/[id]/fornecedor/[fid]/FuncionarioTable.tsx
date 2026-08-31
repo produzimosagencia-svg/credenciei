@@ -64,12 +64,17 @@ export default function FuncionarioTable({
   funcionarios,
   fornecedorId,
   eventoId,
+  eventoNome,
+  setorNome,
   valorCombinado,
   podeExcluir = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
   eventoId: string
+  /** Só para o cabeçalho do modal do funcionário — não muda nenhuma consulta. */
+  eventoNome: string
+  setorNome: string
   valorCombinado: number | null
   /**
    * Só o master exclui. Para o supervisor/admin, DESATIVAR resolve o mesmo
@@ -252,6 +257,8 @@ export default function FuncionarioTable({
                     funcionario={f}
                     fornecedorId={fornecedorId}
                     eventoId={eventoId}
+                    eventoNome={eventoNome}
+                    setorNome={setorNome}
                     valorCombinado={valorCombinado}
                     trigger={
                       <div className="flex items-center gap-2.5 min-w-0 text-left">
@@ -327,6 +334,8 @@ export default function FuncionarioTable({
                       funcionario={f}
                       fornecedorId={fornecedorId}
                       eventoId={eventoId}
+                      eventoNome={eventoNome}
+                      setorNome={setorNome}
                       valorCombinado={valorCombinado}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">

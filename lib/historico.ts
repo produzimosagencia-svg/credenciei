@@ -18,6 +18,7 @@
 // fechamento — "estava escalado para 5 dias e veio em 4".
 
 import { supabaseAdmin } from './supabase-server'
+import { veTodosEventos } from './permissions'
 import { janelaDoMeio, faseDoDia, diaBRT, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
 
 export type Batida = {
@@ -71,12 +72,16 @@ export type ResumoHistorico = {
   diasFaltados: number
   diasIncompletos: number
   horasTotais: number
+  batidasEntrada: number
+  batidasMeio: number
+  batidasFim: number
 }
 
 export type HistoricoNoEvento = {
   eventoId: string
   eventoNome: string
   setorNome: string
+  fornecedorId: string
   funcionarioId: string
   nome: string
   cpf: string
@@ -188,6 +193,7 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     eventoId: evento.id,
     eventoNome: evento.nome,
     setorNome: setor.nome,
+    fornecedorId: func.fornecedor_id as string,
     funcionarioId,
     nome: func.nome as string,
     cpf: func.cpf as string,
@@ -199,6 +205,37 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       diasFaltados: valem.filter(d => !d.compareceu).length,
       diasIncompletos: valem.filter(d => d.compareceu && !d.completo).length,
       horasTotais: Math.round(valem.reduce((soma, d) => soma + (d.horas ?? 0), 0) * 100) / 100,
+      batidasEntrada: valem.filter(d => d.entrada).length,
+      batidasMeio: valem.filter(d => d.meio).length,
+      batidasFim: valem.filter(d => d.fim).length,
     },
   }
+}
+
+/**
+ * A pessoa logada pode ver o histórico deste funcionário?
+ *
+ * Mesma régua do resto do sistema — supervisor só a própria equipe, admin só
+ * a própria organização, master tudo — extraída para um lugar só. Antes vivia
+ * copiada dentro da página cheia; um segundo consumidor (o modal, aberto sem
+ * navegar) precisava da mesma verificação, e duas cópias da mesma regra
+ * divergem no primeiro ajuste que alguém faz numa e esquece na outra.
+ */
+export async function podeVerHistoricoDe(
+  perfil: { role: string; fornecedor_id?: string | null; organizacao_id?: string | null } | null,
+  funcionarioId: string,
+): Promise<boolean> {
+  if (!perfil) return false
+
+  const { data: vinculo } = await supabaseAdmin
+    .from('funcionarios')
+    .select('fornecedor_id, fornecedores!inner(evento_id, eventos!inner(organizacao_id))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!vinculo) return false
+
+  const org = (vinculo.fornecedores as unknown as { eventos: { organizacao_id: string | null } })?.eventos?.organizacao_id
+
+  if (perfil.role === 'supervisor') return perfil.fornecedor_id === vinculo.fornecedor_id
+  return veTodosEventos(perfil.role) || org === perfil.organizacao_id
 }
