@@ -98,7 +98,14 @@ function StatusDoDia({ dia }: { dia: DiaDoHistorico }) {
 }
 
 /**
- * "NÃO REALIZADA" precisa saltar aos olhos: é ela que muda o pagamento.
+ * "NÃO REALIZADA" precisa saltar aos olhos SÓ quando é uma anomalia — a
+ * pessoa esteve no evento e pulou uma etapa específica. É ela que muda o
+ * pagamento e precisa ser vista no fechamento.
+ *
+ * No dia em que a pessoa nem apareceu (`silencioso`), repetir esse aviso em
+ * negrito e vermelho nas três colunas — entrada, meio e saída — é só ruído:
+ * o selo "Ausente" já contou a história da linha inteira, uma vez. Ali a
+ * célula vazia vira um traço quieto.
  *
  * `atrasoMin` marca a batida feita FORA do prazo. Ela existe e vale — o meio
  * pode ser registrado depois da hora de propósito, senão a pessoa ficaria
@@ -106,8 +113,19 @@ function StatusDoDia({ dia }: { dia: DiaDoHistorico }) {
  * isso de relance no fechamento, porque é uma ausência do posto que a pessoa
  * ainda vai ter que justificar.
  */
-function Celula({ batida, atrasoMin }: { batida: DiaDoHistorico['entrada']; atrasoMin?: number | null }) {
-  if (!batida) return <span className="text-erro-600 text-2xs font-semibold uppercase tracking-wide">não realizada</span>
+function Celula({
+  batida, atrasoMin, silencioso,
+}: {
+  batida: DiaDoHistorico['entrada']
+  atrasoMin?: number | null
+  /** O dia inteiro foi ausência — não uma etapa pulada dentro de um dia trabalhado. */
+  silencioso?: boolean
+}) {
+  if (!batida) {
+    return silencioso
+      ? <span className="text-slate-300">—</span>
+      : <span className="text-erro-600 text-2xs font-semibold uppercase tracking-wide">não realizada</span>
+  }
 
   const atrasada = typeof atrasoMin === 'number' && atrasoMin > 0
   return (
@@ -155,9 +173,13 @@ function Linha({ dia }: { dia: DiaDoHistorico }) {
               </span>}
       </td>
       <td><StatusDoDia dia={dia} /></td>
-      <td className="text-slate-600 text-xs"><Celula batida={dia.entrada} /></td>
       <td className="text-slate-600 text-xs">
-        <Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} />
+        <Celula batida={dia.entrada} silencioso={!dia.compareceu} />
+      </td>
+      <td className="text-slate-600 text-xs">
+        {/* Silencioso pelo mesmo motivo da entrada: quem nem apareceu não tem
+            meio pulado, tem dia inteiro sem trabalhar — já dito no Status. */}
+        <Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} silencioso={!dia.compareceu} />
         {/* O esperado ao lado do realizado: sem ele, "12:15" não diz se foi no
             horário. Some quando não houve entrada — não havia de onde contar. */}
         {dia.meioEsperadoEm && (
@@ -167,7 +189,7 @@ function Linha({ dia }: { dia: DiaDoHistorico }) {
         )}
       </td>
       <td className="text-slate-600 text-xs">
-        <Celula batida={dia.fim} />
+        <Celula batida={dia.fim} silencioso={!dia.compareceu} />
         {dia.fim && dia.tipo === 'principal' && (
           <LogOut className="w-3 h-3 text-slate-400 inline-block ml-1" />
         )}
