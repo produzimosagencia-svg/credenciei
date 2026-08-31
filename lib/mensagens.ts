@@ -218,6 +218,24 @@ async function fluxosLigados(): Promise<Record<string, boolean>> {
 /** Um fluxo só está desligado quando o painel disse explicitamente `false`. */
 const desligado = (fluxos: Record<string, boolean>, chave: string) => fluxos[chave] === false
 
+/**
+ * Este dia tem um horário de verdade combinado — não o padrão genérico que
+ * `horariosEsperados` usa quando ninguém configurou nada?
+ *
+ * Verdadeiro no dia principal (o evento sempre tem `janela_entrada_fim`/
+ * `janela_fim_fim` configurados — é o formulário de editar evento) ou em
+ * qualquer dia de preparação com horário próprio setado em `jornada_dias`.
+ *
+ * Independe de `batida_livre`: ela decide se a PESSOA é cobrada por esse
+ * horário (lembrete/reforço ao funcionário) — não se o horário EXISTE. O
+ * fechamento real da operação (ex.: 8h da manhã do dia seguinte) continua
+ * valendo pra avisar o SUPERVISOR de quem nunca saiu, mesmo quando a entrada
+ * e a saída de cada pessoa, individualmente, são livres.
+ */
+function temHorarioReal(ehPrincipal: boolean, jornadaDia: DiaDaJornada | null | undefined): boolean {
+  return ehPrincipal || !!jornadaDia?.entrada_fim || !!jornadaDia?.saida_fim
+}
+
 /** Teto de dias agendados de uma vez. Além disso a fila cresce sem necessidade. */
 const HORIZONTE_DIAS = 45
 
@@ -420,16 +438,26 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        *             → para quem entra na escala das 2h da manhã, é acusação
        *             por algo que não aconteceu.
        *
-       * É a mesma regra que já vale nos dias de montagem, onde `esperado.entrada`
-       * vem nulo e nada é agendado. Com batida livre, o dia do evento passa a
-       * ter horário CONFIGURADO mas não OBRIGATÓRIO — e cobrar horário que não
-       * obriga é o jeito mais rápido de a equipe parar de acreditar nas
-       * mensagens do sistema.
+       * ATÉ NOS DIAS DE MONTAGEM/DESMONTAGEM — mesmo problema, mesma causa.
+       *
+       * `entradaLimite`/`fimLimite` sempre respondem um horário: sem jornada
+       * configurada para o dia, caem no padrão genérico (12:00 / 23:59). Só
+       * que dia de preparação já é livre na trava (o leitor de QR nunca
+       * bloqueia por horário nesses dias — ver `avaliarEntradaSaida`), e até
+       * esta correção lembrete/reforço continuavam cobrando o padrão mesmo
+       * assim: às 12:00 em ponto de um dia de montagem, quem ainda não tinha
+       * chegado recebia "sua presença ainda não foi registrada" por um
+       * horário que ninguém combinou.
+       *
+       * Por isso a trava (que liga lembrete e reforço) só existe no DIA
+       * PRINCIPAL sem batida livre — o único dia em que a entrada/saída
+       * realmente têm um horário combinado e cobrável.
        *
        * O aviso do dia continua: ele informa, não cobra.
        */
       const livre = (evento as EventoJanelas).batida_livre === true
-      const diaComTrava = !(livre && dia.data === diaPrincipal)
+      const ehPrincipal = dia.data === diaPrincipal
+      const diaComTrava = temHorarioReal(ehPrincipal, dia.jornadaDia) && !(livre && ehPrincipal)
 
       if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
@@ -456,10 +484,29 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   for (const dia of dias) {
     if (desligado(fluxos, 'alerta_supervisor')) break
     const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
+    /*
+     * Entrada e fim só cobram quando existe horário DE VERDADE pro dia — não
+     * o padrão genérico (12:00/23:59) que `horariosEsperados` usa quando
+     * ninguém configurou nada. Num dia de preparação sem horário, "fulano
+     * não bateu a entrada" às 12:00 é alarme falso, não aviso.
+     *
+     * DIFERENTE do lembrete ao funcionário, isto NÃO olha `batida_livre`:
+     * a entrada/saída de cada PESSOA pode ser livre (sem hora marcada) e,
+     * mesmo assim, o EVENTO ter um fechamento real configurado — 8h da
+     * manhã do dia seguinte, neste caso. Passado esse horário, quem nunca
+     * saiu é informação real pro supervisor, mesmo sem ninguém ter hora
+     * marcada individualmente. Batida livre cala a cobrança À PESSOA
+     * (lembrete/reforço), não o aviso AO SUPERVISOR sobre o fechamento.
+     *
+     * O meio fica de fora dessa trava: janela individual (entrada real da
+     * PESSOA + 4h), não depende de o dia ter horário configurado, e
+     * continua valendo todo santo dia — inclusive montagem.
+     */
+    const diaComTrava = temHorarioReal(dia.data === diaPrincipal, dia.jornadaDia)
     const gatilhos: [TipoMensagem, string][] = [
-      ['alerta_supervisor_entrada', esperado.entradaLimite],
+      ...(diaComTrava ? [['alerta_supervisor_entrada', esperado.entradaLimite] as [TipoMensagem, string]] : []),
       ['alerta_supervisor_meio', esperado.meioAlerta],
-      ['alerta_supervisor_fim', esperado.fimLimite],
+      ...(diaComTrava ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
     ]
 
     for (const [tipo, quando] of gatilhos) {
@@ -802,10 +849,27 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
       supabase.from('eventos')
-        .select('nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+        .select('nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim, batida_livre')
         .eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
+
+    /*
+     * Entrada e fim recobrados aqui, no envio — mesma trava de
+     * `sincronizarAgendamentos` (ver `diaComTrava`), reconferida porque esta
+     * linha pode ter sido agendada ANTES de a trava existir para este dia.
+     * Meio fica de fora: janela individual, vale todo dia.
+     */
+    if (momento !== 'meio') {
+      const { data: dia } = await supabase
+        .from('jornada_dias').select('tipo, entrada_fim, saida_fim')
+        .eq('evento_id', msg.evento_id).eq('data', msg.data_ref)
+        .order('turno').limit(1)
+      const ehPrincipal = dia?.[0]?.tipo === 'principal'
+      const livre = (evento as { batida_livre?: boolean | null }).batida_livre === true
+      const diaComTrava = temHorarioReal(ehPrincipal, dia?.[0] as DiaDaJornada | undefined) && !(livre && ehPrincipal)
+      if (!diaComTrava) return null
+    }
 
     const horarioLimiteISO = await limiteDaEtapa(msg, momento, evento as EventoJanelas)
     const credencial = linkDaCredencial(func.qr_token, msg.tipo)
@@ -836,6 +900,29 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!msg.perfil_id) return null
     const momento = MOMENTO_POR_TIPO[msg.tipo]
     if (!momento) return null
+
+    /*
+     * Entrada e fim só cobram quando existe horário DE VERDADE pro dia —
+     * reconferido aqui, no envio, porque esta linha pode ter sido agendada
+     * ANTES de essa trava existir (foi quase o caso do alerta de "fim" de
+     * um dia de montagem, avisando o Steivan e a Michelli de gente que
+     * nunca teve horário de saída combinado).
+     *
+     * DIFERENTE do lembrete ao funcionário, isto NÃO olha `batida_livre`:
+     * a pessoa pode ter entrada/saída livres e, mesmo assim, o evento ter
+     * um fechamento real — passado esse horário, quem nunca saiu é
+     * informação real pro supervisor (ver `temHorarioReal`).
+     *
+     * O meio fica de fora: a janela dele é individual (entrada real da
+     * pessoa + 4h) e vale todo santo dia, montagem incluída.
+     */
+    if (momento !== 'meio') {
+      const { data: dia } = await supabase
+        .from('jornada_dias').select('tipo, entrada_fim, saida_fim')
+        .eq('evento_id', msg.evento_id).eq('data', msg.data_ref).order('turno').limit(1)
+      const diaComTrava = temHorarioReal(dia?.[0]?.tipo === 'principal', dia?.[0] as DiaDaJornada | undefined)
+      if (!diaComTrava) return null
+    }
 
     const { data: supervisor } = await supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single()
     if (!supervisor?.fornecedor_id) return null
