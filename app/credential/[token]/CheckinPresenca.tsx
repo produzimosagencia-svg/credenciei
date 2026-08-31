@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck } from 'lucide-react'
 import { registrarPresencaFoto } from '@/lib/actions'
 
 type Status = 'feito' | 'disponivel' | 'aguardando' | 'encerrado' | 'indefinido'
@@ -36,15 +36,29 @@ function horaBR(iso: string | null) {
   })
 }
 
+/*
+ * Prazo para decodificar a foto.
+ *
+ * Em navegador embutido quebrado (o de dentro do WhatsApp, em alguns
+ * aparelhos), `img.onload` e `img.onerror` simplesmente nunca disparam —
+ * nem sucesso, nem erro — e sem um teto aqui a tela ficava girando pra
+ * sempre, com o botão preso em "Enviando...". Foi isso, e não a
+ * localização, que travou o registro relatado pelo Juan: o mesmo defeito
+ * de WebView, só que num passo que ainda não tinha teto.
+ */
+const TETO_COMPRESSAO_MS = 10_000
+
 // Reduz a foto antes de enviar (limite de tamanho da server action + rapidez —
 // durante o evento, a rede do local costuma ser ruim, então prioriza velocidade
 // sobre qualidade aqui: são só fotos de conferência, não precisam de nitidez).
 function comprimir(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const img = new Image()
     const url = URL.createObjectURL(file)
+    const img = new Image()
+    const limpar = () => { clearTimeout(teto); URL.revokeObjectURL(url) }
+    const teto = setTimeout(() => { limpar(); reject(new Error('comprimir-teto')) }, TETO_COMPRESSAO_MS)
     img.onload = () => {
-      URL.revokeObjectURL(url)
+      limpar()
       const max = 720
       let { width, height } = img
       if (width > height && width > max) { height = Math.round((height * max) / width); width = max }
@@ -57,7 +71,7 @@ function comprimir(file: File): Promise<string> {
       ctx.drawImage(img, 0, 0, width, height)
       resolve(canvas.toDataURL('image/jpeg', 0.5))
     }
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')) }
+    img.onerror = () => { limpar(); reject(new Error('img')) }
     img.src = url
   })
 }
@@ -374,18 +388,23 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
        */
       const causa = err instanceof Error ? err.message : ''
       const semPosicao = causa === 'permissao' || causa === 'semsinal'
+      // A foto travou pra decodificar: no aparelho da pessoa, é o mesmo
+      // sintoma do navegador embutido — mesmo quando `embutido` não bateu
+      // (a lista de apps não é exaustiva), então tratamos igual.
+      const travouProcessando = causa === 'comprimir-teto'
       setErro(
         // Dentro do navegador do WhatsApp a localização não funciona, e a
         // culpa não é do GPS da pessoa — mandá-la "ir para perto da porta"
         // seria fazê-la perder tempo com o problema errado.
-        semPosicao && embutido
-          ? 'Você abriu pelo WhatsApp, e por ali a localização não funciona. Toque nos três pontinhos no topo e escolha "Abrir no navegador" — depois é só tirar a foto.'
+        (semPosicao && embutido) || travouProcessando
+          ? 'Este navegador (o de dentro do WhatsApp) não consegue registrar a foto. Toque em "Copiar link" abaixo, abra o Chrome ou Safari e cole lá — depois é só tirar a foto de novo.'
           : causa === 'permissao'
             ? 'Precisamos da sua localização. Permita o acesso à localização para este site e toque de novo.'
             : causa === 'semsinal'
               ? 'Não conseguimos pegar sua localização. Vá para perto de uma porta ou área aberta e tente de novo — se continuar, procure o credenciamento.'
               : 'Não foi possível processar a foto. Tente de novo.'
       )
+      if (travouProcessando) setEmbutido(true)
     } finally {
       setBusy(false)
       setFase(null)
@@ -399,6 +418,7 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
       {erro && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
           <p className="text-red-600 text-xs font-medium">{erro}</p>
+          {embutido && <BotaoCopiarLink />}
         </div>
       )}
 
@@ -438,9 +458,10 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
           <p className="text-amber-900 text-xs font-semibold">Abra no navegador para registrar</p>
           <p className="text-amber-700 text-xs mt-1">
-            Pelo WhatsApp a localização não funciona. Toque nos três pontinhos no
-            topo da tela e escolha <strong>Abrir no navegador</strong> — depois é só tirar a foto.
+            Pelo WhatsApp a foto e a localização não funcionam. Toque em <strong>Copiar link</strong> abaixo,
+            abra o Chrome ou Safari e cole lá — depois é só tirar a foto.
           </p>
+          <BotaoCopiarLink />
         </div>
       )}
 
@@ -465,6 +486,55 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
         <MapPin className="w-3 h-3" /> Na etapa do meio, a localização é registrada junto com a foto.
       </p>
     </div>
+  )
+}
+
+/**
+ * Copia o link desta página, para colar num navegador de verdade.
+ *
+ * A instrução "toque nos três pontinhos e escolha Abrir no navegador" exige
+ * achar o menu certo dentro do WhatsApp — em aparelho velho ou pessoa nervosa
+ * na fila do evento, isso trava mais do que ajuda. Um toque que já copia o
+ * link tira esse passo: só falta abrir qualquer navegador e colar.
+ */
+function BotaoCopiarLink() {
+  const [copiado, setCopiado] = useState(false)
+
+  const copiar = async () => {
+    const link = window.location.href
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link)
+      } else {
+        // Sem Clipboard API (navegador embutido antigo): o truque do campo
+        // temporário funciona em praticamente qualquer WebView.
+        const temp = document.createElement('textarea')
+        temp.value = link
+        temp.style.position = 'fixed'
+        temp.style.opacity = '0'
+        document.body.appendChild(temp)
+        temp.focus()
+        temp.select()
+        document.execCommand('copy')
+        document.body.removeChild(temp)
+      }
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 5000)
+    } catch {
+      // Nem isso funcionou — a pessoa ainda consegue selecionar o link na
+      // própria barra de endereço do navegador embutido. Último recurso.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copiar}
+      className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 active:scale-95 transition-all px-3 py-1.5 rounded-lg"
+    >
+      {copiado ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      {copiado ? 'Link copiado!' : 'Copiar link'}
+    </button>
   )
 }
 
