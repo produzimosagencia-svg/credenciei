@@ -2055,7 +2055,7 @@ export async function registrarPresencaFoto(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string }
+  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string; origem?: string }
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -2135,6 +2135,15 @@ export async function cadastrarFuncionarioPublico(
     consentimento_base: true,
     consentimento_em: new Date().toISOString(),
     ativo: true,
+    /*
+     * De onde este cadastro veio.
+     *
+     * Só três valores importam na prática: `portaria` (cartaz da entrada),
+     * `formulario` (link que o supervisor mandou) e `planilha`. No fechamento,
+     * saber que alguém entrou pelo cartaz — e não pela lista — muda a conversa
+     * sobre quem autorizou aquela contratação.
+     */
+    origem: dados.origem === 'portaria' ? 'portaria' : 'formulario',
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
@@ -2660,4 +2669,59 @@ export async function urlAssinadaFoto(path: string): Promise<string | null> {
 
   const { data } = await supabaseAdmin.storage.from('presencas').createSignedUrl(caminho, 60 * 60)
   return data?.signedUrl ?? null
+}
+
+// ─── Portaria: o QR impresso para quem chega sem cadastro ────────────────────
+
+/**
+ * Liga ou desliga o auto cadastro, gerando o endereço na primeira vez.
+ *
+ * O token nasce só quando alguém liga pela primeira vez. Criar para todo evento
+ * na criação encheria a base de endereços públicos que ninguém pediu — e cada
+ * um deles seria uma porta aberta que alguém teria que lembrar de fechar.
+ *
+ * Ligar de novo REAPROVEITA o token existente: o cartaz impresso continua
+ * valendo depois de o produtor desligar e religar no meio do evento, que é o
+ * uso normal (fecha o credenciamento à noite, reabre no dia seguinte).
+ */
+export async function alternarPortaria(eventoId: string, ligar: boolean) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('token_portaria').eq('id', eventoId).single()
+
+  const token = (evento?.token_portaria as string | null) ?? randomBytes(16).toString('hex')
+
+  const { error } = await supabaseAdmin
+    .from('eventos')
+    .update({ portaria_ativa: ligar, token_portaria: token })
+    .eq('id', eventoId)
+
+  if (error) throw new Error('Não foi possível mudar o cadastro da portaria. Tente de novo.')
+
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  return { ok: true as const, token }
+}
+
+/**
+ * Troca o endereço da portaria, invalidando todo cartaz já impresso.
+ *
+ * Existe para o caso em que o QR vaza — foto no grupo errado, cartaz
+ * fotografado por quem não devia. Sem isto, a única saída seria desligar o
+ * auto cadastro para todo mundo.
+ *
+ * Quem já se cadastrou não é afetado: o vínculo com o evento não passa pelo
+ * token, ele só serve para abrir a página.
+ */
+export async function trocarTokenDaPortaria(eventoId: string) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { error } = await supabaseAdmin
+    .from('eventos')
+    .update({ token_portaria: randomBytes(16).toString('hex') })
+    .eq('id', eventoId)
+
+  if (error) throw new Error('Não foi possível gerar um novo QR. Tente de novo.')
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  return { ok: true as const }
 }

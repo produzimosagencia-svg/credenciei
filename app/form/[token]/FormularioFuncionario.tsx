@@ -40,7 +40,13 @@ function comprimir(file: File): Promise<string> {
   })
 }
 
-export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: string }) {
+export default function FormularioFuncionario({
+  fornecedorId, origem = 'formulario',
+}: {
+  fornecedorId: string
+  /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
+  origem?: string
+}) {
   const [form, setForm] = useState(initialForm)
   const [consentimento, setConsentimento] = useState(false)
   const [foto, setFoto] = useState<string | null>(null)
@@ -118,6 +124,7 @@ export default function FormularioFuncionario({ fornecedorId }: { fornecedorId: 
     }
     setLoading(true)
     const res = await cadastrarFuncionarioPublico(fornecedorId, {
+      origem,
       nome: form.nome,
       cpf: form.cpf,
       telefone: form.telefone,

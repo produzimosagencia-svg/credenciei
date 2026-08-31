@@ -25,8 +25,21 @@ const TUTORIAL: TutorialConfig = {
   ],
 }
 
-export default async function FormPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function FormPage({
+  params, searchParams,
+}: {
+  params: Promise<{ token: string }>
+  /*
+   * `?de=portaria` diz que a pessoa veio do cartaz da entrada, e não do link
+   * que o supervisor mandou. O formulário é o mesmo — só a origem muda, e ela
+   * importa no fechamento: saber que alguém entrou pelo cartaz, e não pela
+   * lista, muda a conversa sobre quem autorizou aquela contratação.
+   */
+  searchParams: Promise<{ de?: string }>
+}) {
   const { token } = await params
+  const { de } = await searchParams
+  const origem = de === 'portaria' ? 'portaria' : 'formulario'
 
   const { data: fornecedor } = await supabase
     .from('fornecedores')
@@ -53,7 +66,7 @@ export default async function FormPage({ params }: { params: Promise<{ token: st
               <TutorialButton />
             </div>
           </div>
-          <FormularioFuncionario fornecedorId={fornecedor.id} />
+          <FormularioFuncionario fornecedorId={fornecedor.id} origem={origem} />
         </div>
       </div>
     </TutorialProvider>

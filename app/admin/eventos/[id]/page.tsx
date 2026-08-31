@@ -1,11 +1,12 @@
 import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeExcluir } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
 import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
+import PortariaCard from './PortariaCard'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -73,6 +74,18 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
    * alimentava. Ter duas formas de dizer "quais dias este evento tem" fazia
    * uma apagar o que a outra gravava, sem avisar ninguém.
    */
+  /*
+   * Quantos entraram pelo cartaz da portaria.
+   *
+   * Consulta separada e com `head: true`: só o número interessa, e trazer as
+   * linhas para contar no servidor seria carregar a equipe inteira de novo.
+   */
+  const { count: viaPortaria } = await supabase
+    .from('funcionarios')
+    .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
+    .eq('origem', 'portaria')
+    .eq('fornecedores.evento_id', id)
+
   const { data: diasTrabalho } = await supabase
     .from('jornada_dias').select('data, tipo, cancelado')
     .eq('evento_id', id).eq('cancelado', false).order('data')
@@ -230,6 +243,24 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           acoes={<FornecedorModal eventoId={id} mode="criar" />}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
+          {/*
+            * O cartaz vive junto dos setores porque é deles que ele se
+            * alimenta: a página pública lista os setores DESTE evento, e um
+            * setor criado depois aparece lá sozinho. Numa tela separada, seria
+            * fácil imprimir o cartaz antes de cadastrar os setores e não
+            * entender por que a página abre vazia.
+            */}
+          {podeGerenciarEventos(perfil?.role) && (
+            <div className="mb-4">
+              <PortariaCard
+                eventoId={id}
+                ativa={evento.portaria_ativa === true}
+                token={(evento.token_portaria as string | null) ?? null}
+                cadastrados={viaPortaria ?? 0}
+              />
+            </div>
+          )}
+
           {!fornecedores?.length ? (
             <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum fornecedor ainda" />
           ) : (
