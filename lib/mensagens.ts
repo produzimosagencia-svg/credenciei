@@ -408,19 +408,42 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        * supervisor, que é olhar passivo. Mandar mensagem é ativo, e ativo só
        * quando existe um horário combinado de verdade.
        */
-      if (!desligado(fluxos, 'lembrete')) {
+      /*
+       * BATIDA LIVRE CALA O LEMBRETE E O REFORÇO — e não por economia.
+       *
+       * Os dois textos afirmam coisas que deixam de ser verdade:
+       *
+       *   lembrete  "Você tem até 23:55 — depois desse horário o sistema não
+       *             aceita mais."   → aceita. É mentira, e faz gente correr.
+       *
+       *   reforço   "Atenção! Sua presença ainda não foi registrada."
+       *             → para quem entra na escala das 2h da manhã, é acusação
+       *             por algo que não aconteceu.
+       *
+       * É a mesma regra que já vale nos dias de montagem, onde `esperado.entrada`
+       * vem nulo e nada é agendado. Com batida livre, o dia do evento passa a
+       * ter horário CONFIGURADO mas não OBRIGATÓRIO — e cobrar horário que não
+       * obriga é o jeito mais rápido de a equipe parar de acreditar nas
+       * mensagens do sistema.
+       *
+       * O aviso do dia continua: ele informa, não cobra.
+       */
+      const livre = (evento as EventoJanelas).batida_livre === true
+      const diaComTrava = !(livre && dia.data === diaPrincipal)
+
+      if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
       }
-      if (esperado.entrada && !desligado(fluxos, 'reforco')) {
+      if (diaComTrava && esperado.entrada && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
           new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
       }
 
-      if (!desligado(fluxos, 'lembrete')) {
+      if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
       }
-      if (esperado.fim && !desligado(fluxos, 'reforco')) {
+      if (diaComTrava && esperado.fim && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
           new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
