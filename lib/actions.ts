@@ -1059,6 +1059,50 @@ export async function moverFuncionarioDeSetor(
   return { ok: true as const, mudou: true, novoSetorNome: destino.nome as string }
 }
 
+export type FuncionarioParaExportar = {
+  nome: string
+  cpf: string
+  telefone: string
+  cargo: string
+  chave_pix: string
+  valor_receber: number | null
+  pago: boolean
+  pago_em: string | null
+  ativo: boolean
+}
+
+/**
+ * A lista de quem está neste setor, pronta para virar planilha no cliente.
+ *
+ * Devolve os dados brutos, não o arquivo: montar o .xlsx roda no navegador
+ * (mesmo pacote `xlsx` que já lê a planilha de importação), então o server
+ * não precisa gerar nem servir um arquivo binário para isto.
+ */
+export async function exportarFuncionariosDoSetor(fornecedorId: string, eventoId: string) {
+  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+
+  const { data: fornecedor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('id, nome, evento_id, eventos(nome)')
+    .eq('id', fornecedorId)
+    .single()
+  if (!fornecedor) throw new Error('Setor não encontrado')
+  if (fornecedor.evento_id !== eventoId) throw new Error('Este setor não pertence ao evento informado')
+
+  const { data: funcionarios, error } = await supabaseAdmin
+    .from('funcionarios')
+    .select('nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo')
+    .eq('fornecedor_id', fornecedorId)
+    .order('nome')
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  return {
+    setorNome: fornecedor.nome as string,
+    eventoNome: (fornecedor.eventos as unknown as { nome: string } | null)?.nome ?? 'Evento',
+    funcionarios: (funcionarios ?? []) as FuncionarioParaExportar[],
+  }
+}
+
 // ─── Setores ─────────────────────────────────────────────────────────────────
 
 export async function criarSetor(eventoId: string, formData: FormData) {

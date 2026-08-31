@@ -6,6 +6,7 @@ import { Copy, Check, Trash2, Users, ArrowRight, Shield, Wallet } from 'lucide-r
 import { deletarFornecedor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import ImportarFuncionarios from './ImportarFuncionarios'
+import ExportarEquipe from './ExportarEquipe'
 import SupervisorModal from './SupervisorModal'
 import ConfirmModal from '@/components/ConfirmModal'
 
@@ -171,6 +172,7 @@ export default function FornecedorCard({
           </button>
         </div>
         <ImportarFuncionarios fornecedorId={f.id} />
+        <ExportarEquipe fornecedorId={f.id} eventoId={eventoId} />
       </div>
 
       {podeGerenciarSupervisores && (

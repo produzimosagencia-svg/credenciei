@@ -1,5 +1,5 @@
 /**
- * Leitura da planilha de equipe, no navegador.
+ * Leitura e exportação da planilha de equipe, no navegador.
  *
  * Roda no cliente de propósito: o arquivo é lido por código, não pela IA. Um
  * modelo transcrevendo 40 CPFs pode trocar um dígito, e CPF é justamente o
@@ -7,6 +7,8 @@
  * evita duplicata. A IA decide o destino e explica o resultado; quem lê os
  * números é isto aqui.
  */
+
+import { formatCpf, formatTelefone } from './format'
 
 export type LinhaPlanilha = {
   nome: string
@@ -83,4 +85,53 @@ export function resumirPlanilha(linhas: LinhaPlanilha[]) {
     cargos_citados: unicos(linhas.map(l => l.cargo)),
     cidades_citadas: unicos(linhas.map(l => l.cidade)),
   }
+}
+
+export type LinhaExportacao = {
+  nome: string
+  cpf: string
+  telefone: string
+  cargo: string
+  chave_pix: string
+  valor_receber: number | null
+  pago: boolean
+  pago_em: string | null
+  ativo: boolean
+}
+
+/**
+ * Gera e baixa o .xlsx da equipe de um setor, direto no navegador.
+ *
+ * Mesma lógica de `lerPlanilhaDeEquipe`, ao contrário: aqui não se lê nada do
+ * usuário, então não existe risco de digitação — o CPF já está exato, vindo
+ * do banco. O que importa é a formatação, para quem abre no Excel entender de
+ * cara o que está vendo (CPF com pontuação, "Sim/Não" em vez de true/false).
+ */
+export async function exportarPlanilhaDeEquipe(
+  eventoNome: string,
+  setorNome: string,
+  funcionarios: LinhaExportacao[],
+): Promise<void> {
+  const XLSX = await import('xlsx')
+
+  const linhas = funcionarios.map(f => ({
+    Nome: f.nome,
+    CPF: f.cpf ? formatCpf(f.cpf) : '',
+    Telefone: f.telefone ? formatTelefone(f.telefone) : '',
+    Cargo: f.cargo || '',
+    'Chave PIX': f.chave_pix || '',
+    'Valor a receber': f.valor_receber ?? '',
+    Pago: f.pago ? 'Sim' : 'Não',
+    'Data do pagamento': f.pago_em ? new Date(f.pago_em).toLocaleDateString('pt-BR') : '',
+    Ativo: f.ativo ? 'Sim' : 'Não',
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(linhas)
+  ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 8 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, setorNome.slice(0, 31) || 'Equipe')
+
+  // Nome do arquivo sem caracteres que o Windows/macOS recusam.
+  const nomeArquivo = `${eventoNome} - ${setorNome}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
+  XLSX.writeFile(wb, `${nomeArquivo}.xlsx`)
 }
