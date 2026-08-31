@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -38,6 +38,8 @@ export default function FuncionarioDetalheModal({
   setorNome,
   valorCombinado,
   trigger,
+  outrosSetores = [],
+  podeMoverDeSetor = false,
 }: {
   funcionario: Funcionario
   fornecedorId: string
@@ -46,6 +48,10 @@ export default function FuncionarioDetalheModal({
   setorNome: string
   valorCombinado: number | null
   trigger: React.ReactNode
+  /** Os demais setores do evento — o cardápio de para onde mover. */
+  outrosSetores?: { id: string; nome: string }[]
+  /** Só admin/master: mover afeta a equipe de outro supervisor. */
+  podeMoverDeSetor?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [aba, setAba] = useState<Aba>('dados')
@@ -53,7 +59,33 @@ export default function FuncionarioDetalheModal({
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [isPendingPagamento, startTransitionPagamento] = useTransition()
+
   const router = useRouter()
+
+  // ── Mover para outro setor ────────────────────────────────────────────────
+  const [destino, setDestino] = useState('')
+  const [confirmandoMover, setConfirmandoMover] = useState(false)
+  const [erroMover, setErroMover] = useState<string | null>(null)
+  const [isPendingMover, startTransitionMover] = useTransition()
+
+  const moverPara = (novoFornecedorId: string) => {
+    setErroMover(null)
+    startTransitionMover(async () => {
+      try {
+        await moverFuncionarioDeSetor(f.id, eventoId, novoFornecedorId)
+        /*
+         * A pessoa some da lista deste setor assim que a página atualizar —
+         * é o efeito esperado de mover, não um bug. Fechar o modal evita que
+         * ele fique aberto sobre uma linha que já não pertence mais aqui.
+         */
+        router.refresh()
+        setOpen(false)
+      } catch (e: any) {
+        setErroMover(mensagemAmigavel(e))
+        setConfirmandoMover(false)
+      }
+    })
+  }
 
   /*
    * O histórico só é buscado quando a aba é aberta, e uma vez só.
@@ -188,6 +220,71 @@ export default function FuncionarioDetalheModal({
                     <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
                   </div>
                 </div>
+
+                {/*
+                  * Mover para outro setor — só quem gerencia o evento inteiro.
+                  *
+                  * Existe para o admin resolver cadastro no setor errado
+                  * sozinho, sem precisar pedir para alguém mexer direto no
+                  * banco — foi exatamente isso que aconteceu com dois
+                  * "Carregadores" duplicados neste mesmo evento.
+                  */}
+                {podeMoverDeSetor && outrosSetores.length > 0 && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Setor</p>
+                    <p className="text-sm text-slate-700 mb-2">
+                      Atualmente em <strong>{setorNome}</strong>
+                    </p>
+
+                    {!confirmandoMover ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={destino}
+                          onChange={e => setDestino(e.target.value)}
+                          className="input text-sm flex-1"
+                        >
+                          <option value="">Mover para…</option>
+                          {outrosSetores.map(s => (
+                            <option key={s.id} value={s.id}>{s.nome}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => destino && setConfirmandoMover(true)}
+                          disabled={!destino}
+                          className="btn btn-secundario shrink-0 disabled:opacity-50"
+                        >
+                          <Users className="w-3.5 h-3.5 shrink-0" /> Mover
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
+                        <p className="text-amber-800 text-xs">
+                          {f.nome} passa a fazer parte de{' '}
+                          <strong>{outrosSetores.find(s => s.id === destino)?.nome}</strong>.
+                          O QR code, o CPF e as batidas já feitas continuam os mesmos — só o
+                          setor muda.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => moverPara(destino)}
+                            disabled={isPendingMover}
+                            className="btn btn-primario btn-sm disabled:opacity-50"
+                          >
+                            {isPendingMover ? 'Movendo…' : 'Confirmar'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmandoMover(false)}
+                            disabled={isPendingMover}
+                            className="btn btn-secundario btn-sm"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {erroMover && <p className="text-red-500 text-xs mt-1.5">{erroMover}</p>}
+                  </div>
+                )}
 
                 <div>
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Presença hoje</p>

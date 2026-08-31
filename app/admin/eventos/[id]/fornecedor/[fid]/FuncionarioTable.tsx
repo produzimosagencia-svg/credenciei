@@ -68,6 +68,8 @@ export default function FuncionarioTable({
   setorNome,
   valorCombinado,
   podeExcluir = false,
+  outrosSetores = [],
+  podeMoverDeSetor = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
@@ -76,6 +78,10 @@ export default function FuncionarioTable({
   eventoNome: string
   setorNome: string
   valorCombinado: number | null
+  /** Os demais setores do evento, para o "mover para outro setor" do modal. */
+  outrosSetores?: { id: string; nome: string }[]
+  /** Só admin/master: mover afeta a equipe de outro supervisor. */
+  podeMoverDeSetor?: boolean
   /**
    * Só o master exclui. Para o supervisor/admin, DESATIVAR resolve o mesmo
    * problema do dia (a pessoa para de registrar presença) sem apagar as
@@ -260,6 +266,8 @@ export default function FuncionarioTable({
                     eventoNome={eventoNome}
                     setorNome={setorNome}
                     valorCombinado={valorCombinado}
+                    outrosSetores={outrosSetores}
+                    podeMoverDeSetor={podeMoverDeSetor}
                     trigger={
                       <div className="flex items-center gap-2.5 min-w-0 text-left">
                         <Avatar url={f.fotoUrl} nome={f.nome} />
@@ -337,6 +345,8 @@ export default function FuncionarioTable({
                       eventoNome={eventoNome}
                       setorNome={setorNome}
                       valorCombinado={valorCombinado}
+                      outrosSetores={outrosSetores}
+                      podeMoverDeSetor={podeMoverDeSetor}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />

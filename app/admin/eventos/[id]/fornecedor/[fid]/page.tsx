@@ -1,5 +1,5 @@
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeExcluir, podeEscanear } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } from 'lucide-react'
@@ -56,7 +56,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   // página podiam cair em dias diferentes na virada da meia-noite.
   const agoraDoRender = new Date()
 
-  const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }] = await Promise.all([
+  const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }, { data: outrosSetores }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id)').eq('id', fid).single(),
     supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo').eq('fornecedor_id', fid).order('nome'),
     /*
@@ -79,6 +79,14 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       .select('data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
       .eq('id', id)
       .single(),
+    /*
+     * Os OUTROS setores deste evento, só id e nome.
+     *
+     * Alimenta o "mover para outro setor" no modal do funcionário. Uma
+     * consulta por carga da página, não por funcionário — a lista é a mesma
+     * para todo mundo listado aqui.
+     */
+    supabase.from('fornecedores').select('id, nome').eq('evento_id', id).neq('id', fid).order('nome'),
   ])
 
   if (!fornecedor) notFound()
@@ -275,6 +283,13 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           setorNome={fornecedor.nome}
           valorCombinado={fornecedor.valor_combinado ?? null}
           podeExcluir={podeExcluir(perfil.role)}
+          outrosSetores={outrosSetores ?? []}
+          /*
+           * Mover é decisão de quem enxerga o evento inteiro, não de um
+           * supervisor — mover gente de setor mexe na equipe de OUTRO
+           * supervisor sem ele estar envolvido na decisão.
+           */
+          podeMoverDeSetor={podeGerenciarEventos(perfil.role)}
         />
       </div>
     </div>

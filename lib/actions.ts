@@ -933,6 +933,91 @@ export async function deletarFornecedor(id: string, eventoId: string) {
   redirect(`/admin/eventos/${eventoId}`)
 }
 
+/**
+ * Move um funcionário para outro setor DO MESMO EVENTO.
+ *
+ * Existe para não depender de mim de novo. É exatamente o que fiz na mão para
+ * os dois "Carregadores" duplicados do Henrique e Juliano — um UPDATE no
+ * `fornecedor_id` — só que como botão, para o admin resolver sozinho quando
+ * alguém foi cadastrado no setor errado.
+ *
+ * NÃO muda nada da pessoa: nome, CPF, telefone, foto e o `qr_token` da
+ * credencial continuam os mesmos. E as batidas já feitas não somem — elas
+ * ficam presas ao funcionário (`funcionario_id`), não ao setor, então o
+ * histórico dela migra junto, automaticamente, sem precisar tocar em
+ * `registros`.
+ *
+ * Só admin e master, de propósito — não o supervisor. Mover gente de setor
+ * afeta a equipe de OUTRO supervisor sem ele saber; deixar cada supervisor
+ * mexer na composição alheia seria o tipo de ação que exige alguém com visão
+ * do evento inteiro.
+ */
+export async function moverFuncionarioDeSetor(
+  funcionarioId: string,
+  eventoId: string,
+  novoFornecedorId: string,
+) {
+  await exigirEventoDaOrg(eventoId)
+  const db = supabaseAdmin
+
+  const { data: func } = await db
+    .from('funcionarios')
+    .select('id, cpf, fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func) throw new Error('Funcionário não encontrado.')
+  // Confere que ele É deste evento — sem isto, um id de outro evento passado
+  // por engano (ou de propósito) moveria gente para um setor de outro cliente.
+  if ((func.fornecedores as unknown as { evento_id: string }).evento_id !== eventoId) {
+    throw new Error('Este funcionário não pertence a este evento.')
+  }
+
+  if (func.fornecedor_id === novoFornecedorId) {
+    return { ok: true as const, mudou: false }
+  }
+
+  const { data: destino } = await db
+    .from('fornecedores')
+    .select('id, nome, evento_id')
+    .eq('id', novoFornecedorId)
+    .single()
+  if (!destino) throw new Error('Setor de destino não encontrado.')
+  // O destino precisa ser do MESMO evento — mover entre eventos é outra
+  // operação (o funcionário pertenceria a duas credenciais, dois QR
+  // diferentes), fora do que este botão resolve.
+  if (destino.evento_id !== eventoId) {
+    throw new Error('O setor de destino não é deste evento.')
+  }
+
+  /*
+   * A mesma regra que vale ao se cadastrar: uma pessoa não pode estar em dois
+   * setores do mesmo evento. Aqui é defensivo — não deveria haver como esse
+   * estado existir — mas mover às cegas por cima de um cadastro duplicado
+   * criaria confusão pior do que a que se está tentando resolver.
+   */
+  const { data: colisao } = await db
+    .from('funcionarios')
+    .select('id')
+    .eq('fornecedor_id', novoFornecedorId)
+    .eq('cpf', func.cpf)
+    .limit(1)
+  if (colisao && colisao.length) {
+    throw new Error(`Já existe um cadastro com este CPF no setor ${destino.nome}.`)
+  }
+
+  const { error } = await db
+    .from('funcionarios')
+    .update({ fornecedor_id: novoFornecedorId })
+    .eq('id', funcionarioId)
+  if (error) throw new Error('Não foi possível mover o funcionário. Tente de novo.')
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${func.fornecedor_id}`)
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${novoFornecedorId}`)
+  revalidatePath(`/admin/eventos/${eventoId}`)
+
+  return { ok: true as const, mudou: true, novoSetorNome: destino.nome as string }
+}
+
 // ─── Setores ─────────────────────────────────────────────────────────────────
 
 export async function criarSetor(eventoId: string, formData: FormData) {
