@@ -31,6 +31,7 @@ type Supervisor = {
 }
 
 type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
+type DiaDoEvento = { data: string; tipo: string }
 
 /** A partir de quantos setores a busca aparece. */
 const MINIMO_PARA_BUSCAR = 5
@@ -40,6 +41,7 @@ export default function ListaDeSetores({
   eventoId,
   supervisoresPorFornecedor,
   funcionariosPorFornecedor,
+  diasDoEvento,
   podeGerenciarSupervisores,
   podeExcluir,
 }: {
@@ -47,6 +49,7 @@ export default function ListaDeSetores({
   eventoId: string
   supervisoresPorFornecedor: Record<string, Supervisor[]>
   funcionariosPorFornecedor: Record<string, FuncionarioDoSetor[]>
+  diasDoEvento: DiaDoEvento[]
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
 }) {
@@ -137,6 +140,7 @@ export default function ListaDeSetores({
               eventoId={eventoId}
               supervisores={supervisoresPorFornecedor[f.id] ?? []}
               funcionariosDoSetor={funcionariosPorFornecedor[f.id] ?? []}
+              diasDoEvento={diasDoEvento}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
             />

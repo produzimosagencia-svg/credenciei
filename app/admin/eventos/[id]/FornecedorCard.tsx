@@ -22,6 +22,7 @@ type Fornecedor = {
 
 type Supervisor = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
 type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
+type DiaDoEvento = { data: string; tipo: string }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -30,6 +31,7 @@ export default function FornecedorCard({
   eventoId,
   supervisores = [],
   funcionariosDoSetor = [],
+  diasDoEvento = [],
   podeGerenciarSupervisores = false,
   podeExcluir = false,
 }: {
@@ -38,6 +40,8 @@ export default function FornecedorCard({
   supervisores?: Supervisor[]
   /** Quem já está credenciado neste setor — o "Criar Supervisor" oferece a lista em vez de um formulário em branco. */
   funcionariosDoSetor?: FuncionarioDoSetor[]
+  /** Os dias do evento — para o "Exportar planilha" oferecer o fluxo de um dia. */
+  diasDoEvento?: DiaDoEvento[]
   podeGerenciarSupervisores?: boolean
   /** Só o master exclui. O admin encerra o evento, que resolve sem destruir. */
   podeExcluir?: boolean
@@ -172,7 +176,7 @@ export default function FornecedorCard({
           </button>
         </div>
         <ImportarFuncionarios fornecedorId={f.id} />
-        <ExportarEquipe fornecedorId={f.id} eventoId={eventoId} />
+        <ExportarEquipe fornecedorId={f.id} eventoId={eventoId} dias={diasDoEvento} />
       </div>
 
       {podeGerenciarSupervisores && (

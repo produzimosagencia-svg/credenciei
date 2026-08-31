@@ -1069,6 +1069,10 @@ export type FuncionarioParaExportar = {
   pago: boolean
   pago_em: string | null
   ativo: boolean
+  /** Só vem preenchido quando `filtro` foi passado — hora de cada etapa, no dia escolhido. */
+  entrada?: string | null
+  meio?: string | null
+  fim?: string | null
 }
 
 /**
@@ -1077,8 +1081,17 @@ export type FuncionarioParaExportar = {
  * Devolve os dados brutos, não o arquivo: montar o .xlsx roda no navegador
  * (mesmo pacote `xlsx` que já lê a planilha de importação), então o server
  * não precisa gerar nem servir um arquivo binário para isto.
+ *
+ * `filtro` é opcional: sem ele, só o cadastro (nome, CPF, financeiro). Com
+ * ele, soma o horário de cada etapa marcada, NUM dia só — juntar o evento
+ * inteiro misturaria montagem com o dia do show na mesma coluna, e quem olha
+ * a planilha não teria como saber de qual dia é cada horário.
  */
-export async function exportarFuncionariosDoSetor(fornecedorId: string, eventoId: string) {
+export async function exportarFuncionariosDoSetor(
+  fornecedorId: string,
+  eventoId: string,
+  filtro?: { dataRef: string; tipos: ('entrada' | 'meio' | 'fim')[] },
+) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
 
   const { data: fornecedor } = await supabaseAdmin
@@ -1091,15 +1104,36 @@ export async function exportarFuncionariosDoSetor(fornecedorId: string, eventoId
 
   const { data: funcionarios, error } = await supabaseAdmin
     .from('funcionarios')
-    .select('nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo')
+    .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo')
     .eq('fornecedor_id', fornecedorId)
     .order('nome')
   if (error) throw new Error(mensagemAmigavel(error))
 
+  const porFuncionario: Record<string, Record<'entrada' | 'meio' | 'fim', string | null>> = {}
+  if (filtro && filtro.tipos.length > 0 && funcionarios?.length) {
+    const { data: registros, error: erroRegistros } = await supabaseAdmin
+      .from('registros')
+      .select('funcionario_id, tipo, created_at')
+      .eq('data_ref', filtro.dataRef)
+      .in('tipo', filtro.tipos)
+      .in('funcionario_id', funcionarios.map(f => f.id))
+    if (erroRegistros) throw new Error(mensagemAmigavel(erroRegistros))
+    for (const r of registros ?? []) {
+      (porFuncionario[r.funcionario_id] ??= { entrada: null, meio: null, fim: null })[r.tipo as 'entrada' | 'meio' | 'fim'] = r.created_at
+    }
+  }
+
   return {
     setorNome: fornecedor.nome as string,
     eventoNome: (fornecedor.eventos as unknown as { nome: string } | null)?.nome ?? 'Evento',
-    funcionarios: (funcionarios ?? []) as FuncionarioParaExportar[],
+    funcionarios: (funcionarios ?? []).map(({ id, ...f }) => ({
+      ...f,
+      ...(filtro ? {
+        entrada: filtro.tipos.includes('entrada') ? (porFuncionario[id]?.entrada ?? null) : undefined,
+        meio: filtro.tipos.includes('meio') ? (porFuncionario[id]?.meio ?? null) : undefined,
+        fim: filtro.tipos.includes('fim') ? (porFuncionario[id]?.fim ?? null) : undefined,
+      } : {}),
+    })) as FuncionarioParaExportar[],
   }
 }
 

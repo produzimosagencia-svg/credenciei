@@ -283,6 +283,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
               funcionariosPorFornecedor={funcionariosPorFornecedor}
+              diasDoEvento={diasTrabalho ?? []}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}
             />

@@ -97,6 +97,21 @@ export type LinhaExportacao = {
   pago: boolean
   pago_em: string | null
   ativo: boolean
+  /** Só vêm quando a exportação pediu fluxo de presença (ver `colunas`). */
+  entrada?: string | null
+  meio?: string | null
+  fim?: string | null
+}
+
+const ROTULO_ETAPA: Record<'entrada' | 'meio' | 'fim', string> = {
+  entrada: 'Entrada', meio: 'Meio', fim: 'Saída',
+}
+
+/** "2026-09-05T08:43:00Z" → "08:43". O dia já está no nome do arquivo e da aba. */
+function soHora(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
 }
 
 /**
@@ -106,14 +121,20 @@ export type LinhaExportacao = {
  * usuário, então não existe risco de digitação — o CPF já está exato, vindo
  * do banco. O que importa é a formatação, para quem abre no Excel entender de
  * cara o que está vendo (CPF com pontuação, "Sim/Não" em vez de true/false).
+ *
+ * `opcoes.colunas` liga o fluxo de presença (hora de cada etapa marcada,
+ * NUM dia só — ver o comentário de `exportarFuncionariosDoSetor`). Sem ela, a
+ * planilha é só o cadastro, como já era.
  */
 export async function exportarPlanilhaDeEquipe(
   eventoNome: string,
   setorNome: string,
   funcionarios: LinhaExportacao[],
+  opcoes?: { diaLabel: string; colunas: ('entrada' | 'meio' | 'fim')[] },
 ): Promise<void> {
   const XLSX = await import('xlsx')
 
+  const colunas = opcoes?.colunas ?? []
   const linhas = funcionarios.map(f => ({
     Nome: f.nome,
     CPF: f.cpf ? formatCpf(f.cpf) : '',
@@ -124,14 +145,19 @@ export async function exportarPlanilhaDeEquipe(
     Pago: f.pago ? 'Sim' : 'Não',
     'Data do pagamento': f.pago_em ? new Date(f.pago_em).toLocaleDateString('pt-BR') : '',
     Ativo: f.ativo ? 'Sim' : 'Não',
+    ...Object.fromEntries(colunas.map(c => [ROTULO_ETAPA[c], soHora(f[c])])),
   }))
 
   const ws = XLSX.utils.json_to_sheet(linhas)
-  ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 8 }]
+  ws['!cols'] = [
+    { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 8 },
+    ...colunas.map(() => ({ wch: 10 })),
+  ]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, setorNome.slice(0, 31) || 'Equipe')
 
   // Nome do arquivo sem caracteres que o Windows/macOS recusam.
-  const nomeArquivo = `${eventoNome} - ${setorNome}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
+  const sufixoDia = opcoes?.diaLabel ? ` - ${opcoes.diaLabel}` : ''
+  const nomeArquivo = `${eventoNome} - ${setorNome}${sufixoDia}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
   XLSX.writeFile(wb, `${nomeArquivo}.xlsx`)
 }
