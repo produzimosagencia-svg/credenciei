@@ -5,7 +5,7 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf } from '@/lib/format'
-import { diaBRT, periodoDoEvento, type EventoJanelas } from '@/lib/janelas'
+import { diaBRT } from '@/lib/janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA, type EtapaPendente, type Pendencia } from '@/lib/pendencias'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import FeedDeAtividade from '../FeedDeAtividade'
@@ -81,19 +81,26 @@ export default async function PendenciasPage({
     redirect('/admin')
   }
 
-  // Dias navegáveis: o período do evento, do mais recente para o mais antigo —
-  // a pergunta quase sempre é sobre hoje ou ontem.
-  const periodo = periodoDoEvento(evento as EventoJanelas)
+  /*
+   * Dias navegáveis: os dias de TRABALHO (`jornada_dias`), não o período do
+   * evento (`data_inicio` → `data_fim`).
+   *
+   * Os dois divergem sempre que existe montagem ou desmontagem — que é o caso
+   * normal, não a exceção. `data_inicio`/`data_fim` marcam só o show em si
+   * (05/09 18:30 → 06/09 08:00); os dias de preparação configurados em
+   * "Editar evento" (28/08, 31/08 a 04/09, 06/09 a 09/09) vivem à parte, em
+   * `jornada_dias`, e ficavam de fora do seletor — a montagem inteira ficava
+   * sem como ser conferida nesta tela, embora as pendências daqueles dias
+   * existissem e as mensagens de WhatsApp já as usassem.
+   */
+  const { data: diasTrabalho } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('data')
+    .eq('evento_id', eventoId)
+    .eq('cancelado', false)
+    .order('data')
   const hoje = diaBRT()
-  const dias: string[] = []
-  if (periodo) {
-    for (let d = periodo.primeiro; d <= periodo.ultimo && dias.length < 60; ) {
-      dias.push(d)
-      const [a, m, dd] = d.split('-').map(Number)
-      const prox = new Date(Date.UTC(a, m - 1, dd + 1, 12))
-      d = prox.toISOString().slice(0, 10)
-    }
-  }
+  const dias = (diasTrabalho ?? []).map(d => d.data as string)
   const diaEscolhido = diaParam && dias.includes(diaParam)
     ? diaParam
     : (dias.includes(hoje) ? hoje : dias[dias.length - 1] ?? hoje)
