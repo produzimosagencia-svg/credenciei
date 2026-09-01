@@ -62,7 +62,7 @@ export type TipoMensagem =
   | 'disparo_manual'
 
 /**
- * A que horas sai o aviso do dia do evento.
+ * A que horas sai o aviso do dia do evento — PADRÃO DE TODO EVENTO.
  *
  * Horário FIXO, não derivado da abertura do credenciamento.
  *
@@ -72,11 +72,12 @@ export type TipoMensagem =
  * mil pessoas de madrugada é ruim por si só, e ainda derrota o propósito — às
  * 8h a mensagem já está enterrada sob as outras do grupo.
  *
- * Nove da manhã pega quase todo mundo acordado e deixa o dia inteiro para
- * resolver problema: quem perdeu a credencial, quem trocou de número, quem não
- * sabia que trabalhava hoje.
+ * Sete da manhã a pedido do Juan: em evento grande a equipe começa a se
+ * organizar cedo, e quem trabalha de manhã precisa da informação antes de sair
+ * de casa. Cedo o bastante para servir, tarde o bastante para não acordar
+ * ninguém de madrugada.
  */
-const HORA_AVISO_DIA_EVENTO = '09:00'
+const HORA_AVISO_DIA_EVENTO = '07:00'
 
 /**
  * Antecedência usada quando o credenciamento inteiro acontece antes das 9h.
@@ -98,23 +99,23 @@ const ANTECEDENCIA_AVISO_DIA_HORAS = 2
  * a antecipação disparou e as 56 mensagens foram parar às 05:00 da manhã —
  * exatamente o que o horário fixo existia para evitar.
  *
- * Abrir cedo não é problema: se a janela segue aberta às 9h, a mensagem ainda
- * serve, e a equipe de um evento noturno chega à tarde. O que torna as 9h
- * inúteis é a janela inteira já ter terminado.
+ * Abrir cedo não é problema: se a janela segue aberta no horário padrão, a
+ * mensagem ainda serve, e a equipe de um evento noturno chega à tarde. O que
+ * torna o horário padrão inútil é a janela inteira já ter terminado.
  */
 function quandoAvisarDoDia(
   diaPrincipal: string,
   entradaAbreEm: string,
   entradaFechaEm: string | null,
 ): string {
-  const noveDaManha = new Date(`${diaPrincipal}T${HORA_AVISO_DIA_EVENTO}:00-03:00`)
+  const horaPadrao = new Date(`${diaPrincipal}T${HORA_AVISO_DIA_EVENTO}:00-03:00`)
 
-  // A janela ainda estará aberta às 9h? Então 9h, e ponto.
-  if (!entradaFechaEm || noveDaManha.getTime() < new Date(entradaFechaEm).getTime()) {
-    return noveDaManha.toISOString()
+  // A janela ainda estará aberta no horário padrão? Então ele vale, e ponto.
+  if (!entradaFechaEm || horaPadrao.getTime() < new Date(entradaFechaEm).getTime()) {
+    return horaPadrao.toISOString()
   }
 
-  // A janela inteira acontece antes das 9h: avisa antes de ela abrir.
+  // A janela inteira termina antes do horário padrão: avisa antes de ela abrir.
   return new Date(
     new Date(entradaAbreEm).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000,
   ).toISOString()
