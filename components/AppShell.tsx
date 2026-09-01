@@ -21,6 +21,8 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+import MeusSetores, { type SetorDoSupervisor } from './MeusSetores'
+
 type NavItem = { href: string; label: string; icon: React.ElementType }
 type Grupo = { titulo?: string; itens: NavItem[] }
 
@@ -115,10 +117,13 @@ function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
   )
 }
 
-function NavLinks({ grupos, pathname, onNavigate }: {
+function NavLinks({ grupos, pathname, onNavigate, setores, setorAtualId }: {
   grupos: Grupo[]
   pathname: string
   onNavigate?: () => void
+  /** Setores do supervisor. Vazio para os outros papéis. */
+  setores: SetorDoSupervisor[]
+  setorAtualId: string | null
 }) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
   return (
@@ -143,6 +148,12 @@ function NavLinks({ grupos, pathname, onNavigate }: {
               )
             })}
           </div>
+          {/*
+            * "Meus setores" entra logo depois do primeiro bloco, junto do que
+            * se usa todos os dias — trocar de setor é navegação, não
+            * configuração. Ele mesmo some quando há um setor só.
+            */}
+          {i === 0 && <MeusSetores setores={setores} atualId={setorAtualId} onNavigate={onNavigate} />}
         </div>
       ))}
     </nav>
@@ -241,10 +252,15 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
  * então menu lateral e conteúdo lado a lado. O menu começando ABAIXO do topo
  * é o que faz o cabeçalho ser do sistema, e não do conteúdo.
  */
-export default function AppShell({ perfil, fotoOrgUrl = null, orgNome = null, children }: {
+export default function AppShell({
+  perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null, children,
+}: {
   perfil: Perfil
   fotoOrgUrl?: string | null
   orgNome?: string | null
+  /** Setores que este supervisor pode acessar. Vazio para os outros papéis. */
+  setores?: SetorDoSupervisor[]
+  setorAtualId?: string | null
   children: React.ReactNode
 }) {
   const router = useRouter()
@@ -294,7 +310,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, orgNome = null, ch
             recortado entre duas faixas claras viraria um bloco solto no meio
             da página. Por isso a trilha mora do lado do conteúdo, não aqui. */}
         <aside className="menu-lateral hidden md:flex flex-col w-60 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)]">
-          <NavLinks grupos={grupos} pathname={pathname} />
+          <NavLinks grupos={grupos} pathname={pathname} setores={setores} setorAtualId={setorAtualId} />
           <BotaoAssistente />
         </aside>
 
@@ -345,7 +361,7 @@ export default function AppShell({ perfil, fotoOrgUrl = null, orgNome = null, ch
               </div>
             )}
 
-            <NavLinks grupos={grupos} pathname={pathname} onNavigate={() => setMenuAberto(false)} />
+            <NavLinks grupos={grupos} pathname={pathname} setores={setores} setorAtualId={setorAtualId} onNavigate={() => setMenuAberto(false)} />
             <BotaoAssistente onNavigate={() => setMenuAberto(false)} />
             <div className="px-3 pb-3 shrink-0 border-t border-white/10 pt-3">
               <button onClick={handleLogout} className="menu-item w-full">

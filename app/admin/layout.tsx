@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin } from '@/lib/supabase-server'
 import AppShell from '@/components/AppShell'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -26,5 +26,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     }
   }
 
-  return <AppShell perfil={perfil} fotoOrgUrl={fotoOrgUrl} orgNome={orgNome}>{children}</AppShell>
+  // Os setores do supervisor alimentam o "Meus setores" do menu. Devolve
+  // vazio para os outros papéis, e o item some sozinho.
+  const setores = await meusSetores(perfil)
+
+  return (
+    <AppShell
+      perfil={perfil}
+      fotoOrgUrl={fotoOrgUrl}
+      orgNome={orgNome}
+      setores={setores}
+      setorAtualId={(perfil.fornecedor_id as string | null) ?? null}
+    >
+      {children}
+    </AppShell>
+  )
 }
