@@ -151,11 +151,9 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         /*
          * O meio ABRE e não FECHA — igual ao servidor, que é quem manda.
          *
-         * Aqui o cartão sumia depois do fim da janela, e isso criava um beco
-         * sem saída que o servidor faz questão de evitar: como a saída exige o
-         * meio, quem se atrasasse não conseguia nem registrar o meio nem ir
-         * embora, e ficava dependendo do supervisor bater o cartão por ele.
-         * Com equipe grande, isso vira fila no portão.
+         * Aqui o cartão sumia depois do fim da janela, e isso tirava de quem
+         * se atrasasse a chance de registrar de vez — com equipe grande, isso
+         * vira gente sem meio gravado e sem jeito de corrigir sozinha.
          *
          * Chegar tarde não fica escondido: o horário real é gravado, e a tela
          * de pendências e o histórico comparam com o previsto.

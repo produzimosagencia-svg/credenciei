@@ -53,9 +53,9 @@ export type DiaDoHistorico = {
    * quando não houve batida.
    *
    * O meio pode ser registrado depois do prazo de propósito — fechar a janela
-   * prenderia a pessoa, já que a saída exige o meio. Mas atrasar não pode sair
-   * de graça: é isto que faz o dia aparecer marcado no histórico, para o
-   * organizador cobrar a justificativa no acerto.
+   * faria quem passasse do horário perder a chance de registrar de vez. Mas
+   * atrasar não pode sair de graça: é isto que faz o dia aparecer marcado no
+   * histórico, para o organizador cobrar a justificativa no acerto.
    */
   meioAtrasoMin: number | null
   /** Bateu pelo menos a entrada. */

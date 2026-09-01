@@ -62,9 +62,9 @@ confere('o servidor só barra antes de abrir', /agora\.getTime\(\) < new Date\(j
 confere('a credencial mantém o cartão aberto', /aberto \? \('disponivel'/.test(C.credencial), true)
 confere('e avisa quem está em atraso', /avisoAtraso/.test(C.credencial), true)
 
-grupo('4 · A saída exige o meio')
-confere('o servidor exige', /Registre o meio antes de sair/.test(C.actions), true)
-confere('e a mensagem avisa disso', /saída não libera|saída só libera/.test(C.modelos), true)
+grupo('4 · A saída NÃO exige mais o meio')
+confere('o servidor não bloqueia', /Registre o meio antes de sair/.test(C.actions), false)
+confere('e a mensagem não afirma isso', /saída não libera|saída só libera/.test(C.modelos), false)
 
 grupo('5 · Batida livre solta o HORÁRIO, não o CALENDÁRIO')
 confere('dia não marcado é checado antes', /if \(!dia\) \{[\s\S]{0,200}não está marcado/.test(C.janelas), true)

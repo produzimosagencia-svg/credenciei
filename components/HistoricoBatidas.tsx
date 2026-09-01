@@ -108,10 +108,10 @@ function StatusDoDia({ dia }: { dia: DiaDoHistorico }) {
  * célula vazia vira um traço quieto.
  *
  * `atrasoMin` marca a batida feita FORA do prazo. Ela existe e vale — o meio
- * pode ser registrado depois da hora de propósito, senão a pessoa ficaria
- * presa, já que a saída exige o meio. Mas o organizador precisa reconhecer
- * isso de relance no fechamento, porque é uma ausência do posto que a pessoa
- * ainda vai ter que justificar.
+ * pode ser registrado depois da hora de propósito, senão a pessoa perderia a
+ * chance de registrar de vez. Mas o organizador precisa reconhecer isso de
+ * relance no fechamento, porque é uma ausência do posto que a pessoa ainda
+ * vai ter que justificar.
  */
 function Celula({
   batida, atrasoMin, silencioso,

@@ -97,7 +97,7 @@ Vá ao *credenciamento* e mostre o QR Code da sua credencial. É ele que registr
 
 Você mesmo faz, pelo celular: abra sua credencial, toque no cartão do meio e tire uma selfie com a *localização ligada*.
 
-⚠️ Sem o meio registrado, a saída não libera.
+⚠️ Não esqueça — é isso que comprova suas horas no meio do turno.
 
 *3️⃣ SAÍDA — das ${saidaAbre} às ${saidaFecha}*
 
@@ -130,7 +130,7 @@ Hoje é dia de *desenvolvimento* do *${evento}* — montagem e preparação da o
 ⏰ Hoje o horário é livre: registre a *entrada* quando começar e a *saída* quando terminar.
 🤳 Durante o turno avisamos por aqui a hora de abrir a credencial e tirar a selfie do meio.
 
-⚠️ A saída só libera depois que o meio estiver registrado — é assim que suas horas ficam comprovadas.
+⚠️ Não esqueça de registrar — é assim que suas horas ficam comprovadas.
 
 🔗 Sua credencial:
 ${link}

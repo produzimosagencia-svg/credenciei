@@ -1734,10 +1734,10 @@ async function resolverRegistro(
      * O meio ABRE num horário, mas não FECHA.
      *
      * O ponto dele é o horário ficar gravado — é o que permite conferir a
-     * jornada com a pessoa depois. Fechar a janela criaria um beco sem saída:
-     * como a saída exige o meio, quem passasse do horário não conseguiria nem
-     * registrar o meio nem ir embora, e ficaria dependendo do supervisor para
-     * bater o cartão às onze da noite.
+     * jornada com a pessoa depois. Fechar a janela faria quem passasse do
+     * horário perder a chance de registrar de vez — e a saída não depende
+     * mais do meio (ver `resolverRegistro`), então não é mais um beco sem
+     * saída, mas continua sendo um buraco no relatório sem necessidade.
      *
      * Chegar atrasado não some do relatório: a tela de pendências e o
      * histórico comparam o horário feito com o esperado e mostram a diferença.
@@ -1760,32 +1760,17 @@ async function resolverRegistro(
     if (!veredito.ok) return { ok: false, erro: veredito.erro }
 
     /*
-     * Saída exige o meio.
+     * A saída NÃO exige mais o meio.
      *
-     * Pedido explicitamente: o horário do meio precisa estar gravado pra ser
-     * possível justificar a jornada com a pessoa depois. Deixar sair sem ele
-     * deixaria um buraco no meio do turno que ninguém consegue reconstruir.
-     *
-     * Quando a pessoa perdeu o meio de verdade, quem resolve é o supervisor
-     * pelo registro assistido — ele grava a etapa pendente com foto e
-     * auditoria, e aí a saída destrava.
+     * Chegou a existir essa trava (o meio precisava estar gravado pra
+     * liberar a saída), a pedido explícito — mas travava justamente quem
+     * mais precisava sair: quem perdeu o meio de verdade ficava preso no
+     * evento até um supervisor destravar pelo registro assistido, e num
+     * show grande isso virava fila. A ausência do meio continua visível:
+     * ela aparece marcada no histórico e na tela de pendências, para o
+     * organizador cobrar a justificativa no acerto — só deixou de IMPEDIR
+     * a saída.
      */
-    if (momento === 'fim') {
-      const { data: temMeio } = await supabaseAdmin
-        .from('registros')
-        .select('id')
-        .eq('funcionario_id', funcionarioId)
-        .eq('evento_id', evento.id)
-        .eq('tipo', 'meio')
-        .eq('data_ref', dataRef)
-        .limit(1)
-      if (!temMeio?.length) {
-        return {
-          ok: false,
-          erro: 'Registre o meio antes de sair. Abra sua credencial, tire a selfie do meio e volte aqui — a saída libera na hora.',
-        }
-      }
-    }
   }
 
   const { data: jaExiste } = await supabaseAdmin
