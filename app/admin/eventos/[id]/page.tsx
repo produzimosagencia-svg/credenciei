@@ -112,6 +112,16 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   // Supervisores vinculados a cada setor (fornecedor) deste evento
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
+
+  /*
+   * Quem já está credenciado NESTE EVENTO, de qualquer setor — para o
+   * "Criar operador" oferecer a busca em vez de um formulário em branco.
+   * Diferente do supervisor (uma lista por setor), o operador é do evento
+   * inteiro, então a lista é uma só, achatada.
+   */
+  const { data: funcionariosDoEventoRows } = fornecedorIds.length
+    ? await supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
+    : { data: [] as any[] }
   const { data: supervisoresRows } = fornecedorIds.length
     ? await supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
     : { data: [] as any[] }
@@ -291,7 +301,12 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
           {podeGerenciarUsuarios(perfil?.role) && (
             <div className="mb-4">
-              <OperadorPortariaCard eventoId={id} operadores={operadoresRows ?? []} podeExcluir={podeExcluir(perfil?.role)} />
+              <OperadorPortariaCard
+                eventoId={id}
+                operadores={operadoresRows ?? []}
+                funcionariosDoEvento={funcionariosDoEventoRows ?? []}
+                podeExcluir={podeExcluir(perfil?.role)}
+              />
             </div>
           )}
 

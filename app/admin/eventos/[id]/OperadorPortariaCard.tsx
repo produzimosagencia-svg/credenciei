@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck } from 'lucide-react'
+import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft } from 'lucide-react'
 import { criarOperadorPortaria, editarSupervisor, deletarUsuario } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -9,6 +9,12 @@ import { mensagemAmigavel } from '@/lib/erros'
 import ConfirmModal from '@/components/ConfirmModal'
 
 type Operador = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
+type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
+
+/** A partir de quantos nomes a lista de escolha ganha busca. */
+const MINIMO_PARA_BUSCAR = 6
+
+const formatCpf = (cpf: string) => cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
 
 /**
  * Operadores de portão — quem lê o QR e registra ponto manual sem precisar
@@ -20,10 +26,12 @@ type Operador = { id: string; nome: string; email: string; cpf: string | null; t
  * consulta, em page.tsx.
  */
 export default function OperadorPortariaCard({
-  eventoId, operadores, podeExcluir = false,
+  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false,
 }: {
   eventoId: string
   operadores: Operador[]
+  /** Quem já está credenciado neste evento — "Criar operador" busca aqui em vez de um formulário em branco. */
+  funcionariosDoEvento?: FuncionarioDoEvento[]
   /** Só o master exclui de verdade — ver `deletarUsuario` em lib/actions.ts. */
   podeExcluir?: boolean
 }) {
@@ -66,6 +74,7 @@ export default function OperadorPortariaCard({
         <ModalOperador
           eventoId={eventoId}
           operador={modalAberto === 'criar' ? null : modalAberto}
+          funcionariosDoEvento={funcionariosDoEvento}
           onFechar={() => setModalAberto(null)}
           podeExcluir={podeExcluir}
         />
@@ -75,10 +84,11 @@ export default function OperadorPortariaCard({
 }
 
 function ModalOperador({
-  eventoId, operador, onFechar, podeExcluir,
+  eventoId, operador, funcionariosDoEvento, onFechar, podeExcluir,
 }: {
   eventoId: string
   operador: Operador | null
+  funcionariosDoEvento: FuncionarioDoEvento[]
   onFechar: () => void
   podeExcluir: boolean
 }) {
@@ -89,6 +99,22 @@ function ModalOperador({
   const [confirmOpen, setConfirmOpen] = useState(false)
   const router = useRouter()
   const editando = !!operador
+
+  /*
+   * Escolher entre quem já está credenciado no evento — como já é feito no
+   * "Tornar supervisor". Repetível: nada aqui impede criar mais de um
+   * operador, um de cada vez, cada um passando pelo mesmo fluxo.
+   */
+  const [escolhido, setEscolhido] = useState<FuncionarioDoEvento | 'manual' | null>(
+    () => (!editando && funcionariosDoEvento.length > 0 ? null : 'manual')
+  )
+  const [busca, setBusca] = useState('')
+  const mostrandoLista = !editando && escolhido === null
+
+  const filtrados = busca.trim()
+    ? funcionariosDoEvento.filter(f =>
+        f.nome.toLowerCase().includes(busca.trim().toLowerCase()) || f.cpf.includes(busca.replace(/\D/g, '')))
+    : funcionariosDoEvento
 
   const handleSubmit = (formData: FormData) => {
     setErro(null)
@@ -131,12 +157,24 @@ function ModalOperador({
     })
   }
 
+  const chaveForm = editando ? operador!.id : (typeof escolhido === 'string' ? escolhido : escolhido?.id ?? 'vazio')
+  const nomeInicial = editando ? operador!.nome : (escolhido && escolhido !== 'manual' ? escolhido.nome : '')
+  const cpfInicial = editando
+    ? (operador!.cpf ?? exibirIdentificador(operador!.email))
+    : (escolhido && escolhido !== 'manual' ? escolhido.cpf : '')
+  const telefoneInicial = editando
+    ? (operador!.telefone ?? '')
+    : (escolhido && escolhido !== 'manual' ? escolhido.telefone : '')
+  const veioDaLista = !editando && escolhido !== null && escolhido !== 'manual'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !isPending && onFechar()}>
       <div className="overlay-fade-in absolute inset-0 bg-black/45" />
       <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
-          <h2 className="text-slate-800 font-bold">{editando ? 'Editar operador' : 'Novo operador de portão'}</h2>
+          <h2 className="text-slate-800 font-bold">
+            {editando ? 'Editar operador' : mostrandoLista ? 'Quem vai ser operador de portão?' : 'Novo operador de portão'}
+          </h2>
           <button onClick={onFechar} disabled={isPending} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
             <X className="w-4 h-4" />
           </button>
@@ -161,23 +199,85 @@ function ModalOperador({
             </button>
             <button onClick={onFechar} className="btn btn-secundario w-full">Fechar</button>
           </div>
+        ) : mostrandoLista ? (
+          /*
+           * Passo 1: escolher entre quem já está credenciado no evento.
+           *
+           * Mesmo motivo do "Tornar supervisor": pedir de novo nome e CPF de
+           * alguém que já se cadastrou é retrabalho e risco de digitar um
+           * dígito errado — o suficiente pra criar um cadastro fantasma.
+           */
+          <div className="p-6 space-y-3">
+            {funcionariosDoEvento.length >= MINIMO_PARA_BUSCAR && (
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  value={busca}
+                  onChange={e => setBusca(e.target.value)}
+                  placeholder="Buscar por nome ou CPF…"
+                  autoFocus
+                  className="input pl-9 text-sm"
+                />
+              </div>
+            )}
+
+            <div className="-mx-1 max-h-72 overflow-y-auto space-y-0.5">
+              {filtrados.length === 0 ? (
+                <p className="text-slate-400 text-sm px-1 py-2">Ninguém encontrado com “{busca}”.</p>
+              ) : filtrados.map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setEscolhido(f)}
+                  className="w-full flex items-center justify-between gap-2 text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-slate-800 text-sm font-medium truncate">{f.nome}</span>
+                    <span className="block text-slate-400 text-xs font-mono tabular-nums">{formatCpf(f.cpf)}</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setEscolhido('manual')}
+              className="w-full text-brand-600 text-sm font-semibold hover:underline text-center pt-1"
+            >
+              A pessoa não está nesta lista — cadastrar manualmente
+            </button>
+          </div>
         ) : (
-          <form action={handleSubmit} className="p-6 space-y-4">
+          <form key={chaveForm} action={handleSubmit} className="p-6 space-y-4">
+            {veioDaLista && (
+              <button
+                type="button"
+                onClick={() => setEscolhido(null)}
+                className="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-xs font-medium -mt-1"
+              >
+                <ArrowLeft className="w-3 h-3" /> Escolher outra pessoa
+              </button>
+            )}
+
             <Field label="Nome completo *">
-              <NomeInput name="nome" required defaultValue={editando ? operador!.nome : ''} placeholder="Nome do operador" className="input" />
+              <NomeInput name="nome" required defaultValue={nomeInicial} readOnly={veioDaLista} placeholder="Nome do operador" className={`input ${veioDaLista ? 'bg-slate-50 text-slate-500' : ''}`} />
             </Field>
             <Field label="CPF *">
               <CpfInput
                 name="cpf" required
-                defaultValue={editando ? (operador!.cpf ?? exibirIdentificador(operador!.email)) : ''}
-                placeholder="000.000.000-00" className="input"
+                defaultValue={cpfInicial}
+                readOnly={veioDaLista}
+                placeholder="000.000.000-00" className={`input ${veioDaLista ? 'bg-slate-50 text-slate-500' : ''}`}
               />
               <p className="text-slate-500 text-xs mt-1.5">
-                É o login dela no sistema. {!editando && 'Depois de criar, você recebe um link de uso único pra repassar por WhatsApp.'}
+                {veioDaLista
+                  ? 'Nome e CPF vêm do cadastro já feito — o credenciamento dela continua o mesmo.'
+                  : 'É o login dela no sistema.'}
+                {' '}{!editando && 'Depois de criar, você recebe um link de uso único pra repassar por WhatsApp.'}
               </p>
             </Field>
             <Field label="WhatsApp *">
-              <TelefoneInput name="telefone" required defaultValue={editando ? (operador!.telefone ?? '') : ''} placeholder="(11) 99999-9999" className="input" />
+              <TelefoneInput name="telefone" required defaultValue={telefoneInicial} placeholder="(11) 99999-9999" className="input" />
+              {veioDaLista && <p className="text-slate-500 text-xs mt-1.5">Confira se ainda é este o número.</p>}
             </Field>
             {editando && (
               <Field label="Nova senha (opcional)">
