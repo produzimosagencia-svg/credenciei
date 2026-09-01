@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
+import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
 import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
@@ -37,8 +38,15 @@ const TUTORIAL: TutorialConfig = {
   ],
 }
 
-export default async function EventoPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EventoPage({
+  params, searchParams,
+}: {
+  params: Promise<{ id: string }>
+  /* `?dia=YYYY-MM-DD` — qual dia da operação os números abaixo descrevem. */
+  searchParams: Promise<{ dia?: string }>
+}) {
   const { id } = await params
+  const { dia: diaParam } = await searchParams
 
   // Supervisor não gerencia o evento inteiro — só o próprio setor (via /scan → Minha equipe)
   const perfil = await getPerfil()
@@ -63,7 +71,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
       .order('created_at'),
     supabase
       .from('registros')
-      .select('funcionario_id, tipo')
+      .select('funcionario_id, tipo, data_ref')
       .eq('evento_id', id),
   ])
 
@@ -154,8 +162,30 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
+  /*
+   * OS NÚMEROS SÃO DE UM DIA, não do evento inteiro.
+   *
+   * Antes somavam tudo: quem trabalhou três dias entrava uma vez (o Set
+   * deduplica por pessoa), mas "Presentes agora" contava como presente quem
+   * tinha entrada em QUALQUER dia sem saída em QUALQUER dia — ou seja, uma
+   * entrada esquecida na montagem fazia a pessoa aparecer presente para
+   * sempre. Numa operação de 11 dias, os quatro cartões viravam ruído.
+   *
+   * O dia escolhido é o de hoje quando hoje é dia de operação; senão, o
+   * último dia que já passou (o mais provável de se querer conferir) ou,
+   * antes de o evento começar, o primeiro.
+   */
+  const diasDaOperacao = (diasTrabalho ?? []).map(d => d.data as string)
+  const hojeBRT = diaBRT()
+  const diaEscolhido =
+    (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
+    ?? (diasDaOperacao.includes(hojeBRT) ? hojeBRT : null)
+    ?? [...diasDaOperacao].reverse().find(d => d <= hojeBRT)
+    ?? diasDaOperacao[0]
+    ?? hojeBRT
+
   // Presença por foto: quantos funcionários já registraram cada etapa
-  const regs = todosRegistros.data ?? []
+  const regs = (todosRegistros.data ?? []).filter(r => (r.data_ref as string | null) === diaEscolhido)
   const quemFez = (t: string) => new Set(regs.filter(r => r.tipo === t).map(r => r.funcionario_id))
   const entraram = quemFez('entrada')
   const sairam = quemFez('fim')
@@ -241,11 +271,48 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
         </Aviso>
       )}
 
+      {/*
+        * O DIA que os números abaixo descrevem.
+        *
+        * Fica acima dos cartões, não ao lado do título: ele governa tudo o
+        * que vem depois, e um seletor no cabeçalho pareceria filtro da tela
+        * inteira — incluindo a lista de setores, que não muda com o dia.
+        */}
+      {diasDaOperacao.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-slate-400 text-2xs uppercase tracking-wide font-semibold mr-1">Dia</span>
+          {diasDaOperacao.map(d => {
+            const [, mes, dd] = d.split('-')
+            return (
+              <Link
+                key={d}
+                href={`/admin/eventos/${id}?dia=${d}`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  d === diaEscolhido
+                    ? 'bg-brand-500 border-brand-500 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
+                }`}
+              >
+                {dd}/{mes}{d === hojeBRT ? ' · hoje' : ''}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Cada número tem uma lista por trás — ver /presenca. "Setores" e
+          "Funcionários" não linkam: a lista deles já está logo abaixo. */}
       <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Setores" value={fornecedores?.length ?? 0} icon={Users} tom="acento" />
         <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} tom="info" />
-        <StatCard label="Presentes agora" value={presentesAgora} icon={Clock} tom="sucesso" />
-        <StatCard label="Ainda não chegaram" value={naoChegaram} icon={Clock} tom="aviso" />
+        <StatCard
+          label="Presentes agora" value={presentesAgora} icon={Clock} tom="sucesso"
+          href={`/admin/eventos/${id}/presenca?ver=presentes&dia=${diaEscolhido}`}
+        />
+        <StatCard
+          label="Ainda não chegaram" value={naoChegaram} icon={Clock} tom="aviso"
+          href={`/admin/eventos/${id}/presenca?ver=faltam&dia=${diaEscolhido}`}
+        />
       </div>
 
       {/* Progresso de presença por etapa */}
@@ -254,7 +321,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
           tom="sucesso"
           icone={<TrendingUp className="w-3.5 h-3.5" />}
           titulo="Progresso de presença"
-          descricao={`Quantos dos ${totalFuncionarios} funcionários já registraram cada etapa`}
+          descricao={`Quantos dos ${totalFuncionarios} funcionários registraram cada etapa em ${diaEscolhido.split('-').reverse().slice(0, 2).join('/')}`}
           corpoClassName="p-5"
         >
           <ProgressoEtapas
