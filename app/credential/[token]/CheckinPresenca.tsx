@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck } from 'lucide-react'
 import { registrarPresencaFoto, registrarPresencaLivre } from '@/lib/actions'
+import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 
 type Status = 'feito' | 'disponivel' | 'aguardando' | 'encerrado' | 'indefinido'
 
@@ -151,26 +152,6 @@ const aposMs = (ms: number) => new Promise<null>(r => setTimeout(() => r(null), 
  * isso rápido do que segurar a pessoa na fila do credenciamento.
  */
 const GRACA_MS = 6_000
-
-/**
- * A pessoa está no navegador embutido de outro aplicativo?
- *
- * O link chega pelo WhatsApp, e tocar nele abre um navegador de dentro do
- * próprio WhatsApp. No Android esse navegador é uma WebView que não recebe a
- * permissão de localização do sistema: `getCurrentPosition` simplesmente não
- * responde — nem sucesso, nem erro. Foi o que travou o registro no Manos da
- * Vila, e é por isso que pelo navegador de verdade vai rápido.
- *
- * Não dá para consertar isso de dentro da página: a permissão é do aplicativo
- * hospedeiro. O que dá é reconhecer onde estamos e dizer à pessoa o caminho —
- * antes de ela perder tempo tentando.
- */
-function emNavegadorEmbutido(): boolean {
-  if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent
-  // `; wv` marca WebView no Android; os demais são os apps que mais aparecem.
-  return /;\s*wv\)|WhatsApp|FB_IAB|FBAN|FBAV|Instagram|Line\/|MicroMessenger/i.test(ua)
-}
 
 /** Uma batida pronta que ainda não conseguiu subir. */
 type Pendente = { base64: string; lat: number; lng: number; em: number }
@@ -546,28 +527,11 @@ function BotaoCopiarLink() {
   const [copiado, setCopiado] = useState(false)
 
   const copiar = async () => {
-    const link = window.location.href
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link)
-      } else {
-        // Sem Clipboard API (navegador embutido antigo): o truque do campo
-        // temporário funciona em praticamente qualquer WebView.
-        const temp = document.createElement('textarea')
-        temp.value = link
-        temp.style.position = 'fixed'
-        temp.style.opacity = '0'
-        document.body.appendChild(temp)
-        temp.focus()
-        temp.select()
-        document.execCommand('copy')
-        document.body.removeChild(temp)
-      }
+    // Falhando, não faz nada: a pessoa ainda consegue selecionar o link na
+    // própria barra de endereço do navegador embutido. Último recurso.
+    if (await copiarTexto(window.location.href)) {
       setCopiado(true)
       setTimeout(() => setCopiado(false), 5000)
-    } catch {
-      // Nem isso funcionou — a pessoa ainda consegue selecionar o link na
-      // própria barra de endereço do navegador embutido. Último recurso.
     }
   }
 
