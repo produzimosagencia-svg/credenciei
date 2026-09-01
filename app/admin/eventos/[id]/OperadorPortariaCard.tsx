@@ -111,9 +111,15 @@ function ModalOperador({
   const [busca, setBusca] = useState('')
   const mostrandoLista = !editando && escolhido === null
 
+  /*
+   * `''.includes('')` é sempre true — sem a guarda de `digitos`, buscar por
+   * nome (sem número nenhum) fazia TODO CPF "bater" e a lista nunca filtrava
+   * de verdade. Só compara CPF quando a busca realmente tem dígito.
+   */
+  const digitosBusca = busca.replace(/\D/g, '')
   const filtrados = busca.trim()
     ? funcionariosDoEvento.filter(f =>
-        f.nome.toLowerCase().includes(busca.trim().toLowerCase()) || f.cpf.includes(busca.replace(/\D/g, '')))
+        f.nome.toLowerCase().includes(busca.trim().toLowerCase()) || (digitosBusca && f.cpf.includes(digitosBusca)))
     : funcionariosDoEvento
 
   const handleSubmit = (formData: FormData) => {
@@ -186,8 +192,12 @@ function ModalOperador({
               <ShieldCheck className="w-8 h-8 text-green-600 mx-auto" />
               <p className="text-green-800 font-bold mt-2">Operador criado!</p>
               <p className="text-green-700 text-sm mt-1">
-                Copie o link abaixo e mande você mesmo por WhatsApp — ele é de uso único, vale 24h e leva
-                direto pra tela de criar a senha (o login depois é pelo CPF).
+                O WhatsApp com o link de criar senha já foi enviado (o login depois é pelo CPF). Se não
+                chegar, copie o link abaixo e mande você mesmo — é de uso único e vale 24h.
+              </p>
+              <p className="text-amber-700 text-2xs mt-2">
+                A mensagem reaproveita o texto de supervisor — ela vai dizer “supervisor” em vez de
+                “operador de portão”. Não muda nada no acesso da pessoa, só o texto.
               </p>
             </div>
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
@@ -272,7 +282,7 @@ function ModalOperador({
                 {veioDaLista
                   ? 'Nome e CPF vêm do cadastro já feito — o credenciamento dela continua o mesmo.'
                   : 'É o login dela no sistema.'}
-                {' '}{!editando && 'Depois de criar, você recebe um link de uso único pra repassar por WhatsApp.'}
+                {' '}{!editando && 'Depois de criar, a pessoa recebe automaticamente por WhatsApp o link de criar senha.'}
               </p>
             </Field>
             <Field label="WhatsApp *">

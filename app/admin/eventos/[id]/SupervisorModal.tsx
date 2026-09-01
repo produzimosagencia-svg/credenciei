@@ -48,8 +48,14 @@ export default function SupervisorModal(props: Props) {
     setOpen(true)
   }
 
+  /*
+   * `''.includes('')` é sempre true — sem a guarda de `digitosBusca`, buscar
+   * por nome (sem número nenhum) fazia TODO CPF "bater" e a lista nunca
+   * filtrava de verdade. Só compara CPF quando a busca realmente tem dígito.
+   */
+  const digitosBusca = busca.replace(/\D/g, '')
   const filtrados = busca.trim()
-    ? opcoes.filter(o => o.nome.toLowerCase().includes(busca.trim().toLowerCase()) || o.cpf.includes(busca.replace(/\D/g, '')))
+    ? opcoes.filter(o => o.nome.toLowerCase().includes(busca.trim().toLowerCase()) || (digitosBusca && o.cpf.includes(digitosBusca)))
     : opcoes
 
   const handleSubmit = (formData: FormData) => {

@@ -641,7 +641,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
  * `podeGerenciarEventos` em `lib/permissions.ts`.
  *
  * Mesmo mecanismo de login do supervisor (CPF, convite de senha de uso
- * único), com duas diferenças:
+ * único, WhatsApp automático), com uma diferença:
  *
  *   • sem `fornecedor_id` — o operador não é de UM setor, é do PORTÃO do
  *     evento inteiro. Por isso o escopo dele acaba sendo a ORGANIZAÇÃO
@@ -650,9 +650,11 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
  *     não só este evento — não existe hoje um jeito de prender um perfil a
  *     um evento específico sem prendê-lo a um setor.
  *
- *   • NÃO manda WhatsApp automático — criar este papel exigiria um modelo
- *     novo aprovado na Meta, que não sai a tempo. Devolve o link de criar
- *     senha na resposta; quem criou repassa manualmente.
+ * O WhatsApp reaproveita o template `cadastro_supervisor_cpf_link` — não
+ * existe um modelo próprio pro operador aprovado na Meta, e submeter um
+ * novo não sai a tempo. O texto fixo do lado da Meta diz "supervisor" mesmo
+ * sendo operador; decisão explícita do Juan, ciente da limitação. O link
+ * também volta na resposta desta action, pra tela mostrar como reforço.
  */
 export async function criarOperadorPortaria(eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
@@ -705,6 +707,19 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
       perfilId: existente.id, nome, cpf, eventoId, evento: evento.nome, setor: 'Portão',
     })
 
+    /*
+     * Reaproveita o template do supervisor — não existe um modelo próprio
+     * aprovado na Meta pro operador, e submeter um novo não sai a tempo.
+     * O texto fixo do lado da Meta diz "supervisor" mesmo sendo operador;
+     * decisão explícita do Juan, sabendo da limitação.
+     */
+    await agendarTemplateSupervisor({
+      eventoId,
+      telefone,
+      template: 'cadastro_supervisor_cpf_link',
+      parametros: [nome, 'Portão', evento.nome, formatarCpfExibicao(cpf), linkSenha],
+    })
+
     revalidatePath('/admin/usuarios')
     revalidatePath(`/admin/eventos/${eventoId}`)
     return { ok: true as const, novo: false as const, usuario: cpf, linkSenha }
@@ -743,6 +758,14 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
   try {
     linkSenha = await criarConviteSenhaSupervisor({
       cpf, perfilId: user.user!.id, nome, eventoId, evento: evento.nome, setor: 'Portão',
+    })
+    // Mesma ressalva da realocação acima: template do supervisor, sem um
+    // próprio pro operador — o texto fixo da Meta diz "supervisor".
+    await agendarTemplateSupervisor({
+      eventoId,
+      telefone,
+      template: 'cadastro_supervisor_cpf_link',
+      parametros: [nome, 'Portão', evento.nome, formatarCpfExibicao(cpf), linkSenha],
     })
   } catch (erro) {
     // Sem convite a conta fica inacessível — desfaz tudo pra poder tentar de novo.
