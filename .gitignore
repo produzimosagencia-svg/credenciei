@@ -47,3 +47,6 @@ ReuniãoCliente/
 # Referencia local do agente, nao faz parte do app
 skills/
 Escopo Do sistema/
+
+# Scripts de diagnóstico contra o banco de produção — sempre descartáveis.
+_tmp-*.mjs
