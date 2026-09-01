@@ -108,10 +108,17 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       .eq('evento_id', id).eq('cancelado', false).order('data'),
   ])
 
-  // Isolamento: supervisor só vê o PRÓPRIO setor; demais papéis, só a própria organização
+  /*
+   * Isolamento: supervisor só vê os PRÓPRIOS setores.
+   *
+   * Era `perfil.fornecedor_id !== fid` — a coluna do setor ATIVO. Quem
+   * supervisiona dois setores só conseguia abrir um deles; o outro dava 404,
+   * mesmo estando legitimamente vinculado. Agora a régua é a lista inteira
+   * (`meusSetores`), então ele navega entre os seus livremente.
+   */
   const organizacaoDoEvento = (fornecedor.eventos as any)?.organizacao_id
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fid) notFound()
+    if (!setoresDoSupervisor.some(s => s.id === fid)) notFound()
   } else if (!veTodosEventos(perfil.role) && organizacaoDoEvento !== perfil.organizacao_id) {
     notFound()
   }

@@ -421,6 +421,34 @@ export async function deletarOrganizacao(id: string) {
  * por um cadastro que não acontece. Sem a tabela, o comportamento é o antigo
  * (um setor por login), que continua correto.
  */
+/**
+ * Como os setores da pessoa aparecem na mensagem de WhatsApp.
+ *
+ * Um setor: o nome dele. Dois: os dois, separados por "e". Mais que isso:
+ * "vários setores" — listar seis nomes num template deixa a frase ilegível no
+ * celular, e o supervisor vê a lista completa ao entrar no sistema.
+ *
+ * Existe porque o texto aprovado na Meta tem "do setor {{2}}" fixo: não dá
+ * para tirar a palavra "setor" da frase, só para escolher bem o que entra no
+ * lugar dela. Antes ia sempre o setor recém-atribuído sozinho, o que fazia a
+ * mensagem parecer que os outros tinham sido perdidos.
+ */
+async function nomeDosSetores(perfilId: string, fornecedorIdNovo: string): Promise<string> {
+  const { data: vinculos } = await supabaseAdmin
+    .from('supervisor_setores').select('fornecedor_id').eq('perfil_id', perfilId)
+
+  const ids = new Set<string>([fornecedorIdNovo])
+  for (const v of vinculos ?? []) ids.add(v.fornecedor_id as string)
+
+  const { data: setores } = await supabaseAdmin
+    .from('fornecedores').select('nome').in('id', [...ids]).order('nome')
+  const nomes = (setores ?? []).map(f => (f.nome as string).trim()).filter(Boolean)
+
+  if (nomes.length <= 1) return nomes[0] ?? 'seu setor'
+  if (nomes.length === 2) return `${nomes[0]} e ${nomes[1]}`
+  return 'vários setores'
+}
+
 async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string) {
   const { error } = await supabaseAdmin
     .from('supervisor_setores')
@@ -502,6 +530,9 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
 
+    // Todos os setores dela, não só o recém-atribuído — ver `nomeDosSetores`.
+    const setoresNaMensagem = await nomeDosSetores(existente.id, fornecedorId)
+
     const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
     await agendarTemplateSupervisor({
       eventoId,
@@ -510,7 +541,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
       parametros: [
         nome,
         eventoDoFornecedor?.nome ?? 'Evento',
-        fornecedor.nome,
+        setoresNaMensagem,
         eventoDoFornecedor?.data_inicio ? formatarBR(eventoDoFornecedor.data_inicio, 'completo') : 'a confirmar',
         eventoDoFornecedor?.local?.trim() || 'a confirmar',
         `${site}/login`,
@@ -538,7 +569,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
         cpf,
         eventoId,
         evento: eventoDoFornecedor?.nome ?? 'Evento',
-        setor: fornecedor.nome,
+        setor: setoresNaMensagem,
       })
       await agendarTemplateSupervisor({
         eventoId,
@@ -546,7 +577,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
         template: 'cadastro_supervisor_cpf_link',
         parametros: [
           nome,
-          fornecedor.nome,
+          setoresNaMensagem,
           eventoDoFornecedor?.nome ?? 'Evento',
           formatarCpfExibicao(cpf),
           linkSenha,

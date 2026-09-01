@@ -31,12 +31,20 @@ export default function TrocarSetor({ setores, atualId }: { setores: Setor[]; at
     if (setor.id === atualId) { setAberto(false); return }
     setErro(null)
     startTransition(async () => {
+      /*
+       * NAVEGA PRIMEIRO, marca depois.
+       *
+       * A página do setor já aceita qualquer setor vinculado, então a
+       * navegação não depende da escrita — e é ela que o supervisor está
+       * esperando ver. `trocarSetorAtivo` continua sendo chamada porque as
+       * OUTRAS telas (pendências, atividades, "minha equipe" no scanner)
+       * ainda seguem o setor ativo; falhando, o pior que acontece é elas
+       * continuarem no setor anterior, e não a troca não acontecer.
+       */
+      router.push(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
+      setAberto(false)
       try {
         await trocarSetorAtivo(setor.id)
-        setAberto(false)
-        // Vai direto para o painel do setor novo: ficar na URL do antigo
-        // mostraria "sem permissão" logo depois de uma troca bem-sucedida.
-        router.push(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
         router.refresh()
       } catch (e: any) {
         setErro(mensagemAmigavel(e))
@@ -62,7 +70,7 @@ export default function TrocarSetor({ setores, atualId }: { setores: Setor[]; at
           <div className="fixed inset-0 z-40" onClick={() => setAberto(false)} />
           <div className="absolute right-0 mt-1 z-50 w-60 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
             <p className="text-slate-400 text-2xs uppercase tracking-wide font-semibold px-3 pt-2.5 pb-1">
-              Seus setores
+              Seus setores ({setores.length})
             </p>
             {setores.map(s => (
               <button

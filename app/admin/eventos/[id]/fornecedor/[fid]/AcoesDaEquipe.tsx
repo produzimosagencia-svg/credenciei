@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Copy, Check, Download } from 'lucide-react'
+import { Copy, Check } from 'lucide-react'
 
 /**
  * As ações da equipe, no painel do setor.
@@ -13,6 +13,10 @@ import { Copy, Check, Download } from 'lucide-react'
  * O botão de copiar mora aqui, e não no servidor, porque depende de
  * `window.location.origin`: o endereço muda entre produção, preview da Vercel
  * e desenvolvimento, e um link fixo mandaria a equipe para o lugar errado.
+ *
+ * "Baixar modelo" NÃO entra aqui: ele já vem dentro de `ImportarFuncionarios`,
+ * que fica ao lado nesta mesma barra — ter os dois deixava o botão duplicado
+ * lado a lado na tela do supervisor.
  */
 export default function AcoesDaEquipe({ tokenFormulario }: { tokenFormulario: string | null }) {
   const [copiado, setCopiado] = useState(false)
@@ -34,10 +38,6 @@ export default function AcoesDaEquipe({ tokenFormulario }: { tokenFormulario: st
           {copiado ? 'Link copiado' : 'Link do formulário'}
         </button>
       )}
-      <a href="/modelo-importacao.xlsx" download="modelo-importacao.xlsx" className="btn btn-secundario btn-sm">
-        <Download className="w-3.5 h-3.5 shrink-0" />
-        Baixar modelo
-      </a>
     </>
   )
 }
