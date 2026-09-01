@@ -1,4 +1,4 @@
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -6,6 +6,10 @@ import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } fro
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
+import AcoesDaEquipe from './AcoesDaEquipe'
+import TrocarSetor from './TrocarSetor'
+import ImportarFuncionarios from '../../ImportarFuncionarios'
+import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -90,6 +94,19 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   ])
 
   if (!fornecedor) notFound()
+
+  /*
+   * Os setores deste supervisor e os dias do evento.
+   *
+   * `meusSetores` devolve vazio para quem não é supervisor — admin e master
+   * navegam pelos setores pela tela do evento, e um seletor aqui seria um
+   * segundo caminho para a mesma coisa.
+   */
+  const [setoresDoSupervisor, { data: diasDoEvento }] = await Promise.all([
+    meusSetores(perfil),
+    supabase.from('jornada_dias').select('data, tipo')
+      .eq('evento_id', id).eq('cancelado', false).order('data'),
+  ])
 
   // Isolamento: supervisor só vê o PRÓPRIO setor; demais papéis, só a própria organização
   const organizacaoDoEvento = (fornecedor.eventos as any)?.organizacao_id
@@ -249,6 +266,19 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           </>
         }
       />
+
+      {/*
+        * As ações da equipe — antes só existiam no cartão do setor, na tela do
+        * evento, que o supervisor não enxerga. Ficam abaixo do cabeçalho e não
+        * dentro dele porque são cinco: na mesma fileira do "Escanear QR" elas
+        * quebrariam a linha e empurrariam a ação do momento para baixo.
+        */}
+      <div className="flex flex-wrap items-center gap-2">
+        <TrocarSetor setores={setoresDoSupervisor} atualId={fid} />
+        <AcoesDaEquipe tokenFormulario={(fornecedor.token_formulario as string | null) ?? null} />
+        <ImportarFuncionarios fornecedorId={fid} />
+        <ExportarEquipe fornecedorId={fid} eventoId={id} dias={diasDoEvento ?? []} />
+      </div>
 
       {/* Três colunas porque são três indicadores. Numa grade de quatro, a
           quarta coluna ficava vazia e sobrava um vão à direita do último

@@ -412,6 +412,22 @@ export async function deletarOrganizacao(id: string) {
  * enxerga/gerencia a equipe e o scanner daquele setor. Apenas admin/gerente
  * da organização (ou master) pode criar.
  */
+/**
+ * Registra que este supervisor pode acessar este setor.
+ *
+ * Falha em silêncio de propósito: antes de a migração
+ * supabase/upgrade-supervisor-multi-setor.sql rodar, a tabela não existe — e
+ * derrubar a criação do supervisor por causa disso trocaria um recurso novo
+ * por um cadastro que não acontece. Sem a tabela, o comportamento é o antigo
+ * (um setor por login), que continua correto.
+ */
+async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string) {
+  const { error } = await supabaseAdmin
+    .from('supervisor_setores')
+    .upsert([{ perfil_id: perfilId, fornecedor_id: fornecedorId }], { onConflict: 'perfil_id,fornecedor_id' })
+  if (error) console.error('[supervisor_setores] vínculo não gravado (migração pendente?)', error.message)
+}
+
 export async function criarSupervisor(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar supervisores')
@@ -452,9 +468,15 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   const admin = getAdminSupabase()
 
   /*
-   * CPF identifica a pessoa, setor identifica a escala atual.
-   * Se a conta já existe na mesma organização, não criamos outro usuário nem
-   * mexemos na senha: apenas atualizamos a designação e avisamos por WhatsApp.
+   * CPF identifica a pessoa; os setores dela SOMAM, não se substituem.
+   *
+   * Antes o segundo setor era uma REALOCAÇÃO: cadastrar a mesma pessoa no
+   * setor B a tirava do setor A, sem avisar ninguém. Quem cobre dois setores
+   * (comum em evento grande) ficava sem acesso a um deles, e a única saída
+   * seria um segundo login — que não existe, porque a pessoa tem um CPF só.
+   *
+   * Agora o vínculo novo entra em `supervisor_setores` e o setor recém-criado
+   * vira o ativo. Ver supabase/upgrade-supervisor-multi-setor.sql.
    */
   const { data: existente } = await admin
     .from('perfis')
@@ -477,6 +499,8 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
       fornecedor_id: fornecedorId,
     }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
+
+    await vincularSupervisorAoSetor(existente.id, fornecedorId)
 
     const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
     await agendarTemplateSupervisor({
@@ -588,6 +612,8 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     })
     throw new Error(mensagemAmigavel(erroPerfil))
   }
+
+  await vincularSupervisorAoSetor(user.user!.id, fornecedorId)
 
   try {
     const linkSenha = await criarConviteSenhaSupervisor({
@@ -1567,6 +1593,49 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
  * servindo para o caso pontual — tirar quem desistiu, sem apagar o cadastro
  * nem o histórico dela.
  */
+/**
+ * Troca qual setor o supervisor está vendo.
+ *
+ * É o único ponto que escreve `perfis.fornecedor_id` para um supervisor em
+ * uso normal — e é de propósito. Os vinte e nove lugares que comparam
+ * `perfil.fornecedor_id` continuam significando "o setor aberto agora", sem
+ * saber que existe mais de um; quem garante que a troca é legítima é esta
+ * função, contra `supervisor_setores`.
+ *
+ * Ver supabase/upgrade-supervisor-multi-setor.sql para o desenho inteiro.
+ */
+export async function trocarSetorAtivo(fornecedorId: string) {
+  const perfil = await getPerfil()
+  if (!perfil || perfil.role !== 'supervisor') throw new Error('Sem permissão')
+
+  const { data: vinculo, error } = await supabaseAdmin
+    .from('supervisor_setores')
+    .select('fornecedor_id')
+    .eq('perfil_id', perfil.id)
+    .eq('fornecedor_id', fornecedorId)
+    .maybeSingle()
+
+  /*
+   * Sem o vínculo, não troca. A checagem é aqui e não na tela porque esconder
+   * o botão não impede a chamada direta — e o que está do outro lado é a
+   * equipe de outro cliente.
+   *
+   * `error` conta como negativa também: se a tabela ainda não existe (migração
+   * pendente), ninguém troca de setor, que é o comportamento de antes.
+   */
+  if (error || !vinculo) throw new Error('Você não tem acesso a este setor.')
+
+  const { error: erroTroca } = await supabaseAdmin
+    .from('perfis').update({ fornecedor_id: fornecedorId }).eq('id', perfil.id)
+  if (erroTroca) throw new Error(mensagemAmigavel(erroTroca))
+
+  const { data: setor } = await supabaseAdmin
+    .from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true as const, eventoId: setor?.evento_id as string | undefined }
+}
+
 export async function alternarAtivacao(funcionarioId: string, fornecedorId: string, eventoId: string, ativo: boolean) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin

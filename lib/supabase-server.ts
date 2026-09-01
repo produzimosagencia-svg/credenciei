@@ -91,6 +91,34 @@ export async function meuSetor(perfil: any): Promise<{ id: string; nome: string;
   return { id: data.id, nome: data.nome, evento_id: data.evento_id, evento_nome: (data.eventos as any)?.nome ?? '' }
 }
 
+/**
+ * TODOS os setores que este supervisor pode acessar.
+ *
+ * `meuSetor` (singular) devolve o que ele está vendo AGORA; esta devolve o
+ * cardápio. A diferença é o que permite um login só cobrir vários setores —
+ * ver supabase/upgrade-supervisor-multi-setor.sql.
+ *
+ * Tolerante à migração ainda não aplicada: sem a tabela, cai no setor único
+ * de sempre, e o sistema segue funcionando como antes.
+ */
+export async function meusSetores(perfil: any): Promise<{ id: string; nome: string; evento_id: string }[]> {
+  if (!perfil || perfil.role !== 'supervisor') return []
+
+  const { data: vinculos, error } = await admin
+    .from('supervisor_setores').select('fornecedor_id').eq('perfil_id', perfil.id)
+
+  const ids = new Set<string>()
+  if (!error) for (const v of vinculos ?? []) ids.add(v.fornecedor_id as string)
+  // O setor ativo entra sempre: se a migração não rodou, ou se o vínculo se
+  // perdeu, o supervisor não pode ficar sem enxergar onde já está.
+  if (perfil.fornecedor_id) ids.add(perfil.fornecedor_id as string)
+  if (!ids.size) return []
+
+  const { data } = await admin
+    .from('fornecedores').select('id, nome, evento_id').in('id', [...ids]).order('nome')
+  return (data ?? []).map(f => ({ id: f.id as string, nome: f.nome as string, evento_id: f.evento_id as string }))
+}
+
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nome: string }[]> {
   if (!perfil || !podeAcompanhar(perfil.role)) return []
