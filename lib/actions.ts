@@ -1080,13 +1080,24 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
     evento_id: eventoId,
     nome: nomeFornecedor,
     valor_combinado: parseValor(formData.get('valor_combinado')),
-    /*
-     * Caixa desmarcada não é enviada pelo navegador — por isso a leitura é
-     * "veio marcado?" e não "qual o valor?". Mesmo cuidado de `batida_livre`.
-     */
-    exige_meio: formData.get('exige_meio') === 'on',
   }
-  await db.from('fornecedores').insert([data])
+  /*
+   * Caixa desmarcada não é enviada pelo navegador — por isso a leitura é
+   * "veio marcado?" e não "qual o valor?". Mesmo cuidado de `batida_livre`.
+   *
+   * `exige_meio` é coluna nova (migração supabase/upgrade-meio-por-setor.sql).
+   * Antes de ela rodar no banco, gravar direto no `insert` derrubava o
+   * cadastro do setor INTEIRO com "column does not exist" — sem avisar
+   * ninguém, porque o erro do insert nem era lido. Por isso ela entra à
+   * parte, e o erro dela nunca impede o setor de ser criado.
+   */
+  const { data: novo, error } = await db.from('fornecedores').insert([data]).select('id').single()
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  const { error: erroMeio } = await db.from('fornecedores')
+    .update({ exige_meio: formData.get('exige_meio') === 'on' })
+    .eq('id', novo.id)
+  if (erroMeio) console.error('[criarFornecedor] exige_meio não gravado (migração pendente?)', erroMeio.message)
 
   // Cria a aba na planilha depois da resposta (after: sobrevive ao serverless da Vercel)
   after(() => garantirAbaFornecedorAsync(eventoId, nomeFornecedor))
@@ -1106,11 +1117,18 @@ async function garantirAbaFornecedorAsync(eventoId: string, nomeFornecedor: stri
 export async function editarFornecedor(id: string, eventoId: string, formData: FormData) {
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
-  await db.from('fornecedores').update({
+  const { error } = await db.from('fornecedores').update({
     nome: formData.get('nome') as string,
     valor_combinado: parseValor(formData.get('valor_combinado')),
-    exige_meio: formData.get('exige_meio') === 'on',
   }).eq('id', id)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  // Mesmo motivo de criarFornecedor: coluna nova, à parte, pra migração
+  // pendente nunca travar o resto da edição do setor.
+  const { error: erroMeio } = await db.from('fornecedores')
+    .update({ exige_meio: formData.get('exige_meio') === 'on' })
+    .eq('id', id)
+  if (erroMeio) console.error('[editarFornecedor] exige_meio não gravado (migração pendente?)', erroMeio.message)
   /*
    * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
    * `sincronizarAgendamentos` recria a fila do evento, cancelando o que
