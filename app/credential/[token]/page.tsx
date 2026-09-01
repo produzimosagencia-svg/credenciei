@@ -63,14 +63,18 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, empresa, cargo, fornecedores(nome, exige_meio, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
   if (!funcionario) notFound()
 
   const fornecedor = funcionario.fornecedores as any
-  const evento = fornecedor?.eventos as (EventoJanelas & { id: string; nome: string; local: string | null; checkin_autonomo: boolean | null }) | null
+  const evento = fornecedor?.eventos as (EventoJanelas & {
+    id: string; nome: string; local: string | null
+    checkin_autonomo: boolean | null
+    token_portaria: string | null
+  }) | null
 
   const agora = new Date()
   const hoje = diaBRT(agora)
@@ -117,7 +121,18 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const dentroDoPeriodo = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
   const diaPrincipal = !!evento && ehDiaPrincipal(evento, dataRef)
 
-  const momentos: MomentoInfo[] = ROTULOS.map(({ momento, label, descricao }) => {
+  /*
+   * Setor de pacote fechado não pede o meio — o cartão some da credencial.
+   *
+   * O que JÁ foi registrado continua aparecendo: desligar a cobrança não pode
+   * apagar da vista uma batida que a pessoa fez. Por isso o filtro deixa
+   * passar quando existe `feitoMap.meio`.
+   */
+  const exigeMeio = (fornecedor?.exige_meio as boolean | null) === true
+
+  const momentos: MomentoInfo[] = ROTULOS
+    .filter(({ momento }) => momento !== 'meio' || exigeMeio || feitoMap.meio)
+    .map(({ momento, label, descricao }) => {
     const feitoEm = feitoMap[momento] ?? null
     const base = { momento, label, descricao, feitoEm }
 
@@ -242,6 +257,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <CheckinPresenca
                   token={token} momentos={momentos}
                   podeAutoRegistrar={!diaPrincipal || evento?.checkin_autonomo === true}
+                  /* Só oferece a câmera se existe um cartaz impresso para ler. */
+                  temCartazNoLocal={!!evento?.token_portaria}
                 />
               </div>
             </div>

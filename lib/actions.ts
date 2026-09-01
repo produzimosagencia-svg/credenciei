@@ -1080,6 +1080,11 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
     evento_id: eventoId,
     nome: nomeFornecedor,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    /*
+     * Caixa desmarcada não é enviada pelo navegador — por isso a leitura é
+     * "veio marcado?" e não "qual o valor?". Mesmo cuidado de `batida_livre`.
+     */
+    exige_meio: formData.get('exige_meio') === 'on',
   }
   await db.from('fornecedores').insert([data])
 
@@ -1104,7 +1109,16 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
   await db.from('fornecedores').update({
     nome: formData.get('nome') as string,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    exige_meio: formData.get('exige_meio') === 'on',
   }).eq('id', id)
+  /*
+   * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
+   * `sincronizarAgendamentos` recria a fila do evento, cancelando o que
+   * deixou de fazer sentido. Sem isto, desligar o meio de um setor não
+   * pararia os lembretes já enfileirados — que é justamente o custo de
+   * WhatsApp que se quer cortar.
+   */
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
 
@@ -2326,18 +2340,47 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
   }
 }
 
+/** Marca no próprio registro quem bateu o meio sem o aparelho dar a localização. */
+const JUSTIFICATIVA_SEM_GPS = 'Meio registrado sem localização (aparelho não forneceu).'
+
 /**
- * Check-in por FOTO + GPS do próprio funcionário — exclusivo da etapa MEIO
+ * Check-in por FOTO do próprio funcionário — exclusivo da etapa MEIO
  * (durante o evento). Chamado da página pública da credencial; o token
  * (qr_token) é o segredo que identifica a pessoa.
+ *
+ * A localização entra quando o aparelho consegue, e o registro sai marcado
+ * quando não — ver o comentário longo dentro da função.
  */
 export async function registrarPresencaFoto(
   token: string,
   fotoBase64: string,
+  /** Entra quando o aparelho consegue. Sem ela o registro sai marcado, não recusado. */
   latitude: number | null,
   longitude: number | null
-): Promise<{ ok?: boolean; error?: string }> {
-  if (latitude == null || longitude == null) return { error: 'Localização obrigatória. Ative o GPS e tente de novo.' }
+): Promise<{ ok?: boolean; error?: string; semLocalizacao?: boolean }> {
+  /*
+   * A LOCALIZAÇÃO DEIXOU DE SER OBRIGATÓRIA — e isto vale a explicação.
+   *
+   * Ela era exigida como prova de que a pessoa estava no local. Na prática,
+   * fez o oposto: em 100% dos casos o meio acabava registrado por um
+   * supervisor, e não pela pessoa. Os números, no dia em que isto mudou:
+   * 13 meios no histórico INTEIRO do sistema, 13 deles assistidos, ZERO
+   * feitos pelo próprio funcionário.
+   *
+   * A causa é o navegador embutido do WhatsApp, por onde o link chega: ele
+   * não responde ao pedido de localização. A câmera funciona (é o app de
+   * câmera do celular, não a da página) — só o GPS não. Então a trava não
+   * separava quem estava no local de quem não estava: separava quem abriu
+   * fora do WhatsApp de todo o resto.
+   *
+   * E o registro assistido, que virou a saída de todo mundo, grava o GPS do
+   * SUPERVISOR — não o da pessoa. Ou seja: exigir GPS estava produzindo
+   * menos prova de localização, não mais.
+   *
+   * Agora a foto e o horário são a prova base, a localização entra quando o
+   * aparelho conseguir, e quem bateu sem ela fica MARCADO (ver
+   * `JUSTIFICATIVA_SEM_GPS`) para o organizador cobrar no fechamento.
+   */
   if (!fotoBase64?.startsWith('data:image/')) return { error: 'Foto inválida' }
 
   // Ação pública (o qr_token é o segredo). Sem teto, um token vazado vira
@@ -2382,14 +2425,25 @@ export async function registrarPresencaFoto(
     return { error: 'Não foi possível salvar a foto. Tente de novo.' }
   }
 
+  const semLocalizacao = latitude == null || longitude == null
   const { data: registro, error } = await upsertRegistro(
-    func.id, eventoId, 'meio', { foto_url: path, latitude, longitude },
+    func.id, eventoId, 'meio',
+    {
+      foto_url: path, latitude, longitude,
+      // Marcado no próprio registro, não só ausente: "sem latitude" também
+      // acontece em batida antiga e em registro assistido, e o fechamento
+      // precisa distinguir "o aparelho não deu" de "nunca teve".
+      ...(semLocalizacao ? { justificativa: JUSTIFICATIVA_SEM_GPS } : {}),
+    },
     resolucao.dataRef,
     resolucao.jornadaDiaId,
   )
   if (error) return { error: 'Erro ao registrar. Tente de novo.' }
 
-  after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
+  // Só há endereço a buscar quando houve coordenada.
+  if (!semLocalizacao) {
+    after(() => sincronizarEndereco(registro.id, latitude!, longitude!).catch(console.error))
+  }
 
   /*
    * A selfie do meio vira a foto de perfil de quem ainda não tem.
@@ -2415,7 +2469,7 @@ export async function registrarPresencaFoto(
     if (error) console.error('[presenca] não consegui usar a selfie como perfil:', error.message)
   })
 
-  return { ok: true }
+  return { ok: true, semLocalizacao }
 }
 
 /**
@@ -2438,7 +2492,17 @@ export async function registrarPresencaLivre(
   token: string,
   momento: 'entrada' | 'fim',
   latitude: number | null,
-  longitude: number | null
+  longitude: number | null,
+  /**
+   * O token lido do QR IMPRESSO no local (o cartaz da portaria), quando a
+   * pessoa registrou escaneando em vez de só tocar no botão.
+   *
+   * É uma prova bem mais forte que a localização: o cartaz está pendurado no
+   * local, e o código dele não circula por WhatsApp. Opcional de propósito —
+   * o botão continua funcionando sozinho, senão um cartaz caído ou molhado
+   * travaria a operação inteira.
+   */
+  tokenDoLocal?: string
 ): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
   if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
 
@@ -2449,7 +2513,7 @@ export async function registrarPresencaLivre(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, telefone, ativo, fornecedores(evento_id, eventos(id, ${JANELA_SELECT}))`)
+    .select(`id, telefone, ativo, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
@@ -2473,6 +2537,18 @@ export async function registrarPresencaLivre(
     return { error: 'No dia do evento, a entrada e a saída são pelo QR Code no credenciamento.' }
   }
 
+  /*
+   * Escaneou um cartaz? Então tem que ser o DESTE evento.
+   *
+   * Sem esta conferência, o cartaz de outro evento (ou um print antigo) valeria
+   * como prova de presença aqui — o que é pior do que não ter prova nenhuma,
+   * porque o relatório passaria a afirmar uma coisa falsa com aparência de
+   * verificada.
+   */
+  if (tokenDoLocal && tokenDoLocal !== evento.token_portaria) {
+    return { error: 'Este QR Code não é o deste evento. Procure o cartaz na entrada.' }
+  }
+
   if (resolucao.jaEm) {
     // "já registrou" (e não "já registrada") de propósito: é o texto que
     // `ehDuplicata`, na tela, reconhece para tratar como sucesso silencioso —
@@ -2481,10 +2557,19 @@ export async function registrarPresencaLivre(
   }
 
   const extra: Record<string, unknown> = { latitude, longitude }
+  /*
+   * A justificativa carrega as duas informações que o fechamento precisa ler
+   * de relance: se veio do cartaz (prova de presença no local) e se a saída
+   * saiu sem o meio. Elas podem acontecer juntas, então somam em vez de uma
+   * sobrescrever a outra.
+   */
+  const observacoes: string[] = []
+  if (tokenDoLocal) observacoes.push('Registrado escaneando o QR do local.')
   if (momento === 'fim') {
-    const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
-    if (justificativa) extra.justificativa = justificativa
+    const semMeio = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
+    if (semMeio) observacoes.push(semMeio)
   }
+  if (observacoes.length) extra.justificativa = observacoes.join(' ')
 
   const { data: registro, error } = await upsertRegistro(func.id, eventoId, momento, extra, resolucao.dataRef, resolucao.jornadaDiaId)
   if (error) return { error: 'Erro ao registrar. Tente de novo.' }

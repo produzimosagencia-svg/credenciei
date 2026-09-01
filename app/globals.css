@@ -319,23 +319,42 @@ button, [role='button'], a.btn-press {
   .btn-acento:active:not(:disabled) { background-color: var(--color-acento-100); }
 }
 
-.input {
-  width: 100%;
-  background: #ffffff;
-  border: 1px solid var(--color-neutro-200);
-  border-radius: var(--radius-lg);   /* 8px */
-  padding: 0.5625rem 0.75rem;        /* 38px de altura */
-  color: var(--color-neutro-900);
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-  outline: none;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+/*
+ * A MESMA ARMADILHA DE CAMADA que já mordeu o `.truncate` e o `.secao-corpo`
+ * — aqui ela quebrava toda barra de busca do sistema.
+ *
+ * `.input` fixa `padding: … 0.75rem`. Fora de camada nomeada, essa regra
+ * vence QUALQUER utilitário do Tailwind (que vive em @layer utilities), não
+ * por especificidade, mas pela ordem da cascata: o que está fora de camada
+ * vem depois de tudo que está dentro.
+ *
+ * Resultado real: `className="input pl-9"` — usado em toda busca com lupa e
+ * em todo campo de valor com o "R$" na frente — tinha o `pl-9` IGNORADO. O
+ * texto começava nos mesmos 12px onde o ícone está desenhado, e o ícone
+ * comia a primeira letra do que a pessoa digitava.
+ *
+ * Dentro de @layer components, quem escreve utilitário no call site vence —
+ * o mesmo contrato do `.btn` e do `.secao-corpo`.
+ */
+@layer components {
+  .input {
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid var(--color-neutro-200);
+    border-radius: var(--radius-lg);   /* 8px */
+    padding: 0.5625rem 0.75rem;        /* 38px de altura */
+    color: var(--color-neutro-900);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .input:focus {
+    border-color: var(--color-acento-500);
+    box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
+  }
+  .input::placeholder { color: var(--color-neutro-400); }
 }
-.input:focus {
-  border-color: var(--color-acento-500);
-  box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
-}
-.input::placeholder { color: var(--color-neutro-400); }
 
 /* ============================================================
    MOLDURA DO PAINEL — barra superior e menu lateral.

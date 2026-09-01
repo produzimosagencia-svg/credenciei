@@ -86,7 +86,7 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
    */
   let equipeQuery = supabase
     .from('funcionarios')
-    .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id)')
+    .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id, exige_meio)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
     .is('descredenciado_em', null)
@@ -128,7 +128,7 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
   const lista: Pendencia[] = []
 
   for (const f of equipe) {
-    const setor = f.fornecedores as unknown as { id: string; nome: string }
+    const setor = f.fornecedores as unknown as { id: string; nome: string; exige_meio: boolean | null }
     const entradaEm = feitos.get(`${f.id}:entrada`) ?? null
 
     const comum = {
@@ -154,8 +154,14 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
     // informação que importa — a de que essa pessoa não apareceu.
     if (!entradaEm) continue
 
-    // ── Meio: horário fixo no dia principal, individual nos de preparação ───
-    if (etapas.includes('meio') && !feitos.has(`${f.id}:meio`)) {
+    /*
+     * ── Meio: horário fixo no dia principal, individual nos de preparação ──
+     *
+     * Só entra setor que LIGOU o meio. Ver `fornecedores.exige_meio`: ele
+     * nasce desligado, e cobrar de quem não ligou encheria a lista do
+     * supervisor e o WhatsApp com gente que não devia nada.
+     */
+    if (etapas.includes('meio') && setor?.exige_meio === true && !feitos.has(`${f.id}:meio`)) {
       const j = janelaDoMeio(evento as EventoJanelas, dia, entradaEm)
       if (j && agora > new Date(j.fim).getTime()) {
         lista.push({ ...comum, etapa: 'meio', esperadoEm: j.inicio, realizadoEm: entradaEm })

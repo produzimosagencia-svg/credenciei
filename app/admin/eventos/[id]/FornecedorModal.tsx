@@ -7,7 +7,7 @@ import { NomeInput } from '@/components/inputs'
 
 type Props =
   | { mode: 'criar'; eventoId: string }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -17,6 +17,12 @@ export default function FornecedorModal(props: Props) {
   const isEditar = props.mode === 'editar'
   const defaultNome = isEditar ? (props as any).nome : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
+  // Setor novo nasce SEM o meio, a pedido: ele só importa em equipe paga por
+  // pessoa, que é a minoria. Quem precisa liga — e paga o WhatsApp só ali.
+  const defaultExigeMeio = isEditar ? (props as any).exige_meio === true : false
+  // Um id por instância: a tela mostra vários destes modais ao mesmo tempo
+  // (um por setor), e `htmlFor` repetido faria o clique cair no cartão errado.
+  const idExigeMeio = `exige_meio_${isEditar ? (props as any).fornecedorId : 'novo'}`
 
   const handleAction = (formData: FormData) => {
     startTransition(async () => {
@@ -65,6 +71,36 @@ export default function FornecedorModal(props: Props) {
                   <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9 tabular-nums" />
                 </div>
               </div>
+
+              {/*
+                * Confirmação do meio — só faz sentido em equipe paga POR PESSOA.
+                *
+                * Para fornecedor de pacote fechado ela não muda pagamento
+                * nenhum: só gera mensagem de WhatsApp (cobrada) que ninguém
+                * precisava receber. Fica aqui, no setor, porque o mesmo evento
+                * tem os dois tipos ao mesmo tempo.
+                */}
+              <label
+                htmlFor={idExigeMeio}
+                className="flex items-start gap-2.5 cursor-pointer bg-slate-50 rounded-xl p-3"
+              >
+                <input
+                  type="checkbox"
+                  id={idExigeMeio}
+                  name="exige_meio"
+                  defaultChecked={defaultExigeMeio}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-slate-700">Pedir confirmação no meio do turno</span>
+                  <span className="block text-slate-500 text-xs mt-0.5">
+                    A selfie que comprova que a pessoa ficou no posto. Vem desligado: ligue só
+                    em equipe paga por pessoa (segurança, limpeza, carregadores, bar…). Em
+                    fornecedor de pacote fechado não muda pagamento e só gasta WhatsApp.
+                  </span>
+                </span>
+              </label>
+
               <button type="submit" disabled={isPending} className="btn btn-primario w-full">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
               </button>

@@ -17,6 +17,8 @@ type Fornecedor = {
   quantidade_estimada: number | null
   valor_combinado: number | null
   cpfs_autorizados: string | null
+  /** Este setor pede a confirmação do meio? Nasce desligado; só vale se TRUE. */
+  exige_meio?: boolean | null
   funcionarios: { count: number }[]
 }
 
@@ -30,7 +32,7 @@ export default function FornecedorCard({
   fornecedor: f,
   eventoId,
   supervisores = [],
-  funcionariosDoSetor = [],
+  funcionariosDoEvento = [],
   diasDoEvento = [],
   podeGerenciarSupervisores = false,
   podeExcluir = false,
@@ -38,8 +40,14 @@ export default function FornecedorCard({
   fornecedor: Fornecedor
   eventoId: string
   supervisores?: Supervisor[]
-  /** Quem já está credenciado neste setor — o "Criar Supervisor" oferece a lista em vez de um formulário em branco. */
-  funcionariosDoSetor?: FuncionarioDoSetor[]
+  /**
+   * Todo mundo credenciado no EVENTO — o "Criar Supervisor" busca aqui.
+   *
+   * Não só deste setor: setor recém-criado nasce vazio (foi o caso do
+   * "Bar - Caixa"), e a lista viria em branco justamente quando mais se
+   * precisa dela. Quem vira supervisor costuma já estar em outro setor.
+   */
+  funcionariosDoEvento?: FuncionarioDoSetor[]
   /** Os dias do evento — para o "Exportar planilha" oferecer o fluxo de um dia. */
   diasDoEvento?: DiaDoEvento[]
   podeGerenciarSupervisores?: boolean
@@ -122,6 +130,7 @@ export default function FornecedorCard({
             fornecedorId={f.id}
             nome={f.nome}
             valor_combinado={f.valor_combinado}
+            exige_meio={f.exige_meio === true}
           />
           {podeExcluir && (
             <button
@@ -185,7 +194,7 @@ export default function FornecedorCard({
             <p className="flex items-center gap-1.5 text-slate-500 text-2xs font-semibold uppercase tracking-wide">
               <Shield className="w-3 h-3" /> Supervisores
             </p>
-            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} funcionariosDoSetor={funcionariosDoSetor} />
+            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} funcionariosDoEvento={funcionariosDoEvento} />
           </div>
           {!supervisores.length ? (
             <p className="text-slate-400 text-xs">Nenhum supervisor vinculado a este setor</p>

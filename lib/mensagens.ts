@@ -531,6 +531,25 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
 }
 
 /**
+ * O setor desta pessoa pede a confirmação do meio?
+ *
+ * Uma consulta só, pelo funcionário, porque é assim que os dois chamadores
+ * têm a informação em mãos — nenhum deles conhece o setor de antemão.
+ * Ausente/nulo conta como `true`: a coluna nasceu com padrão ligado, e
+ * tratar a falta como "não pede" faria um erro de consulta silenciar o meio
+ * do evento inteiro.
+ */
+async function setorExigeMeio(funcionarioId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('funcionarios')
+    .select('fornecedores(exige_meio)')
+    .eq('id', funcionarioId)
+    .single()
+  const forn = data?.fornecedores as unknown as { exige_meio: boolean | null } | null
+  return forn?.exige_meio === true
+}
+
+/**
  * Agenda os avisos do MEIO assim que a pessoa bate a entrada.
  *
  * Existe porque o meio deixou de ter horário fixo: ele é a entrada real + 4h,
@@ -551,6 +570,15 @@ export async function agendarMeioAposEntrada(params: {
   if (!telefone) return
   const fluxos = await fluxosLigados()
   if (desligado(fluxos, 'lembrete') && desligado(fluxos, 'reforco')) return
+
+  /*
+   * Setor que não pede o meio não gera mensagem de meio.
+   *
+   * É aqui que a economia de WhatsApp do `exige_meio` acontece de verdade:
+   * são duas mensagens por pessoa por dia (lembrete + reforço), e cada uma é
+   * cobrada. Ver `fornecedores.exige_meio`.
+   */
+  if (!(await setorExigeMeio(params.funcionarioId))) return
 
   const janela = janelaMeio(params.entradaEm)
   const reforco = new Date(new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString()

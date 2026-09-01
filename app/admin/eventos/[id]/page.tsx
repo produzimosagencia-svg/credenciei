@@ -58,7 +58,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
     supabase.from('eventos').select('*').eq('id', id).single(),
     supabase
       .from('fornecedores')
-      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
+      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, exige_meio, funcionarios(count)')
       .eq('evento_id', id)
       .order('created_at'),
     supabase
@@ -114,10 +114,12 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
 
   /*
-   * Quem já está credenciado NESTE EVENTO, de qualquer setor — para o
-   * "Criar operador" oferecer a busca em vez de um formulário em branco.
-   * Diferente do supervisor (uma lista por setor), o operador é do evento
-   * inteiro, então a lista é uma só, achatada.
+   * Quem já está credenciado NESTE EVENTO, de qualquer setor.
+   *
+   * Serve aos dois botões — "Criar operador" e "Criar Supervisor" —, e é
+   * uma lista só, do evento inteiro, de propósito: setor recém-criado nasce
+   * vazio, e uma lista por setor viria em branco justo quando mais se
+   * precisa dela. Quem vira supervisor quase sempre já está em outro setor.
    */
   const { data: funcionariosDoEventoRows } = fornecedorIds.length
     ? await supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
@@ -131,19 +133,6 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
   }
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil?.role)
 
-  /*
-   * Quem já está credenciado em cada setor, para o "Criar Supervisor"
-   * oferecer nomes em vez de um formulário em branco — a pessoa promovida
-   * quase sempre já está na equipe, e digitar CPF de novo só multiplica
-   * chance de erro de digitação.
-   */
-  const { data: funcionariosRows } = fornecedorIds.length
-    ? await supabase.from('funcionarios').select('id, nome, cpf, telefone, fornecedor_id').in('fornecedor_id', fornecedorIds).order('nome')
-    : { data: [] as any[] }
-  const funcionariosPorFornecedor: Record<string, { id: string; nome: string; cpf: string; telefone: string }[]> = {}
-  for (const fu of funcionariosRows ?? []) {
-    (funcionariosPorFornecedor[fu.fornecedor_id] ??= []).push(fu)
-  }
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
@@ -317,7 +306,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               fornecedores={fornecedores}
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
-              funcionariosPorFornecedor={funcionariosPorFornecedor}
+              funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}

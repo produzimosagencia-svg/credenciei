@@ -8,10 +8,10 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
 
-type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
+type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
 
 type Props =
-  | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string; funcionariosDoSetor?: FuncionarioDoSetor[] }
+  | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string; funcionariosDoEvento?: FuncionarioDoEvento[] }
   | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean } }
 
 /** A partir de quantos nomes a lista de escolha ganha busca. */
@@ -27,7 +27,7 @@ export default function SupervisorModal(props: Props) {
   const router = useRouter()
 
   const isEditar = props.mode === 'editar'
-  const opcoes = !isEditar ? (props.funcionariosDoSetor ?? []) : []
+  const opcoes = !isEditar ? (props.funcionariosDoEvento ?? []) : []
 
   /*
    * Quem vai virar supervisor.
@@ -37,7 +37,7 @@ export default function SupervisorModal(props: Props) {
    * supervisor que não é — e pode nunca vir a ser — funcionário deste setor;
    * um objeto = veio da lista, nome e CPF chegam prontos.
    */
-  const [escolhido, setEscolhido] = useState<FuncionarioDoSetor | 'manual' | null>(null)
+  const [escolhido, setEscolhido] = useState<FuncionarioDoEvento | 'manual' | null>(null)
   const [busca, setBusca] = useState('')
   const mostrandoLista = !isEditar && opcoes.length > 0 && escolhido === null
 

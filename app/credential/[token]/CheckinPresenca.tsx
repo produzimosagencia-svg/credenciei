@@ -1,9 +1,10 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck, ScanLine } from 'lucide-react'
 import { registrarPresencaFoto, registrarPresencaLivre } from '@/lib/actions'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
+import EscanearLocal from './EscanearLocal'
 
 type Status = 'feito' | 'disponivel' | 'aguardando' | 'encerrado' | 'indefinido'
 
@@ -153,8 +154,14 @@ const aposMs = (ms: number) => new Promise<null>(r => setTimeout(() => r(null), 
  */
 const GRACA_MS = 6_000
 
-/** Uma batida pronta que ainda não conseguiu subir. */
-type Pendente = { base64: string; lat: number; lng: number; em: number }
+/**
+ * Uma batida pronta que ainda não conseguiu subir.
+ *
+ * `lat`/`lng` aceitam nulo porque a localização deixou de ser obrigatória —
+ * ver o comentário em `registrarPresencaFoto`. Uma batida guardada sem
+ * posição sobe normalmente quando a rede voltar.
+ */
+type Pendente = { base64: string; lat: number | null; lng: number | null; em: number }
 
 const chavePendente = (token: string) => `credenciei:meio-pendente:${token}`
 
@@ -210,7 +217,7 @@ function limparPendente(token: string) {
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
-  token, momentos, podeAutoRegistrar,
+  token, momentos, podeAutoRegistrar, temCartazNoLocal = false,
 }: {
   token: string
   momentos: MomentoInfo[]
@@ -220,11 +227,18 @@ export default function CheckinPresenca({
    * evento tem `checkin_autonomo` ligado — os dois fluxos coexistem.
    */
   podeAutoRegistrar: boolean
+  /**
+   * O evento tem um QR impresso (cartaz da portaria) para escanear.
+   * Sem ele não há o que ler, e oferecer a câmera seria um beco sem saída.
+   */
+  temCartazNoLocal?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   // Qual etapa (entrada/fim) está em andamento no registro sem operador — nunca as duas ao mesmo tempo.
   const [busyLivre, setBusyLivre] = useState<'entrada' | 'fim' | null>(null)
+  // Qual etapa está esperando a leitura do cartaz. `null` = câmera fechada.
+  const [escaneando, setEscaneando] = useState<'entrada' | 'fim' | null>(null)
   // Em que ponto estamos: a espera fica longa e sem isto a tela parece travada.
   const [fase, setFase] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -281,22 +295,27 @@ export default function CheckinPresenca({
    * problema já corrigido no meio). A localização não trava o registro —
    * falhando, some do resultado, mas a batida sai igual.
    */
-  const registrarLivre = async (momento: 'entrada' | 'fim') => {
+  const registrarLivre = async (momento: 'entrada' | 'fim', tokenDoLocal?: string) => {
     if (busyLivre) return
     setErro(null)
     setBusyLivre(momento)
     try {
       const local = iniciarLocalizacao()
       const posicao = local.agora() ?? await Promise.race([local.pronta, aposMs(GRACA_MS)])
-      const r = await registrarPresencaLivre(token, momento, posicao?.lat ?? null, posicao?.lng ?? null)
+      const r = await registrarPresencaLivre(token, momento, posicao?.lat ?? null, posicao?.lng ?? null, tokenDoLocal)
       if (r.ok || ehDuplicata(r.error)) {
         setErro(null)
+        setEscaneando(null)
         router.refresh()
       } else {
         setErro(r.error ?? 'Não foi possível registrar. Tente de novo.')
+        // Fecha a câmera para o erro ficar visível: ele aparece na tela de
+        // trás, e o leitor cobrindo tudo esconderia justamente o motivo.
+        setEscaneando(null)
       }
     } catch {
       setErro('Não foi possível registrar agora. Verifique a internet e tente de novo.')
+      setEscaneando(null)
     } finally {
       setBusyLivre(null)
     }
@@ -372,12 +391,7 @@ export default function CheckinPresenca({
     setBusy(true)
     setFase('local')
     try {
-      if (!('geolocation' in navigator)) {
-        setErro('Seu aparelho não permite pegar a localização.')
-        return
-      }
       const local = localRef.current
-      if (!local) throw new Error('semsinal')
 
       /*
        * Comprimir e localizar ao mesmo tempo. A compressão não depende da
@@ -386,11 +400,21 @@ export default function CheckinPresenca({
       const [base64, posicao] = await Promise.all([
         comprimir(file),
         // Já chegou? segue na hora. Senão, espera pouco e desiste.
-        local.agora() ?? Promise.race([local.pronta, aposMs(GRACA_MS)]),
+        local ? (local.agora() ?? Promise.race([local.pronta, aposMs(GRACA_MS)])) : null,
       ])
 
-      if (!posicao) throw new Error(local.negada() ? 'permissao' : 'semsinal')
-      const coords = posicao
+      /*
+       * SEM LOCALIZAÇÃO A BATIDA SEGUE ASSIM MESMO.
+       *
+       * Aqui era `if (!posicao) throw` — e esse `throw` foi o que impediu
+       * TODAS as batidas de meio do sistema de acontecerem pelo link: dentro
+       * do navegador do WhatsApp a localização nunca chega, a foto já estava
+       * pronta na mão, e ela era jogada fora sem nem tentar enviar.
+       *
+       * O servidor grava a marca de "sem localização" (ver
+       * `JUSTIFICATIVA_SEM_GPS`), então o organizador continua enxergando
+       * quem bateu sem comprovação de local — só que agora a batida existe.
+       */
       setFase('enviando')
 
       /*
@@ -402,7 +426,7 @@ export default function CheckinPresenca({
        * tentava de novo. Erro falso em cima de sucesso confunde mais do que uma
        * espera longa, porque leva a pessoa a duvidar de uma batida que existe.
        */
-      await entregar({ base64, lat: coords.lat, lng: coords.lng, em: Date.now() })
+      await entregar({ base64, lat: posicao?.lat ?? null, lng: posicao?.lng ?? null, em: Date.now() })
     } catch (err) {
       /*
        * Cada falha tem a sua saída. Antes tudo virava "ative o GPS", inclusive
@@ -492,7 +516,9 @@ export default function CheckinPresenca({
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}
-            podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre} onLivre={registrarLivre}
+            podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre}
+            onLivre={m => registrarLivre(m)}
+            onEscanear={temCartazNoLocal ? setEscaneando : undefined}
           />
           {/*
             * Fora do cartão, e não dentro do botão: o botão precisa continuar
@@ -511,6 +537,13 @@ export default function CheckinPresenca({
       <p className="text-center text-slate-400 text-2xs pt-1 flex items-center justify-center gap-1">
         <MapPin className="w-3 h-3" /> Na etapa do meio, a localização é registrada junto com a foto.
       </p>
+
+      {escaneando && (
+        <EscanearLocal
+          aoLer={tokenDoLocal => registrarLivre(escaneando, tokenDoLocal)}
+          aoFechar={() => setEscaneando(null)}
+        />
+      )}
     </div>
   )
 }
@@ -548,7 +581,7 @@ function BotaoCopiarLink() {
 }
 
 function Cartao({
-  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre,
+  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre, onEscanear,
 }: {
   info: MomentoInfo
   busy: boolean
@@ -558,6 +591,8 @@ function Cartao({
   podeAutoRegistrar: boolean
   busyLivre: 'entrada' | 'fim' | null
   onLivre: (momento: 'entrada' | 'fim') => void
+  /** Abre a câmera para ler o cartaz. Ausente quando o evento não tem cartaz. */
+  onEscanear?: (momento: 'entrada' | 'fim') => void
 }) {
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
@@ -617,26 +652,63 @@ function Cartao({
      * usar este.
      */
     if (ehLivre) {
+      const rotulo = info.momento === 'entrada' ? 'entrada' : 'saída'
       return (
-        <button
-          onClick={() => onLivre(info.momento as 'entrada' | 'fim')}
-          disabled={registrandoEsta}
-          className={`${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
-        >
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            {registrandoEsta
-              ? <Loader2 className="w-5 h-5 animate-spin" />
-              : info.momento === 'entrada' ? <QrCode className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
-          </div>
-          <div className="min-w-0 text-left">
-            <p className="font-bold text-sm">
-              {registrandoEsta ? 'Registrando...' : `Registrar ${info.momento === 'entrada' ? 'entrada' : 'saída'}`}
-            </p>
-            <p className="text-brand-100 text-xs">
-              {registrandoEsta ? 'Não feche a tela.' : `Toque para confirmar, ou mostre o QR acima • ${janela}`}
-            </p>
-          </div>
-        </button>
+        <div className="space-y-2">
+          {/*
+            * Escanear vem PRIMEIRO quando existe cartaz: é o caminho com
+            * prova de presença no local, e o que se quer que vire hábito. O
+            * botão direto continua logo abaixo, porque a câmera falha em
+            * navegador embutido e ninguém pode ficar sem registrar por isso.
+            */}
+          {onEscanear && (
+            <button
+              onClick={() => onEscanear(info.momento as 'entrada' | 'fim')}
+              disabled={registrandoEsta}
+              className={`${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
+            >
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                {registrandoEsta ? <Loader2 className="w-5 h-5 animate-spin" /> : <ScanLine className="w-5 h-5" />}
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="font-bold text-sm">
+                  {registrandoEsta ? 'Registrando...' : `Escanear e registrar ${rotulo}`}
+                </p>
+                <p className="text-brand-100 text-xs">
+                  {registrandoEsta ? 'Não feche a tela.' : `Aponte para o cartaz na entrada • ${janela}`}
+                </p>
+              </div>
+            </button>
+          )}
+
+          <button
+            onClick={() => onLivre(info.momento as 'entrada' | 'fim')}
+            disabled={registrandoEsta}
+            className={onEscanear
+              ? 'w-full text-slate-500 text-xs font-semibold py-2 hover:text-slate-700 transition-colors disabled:opacity-50'
+              : `${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
+          >
+            {onEscanear ? (
+              registrandoEsta ? 'Registrando…' : `Sem o cartaz por perto? Registrar ${rotulo} assim mesmo`
+            ) : (
+              <>
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  {registrandoEsta
+                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    : info.momento === 'entrada' ? <QrCode className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="font-bold text-sm">
+                    {registrandoEsta ? 'Registrando...' : `Registrar ${rotulo}`}
+                  </p>
+                  <p className="text-brand-100 text-xs">
+                    {registrandoEsta ? 'Não feche a tela.' : `Toque para confirmar, ou mostre o QR acima • ${janela}`}
+                  </p>
+                </div>
+              </>
+            )}
+          </button>
+        </div>
       )
     }
     return (

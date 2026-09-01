@@ -22,6 +22,7 @@ type Fornecedor = {
   quantidade_estimada: number | null
   valor_combinado: number | null
   cpfs_autorizados: string | null
+  exige_meio?: boolean | null
   funcionarios: { count: number }[]
 }
 
@@ -40,7 +41,7 @@ export default function ListaDeSetores({
   fornecedores,
   eventoId,
   supervisoresPorFornecedor,
-  funcionariosPorFornecedor,
+  funcionariosDoEvento,
   diasDoEvento,
   podeGerenciarSupervisores,
   podeExcluir,
@@ -48,7 +49,8 @@ export default function ListaDeSetores({
   fornecedores: Fornecedor[]
   eventoId: string
   supervisoresPorFornecedor: Record<string, Supervisor[]>
-  funcionariosPorFornecedor: Record<string, FuncionarioDoSetor[]>
+  /* Todo mundo do EVENTO — o supervisor pode vir de qualquer setor. */
+  funcionariosDoEvento: FuncionarioDoSetor[]
   diasDoEvento: DiaDoEvento[]
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
@@ -139,7 +141,7 @@ export default function ListaDeSetores({
               fornecedor={f}
               eventoId={eventoId}
               supervisores={supervisoresPorFornecedor[f.id] ?? []}
-              funcionariosDoSetor={funcionariosPorFornecedor[f.id] ?? []}
+              funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
