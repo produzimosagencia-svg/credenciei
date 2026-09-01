@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft } from 'lucide-react'
-import { criarOperadorPortaria, editarSupervisor, deletarUsuario } from '@/lib/actions'
+import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound } from 'lucide-react'
+import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -141,6 +141,25 @@ function ModalOperador({
     })
   }
 
+  /*
+   * Esqueceu a senha no meio da operação.
+   *
+   * Não invalida a atual: só oferece um caminho de troca a quem precisar.
+   * Está aqui, na edição, porque é onde o organizador já vai quando alguém
+   * liga dizendo que não entra — e sem isto a saída era pedir socorro.
+   */
+  const gerarAcesso = () => {
+    setErro(null)
+    startTransition(async () => {
+      try {
+        const r = await gerarLinkDeAcesso(operador!.id)
+        setLinkSenha(r.linkSenha)
+      } catch (e: any) {
+        setErro(mensagemAmigavel(e))
+      }
+    })
+  }
+
   const copiarLink = async () => {
     if (!linkSenha) return
     try {
@@ -190,10 +209,11 @@ function ModalOperador({
           <div className="p-6 space-y-4">
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
               <ShieldCheck className="w-8 h-8 text-green-600 mx-auto" />
-              <p className="text-green-800 font-bold mt-2">Operador criado!</p>
+<p className="text-green-800 font-bold mt-2">{editando ? 'Link de acesso gerado' : 'Operador criado!'}</p>
               <p className="text-green-700 text-sm mt-1">
-                O WhatsApp com o link de criar senha já foi enviado (o login depois é pelo CPF). Se não
-                chegar, copie o link abaixo e mande você mesmo — é de uso único e vale 24h.
+                {editando
+                  ? 'Mande este link para a pessoa criar uma senha nova. É de uso único, vale 24h, e a senha atual dela continua funcionando até ela trocar.'
+                  : 'O WhatsApp com o link de criar senha já foi enviado (o login depois é pelo CPF). Se não chegar, copie o link abaixo e mande você mesmo — é de uso único e vale 24h.'}
               </p>
               <p className="text-amber-700 text-2xs mt-2">
                 A mensagem reaproveita o texto de supervisor — ela vai dizer “supervisor” em vez de
@@ -307,6 +327,17 @@ function ModalOperador({
               <button type="submit" disabled={isPending} className="btn btn-primario btn-lg flex-1">
                 {isPending ? 'Salvando...' : editando ? 'Salvar alterações' : 'Criar operador'}
               </button>
+              {editando && (
+                <button
+                  type="button"
+                  onClick={gerarAcesso}
+                  disabled={isPending}
+                  className="btn btn-secundario btn-lg shrink-0 disabled:opacity-50"
+                  title="Gera um link novo para a pessoa criar outra senha. A senha atual continua valendo."
+                >
+                  <KeyRound className="w-4 h-4" /> Link de acesso
+                </button>
+              )}
               {editando && podeExcluir && (
                 <button
                   type="button"

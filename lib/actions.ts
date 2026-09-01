@@ -837,13 +837,59 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
   return { ok: true as const, novo: true as const, usuario: cpf, linkSenha }
 }
 
+/**
+ * Gera um link novo de criar senha para quem já tem acesso.
+ *
+ * Existe para o organizador não depender de ninguém quando alguém esquece a
+ * senha no meio da operação — que é quando isso sempre acontece. Antes, cada
+ * caso virava um pedido de socorro; com dez eventos no mesmo dia, viraria dez.
+ *
+ * NÃO invalida a senha atual. Quem lembra continua entrando normalmente; o
+ * link só oferece um caminho de troca a quem precisar. É de uso único e vale
+ * 24h — as duas travas que já valem para o convite de cadastro.
+ */
+export async function gerarLinkDeAcesso(perfilId: string) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão')
+
+  const admin = getAdminSupabase()
+  const { data: alvo } = await admin
+    .from('perfis').select('id, nome, cpf, role, organizacao_id, fornecedor_id')
+    .eq('id', perfilId).single()
+  if (!alvo) throw new Error('Acesso não encontrado')
+  if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este acesso')
+  }
+
+  /*
+   * O convite guarda evento e setor só para o texto da tela de criar senha.
+   * Um operador de portão não tem setor, e um supervisor pode ter vários —
+   * então o rótulo é do vínculo atual, e a ausência dele não impede nada.
+   */
+  const { data: setor } = alvo.fornecedor_id
+    ? await admin.from('fornecedores').select('nome, evento_id, eventos(nome)').eq('id', alvo.fornecedor_id).single()
+    : { data: null }
+  const eventoDoSetor = setor?.eventos as unknown as { nome: string } | null
+
+  const linkSenha = await criarConviteSenhaSupervisor({
+    perfilId: alvo.id,
+    nome: alvo.nome,
+    cpf: alvo.cpf ?? undefined,
+    eventoId: (setor?.evento_id as string | undefined) ?? '',
+    evento: eventoDoSetor?.nome ?? 'Credenciei',
+    setor: setor?.nome ?? 'Portão',
+  })
+
+  return { ok: true as const, linkSenha, nome: alvo.nome as string, cpf: (alvo.cpf as string | null) ?? null }
+}
+
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
 export async function editarSupervisor(id: string, formData: FormData) {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id').eq('id', id).single()
+  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email').eq('id', id).single()
   if (!alvo) throw new Error('Supervisor não encontrado')
   if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
     throw new Error('Sem permissão sobre este supervisor')
@@ -859,13 +905,31 @@ export async function editarSupervisor(id: string, formData: FormData) {
   if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
   const email = cpfParaEmail(cpf)
 
-  const { error: authErr } = await admin.auth.admin.updateUserById(id, {
-    email,
-    ...(novaSenha ? { password: novaSenha } : {}),
-  })
-  if (authErr) {
-    const jaExiste = /already|exist|registered/i.test(authErr.message)
-    throw new Error(jaExiste ? `Já existe um supervisor com o CPF ${cpf}.` : mensagemAuth(authErr.message))
+  /*
+   * NÃO MEXER NO E-MAIL QUANDO ELE NÃO MUDOU.
+   *
+   * Isto reescrevia o e-mail no Auth em TODA edição — mesmo salvando só o
+   * telefone, mesmo com o CPF idêntico. Trocar e-mail no Supabase abre um
+   * fluxo de confirmação; e o endereço aqui é interno
+   * (`@supervisor.credenciei`), num domínio que não existe e nunca recebe
+   * nada. Confirmação que nunca chega deixa a conta num estado do qual ela
+   * não sai sozinha — e quem descobre é a pessoa, no portão, no meio da
+   * operação, com "senha inválida" numa senha que estava certa.
+   *
+   * Agora: só toca no e-mail se o CPF realmente mudou, e quando toca já
+   * confirma junto (`email_confirm`), exatamente como `createUser` faz na
+   * criação. Editar telefone, nome ou status não encosta mais no Auth.
+   */
+  const precisaTrocarEmail = email !== (alvo as { email?: string }).email
+  if (precisaTrocarEmail || novaSenha) {
+    const { error: authErr } = await admin.auth.admin.updateUserById(id, {
+      ...(precisaTrocarEmail ? { email, email_confirm: true } : {}),
+      ...(novaSenha ? { password: novaSenha } : {}),
+    })
+    if (authErr) {
+      const jaExiste = /already|exist|registered/i.test(authErr.message)
+      throw new Error(jaExiste ? `Já existe um supervisor com o CPF ${cpf}.` : mensagemAuth(authErr.message))
+    }
   }
 
   await admin.from('perfis').update({ nome, email, telefone, ativo }).eq('id', id)
