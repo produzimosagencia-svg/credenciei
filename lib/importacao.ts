@@ -52,20 +52,28 @@ export async function importarFuncionarios(
   const spreadsheetId = evento?.spreadsheet_id
   const eventoId = evento?.id ?? fornecedor.evento_id
 
-  // Trava de ativação: cadastro em lote pode passar do estimado, mas só
-  // entra ATIVADO quem couber no teto (quantidade_estimada); o excedente
-  // fica aguardando ativação manual no painel.
-  const teto = fornecedor.quantidade_estimada as number | null
-  let vagasAtivas = Infinity
-  if (teto && teto > 0) {
-    const { count: jaAtivos } = await supabaseAdmin
-      .from('funcionarios')
-      .select('id', { count: 'exact', head: true })
-      .eq('fornecedor_id', fornecedorId)
-      .eq('ativo', true)
-    vagasAtivas = Math.max(0, teto - (jaAtivos ?? 0))
-  }
-
+  /*
+   * NINGUÉM ENTRA INATIVO — nem acima do teto do setor.
+   *
+   * Existia aqui uma "trava de ativação": quem passasse de
+   * `quantidade_estimada` entrava desativado, esperando alguém liberar no
+   * painel. A intenção era não estourar o combinado com o cliente sem
+   * aprovação. O efeito real foi outro.
+   *
+   * No Henrique e Juliano, uma planilha importada num setor que tinha teto
+   * deixou 197 de 201 pessoas desativadas. O teto foi removido do setor
+   * depois — mas remover o teto NÃO reativa ninguém, então as 197
+   * continuaram sem poder bater ponto. Ninguém percebeu até a véspera do
+   * show, porque o aviso da importação some quando se troca de tela: a
+   * pessoa aparece na lista do setor, com nome e QR, e só é recusada no
+   * portão, na frente de todo mundo.
+   *
+   * O teto continua existindo e continua sendo mostrado (a barra de
+   * progresso do cartão do setor diz "12 de 10"). O que ele deixou de fazer
+   * é impedir alguém de trabalhar — controle de contrato não pode virar
+   * trava de catraca. Quem precisa tirar alguém da escala usa "desativar",
+   * que é explícito e reversível.
+   */
   // Prepara os registros com CPF e telefone limpos. O funcionário já fica
   // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
   // (a coluna de setor da planilha não cria setores novos).
@@ -112,7 +120,7 @@ export async function importarFuncionarios(
 
   const payload = semRepetidos
     .filter(f => !jaCadastrados.has(f.cpf))
-    .map((f, i) => ({ ...f, ativo: i < vagasAtivas }))
+    .map(f => ({ ...f, ativo: true }))
 
   if (payload.length === 0) {
     const motivo = duplicados

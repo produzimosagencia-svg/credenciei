@@ -14,26 +14,19 @@ import {
  * Ferramentas de equipe: cadastrar, editar, mover de setor, ativar, pagar e
  * excluir pessoas.
  *
- * Aqui mora a regra que mais confunde no sistema: o TETO do setor
- * (`quantidade_estimada`). Cadastro pode passar do teto; ATIVAÇÃO não. Quem
- * entra além do teto fica inativo, e inativo não registra presença nem recebe
- * lembrete. A tela do setor respeita isso — as ferramentas precisam respeitar
- * igual, senão a IA vira um caminho para furar o próprio limite.
+ * O TETO do setor (`quantidade_estimada`) NÃO desativa mais ninguém.
+ *
+ * Ele desativava: quem entrasse além do teto ficava inativo, e inativo não
+ * bate ponto nem recebe lembrete. A intenção era não estourar o combinado
+ * com o cliente sem aprovação; o efeito foi 197 pessoas de um setor sem
+ * conseguir entrar no evento, descobertas na véspera do show — ver o
+ * comentário longo em lib/importacao.ts.
+ *
+ * O teto continua existindo como REFERÊNCIA (a barra do cartão do setor
+ * mostra "12 de 10"), e nenhuma tela deixou de mostrá-lo. O que ele não faz
+ * mais é criar gente que não trabalha. Para tirar alguém da escala existe
+ * "desativar", que é explícito, visível e reversível.
  */
-
-/** Quantos ainda cabem ativos neste setor. `null` = setor sem teto. */
-async function vagasAtivas(fornecedorId: string): Promise<number | null> {
-  const { data: setor } = await supabaseAdmin
-    .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).single()
-  const teto = setor?.quantidade_estimada
-  if (!teto || teto <= 0) return null
-  const { count } = await supabaseAdmin
-    .from('funcionarios')
-    .select('id', { count: 'exact', head: true })
-    .eq('fornecedor_id', fornecedorId)
-    .eq('ativo', true)
-  return Math.max(0, teto - (count ?? 0))
-}
 
 /** O mesmo CPF não pode estar em dois setores do mesmo evento. */
 async function cpfJaNoEvento(cpf: string, eventoId: string, ignorarId?: string) {
@@ -56,7 +49,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
     ferramenta({
       nome: 'cadastrar_funcionario',
       descricao:
-        'Cadastra uma pessoa na equipe de um setor. Se o setor já bateu o teto, ela entra INATIVA e precisa ser ativada. ' +
+        'Cadastra uma pessoa na equipe de um setor. Ela entra sempre ATIVA, mesmo acima do teto do setor (o teto é referência, não trava). ' +
         'Com telefone preenchido, a pessoa recebe as boas-vindas com o link da credencial no WhatsApp. ' +
         'PEÇA OS MESMOS DADOS DO FORMULÁRIO PÚBLICO antes de chamar: nome, CPF, telefone, empresa, cargo e CIDADE onde a pessoa mora (obrigatórios), e chave PIX e valor a receber quando o usuário souber. ' +
         'A cidade não é detalhe: é por ela que a pessoa é encontrada depois na busca por região. Se o usuário não informar, pergunte — não invente e não deixe em branco.',
@@ -87,8 +80,8 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           return `Este CPF já está cadastrado neste evento, no setor "${outroSetor}". Uma pessoa não pode estar em dois setores do mesmo evento — se ela mudou de setor, use mover_funcionario_de_setor.`
         }
 
-        const vagas = await vagasAtivas(fornecedor_id)
-        const ativo = vagas === null || vagas > 0
+        // Ninguém entra inativo — ver o comentário no topo do arquivo.
+        const ativo = true
         const fone = String(telefone ?? '').replace(/\D/g, '')
 
         const { data: novo, error } = await supabaseAdmin.from('funcionarios').insert([{
@@ -124,11 +117,9 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           setor: r.setor.nome,
           ativo,
           link_da_credencial: `${urlBase()}/credential/${novo.qr_token}`,
-          observacao: !ativo
-            ? 'Entrou INATIVA porque o setor bateu o teto. Inativa, ela não registra presença nem recebe lembrete — precisa ser ativada.'
-            : !fone
-              ? 'Sem telefone cadastrado: ela não vai receber nada no WhatsApp, nem o link da credencial.'
-              : null,
+          observacao: !fone
+            ? 'Sem telefone cadastrado: ela não vai receber nada no WhatsApp, nem o link da credencial.'
+            : null,
         })
       },
     }),
@@ -236,9 +227,8 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           return 'Os dois setores são de eventos diferentes. Só dá pra mover dentro do mesmo evento — para o outro evento, cadastre a pessoa lá.'
         }
 
-        // Teto do destino: quem não cabe entra inativo, igual ao cadastro.
-        const vagas = await vagasAtivas(fornecedor_id_destino)
-        const continuaAtivo = vagas === null || vagas > 0 ? r.func.ativo : false
+        // Mover de setor não desativa: o teto do destino é referência, não trava.
+        const continuaAtivo = r.func.ativo
 
         await supabaseAdmin.from('funcionarios').update({
           fornecedor_id: fornecedor_id_destino,
@@ -253,9 +243,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           pessoa: r.func.nome,
           de: r.func.setorNome,
           para: destino.setor.nome,
-          observacao: r.func.ativo && !continuaAtivo
-            ? `Ela ficou INATIVA: o setor ${destino.setor.nome} já está no teto. Ative-a lá (ou desative outra pessoa) para ela voltar a registrar presença.`
-            : null,
+          observacao: null,
         })
       },
     }),
@@ -277,13 +265,6 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         const r = await resolverFuncionario(perfil, funcionario_id)
         if (!r.ok) return r.erro
         if (r.func.ativo === ativo) return `${r.func.nome} já está ${ativo ? 'ativa' : 'inativa'}. Nada a fazer.`
-
-        if (ativo) {
-          const vagas = await vagasAtivas(r.func.fornecedor_id)
-          if (vagas !== null && vagas <= 0) {
-            return `O setor ${r.func.setorNome} já está no teto de pessoas ativas. Desative alguém antes de ativar ${r.func.nome}, ou aumente o teto do setor com editar_setor.`
-          }
-        }
 
         await supabaseAdmin.from('funcionarios').update({ ativo }).eq('id', funcionario_id)
         // Ativar alguém cria os lembretes dela; desativar não precisa mexer

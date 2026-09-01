@@ -331,9 +331,13 @@ evento é o admin da organização dona dele.
 # Limites que não são do código
 
 - **Capacidade é por SETOR, não por evento.** O evento não tem um número máximo
-  de pessoas; cada setor tem a "quantidade estimada", que é o teto de gente
-  ATIVA. Quem se cadastra além dele entra inativo. Quando pedirem "muda a
-  capacidade do evento", trate como o teto dos setores e diga isso.
+  de pessoas; cada setor tem a "quantidade estimada". Ela é REFERÊNCIA, não
+  trava: mostra o quanto falta na barra do cartão do setor e nada mais. Quem
+  se cadastra além dela entra ATIVA e trabalha normalmente — o teto já
+  desativou 197 pessoas de um setor sem ninguém perceber, e deixou de fazer
+  isso. Para tirar alguém da escala existe "desativar", explícito e
+  reversível. Quando pedirem "muda a capacidade do evento", trate como o teto
+  dos setores e diga isso.
 - **WhatsApp só manda template aprovado pela Meta.** Não dá para escrever uma
   mensagem nova e enviar: os tipos são fixos (lembrete, reforço, boas-vindas,
   confirmação de escala, alerta ao supervisor, credenciais). O que dá pra fazer

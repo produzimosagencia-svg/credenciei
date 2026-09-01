@@ -47,7 +47,7 @@ export default function AtribuirEvento({
         const r = await atribuirColaboradorAoEvento(cpf, setorId)
         setFeito(
           `${nome} entrou em ${r.evento}, no setor ${r.setor}.` +
-          (!r.ativo ? ' Entrou INATIVA porque o setor bateu o teto — ative na tela do setor.' : '') +
+
           (r.semTelefone ? ' Sem telefone cadastrado: ela não recebe o link da credencial.' : '')
         )
         setSetorId('')
