@@ -4,6 +4,7 @@ import { QrCode } from 'lucide-react'
 import QRCode from 'qrcode'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
+import ManterAtualizado from './ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -234,6 +235,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
+      {/* A tela se atualiza sozinha — ninguém aqui vai recarregar a página. */}
+      <ManterAtualizado />
       <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">

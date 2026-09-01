@@ -518,7 +518,14 @@ export default function CheckinPresenca({
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}
             podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre}
             onLivre={m => registrarLivre(m)}
-            onEscanear={temCartazNoLocal ? setEscaneando : undefined}
+            /*
+             * Dentro do WhatsApp a câmera da página não abre — nem no Android
+             * nem no iPhone. Oferecer "escanear" como caminho principal ali
+             * leva a pessoa a um beco: ela toca, não acontece nada que ela
+             * entenda, e desiste. Quem está no navegador embutido vê só o
+             * botão que funciona.
+             */
+            onEscanear={temCartazNoLocal && !embutido ? setEscaneando : undefined}
           />
           {/*
             * Fora do cartão, e não dentro do botão: o botão precisa continuar
