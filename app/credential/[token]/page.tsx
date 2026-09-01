@@ -233,7 +233,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} />
 
               <div data-tutorial="cred-etapas">
-                <CheckinPresenca token={token} momentos={momentos} />
+                <CheckinPresenca token={token} momentos={momentos} diaPrincipal={diaPrincipal} />
               </div>
             </div>
           </div>

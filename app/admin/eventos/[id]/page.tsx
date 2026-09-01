@@ -7,6 +7,7 @@ import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, Trendi
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
+import OperadorPortariaCard from './OperadorPortariaCard'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -95,6 +96,19 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
 
   // Isolamento por organização: admin só acessa eventos da própria org
   if (!veTodosEventos(perfil?.role) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
+
+  /*
+   * Operadores de portão — da ORGANIZAÇÃO, não deste evento especificamente.
+   *
+   * Ao contrário do supervisor (preso a um setor via `fornecedor_id`), o
+   * operador escaneia o evento inteiro, e o sistema hoje não tem como
+   * prender um perfil a UM evento sem prendê-lo a UM setor. Por isso a
+   * mesma organização mostra os mesmos operadores em qualquer evento dela —
+   * mesma regra que já vale pra admin/cliente escanearem.
+   */
+  const { data: operadoresRows } = evento.organizacao_id
+    ? await supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo').eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id)
+    : { data: [] as any[] }
 
   // Supervisores vinculados a cada setor (fornecedor) deste evento
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
@@ -272,6 +286,12 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
                 token={(evento.token_portaria as string | null) ?? null}
                 cadastrados={viaPortaria ?? 0}
               />
+            </div>
+          )}
+
+          {podeGerenciarUsuarios(perfil?.role) && (
+            <div className="mb-4">
+              <OperadorPortariaCard eventoId={id} operadores={operadoresRows ?? []} podeExcluir={podeExcluir(perfil?.role)} />
             </div>
           )}
 

@@ -1,5 +1,6 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
@@ -41,13 +42,16 @@ function comprimir(file: File): Promise<string> {
 }
 
 export default function FormularioFuncionario({
-  fornecedorId, origem = 'formulario',
+  fornecedorId, origem = 'formulario', cpfInicial,
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
   origem?: string
+  /** Veio da portaria já com o CPF digitado — evita pedir de novo. */
+  cpfInicial?: string
 }) {
-  const [form, setForm] = useState(initialForm)
+  const router = useRouter()
+  const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
   const [consentimento, setConsentimento] = useState(false)
   const [foto, setFoto] = useState<string | null>(null)
   const [erroFoto, setErroFoto] = useState<string | null>(null)
@@ -104,6 +108,21 @@ export default function FormularioFuncionario({
     }).catch(() => {})
   }
 
+  /*
+   * Veio da portaria com o CPF na mão — dispara a mesma busca de quando a
+   * pessoa digita, uma vez, sem esperar ela tocar no campo de novo.
+   *
+   * Adiado um tique (mesmo padrão de app/credential/[token]/CheckinPresenca.tsx):
+   * chamar `onCpf` — que muda estado — direto no corpo do efeito é o que o
+   * React reclama como cascata de re-render.
+   */
+  useEffect(() => {
+    if (!cpfInicial) return
+    const id = setTimeout(() => onCpf(formatCpf(cpfInicial)), 0)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -136,6 +155,17 @@ export default function FormularioFuncionario({
     })
 
     if (res.qrToken) {
+      /*
+       * Veio da portaria: direto pro check-in, sem tela intermediária.
+       *
+       * Fora da portaria a pessoa pode preferir salvar o link e voltar depois
+       * — por isso só aqui o redirecionamento é automático. Quem chegou pelo
+       * cartaz está com fila atrás e precisa registrar a entrada agora.
+       */
+      if (origem === 'portaria') {
+        router.push(`/credential/${res.qrToken}`)
+        return
+      }
       setQrToken(res.qrToken)
     } else {
       alert(res.error ?? 'Erro ao enviar formulário. Tente novamente.')

@@ -1,8 +1,8 @@
 import { getPerfil, eventosEscaneaveis, meuSetor } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
-import { podeEscanear, podeGerenciarEventos } from '@/lib/permissions'
+import { podeEscanear, podeGerenciarEventos, podeAcompanhar } from '@/lib/permissions'
 import ScannerView from './ScannerView'
-import { QrCode, Users } from 'lucide-react'
+import { QrCode, Users, ClipboardCheck } from 'lucide-react'
 import Link from 'next/link'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
@@ -64,6 +64,14 @@ export default async function ScanPage({
           ) : podeGerenciarEventos(perfil.role) ? (
             <Link href="/admin" className="text-slate-400 text-sm hover:text-white font-medium transition-colors">
               Voltar ao painel
+            </Link>
+          ) : podeAcompanhar(perfil.role) ? (
+            // Sem setor e sem gerenciar evento: é o operador de portão — o
+            // link dele é o registro manual, não "voltar ao painel" (que ele
+            // não tem) nem "minha equipe" (que ele também não tem).
+            <Link href="/admin/localizar" className="flex items-center gap-1.5 text-slate-400 text-sm hover:text-white font-medium transition-colors">
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              Registrar ponto
             </Link>
           ) : null}
         </div>

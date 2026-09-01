@@ -35,10 +35,10 @@ export default async function FormPage({
    * importa no fechamento: saber que alguém entrou pelo cartaz, e não pela
    * lista, muda a conversa sobre quem autorizou aquela contratação.
    */
-  searchParams: Promise<{ de?: string }>
+  searchParams: Promise<{ de?: string; cpf?: string }>
 }) {
   const { token } = await params
-  const { de } = await searchParams
+  const { de, cpf } = await searchParams
   const origem = de === 'portaria' ? 'portaria' : 'formulario'
 
   const { data: fornecedor } = await supabase
@@ -66,7 +66,7 @@ export default async function FormPage({
               <TutorialButton />
             </div>
           </div>
-          <FormularioFuncionario fornecedorId={fornecedor.id} origem={origem} />
+          <FormularioFuncionario fornecedorId={fornecedor.id} origem={origem} cpfInicial={cpf} />
         </div>
       </div>
     </TutorialProvider>

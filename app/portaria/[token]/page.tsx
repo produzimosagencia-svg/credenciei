@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowRight, Users, CalendarDays, MapPin } from 'lucide-react'
+import { Users, CalendarDays, MapPin } from 'lucide-react'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { formatarBR } from '@/lib/tz'
 import { periodoDoEvento, diaBRT, type EventoJanelas } from '@/lib/janelas'
+import IdentificarPorCpf from './IdentificarPorCpf'
 
 export const revalidate = 0
 
@@ -99,42 +99,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
             </p>
           </div>
         ) : (
-          <>
-            <h2 className="text-slate-800 font-bold text-lg">Em qual setor você vai trabalhar?</h2>
-            <p className="text-slate-500 text-sm mt-1 mb-4">
-              Escolha o seu. Se não souber, pergunte a quem te chamou — o setor errado
-              atrapalha o seu pagamento depois.
-            </p>
-
-            {/*
-              * Um setor por linha, com alvo grande.
-              *
-              * A pessoa está de pé, no sol, com fila atrás e o celular numa mão
-              * só. Grade de dois faria alvos pequenos e escolha errada — e
-              * escolher errado aqui custa caro: ela cai no formulário de outro
-              * setor e, depois de cadastrada, o sistema recusa trocar (a mesma
-              * pessoa não pode estar em dois setores do mesmo evento).
-              */}
-            <div className="space-y-2.5">
-              {disponiveis.map(s => (
-                <Link
-                  key={s.id}
-                  href={`/form/${s.token_formulario}?de=portaria`}
-                  className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-slate-200
-                             px-4 py-4 active:bg-slate-50 hover:border-brand-300 transition-colors"
-                >
-                  <span className="text-slate-800 font-semibold text-base min-w-0 truncate">
-                    {s.nome.trim()}
-                  </span>
-                  <ArrowRight className="w-4 h-4 text-brand-500 shrink-0" />
-                </Link>
-              ))}
-            </div>
-
-            <p className="text-slate-400 text-xs text-center mt-6">
-              Leva menos de dois minutos. No fim você recebe sua credencial com QR Code.
-            </p>
-          </>
+          <IdentificarPorCpf eventoId={evento.id} setores={disponiveis} />
         )}
       </main>
     </div>

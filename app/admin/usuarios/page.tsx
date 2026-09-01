@@ -43,6 +43,7 @@ const ROLE_BADGE: Record<Role, string> = {
   gerente: 'selo-neutro',
   supervisor: 'selo-neutro',
   cliente: 'selo-neutro',
+  operador_portao: 'selo-neutro',
 }
 
 type Aba = 'todos' | 'ativos' | 'inativos'

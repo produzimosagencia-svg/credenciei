@@ -624,6 +624,128 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   }
 }
 
+/**
+ * Cria (ou realoca) um Operador de Portão: lê QR e registra ponto manual,
+ * mas nunca gerencia evento, equipe ou usuários — ver `podeEscanear` e
+ * `podeGerenciarEventos` em `lib/permissions.ts`.
+ *
+ * Mesmo mecanismo de login do supervisor (CPF, convite de senha de uso
+ * único), com duas diferenças:
+ *
+ *   • sem `fornecedor_id` — o operador não é de UM setor, é do PORTÃO do
+ *     evento inteiro. Por isso o escopo dele acaba sendo a ORGANIZAÇÃO
+ *     inteira (mesma regra que já vale pra admin/cliente em
+ *     `eventosEscaneaveis`/`podeEscanearEvento`, ver lib/supabase-server.ts),
+ *     não só este evento — não existe hoje um jeito de prender um perfil a
+ *     um evento específico sem prendê-lo a um setor.
+ *
+ *   • NÃO manda WhatsApp automático — criar este papel exigiria um modelo
+ *     novo aprovado na Meta, que não sai a tempo. Devolve o link de criar
+ *     senha na resposta; quem criou repassa manualmente.
+ */
+export async function criarOperadorPortaria(eventoId: string, formData: FormData) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar operadores de portão')
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos')
+    .select('id, organizacao_id, nome')
+    .eq('id', eventoId)
+    .single()
+  if (!evento) throw new Error('Evento não encontrado')
+  const organizacaoId = evento.organizacao_id
+  if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este evento')
+  }
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const ativo = formData.get('ativo') !== 'false'
+  if (!nome) throw new Error('Informe o nome do operador.')
+  if (telefone.length < 10 || telefone.length > 13) {
+    throw new Error('Informe um telefone válido — é por ele que você vai repassar o acesso.')
+  }
+
+  const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
+  if (cpf.length !== 11) throw new Error('Informe o CPF do operador, com 11 dígitos.')
+  const email = cpfParaEmail(cpf)
+
+  const admin = getAdminSupabase()
+
+  const { data: existente } = await admin
+    .from('perfis')
+    .select('id, nome, role, organizacao_id')
+    .eq('cpf', cpf)
+    .maybeSingle()
+  if (existente) {
+    if (existente.role !== 'operador_portao') {
+      throw new Error('Este CPF já pertence a outro tipo de acesso no sistema.')
+    }
+    if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
+      throw new Error('Este CPF já está cadastrado em outra organização.')
+    }
+
+    const { error: erroAtualizacao } = await admin.from('perfis').update({
+      nome, telefone, ativo, organizacao_id: organizacaoId,
+    }).eq('id', existente.id)
+    if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
+
+    const linkSenha = await criarConviteSenhaSupervisor({
+      perfilId: existente.id, nome, cpf, eventoId, evento: evento.nome, setor: 'Portão',
+    })
+
+    revalidatePath('/admin/usuarios')
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true as const, novo: false as const, usuario: cpf, linkSenha }
+  }
+
+  const { data: user, error } = await admin.auth.admin.createUser({
+    email,
+    password: randomBytes(32).toString('base64url'),
+    email_confirm: true,
+  })
+  if (error) {
+    const jaExiste = /already|exist|registered/i.test(error.message)
+    throw new Error(jaExiste
+      ? `Já existe um acesso com o CPF ${cpf}. Se for a mesma pessoa, edite o acesso dela em vez de criar outro.`
+      : mensagemAuth(error.message))
+  }
+
+  const { error: erroPerfil } = await admin.from('perfis').insert([{
+    id: user.user!.id,
+    nome,
+    email,
+    telefone,
+    ativo,
+    cpf,
+    role: 'operador_portao',
+    organizacao_id: organizacaoId,
+    fornecedor_id: null,
+  }])
+  if (erroPerfil) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    console.error('[criarOperadorPortaria] falha ao inserir perfil', { eventoId, organizacaoId, erro: erroPerfil })
+    throw new Error(mensagemAmigavel(erroPerfil))
+  }
+
+  let linkSenha: string
+  try {
+    linkSenha = await criarConviteSenhaSupervisor({
+      cpf, perfilId: user.user!.id, nome, eventoId, evento: evento.nome, setor: 'Portão',
+    })
+  } catch (erro) {
+    // Sem convite a conta fica inacessível — desfaz tudo pra poder tentar de novo.
+    await admin.from('perfis').delete().eq('id', user.user!.id)
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    throw erro
+  }
+
+  revalidatePath('/admin/usuarios')
+  revalidatePath(`/admin/eventos/${eventoId}`)
+
+  return { ok: true as const, novo: true as const, usuario: cpf, linkSenha }
+}
+
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
 export async function editarSupervisor(id: string, formData: FormData) {
   const perfil = await getPerfil()
@@ -1840,6 +1962,28 @@ async function diaDeReferencia(evento: { id: string; data_inicio?: string | null
   const dia = await diaDeTrabalho(evento.id, dataRef)
   return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal: dia?.tipo === 'principal' }
 }
+const JUSTIFICATIVA_SEM_MEIO = 'Saída registrada sem registro de meio.'
+
+/**
+ * A saída não exige mais o meio (ver commit que removeu a trava), mas a
+ * ausência continua precisando ficar visível para auditoria e fechamento —
+ * é o que este helper grava como `justificativa` do registro de saída.
+ *
+ * Chamado nos dois lugares onde 'fim' é gravado (scanner do portão e o
+ * registro livre da montagem/desmontagem), para não duplicar a consulta.
+ */
+async function observacaoSemMeio(funcionarioId: string, eventoId: string, dataRef: string): Promise<string | undefined> {
+  const { data } = await supabaseAdmin
+    .from('registros')
+    .select('id')
+    .eq('funcionario_id', funcionarioId)
+    .eq('evento_id', eventoId)
+    .eq('tipo', 'meio')
+    .eq('data_ref', dataRef)
+    .limit(1)
+  return data?.length ? undefined : JUSTIFICATIVA_SEM_MEIO
+}
+
 /** Preenche o endereço aproximado (geocoding reverso) em background — cosmético, sem retry. */
 async function sincronizarEndereco(registroId: string, lat: number, lng: number) {
   const endereco = await enderecoAproximado(lat, lng)
@@ -2097,7 +2241,11 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     }
   }
 
-  const extra = perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}
+  const extra: Record<string, unknown> = perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}
+  if (momento === 'fim') {
+    const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
+    if (justificativa) extra.justificativa = justificativa
+  }
   const { error } = await upsertRegistro(func.id, eventoId, momento, extra, resolucao.dataRef, resolucao.jornadaDiaId)
   if (error) return { success: false, message: 'Erro ao registrar. Tente de novo.' }
 
@@ -2234,6 +2382,96 @@ export async function registrarPresencaFoto(
   })
 
   return { ok: true }
+}
+
+/**
+ * Check-in de entrada/saída SEM operador — pela credencial, com localização.
+ *
+ * Existe pra montagem e desmontagem: quem chega antes da portaria abrir ou
+ * sai depois dela fechar não pode ficar esperando alguém pra ler o QR. Sem
+ * selfie de propósito — é rápido no local, e a foto é o que trava a câmera
+ * em navegador embutido quebrado (o mesmo problema já corrigido no meio).
+ *
+ * NUNCA funciona no dia principal, mesmo chamada direto (sem passar pela
+ * tela): é a garantia de que o Fluxo 1 (credenciamento tradicional, QR lido
+ * por um operador) continua intocado. Esconder o botão na tela não seria
+ * suficiente — é esta checagem, no servidor, que vale.
+ */
+export async function registrarPresencaLivre(
+  token: string,
+  momento: 'entrada' | 'fim',
+  latitude: number | null,
+  longitude: number | null
+): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
+  if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
+
+  // Mesmo teto da foto do meio: ação pública, protegida só pelo token.
+  if (!podePassar(`livre:${token}`, 20, 10 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select(`id, telefone, ativo, fornecedores(evento_id, eventos(id, ${JANELA_SELECT}))`)
+    .eq('qr_token', token)
+    .single()
+  if (!func) return { error: 'Credencial não encontrada' }
+  if (func.ativo === false) return { error: 'Seu cadastro ainda não foi ativado pelo organizador. Fale com o seu supervisor.' }
+
+  const fornecedor = func.fornecedores as any
+  const evento = fornecedor?.eventos as any
+  const eventoId = fornecedor?.evento_id
+  if (!evento || !eventoId) return { error: 'Evento não encontrado' }
+
+  const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
+  if (!resolucao.ok) return { error: resolucao.erro }
+
+  /*
+   * A trava que preserva o Fluxo 1.
+   *
+   * `resolverRegistro` já sabe se este dia é o principal — é o mesmo cálculo
+   * que decide se a saída fecha o vínculo com o evento. Aqui ele decide se
+   * este caminho (sem operador) pode ser usado.
+   */
+  if (resolucao.diaPrincipal) {
+    return { error: 'No dia do evento, a entrada e a saída são pelo QR Code no credenciamento.' }
+  }
+
+  if (resolucao.jaEm) {
+    // "já registrou" (e não "já registrada") de propósito: é o texto que
+    // `ehDuplicata`, na tela, reconhece para tratar como sucesso silencioso —
+    // mesma frase que `registrarPresencaFoto` já usa para o meio.
+    return { error: `Você já registrou ${momento === 'entrada' ? 'a entrada' : 'a saída'} em ${formatarBR(resolucao.jaEm, 'curto')}.` }
+  }
+
+  const extra: Record<string, unknown> = { latitude, longitude }
+  if (momento === 'fim') {
+    const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
+    if (justificativa) extra.justificativa = justificativa
+  }
+
+  const { data: registro, error } = await upsertRegistro(func.id, eventoId, momento, extra, resolucao.dataRef, resolucao.jornadaDiaId)
+  if (error) return { error: 'Erro ao registrar. Tente de novo.' }
+
+  if (latitude != null && longitude != null) {
+    after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
+  }
+
+  // Mesmo agendamento que o scanner do portão dispara na entrada — sem isso,
+  // quem entra sozinho pela credencial nunca receberia o lembrete do meio.
+  if (momento === 'entrada' && func.telefone) {
+    after(() =>
+      agendarMeioAposEntrada({
+        eventoId,
+        funcionarioId: func.id,
+        telefone: func.telefone as string,
+        entradaEm: new Date().toISOString(),
+        dataRef: resolucao.dataRef,
+      }).catch(console.error)
+    )
+  }
+
+  return { ok: true, momento }
 }
 
 // ─── Cadastro público (formulário do fornecedor) ──────────────────────────────
@@ -2452,6 +2690,42 @@ export async function buscarCadastroPorCpf(
     chavePix: func.chave_pix ?? null,
     cidade: func.cidade ?? null,
   }
+}
+
+/**
+ * O primeiro passo do QR fixo da portaria: "esta pessoa já está credenciada
+ * NESTE evento?"
+ *
+ * Já credenciada → devolve o token da credencial dela, pra a tela mandar
+ * direto pro check-in — é o "mostrar a etapa" que o autocredenciamento pede
+ * pra quem já passou por aqui. Não achou → a tela segue pro cadastro
+ * (escolher setor), que já existe e não muda.
+ */
+export async function identificarNaPortaria(
+  eventoId: string,
+  cpfBruto: string
+): Promise<{ qrToken?: string; naoEncontrado?: boolean; error?: string }> {
+  const cpf = cpfBruto.replace(/\D/g, '')
+  if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
+
+  // Mesmo teto do resto do fluxo público: protege um QR fixo, impresso e
+  // exposto, de virar varredura de CPF.
+  if (!podePassar(`portaria-cpf:${eventoId}`, 60, 60 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('qr_token, descredenciado_em, fornecedores!inner(evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .maybeSingle()
+
+  if (!func) return { naoEncontrado: true }
+  if (func.descredenciado_em) {
+    return { error: 'Você já foi descredenciado deste evento. Se isso for engano, procure o credenciamento.' }
+  }
+  return { qrToken: func.qr_token }
 }
 
 /**

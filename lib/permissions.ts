@@ -1,18 +1,25 @@
 // Hierarquia de papéis do sistema (SaaS multi-organização):
-//   master     → dono da plataforma. Enxerga e gerencia TODAS as organizações,
-//                todos os eventos e cria os admins. organizacao_id = null.
-//   admin      → dono de UMA organização. Enxerga apenas os dados da própria
-//                organização (eventos.organizacao_id = perfil.organizacao_id).
-//                Cria a equipe (supervisores) e eventos até o limite da org.
-//                NÃO pode excluir eventos (só o master exclui).
-//   supervisor → vinculado a UM setor (fornecedor) específico via
-//                perfis.fornecedor_id. Só escaneia QR e gerencia a equipe
-//                daquele setor — nunca vê outros setores/eventos/organização.
+//   master          → dono da plataforma. Enxerga e gerencia TODAS as
+//                      organizações, todos os eventos e cria os admins.
+//                      organizacao_id = null.
+//   admin           → dono de UMA organização. Enxerga apenas os dados da
+//                      própria organização (eventos.organizacao_id =
+//                      perfil.organizacao_id). Cria a equipe (supervisores)
+//                      e eventos até o limite da org. NÃO pode excluir
+//                      eventos (só o master exclui).
+//   supervisor      → vinculado a UM setor (fornecedor) específico via
+//                      perfis.fornecedor_id. Gerencia a equipe daquele setor
+//                      — nunca vê outros setores/eventos/organização.
+//   operador_portao → vinculado ao EVENTO inteiro (fornecedor_id nulo), não
+//                      a um setor. Só lê QR e registra ponto manual — nunca
+//                      gerencia evento, equipe ou usuários. É o papel de
+//                      quem opera fisicamente o credenciamento sem precisar
+//                      de senha de admin.
 //
 // Papéis legados ('gerente', 'cliente') continuam válidos no banco, mas não
 // são mais oferecidos na UI. Tratamos 'gerente' como equivalente a admin.
 
-export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente'
+export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao'
 
 export const ROLE_LABELS: Record<Role, string> = {
   master: 'Master',
@@ -20,6 +27,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   supervisor: 'Supervisor',
   gerente: 'Gerente',
   cliente: 'Cliente',
+  operador_portao: 'Operador de portão',
 }
 
 /** Dono da plataforma: acesso irrestrito a todas as organizações. */
@@ -61,9 +69,13 @@ export const podeExcluirEventos = podeExcluir
  * credenciamento — o supervisor cuida da equipe, não do portão. É a mesma
  * separação que as mensagens já dizem à equipe ("vá ao credenciamento", e não
  * "procure seu supervisor"), agora valendo também no sistema.
+ *
+ * `operador_portao` existe exatamente para ser o posto de credenciamento:
+ * escaneia, mas não gerencia nada — ver `podeGerenciarEventos`, que ele NÃO
+ * satisfaz.
  */
 export const podeEscanear = (role?: string) =>
-  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente'
+  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente' || role === 'operador_portao'
 
 /**
  * Pode ACOMPANHAR a operação: atividades, pendências, histórico e a tela de

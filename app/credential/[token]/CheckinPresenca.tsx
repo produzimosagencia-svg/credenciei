@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck } from 'lucide-react'
-import { registrarPresencaFoto } from '@/lib/actions'
+import { registrarPresencaFoto, registrarPresencaLivre } from '@/lib/actions'
 
 type Status = 'feito' | 'disponivel' | 'aguardando' | 'encerrado' | 'indefinido'
 
@@ -228,9 +228,18 @@ function limparPendente(token: string) {
  */
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
-export default function CheckinPresenca({ token, momentos }: { token: string; momentos: MomentoInfo[] }) {
+export default function CheckinPresenca({
+  token, momentos, diaPrincipal,
+}: {
+  token: string
+  momentos: MomentoInfo[]
+  /** Fora do dia principal, entrada e saída ganham registro sem operador (ver `registrarLivre`). */
+  diaPrincipal: boolean
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
+  // Qual etapa (entrada/fim) está em andamento no registro sem operador — nunca as duas ao mesmo tempo.
+  const [busyLivre, setBusyLivre] = useState<'entrada' | 'fim' | null>(null)
   // Em que ponto estamos: a espera fica longa e sem isto a tela parece travada.
   const [fase, setFase] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -277,6 +286,35 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
     // vez de os dois se somarem.
     fileRef.current?.click()
     localRef.current = iniciarLocalizacao()
+  }
+
+  /**
+   * Entrada e saída sem operador — fora do dia principal.
+   *
+   * Sem selfie de propósito: é o toque que precisa ser rápido, e câmera é
+   * exatamente o passo que trava em navegador embutido quebrado (o mesmo
+   * problema já corrigido no meio). A localização não trava o registro —
+   * falhando, some do resultado, mas a batida sai igual.
+   */
+  const registrarLivre = async (momento: 'entrada' | 'fim') => {
+    if (busyLivre) return
+    setErro(null)
+    setBusyLivre(momento)
+    try {
+      const local = iniciarLocalizacao()
+      const posicao = local.agora() ?? await Promise.race([local.pronta, aposMs(GRACA_MS)])
+      const r = await registrarPresencaLivre(token, momento, posicao?.lat ?? null, posicao?.lng ?? null)
+      if (r.ok || ehDuplicata(r.error)) {
+        setErro(null)
+        router.refresh()
+      } else {
+        setErro(r.error ?? 'Não foi possível registrar. Tente de novo.')
+      }
+    } catch {
+      setErro('Não foi possível registrar agora. Verifique a internet e tente de novo.')
+    } finally {
+      setBusyLivre(null)
+    }
   }
 
   /**
@@ -467,7 +505,10 @@ export default function CheckinPresenca({ token, momentos }: { token: string; mo
 
       {momentos.map(m => (
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
-          <Cartao info={m} busy={busy} fase={fase} onFoto={abrirCamera} />
+          <Cartao
+            info={m} busy={busy} fase={fase} onFoto={abrirCamera}
+            diaPrincipal={diaPrincipal} busyLivre={busyLivre} onLivre={registrarLivre}
+          />
           {/*
             * Fora do cartão, e não dentro do botão: o botão precisa continuar
             * curto e óbvio. Aqui cabe o recado inteiro — que ainda dá para
@@ -538,10 +579,23 @@ function BotaoCopiarLink() {
   )
 }
 
-function Cartao({ info, busy, fase, onFoto }: { info: MomentoInfo; busy: boolean; fase: 'local' | 'enviando' | null; onFoto: () => void }) {
+function Cartao({
+  info, busy, fase, onFoto, diaPrincipal, busyLivre, onLivre,
+}: {
+  info: MomentoInfo
+  busy: boolean
+  fase: 'local' | 'enviando' | null
+  onFoto: () => void
+  /** Fora do dia principal, entrada e saída ficam autônomas — ver `onLivre`. */
+  diaPrincipal: boolean
+  busyLivre: 'entrada' | 'fim' | null
+  onLivre: (momento: 'entrada' | 'fim') => void
+}) {
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
+  const ehLivre = !ehFoto && !diaPrincipal
+  const registrandoEsta = busyLivre === info.momento
 
   if (info.status === 'feito') {
     return (
@@ -579,6 +633,37 @@ function Cartao({ info, busy, fase, onFoto }: { info: MomentoInfo; busy: boolean
                 : fase === 'local'
                   ? 'Pode levar alguns segundos. Não feche a tela.'
                   : 'Quase lá — não feche a tela.'}
+            </p>
+          </div>
+        </button>
+      )
+    }
+    /*
+     * Fora do dia principal, entrada e saída não precisam de operador.
+     *
+     * É o que resolve quem chega antes da portaria abrir ou sai depois dela
+     * fechar na montagem/desmontagem: um toque registra, com localização —
+     * sem selfie, pra ser rápido. No dia principal isto nunca aparece; o
+     * Fluxo 1 (QR lido no credenciamento) continua do jeito que já era.
+     */
+    if (ehLivre) {
+      return (
+        <button
+          onClick={() => onLivre(info.momento as 'entrada' | 'fim')}
+          disabled={registrandoEsta}
+          className={`${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
+        >
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            {registrandoEsta
+              ? <Loader2 className="w-5 h-5 animate-spin" />
+              : info.momento === 'entrada' ? <QrCode className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
+          </div>
+          <div className="min-w-0 text-left">
+            <p className="font-bold text-sm">
+              {registrandoEsta ? 'Registrando...' : `Registrar ${info.momento === 'entrada' ? 'entrada' : 'saída'}`}
+            </p>
+            <p className="text-brand-100 text-xs">
+              {registrandoEsta ? 'Não feche a tela.' : `Toque para confirmar • ${janela}`}
             </p>
           </div>
         </button>

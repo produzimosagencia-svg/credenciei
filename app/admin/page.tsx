@@ -126,12 +126,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * números do evento inteiro e o menu de editar/encerrar. `podeAcompanhar` é
    * o teste certo: acompanha a operação, não gerencia o evento.
    *
-   * Sem setor vinculado não há nada a mostrar e nem scanner para oferecer, e
-   * mandar para cá de novo daria laço — então a tela diz o que fazer.
+   * Operador de portão é o mesmo caso, mas sem SETOR — ele escaneia o evento
+   * inteiro, não um fornecedor (`perfis.fornecedor_id` fica nulo). Sem isso,
+   * ele caía em "sem setor vinculado", uma tela feita para outro problema.
+   * Manda ele direto pro scanner, que já lista os eventos dele.
    */
   if (podeAcompanhar(perfil.role) && !podeGerenciarEventos(perfil.role)) {
     const setor = await meuSetor(perfil)
-    if (!setor) return <SemSetorVinculado />
+    if (!setor) {
+      if (perfil.role === 'operador_portao') redirect('/scan')
+      return <SemSetorVinculado />
+    }
     redirect(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
   }
 
