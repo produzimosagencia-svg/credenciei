@@ -54,11 +54,11 @@ export default async function CartazPage({ params }: { params: Promise<{ id: str
           <img src={qr} alt="QR Code do cadastro" className="w-full max-w-sm mx-auto" />
         </div>
 
-        <p className="text-slate-900 font-bold text-2xl">Não está cadastrado?</p>
+        <p className="text-slate-900 font-bold text-2xl">Bata seu ponto por aqui</p>
         <ol className="text-slate-700 text-lg mt-4 space-y-2 text-left max-w-xs mx-auto">
           <li><strong>1.</strong> Aponte a câmera do celular para o código</li>
-          <li><strong>2.</strong> Escolha o seu setor</li>
-          <li><strong>3.</strong> Preencha e pronto</li>
+          <li><strong>2.</strong> Digite seu CPF</li>
+          <li><strong>3.</strong> Já cadastrado? Registra na hora. Novo? Escolhe o setor e preenche.</li>
         </ol>
 
         <p className="text-slate-400 text-sm mt-8">

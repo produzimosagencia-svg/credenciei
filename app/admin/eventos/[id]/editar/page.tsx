@@ -158,6 +158,45 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             </div>
           </label>
 
+          {/*
+            * Auto-atendimento no dia principal — os dois fluxos coexistem.
+            *
+            * Desligado (padrão): o dia principal continua só no Fluxo 1,
+            * crachá lido por um operador — nada muda pra quem já usa assim.
+            * Ligado: o QR fixo da portaria (identificação por CPF) TAMBÉM
+            * libera entrada e saída, sem tirar o operador de cena — os dois
+            * caminhos ficam disponíveis ao mesmo tempo. Independe de "batida
+            * livre": o horário continua sendo o de cima, só muda quem pode
+            * fazer o registro.
+            */}
+          <label
+            htmlFor="checkin_autonomo"
+            className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
+                       hover:border-brand-300 transition-colors"
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="checkin_autonomo"
+                name="checkin_autonomo"
+                defaultChecked={evento.checkin_autonomo === true}
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-slate-800 font-semibold text-sm">Auto-atendimento no dia principal</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  Além do crachá lido por um operador, a equipe também pode escanear o QR fixo
+                  da portaria e registrar a própria entrada/saída pelo celular, com localização
+                  — o mesmo caminho que já funciona sempre na montagem e desmontagem.
+                </p>
+                <p className="text-slate-500 text-xs mt-1.5">
+                  Use pra aliviar a fila num show grande: quem preferir continua indo pelo
+                  crachá, normalmente.
+                </p>
+              </div>
+            </div>
+          </label>
+
           <div className="space-y-3">
             {janelas.map(j => (
               <div key={j.key} data-tutorial={`edt-janela-${j.key}`} className={`bg-white rounded-2xl border ${j.border} p-4 space-y-3`}>

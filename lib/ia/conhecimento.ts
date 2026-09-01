@@ -24,8 +24,15 @@ acompanha tudo em tempo real.
   os admins delas. Não pertence a nenhuma organização (organizacao_id nulo).
 - **admin**: dono de UMA organização. Vê apenas os dados dela. Cria eventos (até
   o limite contratado), setores e supervisores. NÃO pode excluir eventos.
-- **supervisor**: preso a UM setor. Vê só a equipe daquele setor, o scanner e as
-  presenças dele. Nunca vê outros setores, eventos ou a organização.
+- **supervisor**: preso a UM setor (fornecedor). Vê só a equipe daquele setor e
+  as presenças dela. NÃO tem mais o scanner (saiu do papel dele a pedido —
+  quem credencia é o posto de credenciamento). Nunca vê outros setores,
+  eventos ou a organização.
+- **operador_portao**: preso à ORGANIZAÇÃO inteira (não a um setor). Só lê QR
+  e registra ponto manual em "Registrar ponto" (/admin/localizar) — sem
+  NENHUM acesso de gerenciamento (não edita evento, equipe, valores nem
+  usuários). Existe pra quem opera fisicamente o credenciamento sem precisar
+  de senha de admin.
 - **funcionário**: não faz login. Usa dois links públicos — o formulário de
   cadastro e a credencial com o QR Code.
 
@@ -82,9 +89,57 @@ Os horários da jornada ("jornada_dias") não travam mais nada. Eles dizem "que
 horas era pra essa pessoa ter chegado" e alimentam as listas de pendência e os
 lembretes de WhatsApp.
 
-Quando alguém perde qualquer etapa, quem resolve é o supervisor pela tela
-"Localizar funcionário" (registro assistido) — essa tela NÃO valida horário,
-justamente porque existe pra quando o prazo já passou.
+Quando alguém perde qualquer etapa, quem resolve é o supervisor (ou o
+operador de portão) pela tela "Registrar ponto" (/admin/localizar, registro
+assistido) — essa tela NÃO valida horário, justamente porque existe pra
+quando o prazo já passou. Pede foto do rosto da pessoa, geolocalização
+(quando disponível) e grava autor, aparelho e justificativa.
+
+## A saída NÃO exige mais o meio
+Registrar a saída não depende de o meio ter sido feito. Se sair sem meio, o
+sistema grava sozinho a observação "Saída registrada sem registro de meio."
+no registro de saída — aparece no histórico pra auditoria, mas não bloqueia
+ninguém.
+
+## batida_livre × checkin_autonomo — são coisas DIFERENTES
+Fácil confundir os dois, mas resolvem perguntas diferentes:
+
+- **batida_livre** (por evento): decide QUANDO a entrada/saída do DIA
+  PRINCIPAL é aceita. Desligado (padrão): só dentro da janela configurada.
+  Ligado: qualquer hora, sem trava — pra show com escala rotativa, onde a
+  equipe entra a noite toda. Os horários configurados continuam valendo como
+  REFERÊNCIA nas mensagens e no cálculo de atraso; só a recusa some.
+- **checkin_autonomo** (por evento): decide QUEM pode fazer o registro do
+  DIA PRINCIPAL. Desligado (padrão): só um operador, lendo o crachá (Fluxo
+  1) — nada muda. Ligado: a própria pessoa TAMBÉM pode registrar sozinha
+  (Fluxo 2, ver abaixo), em paralelo — nenhum caminho substitui o outro.
+
+Nos dias de MONTAGEM/DESMONTAGEM, checkin_autonomo nunca entra em jogo:
+lá o auto-atendimento já é sempre permitido, porque não existe operador de
+plantão o tempo todo nesses dias.
+
+## Fluxo 1 × Fluxo 2 — os dois caminhos de credenciar
+- **Fluxo 1 (crachá)**: um operador (master/admin/gerente/cliente ou
+  operador_portao) escaneia o QR pessoal da credencial de cada funcionário,
+  em /scan. É o padrão do dia principal, e continua existindo sempre, em
+  qualquer configuração.
+- **Fluxo 2 (auto-atendimento)**: a própria pessoa se registra, sem
+  operador. Dois pontos de entrada:
+  - **QR fixo da portaria** (cartaz impresso, em /admin/eventos/[id]/portaria):
+    um único QR por evento (token_portaria), pra quem chega sem estar
+    credenciado ainda OU pra quem já é credenciado mas quer bater ponto sem
+    fila. Ao escanear, pede o CPF: já credenciado NESTE evento → vai direto
+    pro check-in; não achou → cai no cadastro público (formulário), que
+    também pré-preenche os dados se a pessoa já trabalhou pra esta
+    organização antes.
+  - **Botão na própria credencial** (/credential/[token]): "Registrar
+    entrada"/"Registrar saída", com localização, sem selfie (só o meio pede
+    foto). Sempre disponível fora do dia principal; no dia principal, só
+    quando checkin_autonomo está ligado nesse evento.
+
+Ligar portaria_ativa NÃO liga checkin_autonomo, e vice-versa — são
+interruptores independentes, um controla o cadastro de gente nova, o outro
+controla quem pode registrar ponto sozinho no dia principal.
 
 # Telas do sistema
 
@@ -126,6 +181,16 @@ partir de um .xlsx/.csv com as colunas Nome, CPF, Telefone, Empresa/Setor,
 Cargo, Cidade, Chave PIX e Valor (só Nome e CPF são obrigatórios na planilha).
 São os MESMOS campos do formulário público — planilha, formulário e cadastro
 pela IA pedem o mesmo conjunto, pra ninguém entrar na base pela metade.
+Também tem: o card do cartaz da portaria (liga/desliga portaria_ativa, troca
+o token, link pro cartaz pra imprimir) e o card de operadores de portão
+(cria e edita quem tem esse papel, mostrando o link de criar senha — não
+manda WhatsApp automático pra este papel).
+
+## Cartaz da portaria (/admin/eventos/[id]/portaria)
+Folha A4 pra imprimir e colar na entrada: um QR fixo por evento
+(token_portaria). Instrui "aponte a câmera, digite o CPF" — atende os dois
+casos, gente nova (cai no cadastro) e gente já credenciada (vai direto pro
+check-in). Só master/admin.
 
 ## Cadastrar equipe pela planilha, aqui no chat
 A pessoa também pode anexar a planilha nesta conversa, pelo clipe ao lado do
@@ -137,7 +202,10 @@ trocado. Pergunte em qual setor a equipe entra antes de importar.
 
 ## Editar evento (/admin/eventos/[id]/editar)
 Mesmos campos do cadastro, mais a mensagem pré-evento de WhatsApp (quando
-enviar + instruções livres que entram na confirmação de escala).
+enviar + instruções livres que entram na confirmação de escala). Tem os dois
+interruptores do dia principal: "Batida livre" (solta o HORÁRIO) e
+"Auto-atendimento no dia principal" (solta QUEM registra — ver a seção
+batida_livre × checkin_autonomo, acima). Os dois são independentes.
 
 ## Painel do setor (/admin/eventos/[id]/fornecedor/[fid])
 É a tela do supervisor. Link de cadastro pra mandar no grupo, cadastro manual,

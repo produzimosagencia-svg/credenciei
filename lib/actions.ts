@@ -159,6 +159,17 @@ function janelasDoForm(formData: FormData) {
      * `false`, e o evento continuaria travado sem ninguém entender por quê.
      */
     batida_livre: formData.get('batida_livre') === 'on',
+    /*
+     * Os dois fluxos coexistem por evento, não é uma coisa que o sistema
+     * decide sozinho. Desligado, o dia principal continua só no Fluxo 1
+     * (crachá lido por um operador) — igual sempre foi. Ligado, o QR fixo da
+     * portaria (auto-cadastro/identificação por CPF) TAMBÉM libera entrada
+     * e saída no dia principal, sem tirar o scanner do operador de cena: os
+     * dois caminhos ficam disponíveis ao mesmo tempo, e cada pessoa usa o
+     * que estiver mais à mão. Nos dias de montagem/desmontagem isto nunca
+     * entra em jogo — lá o auto-atendimento já é sempre o padrão.
+     */
+    checkin_autonomo: formData.get('checkin_autonomo') === 'on',
     janela_entrada_inicio: g('janela_entrada_inicio'),
     janela_entrada_fim: g('janela_entrada_fim'),
     janela_meio_inicio: g('janela_meio_inicio'),
@@ -1724,7 +1735,7 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
 
 export type MomentoPresenca = 'entrada' | 'meio' | 'fim'
 
-const JANELA_SELECT = 'data_inicio, data_fim, batida_livre, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim'
+const JANELA_SELECT = 'data_inicio, data_fim, batida_livre, checkin_autonomo, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim'
 
 /**
  * A entrada que ancora o turno atual desta pessoa.
@@ -2387,15 +2398,18 @@ export async function registrarPresencaFoto(
 /**
  * Check-in de entrada/saída SEM operador — pela credencial, com localização.
  *
- * Existe pra montagem e desmontagem: quem chega antes da portaria abrir ou
- * sai depois dela fechar não pode ficar esperando alguém pra ler o QR. Sem
- * selfie de propósito — é rápido no local, e a foto é o que trava a câmera
- * em navegador embutido quebrado (o mesmo problema já corrigido no meio).
+ * Sempre disponível na montagem/desmontagem: quem chega antes da portaria
+ * abrir ou sai depois dela fechar não pode ficar esperando alguém pra ler o
+ * QR. Sem selfie de propósito — é rápido no local, e a foto é o que trava a
+ * câmera em navegador embutido quebrado (o mesmo problema já corrigido no
+ * meio).
  *
- * NUNCA funciona no dia principal, mesmo chamada direto (sem passar pela
- * tela): é a garantia de que o Fluxo 1 (credenciamento tradicional, QR lido
- * por um operador) continua intocado. Esconder o botão na tela não seria
- * suficiente — é esta checagem, no servidor, que vale.
+ * No dia principal, só funciona se `eventos.checkin_autonomo` estiver
+ * ligado — os DOIS fluxos coexistem por escolha do admin, nenhum substitui
+ * o outro (ver a migração e o checkbox em editar evento). Desligado (padrão),
+ * o dia principal continua só no Fluxo 1: crachá lido por um operador, do
+ * jeito que já era. Esconder o botão na tela não seria suficiente — é esta
+ * checagem, no servidor, que vale.
  */
 export async function registrarPresencaLivre(
   token: string,
@@ -2427,13 +2441,12 @@ export async function registrarPresencaLivre(
   if (!resolucao.ok) return { error: resolucao.erro }
 
   /*
-   * A trava que preserva o Fluxo 1.
-   *
-   * `resolverRegistro` já sabe se este dia é o principal — é o mesmo cálculo
-   * que decide se a saída fecha o vínculo com o evento. Aqui ele decide se
-   * este caminho (sem operador) pode ser usado.
+   * No dia principal, este caminho só existe se o admin ligou. Fora dele
+   * (montagem/desmontagem), é sempre permitido — não depende de nenhuma
+   * configuração, porque não existe operador de plantão o tempo todo nesses
+   * dias.
    */
-  if (resolucao.diaPrincipal) {
+  if (resolucao.diaPrincipal && evento.checkin_autonomo !== true) {
     return { error: 'No dia do evento, a entrada e a saída são pelo QR Code no credenciamento.' }
   }
 

@@ -89,10 +89,11 @@ grupo('7 · Montagem tem entrada e saída livres')
 confere('o servidor libera', /if \(dia\.tipo !== 'principal'\) return \{ ok: true \}/.test(C.janelas), true)
 confere('nada é cobrado sem horário esperado', /esperado\.entrada && !desligado/.test(C.mensagens), true)
 
-grupo('8 · Fluxo 1 (dia principal) intocado pelo registro livre da montagem')
-confere('o botão só aparece fora do dia principal', /!ehFoto && !diaPrincipal/.test(C.checkin), true)
-confere('e o servidor recusa mesmo chamado direto no dia principal',
-  /if \(resolucao\.diaPrincipal\) \{[\s\S]{0,200}QR Code no credenciamento/.test(C.actions), true)
+grupo('8 · No dia principal, o registro livre exige checkin_autonomo ligado')
+confere('a tela só oferece o botão fora do dia principal ou com o auto-atendimento ligado',
+  /!diaPrincipal \|\| evento\?\.checkin_autonomo === true/.test(C.credencial), true)
+confere('e o servidor recusa mesmo chamado direto, sem a coluna ligada',
+  /resolucao\.diaPrincipal && evento\.checkin_autonomo !== true/.test(C.actions), true)
 
 console.log(
   falhas

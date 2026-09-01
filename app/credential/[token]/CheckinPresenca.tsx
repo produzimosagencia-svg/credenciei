@@ -229,12 +229,16 @@ function limparPendente(token: string) {
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
-  token, momentos, diaPrincipal,
+  token, momentos, podeAutoRegistrar,
 }: {
   token: string
   momentos: MomentoInfo[]
-  /** Fora do dia principal, entrada e saída ganham registro sem operador (ver `registrarLivre`). */
-  diaPrincipal: boolean
+  /**
+   * Entrada e saída ganham registro sem operador (ver `registrarLivre`).
+   * Sempre `true` fora do dia principal; no dia principal, só quando o
+   * evento tem `checkin_autonomo` ligado — os dois fluxos coexistem.
+   */
+  podeAutoRegistrar: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -507,7 +511,7 @@ export default function CheckinPresenca({
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}
-            diaPrincipal={diaPrincipal} busyLivre={busyLivre} onLivre={registrarLivre}
+            podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre} onLivre={registrarLivre}
           />
           {/*
             * Fora do cartão, e não dentro do botão: o botão precisa continuar
@@ -580,21 +584,21 @@ function BotaoCopiarLink() {
 }
 
 function Cartao({
-  info, busy, fase, onFoto, diaPrincipal, busyLivre, onLivre,
+  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre,
 }: {
   info: MomentoInfo
   busy: boolean
   fase: 'local' | 'enviando' | null
   onFoto: () => void
-  /** Fora do dia principal, entrada e saída ficam autônomas — ver `onLivre`. */
-  diaPrincipal: boolean
+  /** Entrada e saída ficam autônomas quando true — ver `onLivre`. */
+  podeAutoRegistrar: boolean
   busyLivre: 'entrada' | 'fim' | null
   onLivre: (momento: 'entrada' | 'fim') => void
 }) {
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
-  const ehLivre = !ehFoto && !diaPrincipal
+  const ehLivre = !ehFoto && podeAutoRegistrar
   const registrandoEsta = busyLivre === info.momento
 
   if (info.status === 'feito') {
@@ -639,12 +643,14 @@ function Cartao({
       )
     }
     /*
-     * Fora do dia principal, entrada e saída não precisam de operador.
+     * Auto-atendimento: entrada e saída sem precisar de operador.
      *
-     * É o que resolve quem chega antes da portaria abrir ou sai depois dela
-     * fechar na montagem/desmontagem: um toque registra, com localização —
-     * sem selfie, pra ser rápido. No dia principal isto nunca aparece; o
-     * Fluxo 1 (QR lido no credenciamento) continua do jeito que já era.
+     * Sempre disponível fora do dia principal — é o que resolve quem chega
+     * antes da portaria abrir ou sai depois dela fechar na montagem/
+     * desmontagem. No dia principal só aparece se o evento tiver o
+     * auto-atendimento ligado (ver editar evento); mesmo ligado, o QR acima
+     * continua valendo — os dois caminhos coexistem, ninguém é obrigado a
+     * usar este.
      */
     if (ehLivre) {
       return (
@@ -663,7 +669,7 @@ function Cartao({
               {registrandoEsta ? 'Registrando...' : `Registrar ${info.momento === 'entrada' ? 'entrada' : 'saída'}`}
             </p>
             <p className="text-brand-100 text-xs">
-              {registrandoEsta ? 'Não feche a tela.' : `Toque para confirmar • ${janela}`}
+              {registrandoEsta ? 'Não feche a tela.' : `Toque para confirmar, ou mostre o QR acima • ${janela}`}
             </p>
           </div>
         </button>

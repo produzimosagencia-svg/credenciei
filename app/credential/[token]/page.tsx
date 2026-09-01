@@ -33,11 +33,11 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'cred-qr', titulo: 'Seu QR Code', posicao: 'bottom',
       descricao: 'Mostre esta tela no credenciamento quando chegar e quando for embora. O código é lido na hora e a sua presença fica registrada. O crachá da montagem é diferente do crachá do dia do evento — a tela troca sozinha quando chega o dia. Mostre sempre a tela ao vivo, nunca um print.' },
     { alvo: 'cred-etapa-entrada', titulo: '1. Entrada', posicao: 'bottom',
-      descricao: 'Na chegada, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
+      descricao: 'Na chegada: se o cartão tiver um botão "Registrar entrada", é só tocar nele, com a localização ligada. Sem o botão, procure o posto de credenciamento e mostre o QR Code. O cartão fica verde quando o registro é feito.' },
     { alvo: 'cred-etapa-meio', titulo: '2. Meio — este é por sua conta', posicao: 'bottom',
       descricao: 'Durante o turno, você mesmo confirma que está no posto: toque no cartão, tire uma selfie e pronto. Precisa estar com a localização do celular ligada. Avisamos no WhatsApp quando chegar a hora — não precisa ficar olhando.' },
     { alvo: 'cred-etapa-fim', titulo: '3. Saída', posicao: 'top',
-      descricao: 'Na hora de ir embora, volte ao credenciamento e mostre o QR Code de novo. Isso fecha o seu ciclo no dia.' },
+      descricao: 'Na hora de ir embora: mesma lógica da entrada — toque em "Registrar saída" se o cartão oferecer, ou volte ao credenciamento e mostre o QR Code de novo. Isso fecha o seu ciclo no dia.' },
     { alvo: 'cred-etapas', titulo: 'Um ciclo por dia', posicao: 'top',
       descricao: 'Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo: amanhã os três cartões voltam do zero.' },
   ],
@@ -63,14 +63,14 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, empresa, cargo, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
   if (!funcionario) notFound()
 
   const fornecedor = funcionario.fornecedores as any
-  const evento = fornecedor?.eventos as (EventoJanelas & { id: string; nome: string; local: string | null }) | null
+  const evento = fornecedor?.eventos as (EventoJanelas & { id: string; nome: string; local: string | null; checkin_autonomo: boolean | null }) | null
 
   const agora = new Date()
   const hoje = diaBRT(agora)
@@ -233,7 +233,16 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} />
 
               <div data-tutorial="cred-etapas">
-                <CheckinPresenca token={token} momentos={momentos} diaPrincipal={diaPrincipal} />
+                {/*
+                  * Fora do dia principal, o auto-atendimento é sempre
+                  * permitido. No dia principal, só se o admin ligou
+                  * `checkin_autonomo` (ver editar evento) — os dois fluxos
+                  * coexistem por escolha dele, nenhum some.
+                  */}
+                <CheckinPresenca
+                  token={token} momentos={momentos}
+                  podeAutoRegistrar={!diaPrincipal || evento?.checkin_autonomo === true}
+                />
               </div>
             </div>
           </div>
