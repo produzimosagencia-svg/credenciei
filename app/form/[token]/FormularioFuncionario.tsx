@@ -1,12 +1,23 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera as CameraIcon, X, Sparkles } from 'lucide-react'
+import { Camera as CameraIcon, X, Sparkles, Download } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 import SeletorLista from '@/components/SeletorLista'
 import { CIDADES_ES } from '@/lib/cidades'
 import { useCampoFormatado } from '@/components/inputs'
+
+/**
+ * Onde o app fica nas lojas.
+ *
+ * `null` enquanto ele não é publicado — os botões abaixo aparecem
+ * desabilitados, com "em breve", em vez de um link morto que a pessoa toca e
+ * não vai a lugar nenhum. Trocar aqui por uma URL real é tudo que falta no
+ * dia em que o app sair do ar.
+ */
+const LINK_APP_ANDROID: string | null = null
+const LINK_APP_IOS: string | null = null
 
 const initialForm = {
   nome: '',
@@ -191,6 +202,24 @@ export default function FormularioFuncionario({
         >
           Abrir minha credencial →
         </a>
+
+        {/*
+          Convite para o app, não trava de nada.
+          A credencial acima já funciona pelo navegador — isso aqui é sobre a
+          PRÓXIMA vez: com o app, ela entra com o WhatsApp em vez de guardar
+          este link. Por isso vem depois do botão que já resolve o problema
+          de hoje, nunca antes dele.
+        */}
+        <div className="pt-2 border-t border-slate-100">
+          <p className="text-slate-500 text-xs mb-2.5">
+            Baixe o app para acessar sua credencial e seu ponto mais rápido da
+            próxima vez
+          </p>
+          <div className="flex gap-2">
+            <BotaoDeLoja rotulo="Android" link={LINK_APP_ANDROID} />
+            <BotaoDeLoja rotulo="iPhone" link={LINK_APP_IOS} />
+          </div>
+        </div>
       </div>
     )
   }
@@ -311,6 +340,34 @@ export default function FormularioFuncionario({
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}
       </button>
     </form>
+  )
+}
+
+/**
+ * Um botão de loja — Android ou iPhone.
+ *
+ * Sem link, vira aviso "em breve" em vez de sumir: a pessoa vê que o app
+ * existe e está a caminho, em vez de a opção desaparecer sem explicação.
+ */
+function BotaoDeLoja({ rotulo, link }: { rotulo: string; link: string | null }) {
+  if (!link) {
+    return (
+      <span className="flex-1 flex items-center justify-center gap-1.5 border border-dashed border-slate-200
+                        rounded-xl py-2.5 text-xs text-slate-400">
+        <Download className="w-3.5 h-3.5" /> {rotulo} · em breve
+      </span>
+    )
+  }
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex-1 flex items-center justify-center gap-1.5 border border-slate-200 rounded-xl py-2.5
+                 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-600 transition-colors"
+    >
+      <Download className="w-3.5 h-3.5" /> {rotulo}
+    </a>
   )
 }
 

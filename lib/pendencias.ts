@@ -60,6 +60,27 @@ type Opcoes = {
 }
 
 /**
+ * Quais destes setores pedem a confirmação do meio.
+ *
+ * Consulta SEPARADA, e não um join — de propósito. `exige_meio` é uma coluna
+ * nova, e no Supabase pedir uma coluna que ainda não existe derruba a
+ * consulta INTEIRA, não só aquele campo. Junto no `select` da equipe, isso
+ * fez a tela do evento aparecer com "nenhum fornecedor ainda" em produção,
+ * com 33 setores e 387 pessoas intactos no banco — só porque a migração
+ * ainda não tinha sido aplicada.
+ *
+ * Isolada aqui, a falha custa no máximo o recurso novo (nenhum setor pede o
+ * meio, que é o padrão de qualquer forma) e nunca a tela.
+ */
+async function setoresComMeio(fornecedorIds: string[]): Promise<Set<string>> {
+  if (!fornecedorIds.length) return new Set()
+  const { data, error } = await supabase
+    .from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
+  if (error) return new Set()
+  return new Set((data ?? []).filter(f => f.exige_meio === true).map(f => f.id as string))
+}
+
+/**
  * As pendências de um dia.
  *
  * "Previsto para trabalhar" é quem está ATIVO no setor. Quem se cadastrou mas
@@ -86,7 +107,7 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
    */
   let equipeQuery = supabase
     .from('funcionarios')
-    .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id, exige_meio)')
+    .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .eq('ativo', true)
     .is('descredenciado_em', null)
@@ -123,12 +144,16 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
   const dia = (diasJornada?.[0] as DiaDaJornada | undefined) ?? null
   if (!dia || dia.cancelado) return []
 
+  const comMeio = etapas.includes('meio')
+    ? await setoresComMeio([...new Set(equipe.map(f => f.fornecedor_id as string))])
+    : new Set<string>()
+
   const esperados = horariosEsperados(evento as EventoJanelas, data, dia)
 
   const lista: Pendencia[] = []
 
   for (const f of equipe) {
-    const setor = f.fornecedores as unknown as { id: string; nome: string; exige_meio: boolean | null }
+    const setor = f.fornecedores as unknown as { id: string; nome: string }
     const entradaEm = feitos.get(`${f.id}:entrada`) ?? null
 
     const comum = {
@@ -157,11 +182,12 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
     /*
      * ── Meio: horário fixo no dia principal, individual nos de preparação ──
      *
-     * Só entra setor que LIGOU o meio. Ver `fornecedores.exige_meio`: ele
-     * nasce desligado, e cobrar de quem não ligou encheria a lista do
-     * supervisor e o WhatsApp com gente que não devia nada.
+     * Só entra setor que LIGOU o meio (`fornecedores.exige_meio`, que nasce
+     * desligado). A leitura vem de `setoresComMeio`, e não de um join, para
+     * esta função continuar de pé mesmo antes de a migração ser aplicada —
+     * ver o comentário lá.
      */
-    if (etapas.includes('meio') && setor?.exige_meio === true && !feitos.has(`${f.id}:meio`)) {
+    if (etapas.includes('meio') && comMeio.has(setor?.id ?? '') && !feitos.has(`${f.id}:meio`)) {
       const j = janelaDoMeio(evento as EventoJanelas, dia, entradaEm)
       if (j && agora > new Date(j.fim).getTime()) {
         lista.push({ ...comum, etapa: 'meio', esperadoEm: j.inicio, realizadoEm: entradaEm })

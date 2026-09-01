@@ -17,8 +17,6 @@ type Fornecedor = {
   quantidade_estimada: number | null
   valor_combinado: number | null
   cpfs_autorizados: string | null
-  /** Este setor pede a confirmação do meio? Nasce desligado; só vale se TRUE. */
-  exige_meio?: boolean | null
   funcionarios: { count: number }[]
 }
 
@@ -34,6 +32,7 @@ export default function FornecedorCard({
   supervisores = [],
   funcionariosDoEvento = [],
   diasDoEvento = [],
+  exigeMeio = false,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
 }: {
@@ -50,6 +49,8 @@ export default function FornecedorCard({
   funcionariosDoEvento?: FuncionarioDoSetor[]
   /** Os dias do evento — para o "Exportar planilha" oferecer o fluxo de um dia. */
   diasDoEvento?: DiaDoEvento[]
+  /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
+  exigeMeio?: boolean
   podeGerenciarSupervisores?: boolean
   /** Só o master exclui. O admin encerra o evento, que resolve sem destruir. */
   podeExcluir?: boolean
@@ -130,7 +131,7 @@ export default function FornecedorCard({
             fornecedorId={f.id}
             nome={f.nome}
             valor_combinado={f.valor_combinado}
-            exige_meio={f.exige_meio === true}
+            exige_meio={exigeMeio}
           />
           {podeExcluir && (
             <button

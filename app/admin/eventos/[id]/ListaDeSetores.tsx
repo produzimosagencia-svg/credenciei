@@ -43,6 +43,7 @@ export default function ListaDeSetores({
   supervisoresPorFornecedor,
   funcionariosDoEvento,
   diasDoEvento,
+  setoresComMeio,
   podeGerenciarSupervisores,
   podeExcluir,
 }: {
@@ -52,6 +53,8 @@ export default function ListaDeSetores({
   /* Todo mundo do EVENTO — o supervisor pode vir de qualquer setor. */
   funcionariosDoEvento: FuncionarioDoSetor[]
   diasDoEvento: DiaDoEvento[]
+  /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
+  setoresComMeio: Set<string>
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
 }) {
@@ -143,6 +146,7 @@ export default function ListaDeSetores({
               supervisores={supervisoresPorFornecedor[f.id] ?? []}
               funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
+              exigeMeio={setoresComMeio.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
             />

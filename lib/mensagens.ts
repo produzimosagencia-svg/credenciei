@@ -540,13 +540,19 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
  * do evento inteiro.
  */
 async function setorExigeMeio(funcionarioId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('funcionarios')
-    .select('fornecedores(exige_meio)')
-    .eq('id', funcionarioId)
-    .single()
-  const forn = data?.fornecedores as unknown as { exige_meio: boolean | null } | null
-  return forn?.exige_meio === true
+  const { data: func } = await supabase
+    .from('funcionarios').select('fornecedor_id').eq('id', funcionarioId).single()
+  if (!func?.fornecedor_id) return false
+  /*
+   * Consulta separada, não um join — ver `setoresComMeio` em lib/pendencias.
+   * Pedir uma coluna que ainda não existe derruba a consulta inteira no
+   * Supabase, e aqui isso silenciaria o agendamento de mensagens sem
+   * ninguém perceber. Erro = ninguém pede o meio, que é o padrão.
+   */
+  const { data, error } = await supabase
+    .from('fornecedores').select('exige_meio').eq('id', func.fornecedor_id).single()
+  if (error) return false
+  return data?.exige_meio === true
 }
 
 /**

@@ -58,7 +58,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
     supabase.from('eventos').select('*').eq('id', id).single(),
     supabase
       .from('fornecedores')
-      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, exige_meio, funcionarios(count)')
+      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
       .eq('evento_id', id)
       .order('created_at'),
     supabase
@@ -121,6 +121,24 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
    * vazio, e uma lista por setor viria em branco justo quando mais se
    * precisa dela. Quem vira supervisor quase sempre já está em outro setor.
    */
+  /*
+   * Quais setores pedem o meio — CONSULTA SEPARADA, nunca no select acima.
+   *
+   * `exige_meio` é coluna nova. No Supabase, pedir uma coluna que ainda não
+   * existe derruba a consulta INTEIRA — e foi exatamente isso que fez a tela
+   * mostrar "nenhum fornecedor ainda" em produção, com 33 setores e 387
+   * pessoas intactos no banco, só porque a migração não tinha sido aplicada.
+   *
+   * Isolada, a falha custa no máximo o recurso novo (nenhum setor marcado),
+   * e nunca a lista de setores do evento.
+   */
+  const { data: setoresComMeioRows } = fornecedorIds.length
+    ? await supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
+    : { data: null }
+  const setoresComMeio = new Set(
+    (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
+  )
+
   const { data: funcionariosDoEventoRows } = fornecedorIds.length
     ? await supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
     : { data: [] as any[] }
@@ -308,6 +326,7 @@ export default async function EventoPage({ params }: { params: Promise<{ id: str
               supervisoresPorFornecedor={supervisoresPorFornecedor}
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
+              setoresComMeio={setoresComMeio}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}
             />

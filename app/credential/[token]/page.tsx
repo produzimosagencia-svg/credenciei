@@ -63,7 +63,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedores(nome, exige_meio, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, empresa, cargo, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
@@ -128,7 +128,17 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * apagar da vista uma batida que a pessoa fez. Por isso o filtro deixa
    * passar quando existe `feitoMap.meio`.
    */
-  const exigeMeio = (fornecedor?.exige_meio as boolean | null) === true
+  /*
+   * Consulta separada da coluna nova — ver `setoresComMeio` em lib/pendencias.
+   * Dentro do join acima, uma coluna ainda não migrada derrubaria a busca
+   * inteira e a credencial abriria como "não encontrada".
+   */
+  let exigeMeio = false
+  if (funcionario.fornecedor_id) {
+    const { data: cfg } = await supabase
+      .from('fornecedores').select('exige_meio').eq('id', funcionario.fornecedor_id).maybeSingle()
+    exigeMeio = cfg?.exige_meio === true
+  }
 
   const momentos: MomentoInfo[] = ROTULOS
     .filter(({ momento }) => momento !== 'meio' || exigeMeio || feitoMap.meio)
