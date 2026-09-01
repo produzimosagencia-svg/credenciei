@@ -486,29 +486,33 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     if (desligado(fluxos, 'alerta_supervisor')) break
     const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
     /*
-     * Entrada e fim só cobram quando existe horário DE VERDADE pro dia — não
-     * o padrão genérico (12:00/23:59) que `horariosEsperados` usa quando
-     * ninguém configurou nada. Num dia de preparação sem horário, "fulano
-     * não bateu a entrada" às 12:00 é alarme falso, não aviso.
+     * ALERTA AO SUPERVISOR SÓ NO DIA DO EVENTO.
      *
-     * DIFERENTE do lembrete ao funcionário, isto NÃO olha `batida_livre`:
-     * a entrada/saída de cada PESSOA pode ser livre (sem hora marcada) e,
-     * mesmo assim, o EVENTO ter um fechamento real configurado — 8h da
-     * manhã do dia seguinte, neste caso. Passado esse horário, quem nunca
-     * saiu é informação real pro supervisor, mesmo sem ninguém ter hora
-     * marcada individualmente. Batida livre cala a cobrança À PESSOA
-     * (lembrete/reforço), não o aviso AO SUPERVISOR sobre o fechamento.
+     * Cada mensagem de WhatsApp é cobrada, e o volume estourou: num evento de
+     * onze dias com 523 pessoas, a fila chegou a 2.790 mensagens pendentes —
+     * R$ 22 gastos em dois dias de montagem, com projeção de R$ 220 no
+     * evento inteiro. A maior parte não informava nada:
      *
-     * O meio fica de fora dessa trava: janela individual (entrada real da
-     * PESSOA + 4h), não depende de o dia ter horário configurado, e
-     * continua valendo todo santo dia — inclusive montagem.
+     *   • entrada e saída são LIVRES nos dias de preparação (e no dia do
+     *     evento, com batida livre). Cobrar quem "não bateu" um horário que
+     *     não existe é alarme falso — e alarme falso repetido faz o
+     *     supervisor parar de ler os de verdade;
+     *   • o meio na montagem interessa pouco: a operação é pequena e o
+     *     supervisor está junto da equipe.
+     *
+     * Fica o que o organizador de fato usa: no DIA DO EVENTO, quem não
+     * registrou o meio, e quem não fez a saída depois do fechamento. Nos
+     * demais dias, a tela de pendências continua mostrando tudo — a
+     * informação não sumiu, só parou de virar mensagem paga.
      */
-    const diaComTrava = temHorarioReal(dia.data === diaPrincipal, dia.jornadaDia)
-    const gatilhos: [TipoMensagem, string][] = [
-      ...(diaComTrava ? [['alerta_supervisor_entrada', esperado.entradaLimite] as [TipoMensagem, string]] : []),
-      ['alerta_supervisor_meio', esperado.meioAlerta],
-      ...(diaComTrava ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
-    ]
+    const ehDiaPrincipal = dia.data === diaPrincipal
+    const temHorario = temHorarioReal(ehDiaPrincipal, dia.jornadaDia)
+    const gatilhos: [TipoMensagem, string][] = ehDiaPrincipal
+      ? [
+          ['alerta_supervisor_meio', esperado.meioAlerta],
+          ...(temHorario ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
+        ]
+      : []
 
     for (const [tipo, quando] of gatilhos) {
       if (new Date(quando).getTime() <= agora) continue
@@ -529,6 +533,58 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   if (linhasSupervisor.length) {
     await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo,data_ref' })
   }
+
+  await cancelarOqueNaoValeMais(eventoId, [...linhasFuncionario, ...linhasSupervisor])
+}
+
+/**
+ * Cancela o que esta função DEIXOU de agendar.
+ *
+ * Ela sempre soube adicionar e nunca soube remover: mudar uma regra parava de
+ * criar mensagem nova, mas as antigas continuavam na fila, agendadas, e eram
+ * enviadas assim mesmo. Foi assim que 2.790 mensagens sobreviveram a três
+ * mudanças de regra seguidas — cobrando prazo em dia de batida livre, para
+ * 523 pessoas, com cada envio faturado.
+ *
+ * Só toca em `pendente`, e só nos tipos que ela mesma agenda. O que já foi
+ * enviado é histórico; `disparo_manual` e `boas_vindas_funcionario` são de
+ * outra origem e não podem ser varridos por engano.
+ */
+type LinhaAgendada = { tipo: string; data_ref: string; funcionario_id?: string; perfil_id?: string }
+
+async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada[]) {
+  const TIPOS_DESTA_FUNCAO: TipoMensagem[] = [
+    'lembrete_entrada', 'lembrete_fim', 'reforco_entrada', 'reforco_fim',
+    'aviso_dia_evento', 'aviso_montagem', 'aviso_desmontagem', 'confirmacao_escala',
+    'alerta_supervisor_entrada', 'alerta_supervisor_meio', 'alerta_supervisor_fim',
+  ]
+
+  const { data: naFila } = await supabase
+    .from('mensagens_agendadas')
+    .select('id, tipo, data_ref, funcionario_id, perfil_id')
+    .eq('evento_id', eventoId)
+    .eq('status', 'pendente')
+    .in('tipo', TIPOS_DESTA_FUNCAO)
+  if (!naFila?.length) return
+
+  const chave = (l: LinhaAgendada) => `${l.tipo}|${l.data_ref}|${l.funcionario_id ?? ''}|${l.perfil_id ?? ''}`
+  const ainda = new Set(mantidas.map(chave))
+
+  const orfas = naFila.filter(l => !ainda.has(chave(l as LinhaAgendada))).map(l => l.id as string)
+  if (!orfas.length) return
+
+  /*
+   * Em lotes: `in` com milhares de ids estoura o limite de tamanho da URL do
+   * PostgREST, e a limpeza falharia calada justamente no caso que mais
+   * precisa dela — o da fila grande.
+   */
+  for (let i = 0; i < orfas.length; i += 200) {
+    await supabase
+      .from('mensagens_agendadas')
+      .update({ status: 'cancelado', erro: 'Cancelada: a regra que a agendou deixou de valer.' })
+      .in('id', orfas.slice(i, i + 200))
+  }
+  console.log(`[agendamentos] ${orfas.length} mensagens canceladas por regra vencida (evento ${eventoId})`)
 }
 
 /**
