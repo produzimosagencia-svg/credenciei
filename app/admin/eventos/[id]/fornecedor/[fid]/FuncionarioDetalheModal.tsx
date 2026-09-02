@@ -115,7 +115,15 @@ export default function FuncionarioDetalheModal({
     setErroCpf(null)
     startTransitionCpf(async () => {
       try {
-        await editarCpfFuncionario(f.id, fornecedorId, eventoId, novoCpf)
+        /*
+         * O erro vem como VALOR de retorno, não como exceção: mensagem
+         * lançada de dentro de uma Server Action é apagada pelo Next em
+         * produção e chega aqui como texto genérico em inglês. Ver o
+         * comentário em `editarCpfFuncionario`. O `catch` fica só para a
+         * falha de rede, que é a única exceção real possível aqui.
+         */
+        const r = await editarCpfFuncionario(f.id, fornecedorId, eventoId, novoCpf)
+        if ('erro' in r) { setErroCpf(r.erro); return }
         router.refresh()
         setEditandoCpf(false)
       } catch (e: any) {
@@ -181,7 +189,11 @@ export default function FuncionarioDetalheModal({
         setOkSupervisor(
           r.novo
             ? 'Supervisor criado e avisado por WhatsApp.'
-            : 'Login de supervisor associado a este setor e pessoa avisada por WhatsApp.'
+            : r.avisado
+              ? 'Login de supervisor associado a este setor e pessoa avisada por WhatsApp.'
+              // Já era supervisora deste evento: nada de WhatsApp de novo — ela
+              // troca de setor no próprio acesso, em "Meus setores".
+              : 'Setor adicionado ao acesso dela. Não avisamos de novo por WhatsApp: ela já supervisiona este evento e troca de setor no próprio login.'
         )
         router.refresh()
       } catch (e: any) {

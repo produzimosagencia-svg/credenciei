@@ -160,8 +160,20 @@ export default async function EventoPage({
     fornecedorIds.length
       ? supabase.from('funcionarios').select('id, nome, cpf, telefone, cargo, fornecedor_id').in('fornecedor_id', fornecedorIds).order('nome')
       : Promise.resolve(vazio),
+    /*
+     * TODOS os vínculos de supervisor destes setores — de `supervisor_setores`,
+     * não de `perfis.fornecedor_id`.
+     *
+     * `perfis.fornecedor_id` é o setor que a pessoa está VENDO agora, um só.
+     * Listar por ele fazia quem cobre três setores aparecer em um único card,
+     * e o card dos outros dois parecia sem supervisor — o vínculo estava certo
+     * no banco o tempo todo. Foi o que aconteceu com a Fernanda nos três
+     * setores do Bar. Ver supabase/upgrade-supervisor-multi-setor.sql.
+     */
     fornecedorIds.length
-      ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
+      ? supabase.from('supervisor_setores')
+          .select('fornecedor_id, perfis!inner(id, nome, email, cpf, telefone, ativo, role)')
+          .in('fornecedor_id', fornecedorIds)
       : Promise.resolve(vazio),
   ])
 
@@ -169,9 +181,31 @@ export default async function EventoPage({
     (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
   )
 
-  const supervisoresPorFornecedor: Record<string, { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]> = {}
-  for (const s of supervisoresRows ?? []) {
-    (supervisoresPorFornecedor[s.fornecedor_id] ??= []).push(s)
+  type SupervisorDoCard = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
+  const supervisoresPorFornecedor: Record<string, SupervisorDoCard[]> = {}
+  for (const linha of supervisoresRows ?? []) {
+    const p = (linha as unknown as { fornecedor_id: string; perfis: SupervisorDoCard & { role?: string } }).perfis
+    // O vínculo sobrevive à mudança de papel; o card é de supervisor.
+    if (!p || (p.role && p.role !== 'supervisor')) continue
+    const lista = (supervisoresPorFornecedor[linha.fornecedor_id as string] ??= [])
+    if (!lista.some(s => s.id === p.id)) lista.push(p)
+  }
+  for (const lista of Object.values(supervisoresPorFornecedor)) {
+    lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }
+
+  /*
+   * Rede de segurança para a migração de multi-setor ainda não aplicada: sem
+   * a tabela, a consulta acima volta vazia e a tela diria que NENHUM setor
+   * tem supervisor. Aí vale o setor ativo, que é como era antes.
+   */
+  if (!Object.keys(supervisoresPorFornecedor).length && fornecedorIds.length) {
+    const { data: legado } = await supabase
+      .from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id')
+      .eq('role', 'supervisor').in('fornecedor_id', fornecedorIds)
+    for (const s of legado ?? []) {
+      (supervisoresPorFornecedor[s.fornecedor_id as string] ??= []).push(s as SupervisorDoCard)
+    }
   }
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil?.role)
 

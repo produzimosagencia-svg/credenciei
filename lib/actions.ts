@@ -461,6 +461,33 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
 }
 
 /**
+ * Esta pessoa JÁ supervisiona algum setor deste evento?
+ *
+ * Serve para não repetir o WhatsApp. Escalar a mesma pessoa em três setores
+ * do mesmo evento disparava três vezes as DUAS mensagens (aviso de escala +
+ * link de senha) — seis mensagens cobradas para dizer a mesma coisa a quem
+ * já sabia. Aconteceu de verdade com a Fernanda, em três setores do Bar.
+ *
+ * O corte é POR EVENTO, não por pessoa: ser escalada num evento novo é
+ * notícia e merece aviso; ganhar mais um setor no mesmo evento não é — ela
+ * troca de setor dentro do próprio acesso (ver `trocarSetorAtivo` e o menu
+ * "Meus setores").
+ *
+ * Erro de consulta devolve `false` — ou seja, avisa. Na dúvida, a mensagem a
+ * mais incomoda; a de menos deixa alguém sem saber que foi escalado.
+ */
+async function jaSupervisionaNesteEvento(perfilId: string, eventoId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('supervisor_setores')
+    .select('fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('perfil_id', perfilId)
+    .eq('fornecedores.evento_id', eventoId)
+    .limit(1)
+  if (error) return false
+  return !!data?.length
+}
+
+/**
  * O CPF já tem outro tipo de acesso, antes de a pessoa preencher o resto?
  *
  * "Tornar supervisor" descobria isso só depois do telefone preenchido e do
@@ -556,7 +583,31 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
 
+    /*
+     * ANTES de vincular: ela já cobria algum setor DESTE evento?
+     *
+     * Depois de `vincularSupervisorAoSetor` a resposta seria sempre "sim", e
+     * o aviso nunca mais sairia. A ordem aqui não é arbitrária.
+     */
+    const jaEraDesteEvento = await jaSupervisionaNesteEvento(existente.id, eventoId)
+
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
+
+    /*
+     * Ganhar mais um setor no MESMO evento não gera mensagem.
+     *
+     * São duas mensagens cobradas por atribuição (aviso de escala + link de
+     * senha). Escalar alguém em três setores do Bar mandava seis mensagens
+     * para dizer a mesma coisa a quem já sabia — aconteceu com a Fernanda.
+     * Ela troca de setor dentro do próprio acesso, em "Meus setores".
+     *
+     * Evento NOVO continua avisando: aí é notícia de verdade.
+     */
+    if (jaEraDesteEvento) {
+      revalidatePath('/admin/usuarios')
+      revalidatePath(`/admin/eventos/${eventoId}`)
+      return { ok: true as const, novo: false as const, usuario: cpf, avisado: false as const }
+    }
 
     // Todos os setores dela, não só o recém-atribuído — ver `nomeDosSetores`.
     const setoresNaMensagem = await nomeDosSetores(existente.id, fornecedorId)
@@ -620,7 +671,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
     revalidatePath('/admin/usuarios')
     revalidatePath(`/admin/eventos/${eventoId}`)
-    return { ok: true as const, novo: false as const, usuario: cpf }
+    return { ok: true as const, novo: false as const, usuario: cpf, avisado: true as const }
   }
 
   const { data: user, error } = await admin.auth.admin.createUser({
@@ -862,7 +913,7 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
   revalidatePath('/admin/usuarios')
   revalidatePath(`/admin/eventos/${eventoId}`)
 
-  return { ok: true as const, novo: true as const, usuario: cpf, linkSenha }
+  return { ok: true as const, novo: true as const, usuario: cpf, linkSenha, avisado: true as const }
 }
 
 /**
@@ -1700,44 +1751,70 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
  * regional, histórico entre eventos); trocá-lo sem cuidado troca quem a
  * pessoa É pro sistema, não só um campo de formulário.
  */
+/*
+ * ⚠️ DEVOLVE o erro, nunca o LANÇA — e isto não é estilo, é o que faz a
+ * mensagem chegar ao usuário.
+ *
+ * Em produção o Next.js APAGA a mensagem de qualquer erro lançado dentro de
+ * uma Server Action e entrega ao cliente um texto genérico em inglês
+ * ("An error occurred in the Server Components render... omitted in
+ * production builds"). Esse texto casa com o padrão `server component` em
+ * `lib/erros.ts` e vira "Ocorreu um erro interno nesta tela" — foi
+ * exatamente o que apareceu ao tentar corrigir o CPF da Maria da Penha, e
+ * antes dela ao tornar a Keyci supervisora. Quem escreve a mensagem em
+ * português aqui nunca vê ela na tela; o `throw` a destrói no caminho.
+ *
+ * Devolver `{ erro }` como VALOR atravessa a fronteira intacto, porque é
+ * dado de retorno e não exceção. É o mesmo padrão de
+ * `registrarPresencaAssistida` e `lancarPontoManual`, que sempre
+ * funcionaram.
+ */
 export async function editarCpfFuncionario(
   funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string,
-) {
+): Promise<{ ok: true } | { erro: string }> {
   const perfil = await getPerfil()
-  if (!podeEditarIdentidade(perfil?.role)) throw new Error('Só o master pode corrigir o CPF de um cadastro.')
+  if (!podeEditarIdentidade(perfil?.role)) return { erro: 'Só o master pode corrigir o CPF de um cadastro.' }
 
   const novoCpf = normalizarCpf(novoCpfBruto)
-  if (!validarCpf(novoCpf)) throw new Error('O CPF precisa ter 11 dígitos válidos.')
+  if (!validarCpf(novoCpf)) return { erro: 'O CPF precisa ter 11 dígitos.' }
 
   const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
-  if (!fornecedor || fornecedor.evento_id !== eventoId) throw new Error('Setor não encontrado neste evento.')
+  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
 
   const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, cpf, fornecedor_id').eq('id', funcionarioId).single()
-  if (!atual || atual.fornecedor_id !== fornecedorId) throw new Error('Funcionário não encontrado neste setor.')
-  if (atual.cpf === novoCpf) return { ok: true as const } // nada mudou
+  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste setor.' }
+  if (atual.cpf === novoCpf) return { ok: true } // nada mudou
 
   /*
    * Mesma régua do cadastro público: uma pessoa não pode estar em dois
    * setores do mesmo evento. Corrigir o CPF pra um que já é de OUTRA pessoa
    * neste evento fundiria as duas identidades — o oposto do que se quer.
+   *
+   * `limit(1)` em vez de `maybeSingle()`: havendo DOIS cadastros com o CPF
+   * de destino, o `maybeSingle` estouraria com erro técnico em vez de dizer
+   * qual é o conflito — trocaria uma mensagem útil por uma inútil.
    */
-  const { data: conflito } = await supabaseAdmin
+  const { data: conflitos } = await supabaseAdmin
     .from('funcionarios')
     .select('id, nome, fornecedores!inner(evento_id, nome)')
     .eq('cpf', novoCpf)
     .eq('fornecedores.evento_id', eventoId)
     .neq('id', funcionarioId)
-    .maybeSingle()
+    .limit(1)
+  const conflito = conflitos?.[0]
   if (conflito) {
     const setorConflito = (conflito.fornecedores as unknown as { nome: string })?.nome ?? 'outro setor'
-    throw new Error(`Este CPF já é de ${conflito.nome}, no setor ${setorConflito}. Confira o número antes de salvar.`)
+    return {
+      erro: `Este CPF já é de "${conflito.nome}", no setor ${setorConflito}. `
+        + 'Se as duas linhas forem a mesma pessoa, apague a duplicada antes de corrigir o CPF aqui.',
+    }
   }
 
   const { error } = await supabaseAdmin.from('funcionarios').update({ cpf: novoCpf }).eq('id', funcionarioId)
-  if (error) throw new Error(mensagemAmigavel(error))
+  if (error) return { erro: mensagemAmigavel(error) }
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
-  return { ok: true as const }
+  return { ok: true }
 }
 
 /** Marca/desmarca a baixa de pagamento do valor a receber do setor. */
