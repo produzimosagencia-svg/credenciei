@@ -6,6 +6,7 @@ import type { Periodo } from '@/lib/relatorios'
 import { gerarRelatorioCompleto, gerarRelatorioSetor } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
 import { Secao } from '@/components/ui/Superficie'
+import DateTimePicker from '@/components/DateTimePicker'
 
 type Setor = { id: string; nome: string }
 
@@ -79,25 +80,11 @@ export default function ExportarRelatorio({
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="text-slate-500 text-xs font-medium block mb-1.5">Data inicial</label>
-            <input
-              type="date"
-              value={de}
-              min={periodoCompleto.de}
-              max={periodoCompleto.ate}
-              onChange={e => setDe(e.target.value)}
-              className="input"
-            />
+            <DateTimePicker modo="data" value={de} onChange={setDe} className="w-40" />
           </div>
           <div>
             <label className="text-slate-500 text-xs font-medium block mb-1.5">Data final</label>
-            <input
-              type="date"
-              value={ate}
-              min={periodoCompleto.de}
-              max={periodoCompleto.ate}
-              onChange={e => setAte(e.target.value)}
-              className="input"
-            />
+            <DateTimePicker modo="data" value={ate} onChange={setAte} className="w-40" />
           </div>
           {(de !== periodoCompleto.de || ate !== periodoCompleto.ate) && (
             <button

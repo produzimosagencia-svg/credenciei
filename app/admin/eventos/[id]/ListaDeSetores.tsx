@@ -1,8 +1,9 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Search, Users, X } from 'lucide-react'
+import { Search, Users, X, User, MessageCircle, Phone } from 'lucide-react'
 import FornecedorCard from './FornecedorCard'
 import CopiarLinks, { type SetorParaCopiar } from './CopiarLinks'
+import { formatCpf } from '@/lib/format'
 
 /**
  * A lista de setores do evento, com busca e cópia em massa dos links.
@@ -31,11 +32,19 @@ type Supervisor = {
   cpf: string | null; telefone: string | null; ativo: boolean
 }
 
-type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
+type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string; cargo?: string | null; fornecedor_id?: string }
 type DiaDoEvento = { data: string; tipo: string }
 
-/** A partir de quantos setores a busca aparece. */
-const MINIMO_PARA_BUSCAR = 5
+/*
+ * A busca deixou de ter um teto de "a partir de quantos setores aparece".
+ * Antes ela só filtrava setor/supervisor, e numa lista pequena o campo era
+ * um elemento a mais numa tela que já tem muitos. Agora ela TAMBÉM acha
+ * pessoa — e um evento com poucos setores ainda pode ter centenas de
+ * funcionários dentro deles: "achar o Carlos pra ligar pra ele agora" vale
+ * independente de quantos cartões de setor existem.
+ */
+/** A partir de quantos caracteres a busca por pessoa começa a filtrar. */
+const MINIMO_PARA_BUSCAR_PESSOA = 2
 
 export default function ListaDeSetores({
   fornecedores,
@@ -75,6 +84,29 @@ export default function ListaDeSetores({
     )
   }, [fornecedores, supervisoresPorFornecedor, busca])
 
+  /*
+   * Achar a PESSOA, não só o setor.
+   *
+   * "Onde está o funcionário X" é uma pergunta operacional — conferir uma
+   * informação com ele, ligar rápido — diferente de "abrir o setor Y". A
+   * mesma caixa de busca responde as duas, mas os resultados são listas
+   * distintas: um setor encontrado abre o cartão dele; uma pessoa encontrada
+   * mostra onde ela está, sem precisar abrir setor por setor procurando.
+   */
+  const digitosBusca = busca.replace(/\D/g, '')
+  const pessoasEncontradas = useMemo(() => {
+    const t = busca.trim().toLowerCase()
+    if (t.length < MINIMO_PARA_BUSCAR_PESSOA) return []
+    return funcionariosDoEvento.filter(f =>
+      f.nome.toLowerCase().includes(t) || (digitosBusca.length >= 3 && f.cpf?.includes(digitosBusca)),
+    ).slice(0, 20)
+  }, [funcionariosDoEvento, busca, digitosBusca])
+
+  const nomeDoSetor = useMemo(
+    () => Object.fromEntries(fornecedores.map(f => [f.id, f.nome])),
+    [fornecedores],
+  )
+
   const paraCopiar: SetorParaCopiar[] = fornecedores.map(f => ({
     id: f.id,
     nome: f.nome,
@@ -82,6 +114,7 @@ export default function ListaDeSetores({
   }))
 
   const totalEquipe = fornecedores.reduce((s, f) => s + (f.funcionarios?.[0]?.count ?? 0), 0)
+  const semNenhumResultado = !!busca.trim() && !visiveis.length && !pessoasEncontradas.length
 
   return (
     <div className="space-y-3">
@@ -96,37 +129,82 @@ export default function ListaDeSetores({
         <CopiarLinks setores={paraCopiar} />
       </div>
 
-      {fornecedores.length >= MINIMO_PARA_BUSCAR && (
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar setor ou supervisor…"
-            aria-label="Buscar setor"
-            className="input pl-9 pr-9 text-sm"
-          />
-          {busca && (
-            <button
-              onClick={() => setBusca('')}
-              aria-label="Limpar busca"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+      <div className="relative">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          placeholder="Buscar setor, supervisor ou funcionário…"
+          aria-label="Buscar setor ou funcionário"
+          className="input pl-9 pr-9 text-sm"
+        />
+        {busca && (
+          <button
+            onClick={() => setBusca('')}
+            aria-label="Limpar busca"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/*
+        * "Onde está o Carlos" — nome, setor e um jeito rápido de contatar,
+        * sem precisar abrir o cartão do setor pra achar o telefone dele.
+        */}
+      {!!pessoasEncontradas.length && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          <p className="text-slate-500 text-2xs font-semibold uppercase tracking-wide px-4 pt-3 pb-2 bg-slate-50 border-b border-slate-100">
+            {pessoasEncontradas.length} pessoa{pessoasEncontradas.length === 1 ? '' : 's'} encontrada{pessoasEncontradas.length === 1 ? '' : 's'}
+          </p>
+          <div className="divide-y divide-slate-100">
+            {pessoasEncontradas.map(f => {
+              const zap = f.telefone ? `55${f.telefone.replace(/\D/g, '')}` : null
+              return (
+                <div key={f.id} className="px-4 py-2.5 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <User className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-slate-800 text-sm font-semibold truncate">{f.nome}</p>
+                    <p className="text-slate-400 text-2xs truncate">
+                      {f.fornecedor_id ? (nomeDoSetor[f.fornecedor_id] ?? '—') : '—'}
+                      {f.cargo ? ` · ${f.cargo}` : ''}
+                      {f.cpf ? ` · ${formatCpf(f.cpf)}` : ''}
+                    </p>
+                  </div>
+                  {zap ? (
+                    <a
+                      href={`https://wa.me/${zap}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secundario btn-sm shrink-0"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">Chamar</span>
+                    </a>
+                  ) : (
+                    <span className="flex items-center gap-1 text-slate-300 text-2xs shrink-0">
+                      <Phone className="w-3 h-3" /> sem telefone
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      {!visiveis.length ? (
+      {semNenhumResultado ? (
         <div className="text-center py-8">
           <Users className="w-7 h-7 text-slate-300 mx-auto" />
-          <p className="text-slate-500 text-sm mt-2">Nenhum setor com “{busca}”.</p>
+          <p className="text-slate-500 text-sm mt-2">Nada encontrado com “{busca}”.</p>
           <button onClick={() => setBusca('')} className="text-brand-600 text-xs font-semibold hover:underline mt-1">
             Limpar busca
           </button>
         </div>
-      ) : (
+      ) : !visiveis.length ? null : (
         /*
          * Grade, não pilha.
          *

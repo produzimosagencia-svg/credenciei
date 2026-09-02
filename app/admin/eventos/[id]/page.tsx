@@ -157,7 +157,7 @@ export default async function EventoPage({
     // evento inteiro, porque setor recém-criado nasce vazio e a lista por
     // setor viria em branco justo quando mais se precisa dela.
     fornecedorIds.length
-      ? supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
+      ? supabase.from('funcionarios').select('id, nome, cpf, telefone, cargo, fornecedor_id').in('fornecedor_id', fornecedorIds).order('nome')
       : Promise.resolve(vazio),
     fornecedorIds.length
       ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)

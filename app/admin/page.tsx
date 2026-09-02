@@ -8,6 +8,7 @@ import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos } from '@/lib/permissions'
+import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import { COR_ETAPA } from '@/components/charts'
 import { FluxoDoDia } from '@/components/charts-cliente'
@@ -114,6 +115,38 @@ function SemSetorVinculado() {
   )
 }
 
+/** Teto de leitura da base — bem acima do tamanho real de hoje (poucos milhares). */
+const TETO_BASE_FUNCIONARIOS = 20_000
+
+type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; custoMensagens: number }
+
+/**
+ * Os quatro números que respondem "como vai o negócio", pro master. Rodam em
+ * paralelo com o resto da página (o `await` fica lá no meio do componente,
+ * perto de montar `stats`) — sem isso, cada consulta daqui somaria à espera
+ * de tudo que a página já busca.
+ *
+ * "Funcionários na base" conta CPF distinto — a mesma régua de
+ * `/admin/encontrar` — e "valor cobrado" soma `funcionarios.valor_receber`
+ * de TODOS os eventos, não só os ativos: é o volume de negócio que a
+ * plataforma já processou, não uma foto do momento (essa é "Eventos ativos",
+ * ao lado). "Custo de disparo" reaproveita `resumoFinanceiroWhatsApp` — o
+ * mesmo cálculo que o painel de WhatsApp já mostra — pra nunca existirem
+ * dois números diferentes pra a mesma pergunta em duas telas.
+ */
+async function calcularStatsMestre(): Promise<StatsMestre> {
+  const [{ data: funcionarios }, templates] = await Promise.all([
+    supabaseAdmin.from('funcionarios').select('cpf, valor_receber').limit(TETO_BASE_FUNCIONARIOS),
+    templatesAprovados(),
+  ])
+
+  const funcionariosNaBase = new Set((funcionarios ?? []).map(f => f.cpf)).size
+  const valorTotalCobrado = (funcionarios ?? []).reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
+  const { custoEstimado } = await resumoFinanceiroWhatsApp(templates)
+
+  return { funcionariosNaBase, valorTotalCobrado, custoMensagens: custoEstimado }
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -142,6 +175,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   const db = supabaseAdmin
   const podeExcluir = podeExcluirEventos(perfil.role)
+
+  /*
+   * KPIs do MASTER — disparados aqui, cedo, pra correr em paralelo com todo
+   * o resto que a página já busca (o `await` só acontece lá embaixo, perto
+   * de montar `stats`). Só o master vê isto: os quatro números de baixo
+   * (entrada/meio/saída/batidas de UM evento) fazem sentido pra quem opera
+   * um evento por vez; o master olha a PLATAFORMA inteira, e "presentes
+   * agora" de qual organização seria essa pergunta?
+   *
+   * A régua de escolha foi a mesma do resto do relatório este mês: o que
+   * responde "como vai o negócio", não "como vai o evento de hoje".
+   */
+  const statsMestrePromise = ehMaster(perfil.role) ? calcularStatsMestre() : null
   /*
    * O supervisor não administra o evento — ele cuida do setor dele.
    *
@@ -320,35 +366,78 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const presentes = linhasAtivas.reduce((a, e) => a + e.presentes, 0)
   const batidas = dadosFluxo.reduce((a, p) => a + p.entrada + p.meio + p.fim, 0)
 
-  const stats = [
-    {
-      label: 'Eventos ativos',
-      value: linhasAtivas.length,
-      sub: `de ${totalEventos} no total`,
-      icon: Radio,
-      tom: 'acento' as const,
-    },
-    {
-      label: 'Presentes agora',
-      value: presentes,
-      sub: esperados ? `de ${esperados} na equipe` : 'equipe não cadastrada',
-      icon: UserCheck,
-      tom: 'sucesso' as const,
-    },
-    {
-      label: 'Ainda não chegaram',
-      value: Math.max(0, esperados - presentes),
-      icon: Clock,
-      tom: 'aviso' as const,
-    },
-    {
-      label: 'Batidas na janela',
-      value: batidas,
-      sub: janela ? 'entrada, meio e saída' : 'sem janela definida',
-      icon: Activity,
-      tom: 'info' as const,
-    },
-  ]
+  /*
+   * Dois conjuntos de KPI, um por audiência.
+   *
+   * Admin/gerente/cliente vê a operação: um evento por vez, ao vivo, "quem
+   * chegou". Master vê o negócio: quantos eventos rodam, quanto a base
+   * cresceu, quanto está sendo cobrado, quanto o canal está custando — a
+   * régua de escolha foi "responde como vai o negócio", não "como vai o
+   * evento de hoje".
+   */
+  const statsMestre = await statsMestrePromise
+  const stats = statsMestre
+    ? [
+        {
+          label: 'Eventos ativos',
+          value: linhasAtivas.length,
+          sub: `de ${totalEventos} no total`,
+          icon: Radio,
+          tom: 'acento' as const,
+        },
+        {
+          label: 'Funcionários na base',
+          value: statsMestre.funcionariosNaBase.toLocaleString('pt-BR'),
+          sub: 'pessoas distintas, por CPF',
+          icon: UserCheck,
+          tom: 'sucesso' as const,
+        },
+        {
+          label: 'Valor cobrado nos eventos',
+          value: statsMestre.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          sub: 'soma do combinado com a equipe',
+          icon: TrendingUp,
+          tom: 'aviso' as const,
+          small: true,
+        },
+        {
+          label: 'Custo de disparo (WhatsApp)',
+          value: statsMestre.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          sub: 'todas as mensagens já enviadas',
+          icon: Activity,
+          tom: 'info' as const,
+          small: true,
+        },
+      ]
+    : [
+        {
+          label: 'Eventos ativos',
+          value: linhasAtivas.length,
+          sub: `de ${totalEventos} no total`,
+          icon: Radio,
+          tom: 'acento' as const,
+        },
+        {
+          label: 'Presentes agora',
+          value: presentes,
+          sub: esperados ? `de ${esperados} na equipe` : 'equipe não cadastrada',
+          icon: UserCheck,
+          tom: 'sucesso' as const,
+        },
+        {
+          label: 'Ainda não chegaram',
+          value: Math.max(0, esperados - presentes),
+          icon: Clock,
+          tom: 'aviso' as const,
+        },
+        {
+          label: 'Batidas na janela',
+          value: batidas,
+          sub: janela ? 'entrada, meio e saída' : 'sem janela definida',
+          icon: Activity,
+          tom: 'info' as const,
+        },
+      ]
 
   /** Subtítulo do gráfico: diz de QUE janela é a curva. */
   const iso = (ms: number) => new Date(ms).toISOString()
@@ -652,8 +741,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
  * que se repete no rádio a cada dez minutos.
  */
 function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
-  const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
-
   return (
     <div className="evento-vivo">
       <div className="flex items-start justify-between gap-3">
@@ -684,6 +771,22 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
               <Users className="w-3 h-3 shrink-0" />
               {evento.setores} setor{evento.setores !== 1 ? 'es' : ''}
             </span>
+            {/*
+              * "Presentes agora" saiu daqui — a pedido do Juan ("muito feio",
+              * "deixar apenas os números de funcionário cadastrado"). Ela
+              * também tinha um problema real de dado, não só de visual: o
+              * número somava quem teve entrada em QUALQUER dia da montagem,
+              * sem checar se a pessoa já tinha saído — a mesma conta que já
+              * foi corrigida na tela do evento (ver comentário lá, "OS
+              * NÚMEROS SÃO DE UM DIA"). Sem essa conta certa pra um card
+              * pequeno feito pra ser lido rápido, o número certo do dia
+              * certo mora em `/admin/eventos/[id]`, um clique adiante — aqui
+              * fica só o tamanho da equipe.
+              */}
+            <span className="flex items-center gap-1">
+              <UserCheck className="w-3 h-3 shrink-0" />
+              {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
+            </span>
           </div>
         </div>
 
@@ -694,29 +797,6 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
           </div>
         )}
       </div>
-
-      {evento.equipe === 0 ? (
-        <p className="text-white/50 text-xs mt-5">Equipe ainda não cadastrada neste evento</p>
-      ) : (
-        <div className="mt-5">
-          <div className="flex items-end justify-between gap-3 mb-2">
-            <div>
-              <p className="text-white/60 text-xs">Presentes agora</p>
-              <p className="text-white text-2xl font-semibold tabular-nums leading-tight mt-0.5">
-                {evento.presentes}
-                <span className="text-white/45 text-base font-normal">/{evento.equipe}</span>
-              </p>
-            </div>
-            <span className="indicador-selo selo-sucesso mb-1">{pct}%</span>
-          </div>
-          <div className="h-2 bg-white/12 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22c55e, #16a34a)' }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -727,8 +807,6 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
  * cada item cria caixa dentro de caixa e engorda a lista sem informar nada.
  */
 function EventoLinha({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
-  const pct = evento.equipe > 0 ? Math.round((evento.presentes / evento.equipe) * 100) : 0
-
   return (
     <div className={`px-4 py-3 flex items-center gap-4 hover:bg-slate-50 transition-colors ${evento.ativo ? '' : 'opacity-70'}`}>
       <Link
@@ -767,26 +845,6 @@ function EventoLinha({ evento, podeExcluir, podeGerir, destacar }: { evento: Lin
           </span>
         </div>
       </Link>
-
-      <div className="hidden sm:block w-44 shrink-0">
-        {evento.equipe === 0 ? (
-          <p className="text-slate-400 text-xs text-right">Equipe ainda não cadastrada</p>
-        ) : (
-          <>
-            <div className="flex items-baseline justify-between gap-2 mb-1">
-              <span className="text-slate-500 text-2xs">presentes</span>
-              <span className="text-xs tabular-nums">
-                <span className="text-slate-800 font-medium">{evento.presentes}</span>
-                <span className="text-slate-500">/{evento.equipe}</span>
-                <span className="text-slate-400"> · {pct}%</span>
-              </span>
-            </div>
-            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--color-sucesso-600)' }} />
-            </div>
-          </>
-        )}
-      </div>
 
       {podeGerir && (
         <div className="shrink-0 -mr-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
