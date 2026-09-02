@@ -2,7 +2,7 @@ import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabas
 import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList } from 'lucide-react'
+import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
@@ -285,6 +285,12 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         <AcoesDaEquipe tokenFormulario={(fornecedor.token_formulario as string | null) ?? null} />
         <ImportarFuncionarios fornecedorId={fid} />
         <ExportarEquipe fornecedorId={fid} eventoId={id} dias={diasDoEvento ?? []} />
+        {/* Relatório pós-evento (planilha completa, com histórico e métodos
+            de registro) — a página já filtra pra só este setor quando quem
+            está olhando é supervisor. Ver lib/relatorios.ts. */}
+        <Link href={`/admin/eventos/${id}/relatorios`} className="btn btn-secundario btn-sm">
+          <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Relatório
+        </Link>
       </div>
 
       {/* Três colunas porque são três indicadores. Numa grade de quatro, a

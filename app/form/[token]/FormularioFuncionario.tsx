@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera as CameraIcon, X, Sparkles, Download } from 'lucide-react'
+import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 import SeletorLista from '@/components/SeletorLista'
 import { CIDADES_ES } from '@/lib/cidades'
 import { useCampoFormatado } from '@/components/inputs'
+import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 
 /**
  * Onde o app fica nas lojas.
@@ -72,6 +73,15 @@ export default function FormularioFuncionario({
   const [erroCpf, setErroCpf] = useState<string | null>(null)
   const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  /*
+   * Detectado só no cliente, depois de montar — `navigator` não existe no
+   * servidor, e calcular isso durante a renderização do servidor faria a
+   * primeira pintura da tela (SSR) divergir da segunda (browser), o que o
+   * React rejeita como erro de hidratação.
+   */
+  const [embutido, setEmbutido] = useState(false)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+  useEffect(() => { setEmbutido(emNavegadorEmbutido()) }, [])
 
   const set = (field: keyof typeof form, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
@@ -226,6 +236,40 @@ export default function FormularioFuncionario({
 
   return (
     <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
+      {/*
+        * Só aparece dentro do navegador embutido do WhatsApp/Instagram —
+        * onde a câmera some sem erro nenhum (ver lib/navegador.ts). Fica no
+        * TOPO do formulário, antes até do campo de foto, porque avisa antes
+        * da pessoa tentar e travar: "não abriu, o sistema tá quebrado" é a
+        * reação natural quando ninguém avisou que aqui é diferente.
+        *
+        * Tom calmo (roxo, não vermelho): a foto é OPCIONAL, então isto não é
+        * um erro que bloqueia o cadastro — é só orientação de antemão.
+        */}
+      {embutido && (
+        <div className="bg-brand-50 border border-brand-200 rounded-xl p-3.5 space-y-2">
+          <p className="text-brand-700 text-xs leading-relaxed">
+            Você abriu este link por dentro do WhatsApp. Aqui a câmera pode não
+            abrir — mas a foto é opcional, então dá pra continuar o cadastro
+            sem ela. Se quiser tentar a foto, copie o link e abra no navegador.
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              if (await copiarTexto(window.location.href)) {
+                setLinkCopiado(true)
+                setTimeout(() => setLinkCopiado(false), 3000)
+              }
+            }}
+            className="btn-press flex items-center gap-1.5 text-brand-700 text-xs font-semibold bg-white border border-brand-300 rounded-lg px-3 py-1.5 hover:bg-brand-100 transition-colors"
+          >
+            {linkCopiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {linkCopiado ? 'Link copiado!' : 'Copiar link'}
+            <ExternalLink className="w-3 h-3 opacity-60" />
+          </button>
+        </div>
+      )}
+
       <Field label="Foto (opcional)" tutorial="form-foto">
         <input ref={fileRef} type="file" accept="image/*" capture="user" className="hidden" onChange={onFoto} />
         {foto ? (

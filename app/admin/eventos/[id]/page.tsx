@@ -4,7 +4,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList } from 'lucide-react'
+import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList, FileSpreadsheet } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
@@ -245,6 +245,9 @@ export default async function EventoPage({
             */}
           <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-primario">
             <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências e atividade
+          </Link>
+          <Link href={`/admin/eventos/${id}/relatorios`} className="btn btn-secundario">
+            <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Relatórios
           </Link>
           {evento.spreadsheet_id && (
             <a
