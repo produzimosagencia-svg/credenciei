@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
-  Activity, ClipboardCheck, MessageCircle, Megaphone,
+  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -68,6 +68,14 @@ function gruposPara(role: string): Grupo[] {
    */
   if (podeGerenciarEventos(role)) {
     principal.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
+  }
+  /*
+   * Relatórios também pede o evento antes — mesmo padrão de Avisos. Aparece
+   * pro supervisor também: `lib/relatorios.ts` já permite que ele exporte o
+   * próprio setor, e ele já tinha esse botão dentro da tela da equipe dele.
+   */
+  if (podeGerenciarEventos(role) || role === 'supervisor') {
+    principal.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
   }
   if (podeGerenciarUsuarios(role)) {
     principal.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
