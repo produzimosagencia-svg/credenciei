@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { getPerfil, supabaseAdmin, podeEscanearEvento } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
@@ -3525,6 +3525,125 @@ export async function registrarPresencaAssistida(
 
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
   return { ok: true, nome: func.nome, etapa: etapaEscolhida.rotulo }
+}
+
+/**
+ * Lançamento manual de ponto — retroativo, com hora escolhida e motivo
+ * escrito à mão.
+ *
+ * É PARENTE do registro assistido, mas não é a mesma coisa, e a diferença é
+ * o motivo de existir: o assistido acontece COM A PESSOA NA FRENTE (por isso
+ * exige a foto do rosto, que é a prova) e grava na hora atual. Este aqui
+ * acontece DEPOIS, na mesa, quando a pessoa já foi embora — a foto é
+ * impossível e a hora certa é no passado.
+ *
+ * Sem isto, regularizar uma saída de ontem às 22h só era possível com script
+ * direto no banco, o que aconteceu de verdade com treze pessoas do Henrique
+ * e Juliano em 01/09/2026. Ficar dependente de script para uma tarefa
+ * rotineira é a definição de buraco de produto.
+ *
+ * ── DIA DA OPERAÇÃO ≠ HORA DA BATIDA ──
+ *
+ * São dois campos de propósito. Numa saída de madrugada, a pessoa trabalhou
+ * no dia 05 e bateu a saída às 02:00 do dia 06: `dataRef` é 05 (é o dia de
+ * trabalho a que a batida pertence, e por onde o fechamento conta) e
+ * `created_at` é 06 às 02:00 (o instante real). Colapsar os dois num campo
+ * só jogaria essa batida para o dia seguinte e sumiria com ela do dia
+ * trabalhado — exatamente o tipo de erro que o pagamento não perdoa.
+ *
+ * A PROVA aqui é a trilha, não a foto: autor, motivo escrito por ele, e
+ * `registro_manual` marcando que não foi a própria pessoa.
+ */
+export async function lancarPontoManual(
+  funcionarioId: string,
+  momento: MomentoPresenca,
+  /** Dia de trabalho a que a batida pertence, 'AAAA-MM-DD'. */
+  dataRef: string,
+  /** Instante real da batida, no formato do input: 'AAAA-MM-DDTHH:mm' (BRT). */
+  quandoLocal: string,
+  motivo: string,
+): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
+  const perfil = await getPerfil()
+  /*
+   * Mais restrito que o registro assistido de propósito: lá o operador de
+   * portão registra o que está acontecendo na frente dele; aqui se escreve o
+   * passado, com hora arbitrária, e isso é ato de gestão. Supervisor entra
+   * porque é quem sabe quem de fato trabalhou no setor dele.
+   */
+  if (!perfil || !(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor')) {
+    return { error: 'Sem permissão para lançar ponto manualmente.' }
+  }
+
+  const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
+  if (!etapaEscolhida) return { error: 'Etapa inválida.' }
+
+  const justificativa = (motivo ?? '').trim()
+  if (justificativa.length < 5) {
+    return { error: 'Escreva o motivo do lançamento manual — é ele que sustenta a batida numa conferência.' }
+  }
+
+  const quandoISO = inputParaISO(quandoLocal)
+  if (!quandoISO || Number.isNaN(new Date(quandoISO).getTime())) {
+    return { error: 'Informe a data e a hora da batida.' }
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataRef ?? '')) return { error: 'Informe o dia de trabalho.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, telefone, ativo, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func) return { error: 'Funcionário não encontrado.' }
+
+  const evento = comEvento(func.fornecedores)?.eventos
+  if (!evento) return { error: 'Evento não encontrado.' }
+
+  if (perfil.role === 'supervisor') {
+    const meus = await meusSetores(perfil)
+    if (!meus.some(s => s.id === func.fornecedor_id)) {
+      return { error: 'Esta pessoa é de outro setor. Você só lança ponto da sua equipe.' }
+    }
+  } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    return { error: 'Esta pessoa é de outra organização.' }
+  }
+
+  if (func.ativo === false) {
+    return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de lançar o ponto.' }
+  }
+
+  /*
+   * O dia precisa ser dia de trabalho do evento. Sem isto a batida ficaria
+   * órfã: não apareceria em nenhuma visão por dia nem no relatório, e o
+   * lançamento pareceria ter sumido.
+   */
+  const dia = await diaDeTrabalho(evento.id, dataRef)
+  if (!dia || dia.cancelado) {
+    return { error: 'Esse dia não é um dia de trabalho deste evento. Marque-o em Editar evento antes de lançar o ponto.' }
+  }
+
+  /*
+   * A hora tem que ficar perto do dia de trabalho. Não é regra de negócio —
+   * é rede contra o dedo escorregar no ano ou no mês e mandar uma batida
+   * para um mês adiante sem ninguém notar. Um turno nunca passa de ~36h do
+   * início do dia a que pertence.
+   */
+  const inicioDoDia = new Date(`${dataRef}T00:00:00-03:00`).getTime()
+  const distancia = new Date(quandoISO).getTime() - inicioDoDia
+  if (distancia < -12 * 60 * 60 * 1000 || distancia > 36 * 60 * 60 * 1000) {
+    return { error: `A data e hora informadas estão longe demais do dia ${dataRef.split('-').reverse().join('/')}. Confira antes de salvar.` }
+  }
+
+  const { error } = await upsertRegistro(func.id, evento.id, momento, {
+    created_at: quandoISO,
+    criado_por_perfil_id: perfil.id,
+    registro_manual: true,
+    justificativa,
+  }, dataRef, dia.id ?? null)
+  if (error) return { error: mensagemAmigavel(error) }
+
+  revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+  revalidatePath(`/admin/eventos/${evento.id}/presenca`)
+  return { ok: true, nome: func.nome as string, etapa: etapaEscolhida.rotulo }
 }
 
 /**

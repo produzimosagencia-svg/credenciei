@@ -6,6 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
+  ClipboardPen,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -63,6 +64,20 @@ function gruposPara(role: string): Grupo[] {
   // em relação à própria equipe.
   if (podeAcompanhar(role)) {
     operacional.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
+  }
+  /*
+   * Lançamento manual fica ao lado do Registro de ponto porque respondem a
+   * mesma pergunta em tempos diferentes: lá a pessoa está na frente (foto do
+   * rosto é a prova, hora é agora); aqui ela já foi embora (a prova é o
+   * motivo escrito, e a hora é escolhida). Ver /admin/lancar-ponto.
+   *
+   * Sem operador de portão: escrever o passado com hora arbitrária é ato de
+   * gestão, não de portaria — mesma régua da action `lancarPontoManual`.
+   */
+  if (podeGerenciarEventos(role) || role === 'supervisor') {
+    operacional.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
+  }
+  if (podeAcompanhar(role)) {
     operacional.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
   grupos.push({ titulo: 'Operacional', itens: operacional })
