@@ -27,12 +27,11 @@ export default async function RelatoriosPage({ params }: { params: Promise<{ id:
     <div className="space-y-5">
       <PageHeader
         titulo="Relatórios do evento"
-        descricao={`${resumo.eventoNome} — planilha completa da operação de credenciamento e presença`}
+        descricao={`${resumo.eventoNome} — entrada e saída da equipe, por setor e função`}
       />
       <ExportarRelatorio
         eventoId={eventoId}
-        dataInicioISO={resumo.dataInicioISO}
-        dataFimISO={resumo.dataFimISO}
+        periodoCompleto={resumo.periodoCompleto}
         setores={resumo.setores}
         totalFuncionarios={resumo.totalFuncionarios}
       />

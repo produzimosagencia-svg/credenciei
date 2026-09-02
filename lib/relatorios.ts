@@ -1,56 +1,50 @@
 'use server'
 /**
- * Dados para o relatório pós-evento — a fonte que alimenta a planilha Excel.
+ * Dados para o relatório de credenciamento — a fonte que alimenta a planilha
+ * Excel em `lib/relatorio-excel.ts`.
  *
  * `'use server'`: cada função exportada vira um endpoint próprio (o mesmo
  * detalhe que causou o achado de segurança 01 da auditoria — ver histórico
- * do projeto). Por isso as três funções exportadas aqui SEMPRE começam
- * checando permissão via `exigirAcessoAoEvento`, nunca confiando em quem as
- * chamou pela tela.
+ * do projeto). Por isso as funções exportadas aqui SEMPRE começam checando
+ * permissão via `exigirAcessoAoEvento`, nunca confiando em quem as chamou
+ * pela tela.
  *
- * Fica separado de `lib/actions.ts` (que já passa de 3000 linhas) porque é um
- * bloco fechado com um único consumidor: a exportação. Roda no servidor
- * (`supabaseAdmin`), porque cruza `funcionarios` + `registros` + `perfis` de
- * um evento inteiro — não é dado que o browser deveria buscar direto.
+ * ─── SIMPLIFICADO A PEDIDO DO JUAN ───────────────────────────────────────
+ *
+ * A primeira versão respondia tudo — meio, método de cada batida, status,
+ * justificativa — e virou o problema que ela tentava resolver: "ficou muito
+ * poluído e com excesso de informações". O pedido foi explícito: um gestor
+ * administrativo precisa responder rápido só a oito perguntas (quem entrou,
+ * quem saiu, quando, em qual setor, em qual função, quantos entraram, quantos
+ * saíram, qual período) — o resto foi cortado, não escondido atrás de uma
+ * aba extra. Meio saiu inteiro: não é credenciamento de entrada/saída, que é
+ * o que este relatório existe pra mostrar.
  *
  * NADA aqui inventa informação. Cada campo vem de uma coluna real; quando o
- * dado não existe (justificativa vazia, supervisor não atribuído), o campo
- * fica vazio — nunca um valor calculado que pareça um registro.
+ * dado não existe, o campo fica vazio — nunca um valor calculado que pareça
+ * um registro.
  */
 import { getPerfil, supabaseAdmin, meusSetores } from './supabase-server'
 import { podeGerenciarEventos, ehMaster } from './permissions'
+import { diaBRT } from './janelas'
 
-export type MomentoRelatorio = 'entrada' | 'meio' | 'fim'
+export type Periodo = { de: string; ate: string }
 
-/** Como esta batida específica foi feita — só o que dá pra provar com dado real. */
-export type MetodoRegistro = 'QR Code' | 'Assistido' | 'Selfie' | 'Autoatendimento'
-
-export type BatidaRelatorio = {
-  horaISO: string
-  metodo: MetodoRegistro
-  justificativa: string | null
-}
-
-/** Uma linha da planilha: uma pessoa, num dia — com as três etapas daquele dia. */
+/** Uma linha do relatório detalhado: uma pessoa, num dia, com entrada e saída. */
 export type LinhaRelatorio = {
   funcionarioId: string
   nome: string
-  cpf: string
-  cargo: string
-  supervisorNome: string | null
-  ativo: boolean
-  /** `null` = a pessoa nunca registrou nada em nenhum dia (linha "não compareceu"). */
-  dataRef: string | null
-  entrada: BatidaRelatorio | null
-  meio: BatidaRelatorio | null
-  fim: BatidaRelatorio | null
+  setor: string
+  /** `cargo` do cadastro — o "subsetor/função" pedido (ex.: Segurança, Bartender). */
+  funcao: string
+  dataRef: string
+  entradaISO: string | null
+  saidaISO: string | null
 }
 
 export type SetorRelatorio = {
   id: string
   nome: string
-  supervisorNome: string | null
-  exigeMeio: boolean
   linhas: LinhaRelatorio[]
 }
 
@@ -58,90 +52,9 @@ export type DadosRelatorioEvento = {
   eventoId: string
   eventoNome: string
   organizacaoNome: string | null
-  local: string | null
-  dataInicioISO: string
-  dataFimISO: string
+  /** O período EFETIVAMENTE analisado — o pedido, recortado pelo período real do evento. */
+  periodo: Periodo
   setores: SetorRelatorio[]
-}
-
-/**
- * Como esta batida foi feita, a partir das colunas reais de `registros`.
- *
- * A ordem importa: `registro_manual` é o sinal mais forte (marcado
- * explicitamente pela tela de registro assistido) e vence qualquer outro.
- * Sem ele, `criado_por_perfil_id` presente é o scanner de QR — só um
- * operador logado gera essa coluna. Sem nenhum dos dois, `foto_url` é a
- * selfie do meio. O que sobra é autoatendimento livre (entrada/saída pela
- * credencial ou pelo cartaz da portaria, sem foto e sem operador).
- */
-function metodoDaBatida(r: {
-  registro_manual: boolean | null
-  criado_por_perfil_id: string | null
-  foto_url: string | null
-}): MetodoRegistro {
-  if (r.registro_manual) return 'Assistido'
-  if (r.criado_por_perfil_id) return 'QR Code'
-  if (r.foto_url) return 'Selfie'
-  return 'Autoatendimento'
-}
-
-/**
- * Monta as linhas de um setor: uma por (funcionário, dia com pelo menos uma
- * batida), mais uma linha "não compareceu" para quem não tem NENHUM registro
- * em nenhum dia.
- *
- * Multi-dia é o normal, não a exceção — um evento de dez dias de montagem
- * tem a mesma pessoa em dez linhas, cada uma com seu próprio entrada/meio/fim
- * (ver o pedido do Juan: "não sobrescrever registros de dias diferentes").
- */
-function linhasDoSetor(
-  funcionarios: { id: string; nome: string; cpf: string; cargo: string | null; ativo: boolean | null }[],
-  registrosPorFuncionario: Map<string, RegistroBruto[]>,
-  supervisorNome: string | null,
-): LinhaRelatorio[] {
-  const linhas: LinhaRelatorio[] = []
-
-  for (const f of funcionarios) {
-    const registros = registrosPorFuncionario.get(f.id) ?? []
-    const base = {
-      funcionarioId: f.id,
-      nome: f.nome,
-      cpf: f.cpf,
-      cargo: f.cargo ?? '',
-      supervisorNome,
-      ativo: f.ativo !== false,
-    }
-
-    if (!registros.length) {
-      linhas.push({ ...base, dataRef: null, entrada: null, meio: null, fim: null })
-      continue
-    }
-
-    // Agrupa por dia — cada data_ref vira uma linha própria.
-    const porDia = new Map<string, typeof registros>()
-    for (const r of registros) {
-      const dia = r.data_ref ?? '—'
-      const grupo = porDia.get(dia) ?? []
-      grupo.push(r)
-      porDia.set(dia, grupo)
-    }
-
-    for (const [dia, doDia] of [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const acha = (tipo: MomentoRelatorio) => doDia.find(r => r.tipo === tipo)
-      const paraBatida = (r: typeof doDia[number] | undefined): BatidaRelatorio | null =>
-        r ? { horaISO: r.created_at, metodo: metodoDaBatida(r), justificativa: r.justificativa } : null
-
-      linhas.push({
-        ...base,
-        dataRef: dia,
-        entrada: paraBatida(acha('entrada')),
-        meio: paraBatida(acha('meio')),
-        fim: paraBatida(acha('fim')),
-      })
-    }
-  }
-
-  return linhas
 }
 
 /**
@@ -154,9 +67,6 @@ function linhasDoSetor(
 type EventoParaRelatorio = {
   id: string
   nome: string
-  local: string | null
-  data_inicio: string
-  data_fim: string
   organizacao_id: string | null
   organizacoes: { nome: string } | null
 }
@@ -171,7 +81,7 @@ async function exigirAcessoAoEvento(eventoId: string): Promise<AcessoRelatorio> 
 
   const { data } = await supabaseAdmin
     .from('eventos')
-    .select('id, nome, local, data_inicio, data_fim, organizacao_id, organizacoes(nome)')
+    .select('id, nome, organizacao_id, organizacoes(nome)')
     .eq('id', eventoId)
     .single()
   if (!data) return { erro: 'Evento não encontrado.' }
@@ -191,39 +101,103 @@ async function exigirAcessoAoEvento(eventoId: string): Promise<AcessoRelatorio> 
 }
 
 /**
- * Carrega os dados de UM setor específico — usado tanto no "relatório do
- * setor" quanto, aba por aba, no "relatório completo do evento".
+ * O período completo de operação do evento — dos dias de `jornada_dias`
+ * (que incluem montagem e desmontagem), não só `data_inicio`/`data_fim` (que
+ * é só o dia do show). É o que a tela usa como intervalo padrão do filtro, e
+ * o teto que recorta um período pedido fora da faixa real do evento.
  */
-type RegistroBruto = {
-  funcionario_id: string
-  tipo: string
-  data_ref: string | null
-  created_at: string
-  registro_manual: boolean | null
-  criado_por_perfil_id: string | null
-  foto_url: string | null
-  justificativa: string | null
+async function periodoCompletoDoEvento(eventoId: string): Promise<Periodo | null> {
+  const { data } = await supabaseAdmin
+    .from('jornada_dias').select('data').eq('evento_id', eventoId).eq('cancelado', false).order('data')
+  const dias = (data ?? []).map(d => d.data as string)
+  if (!dias.length) return null
+  return { de: dias[0], ate: dias[dias.length - 1] }
 }
 
-async function carregarSetor(fornecedorId: string): Promise<SetorRelatorio | null> {
+/** "YYYY-MM-DD" válido? Único formato que `data_ref` usa — filtro maldito não passa disso. */
+function dataValida(s: string | undefined | null): s is string {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+
+/**
+ * O período a aplicar: o pedido, recortado pelos limites reais do evento.
+ * Sem pedido nenhum, o período completo. Evento sem nenhum dia configurado
+ * (caso raro, cadastro incompleto) cai num período de hoje só, pra nunca
+ * devolver TUDO sem intenção.
+ */
+async function resolverPeriodo(eventoId: string, pedido?: Periodo): Promise<Periodo> {
+  const completo = await periodoCompletoDoEvento(eventoId)
+  const hoje = diaBRT()
+  const teto = completo ?? { de: hoje, ate: hoje }
+
+  if (!pedido || !dataValida(pedido.de) || !dataValida(pedido.ate)) return teto
+
+  const de = pedido.de < teto.de ? teto.de : pedido.de
+  const ate = pedido.ate > teto.ate ? teto.ate : pedido.ate
+  return de <= ate ? { de, ate } : teto
+}
+
+type RegistroBruto = { funcionario_id: string; tipo: string; data_ref: string | null; created_at: string }
+
+/**
+ * Monta as linhas de um setor, já dentro do período: uma por (funcionário,
+ * dia) em que houve entrada OU saída. Quem não registrou nada no período
+ * simplesmente não aparece — é o que mantém a tabela enxuta (o pedido:
+ * "evitar transformar isso numa tabela gigantesca e confusa"). O resumo por
+ * setor/função, calculado à parte, é quem responde "quantos faltam".
+ */
+function linhasDoSetor(
+  funcionarios: { id: string; nome: string; cargo: string | null }[],
+  registrosPorFuncionario: Map<string, RegistroBruto[]>,
+  nomeSetor: string,
+): LinhaRelatorio[] {
+  const linhas: LinhaRelatorio[] = []
+
+  for (const f of funcionarios) {
+    const registros = registrosPorFuncionario.get(f.id) ?? []
+    if (!registros.length) continue
+
+    const porDia = new Map<string, RegistroBruto[]>()
+    for (const r of registros) {
+      if (!r.data_ref) continue
+      const grupo = porDia.get(r.data_ref) ?? []
+      grupo.push(r)
+      porDia.set(r.data_ref, grupo)
+    }
+
+    for (const [dia, doDia] of [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      linhas.push({
+        funcionarioId: f.id,
+        nome: f.nome,
+        setor: nomeSetor,
+        funcao: f.cargo ?? '',
+        dataRef: dia,
+        entradaISO: doDia.find(r => r.tipo === 'entrada')?.created_at ?? null,
+        saidaISO: doDia.find(r => r.tipo === 'fim')?.created_at ?? null,
+      })
+    }
+  }
+
+  return linhas
+}
+
+/** Carrega os dados de UM setor, dentro do período — o setor individual ou uma aba do completo. */
+async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<SetorRelatorio | null> {
   const { data: fornecedor } = await supabaseAdmin
-    .from('fornecedores').select('id, nome, exige_meio').eq('id', fornecedorId).single()
+    .from('fornecedores').select('id, nome').eq('id', fornecedorId).single()
   if (!fornecedor) return null
 
-  const [{ data: funcionarios }, { data: supervisores }] = await Promise.all([
-    supabaseAdmin.from('funcionarios')
-      .select('id, nome, cpf, cargo, ativo').eq('fornecedor_id', fornecedorId).order('nome'),
-    supabaseAdmin.from('perfis')
-      .select('nome').eq('fornecedor_id', fornecedorId).eq('role', 'supervisor').limit(1),
-  ])
+  const { data: funcionarios } = await supabaseAdmin
+    .from('funcionarios').select('id, nome, cargo').eq('fornecedor_id', fornecedorId).order('nome')
 
-  const supervisorNome = (supervisores?.[0]?.nome as string | undefined) ?? null
   const ids = (funcionarios ?? []).map(f => f.id)
-
   const { data: registros } = ids.length
     ? await supabaseAdmin.from('registros')
-        .select('funcionario_id, tipo, data_ref, created_at, registro_manual, criado_por_perfil_id, foto_url, justificativa')
+        .select('funcionario_id, tipo, data_ref, created_at')
         .in('funcionario_id', ids)
+        .in('tipo', ['entrada', 'fim'])
+        .gte('data_ref', periodo.de)
+        .lte('data_ref', periodo.ate)
     : { data: [] as RegistroBruto[] }
 
   const porFuncionario = new Map<string, RegistroBruto[]>()
@@ -236,15 +210,13 @@ async function carregarSetor(fornecedorId: string): Promise<SetorRelatorio | nul
   return {
     id: fornecedor.id,
     nome: fornecedor.nome,
-    supervisorNome,
-    exigeMeio: fornecedor.exige_meio === true,
-    linhas: linhasDoSetor(funcionarios ?? [], porFuncionario, supervisorNome),
+    linhas: linhasDoSetor(funcionarios ?? [], porFuncionario, fornecedor.nome),
   }
 }
 
-/** Dados do relatório de UM setor — o "Relatório individual" (seção 2 do pedido). */
+/** Dados do relatório de UM setor. */
 export async function obterDadosRelatorioSetor(
-  eventoId: string, fornecedorId: string,
+  eventoId: string, fornecedorId: string, periodoPedido?: Periodo,
 ): Promise<{ dados: DadosRelatorioEvento } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
@@ -252,9 +224,9 @@ export async function obterDadosRelatorioSetor(
     return { erro: 'Sem permissão sobre este setor.' }
   }
 
-  const setor = await carregarSetor(fornecedorId)
+  const periodo = await resolverPeriodo(eventoId, periodoPedido)
+  const setor = await carregarSetor(fornecedorId, periodo)
   if (!setor) return { erro: 'Setor não encontrado.' }
-  // O setor precisa pertencer a ESTE evento — o id vem do cliente.
   const { data: confere } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
   if (confere?.evento_id !== eventoId) return { erro: 'Este setor não pertence a este evento.' }
 
@@ -263,9 +235,7 @@ export async function obterDadosRelatorioSetor(
       eventoId,
       eventoNome: acesso.evento.nome,
       organizacaoNome: acesso.evento.organizacoes?.nome ?? null,
-      local: acesso.evento.local,
-      dataInicioISO: acesso.evento.data_inicio,
-      dataFimISO: acesso.evento.data_fim,
+      periodo,
       setores: [setor],
     },
   }
@@ -273,20 +243,21 @@ export async function obterDadosRelatorioSetor(
 
 /**
  * Dados do relatório COMPLETO do evento — todos os setores, cada um vira uma
- * aba (seção 3/4 do pedido). Supervisor nunca chega aqui: `exigirAcessoAoEvento`
- * só libera `setoresPermitidos: null` para quem gerencia o evento inteiro.
+ * aba. Supervisor nunca chega aqui: `exigirAcessoAoEvento` só libera
+ * `setoresPermitidos: null` para quem gerencia o evento inteiro.
  */
 export async function obterDadosRelatorioEvento(
-  eventoId: string,
+  eventoId: string, periodoPedido?: Periodo,
 ): Promise<{ dados: DadosRelatorioEvento } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
   if (acesso.setoresPermitidos) return { erro: 'O relatório completo é só para quem gerencia o evento inteiro.' }
 
+  const periodo = await resolverPeriodo(eventoId, periodoPedido)
   const { data: fornecedores } = await supabaseAdmin
     .from('fornecedores').select('id').eq('evento_id', eventoId).order('created_at')
   const setores = (
-    await Promise.all((fornecedores ?? []).map(f => carregarSetor(f.id)))
+    await Promise.all((fornecedores ?? []).map(f => carregarSetor(f.id, periodo)))
   ).filter((s): s is SetorRelatorio => s !== null)
 
   return {
@@ -294,23 +265,21 @@ export async function obterDadosRelatorioEvento(
       eventoId,
       eventoNome: acesso.evento.nome,
       organizacaoNome: acesso.evento.organizacoes?.nome ?? null,
-      local: acesso.evento.local,
-      dataInicioISO: acesso.evento.data_inicio,
-      dataFimISO: acesso.evento.data_fim,
+      periodo,
       setores,
     },
   }
 }
 
 /**
- * O resumo (contagens só) que alimenta a TELA de relatórios — não a
- * planilha. Existe pra tela mostrar "34 setores, 611 funcionários" sem
- * carregar o histórico de presença inteiro, que só a exportação precisa.
+ * O resumo que alimenta a TELA de relatórios — setores, total de
+ * funcionários e o período completo do evento (o padrão dos seletores de
+ * data). Não a planilha: existe pra tela não precisar carregar o histórico
+ * de presença inteiro só pra desenhar o formulário de exportação.
  */
 export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise<{
   eventoNome: string
-  dataInicioISO: string
-  dataFimISO: string
+  periodoCompleto: Periodo
   setores: { id: string; nome: string }[]
   totalFuncionarios: number
 } | { erro: string }> {
@@ -319,16 +288,13 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
 
   let query = supabaseAdmin.from('fornecedores').select('id, nome, funcionarios(count)').eq('evento_id', eventoId)
   if (acesso.setoresPermitidos) query = query.in('id', [...acesso.setoresPermitidos])
-  const { data: fornecedores } = await query.order('nome')
+  const [{ data: fornecedores }, periodoCompleto] = await Promise.all([
+    query.order('nome'),
+    resolverPeriodo(eventoId),
+  ])
 
   const setores = (fornecedores ?? []).map(f => ({ id: f.id as string, nome: f.nome as string }))
   const totalFuncionarios = (fornecedores ?? []).reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0)
 
-  return {
-    eventoNome: acesso.evento.nome,
-    dataInicioISO: acesso.evento.data_inicio,
-    dataFimISO: acesso.evento.data_fim,
-    setores,
-    totalFuncionarios,
-  }
+  return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios }
 }
