@@ -2,11 +2,11 @@
 import { useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
-  MapPin, Clock, Building2, IdCard, ShieldCheck,
+  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw,
 } from 'lucide-react'
 import {
   localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida,
-  type FuncionarioLocalizado, type CandidatoLocalizado,
+  type FuncionarioLocalizado, type CandidatoLocalizado, type MomentoPresenca,
 } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -59,6 +59,11 @@ export default function LocalizarFuncionario() {
   const [termo, setTermo] = useState('')
   const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
   const [candidatos, setCandidatos] = useState<CandidatoLocalizado[] | null>(null)
+  // A etapa que o operador escolhe — pré-marcada com a recomendação do
+  // sistema (proximaPendente), mas livre para trocar. Ver o comentário em
+  // registrarPresencaAssistida (lib/actions.ts) sobre por que a escolha é
+  // dele, não mais automática.
+  const [momento, setMomento] = useState<MomentoPresenca | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState<{ nome: string; etapa: string } | null>(null)
@@ -67,17 +72,25 @@ export default function LocalizarFuncionario() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const recomecar = () => {
-    setTermo(''); setFunc(null); setCandidatos(null); setFoto(null); setErro(null); setSucesso(null)
+    setTermo(''); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null); setErro(null); setSucesso(null)
+  }
+
+  const abrirFicha = (f: FuncionarioLocalizado) => {
+    setFunc(f)
+    // Sugestão pré-marcada; some se a pessoa já tem tudo registrado — aí o
+    // operador escolhe manualmente qual corrigir.
+    setMomento(f.proximaPendente?.momento ?? null)
+    setFoto(null)
   }
 
   const buscar = (e: React.FormEvent) => {
     e.preventDefault()
-    setErro(null); setFunc(null); setCandidatos(null); setFoto(null)
+    setErro(null); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null)
     startBusca(async () => {
       const res = await localizarFuncionario(termo)
       if (res.error) return setErro(res.error)
       if (res.candidatos) return setCandidatos(res.candidatos)
-      setFunc(res.funcionario!)
+      abrirFicha(res.funcionario!)
     })
   }
 
@@ -88,7 +101,7 @@ export default function LocalizarFuncionario() {
       const res = await abrirFuncionarioLocalizado(id)
       if (res.error) return setErro(res.error)
       setCandidatos(null)
-      setFunc(res.funcionario!)
+      abrirFicha(res.funcionario!)
     })
   }
 
@@ -105,11 +118,11 @@ export default function LocalizarFuncionario() {
   }
 
   const registrar = () => {
-    if (!func || !foto) return
+    if (!func || !momento || !foto) return
     setErro(null)
     startRegistro(async () => {
       const gps = await pegarLocalizacao()
-      const res = await registrarPresencaAssistida(func.id, {
+      const res = await registrarPresencaAssistida(func.id, momento, {
         fotoBase64: foto,
         latitude: gps?.latitude,
         longitude: gps?.longitude,
@@ -238,18 +251,48 @@ export default function LocalizarFuncionario() {
               <Dado icone={MapPin} rotulo="Evento" valor={func.eventoNome} />
             </div>
 
-            <div className={`rounded-xl p-3 border ${func.proximaPendente ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-              <p className={`text-2xs font-semibold uppercase tracking-wide ${func.proximaPendente ? 'text-amber-600' : 'text-green-600'}`}>
-                Batida pendente
-              </p>
-              <p className={`text-sm font-bold mt-0.5 ${func.proximaPendente ? 'text-amber-800' : 'text-green-800'}`}>
-                {func.proximaPendente ? func.proximaPendente.rotulo : 'Nenhuma — tudo registrado'}
-              </p>
-            </div>
           </div>
 
-          {func.proximaPendente && func.ativo && (
+          {func.ativo && (
             <>
+              {/* Seletor de etapa — o operador escolhe, o sistema só sugere.
+                  Ver o comentário em registrarPresencaAssistida. */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-etapa">
+                <p className="text-sm font-medium text-slate-700">Que batida é esta?</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {func.etapas.map(e => {
+                    const feita = !!e.quandoISO
+                    const ativo = momento === e.momento
+                    return (
+                      <button
+                        key={e.momento}
+                        type="button"
+                        onClick={() => setMomento(e.momento)}
+                        className={`btn-press rounded-xl border p-2.5 text-left transition-colors ${
+                          ativo
+                            ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1 text-xs font-semibold text-slate-800">
+                          {feita && <Check className="w-3 h-3 text-green-500 shrink-0" />}
+                          {e.rotulo}
+                        </span>
+                        <span className="block text-2xs text-slate-400 mt-0.5">
+                          {feita ? formatarBR(e.quandoISO!, 'curto') : 'pendente'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {momento && func.etapas.find(e => e.momento === momento)?.quandoISO && (
+                  <p className="flex items-start gap-1.5 text-amber-700 text-2xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    Esta etapa já tem registro — confirmar substitui o horário anterior por agora.
+                  </p>
+                )}
+              </div>
+
               {/* Foto de validação */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-foto">
                 <div>
@@ -280,13 +323,17 @@ export default function LocalizarFuncionario() {
 
               <button
                 onClick={registrar}
-                disabled={!foto || registrando}
+                disabled={!momento || !foto || registrando}
                 data-tutorial="loc-registrar"
                 className="btn btn-primario btn-lg w-full"
               >
-                {registrando ? 'Registrando...' : `Registrar batida — ${func.proximaPendente.rotulo}`}
+                {registrando
+                  ? 'Registrando...'
+                  : momento
+                    ? `Registrar batida — ${func.etapas.find(e => e.momento === momento)?.rotulo}`
+                    : 'Escolha a etapa acima'}
               </button>
-              {!foto && <p className="text-slate-400 text-2xs text-center">Tire a foto para liberar o registro.</p>}
+              {momento && !foto && <p className="text-slate-400 text-2xs text-center">Tire a foto para liberar o registro.</p>}
             </>
           )}
 

@@ -3062,7 +3062,18 @@ export type FuncionarioLocalizado = {
   eventoId: string
   eventoNome: string
   ultimaBatida: { rotulo: string; quandoISO: string } | null
+  /**
+   * A etapa que o sistema RECOMENDA (a primeira sem registro) — só uma
+   * sugestão pré-marcada na tela. Quem decide de verdade é o operador: ver
+   * `etapas`, abaixo, e o comentário em `registrarPresencaAssistida`.
+   */
   proximaPendente: { momento: MomentoPresenca; rotulo: string } | null
+  /**
+   * As três etapas com o estado de cada uma — o que alimenta o seletor.
+   * `quandoISO: null` = ainda não registrada; presente = já tem registro
+   * (e escolhê-la de novo sobrescreve o horário, não duplica).
+   */
+  etapas: { momento: MomentoPresenca; rotulo: string; quandoISO: string | null }[]
 }
 
 /** Resultado resumido, pra escolher quando a busca por nome dá em várias pessoas. */
@@ -3263,6 +3274,7 @@ async function fichaDoFuncionario(
 
   const feitos = new Map((registros ?? []).map(r => [r.tipo as MomentoPresenca, r.created_at as string]))
   const proxima = ORDEM_ETAPAS.find(e => !feitos.has(e.momento)) ?? null
+  const etapas = ORDEM_ETAPAS.map(e => ({ ...e, quandoISO: feitos.get(e.momento) ?? null }))
 
   // Última batida = a mais recente no relógio, não a última da ordem: alguém
   // pode ter batido o meio sem ter batido a entrada.
@@ -3294,6 +3306,7 @@ async function fichaDoFuncionario(
       eventoNome: evento.nome,
       ultimaBatida: ultima,
       proximaPendente: proxima ? { momento: proxima.momento, rotulo: proxima.rotulo } : null,
+      etapas,
     },
   }
 }
@@ -3302,21 +3315,36 @@ const JUSTIFICATIVA_ASSISTIDO =
   'Batida registrada por supervisor devido à ausência de registro pelo colaborador.'
 
 /**
- * Registro assistido: o supervisor localizou a pessoa, tirou a foto do rosto
- * dela e confirma. O sistema decide sozinho QUAL etapa gravar (a primeira
- * pendente) — o supervisor nunca escolhe, o que evita registrar a etapa errada
- * e tira dele a chance de escolher a que lhe convém.
+ * Registro assistido: o supervisor (ou operador de portão) localizou a
+ * pessoa, tirou a foto do rosto dela e confirma.
+ *
+ * QUEM ESCOLHE A ETAPA É O OPERADOR, não o sistema — a pedido do Juan.
+ * Existia uma trava aqui ("o sistema decide sozinho, a primeira pendente")
+ * pensada contra erro e uso indevido; na operação real ela virou o
+ * problema oposto: sem QR na hora, pode ser entrada, meio OU saída que
+ * falta, e às vezes o que o sistema calcula como "próxima" não é a que
+ * aconteceu de verdade (a pessoa entrou por um caminho que o sistema não
+ * viu, por exemplo) — e o operador não tinha como corrigir isso.
+ *
+ * A escolha ainda é validada no servidor (não confia no que a tela mandou
+ * sem checar), e continua tudo auditado do mesmo jeito: autor, foto da
+ * pessoa na hora, GPS, aparelho e motivo. Escolher uma etapa JÁ registrada
+ * sobrescreve o horário dela — é uma correção, não uma duplicata (o índice
+ * único do banco não permite duas linhas para a mesma pessoa/etapa/dia).
  *
  * Não valida janela de horário de propósito: existe justamente para o caso em
  * que a janela já fechou. O que sustenta a confiança no registro é a trilha de
- * auditoria — autor, foto da pessoa na hora, GPS, aparelho e motivo.
+ * auditoria, não a hora.
  */
 export async function registrarPresencaAssistida(
   funcionarioId: string,
+  momento: MomentoPresenca,
   dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string }
 ): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
   const perfil = await getPerfil()
   if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
+  const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
+  if (!etapaEscolhida) return { error: 'Etapa inválida.' }
 
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return { error: 'A foto da pessoa é obrigatória — é ela que comprova que o colaborador estava presente.' }
@@ -3339,30 +3367,24 @@ export async function registrarPresencaAssistida(
   if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
   if (func.ativo === false) return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de registrar.' }
 
-  // Recalcula a etapa pendente no servidor: o que a tela mostrou pode ter
-  // mudado (o próprio colaborador pode ter batido nesse meio tempo).
+  /*
+   * O dia é recalculado no servidor (o que a tela mostrou pode ter mudado),
+   * mas a ETAPA é a que o operador escolheu — não é mais recomputada aqui.
+   * Escolher uma etapa que já tem registro é uma correção deliberada, não
+   * um erro: `upsertRegistro` grava por cima, e o índice único do banco
+   * garante que nunca vira uma segunda linha.
+   */
   const refAssistido = await diaDeReferencia(evento, func.id)
-  const { data: registros } = await supabaseAdmin
-    .from('registros')
-    .select('tipo')
-    .eq('funcionario_id', func.id)
-    .eq('evento_id', evento.id)
-    // Do DIA, não do evento inteiro: numa operação de 30 dias, olhar o evento
-    // faria a tela dizer "já registrou tudo" a partir do segundo dia.
-    .eq('data_ref', refAssistido.dataRef)
-  const feitos = new Set((registros ?? []).map(r => r.tipo))
-  const pendente = ORDEM_ETAPAS.find(e => !feitos.has(e.momento))
-  if (!pendente) return { error: 'Esta pessoa já registrou todas as etapas — não há nada pendente.' }
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'
   const buffer = Buffer.from(match[2], 'base64')
-  const path = `${evento.id}/${func.id}/assistido-${pendente.momento}-${refAssistido.dataRef}.${ext}`
+  const path = `${evento.id}/${func.id}/assistido-${momento}-${refAssistido.dataRef}.${ext}`
   const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
   if (up.error) return { error: 'Não foi possível salvar a foto. Tente de novo.' }
 
   const temGps = typeof dados.latitude === 'number' && typeof dados.longitude === 'number'
-  const { data: registro, error } = await upsertRegistro(func.id, evento.id, pendente.momento, {
+  const { data: registro, error } = await upsertRegistro(func.id, evento.id, momento, {
     foto_url: path,
     criado_por_perfil_id: perfil.id,
     registro_manual: true,
@@ -3378,7 +3400,7 @@ export async function registrarPresencaAssistida(
 
   // Mesma razao do scanner: o meio so ganha horario depois que a entrada
   // existe, inclusive quando quem registrou a entrada foi o supervisor.
-  if (pendente.momento === 'entrada' && func.telefone) {
+  if (momento === 'entrada' && func.telefone) {
     after(() =>
       agendarMeioAposEntrada({
         eventoId: evento.id,
@@ -3390,12 +3412,12 @@ export async function registrarPresencaAssistida(
     )
   }
   // Mesma regra do scanner: a saída do dia principal fecha o vínculo.
-  if (pendente.momento === 'fim' && refAssistido.diaPrincipal) {
+  if (momento === 'fim' && refAssistido.diaPrincipal) {
     await descredenciar(func.id, perfil.id)
   }
 
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
-  return { ok: true, nome: func.nome, etapa: pendente.rotulo }
+  return { ok: true, nome: func.nome, etapa: etapaEscolhida.rotulo }
 }
 
 /**

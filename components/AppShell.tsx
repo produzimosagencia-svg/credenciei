@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
-  QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles, IdCard,
+  QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle,
 } from 'lucide-react'
 import {
@@ -70,9 +70,12 @@ function gruposPara(role: string): Grupo[] {
       titulo: 'Plataforma',
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
-        { href: '/admin/base-funcionarios', label: 'Base de funcionários', icon: IdCard },
-        // A base regional é serviço vendido à parte: quem consulta e atribui
-        // gente ao evento de um cliente é o dono da plataforma, não o cliente.
+        /*
+         * Era duas entradas — "Base de funcionários" e "Encontre colaborador"
+         * — para a mesma consulta com um filtro a menos. Agora é uma tela só,
+         * com um toggle interno (Prontas para recrutar / Toda a base) — ver o
+         * comentário no topo de app/admin/encontrar/page.tsx.
+         */
         { href: '/admin/encontrar', label: 'Encontre colaborador', icon: UserSearch },
         // O canal de WhatsApp é da plataforma, não de um evento: quem dispara
         // em massa e responde conversa é o dono, nunca o produtor de um cliente.
