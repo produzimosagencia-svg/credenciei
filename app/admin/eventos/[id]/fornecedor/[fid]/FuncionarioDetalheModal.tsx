@@ -1,8 +1,9 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -105,6 +106,33 @@ export default function FuncionarioDetalheModal({
   const [erroSupervisor, setErroSupervisor] = useState<string | null>(null)
   const [okSupervisor, setOkSupervisor] = useState<string | null>(null)
   const [isPendingSupervisor, startTransitionSupervisor] = useTransition()
+  /*
+   * O conflito de acesso (CPF já é operador de portão, admin etc.) é
+   * conferido ANTES de mostrar o formulário — não depois do "Confirmar".
+   *
+   * Sem isto, a pessoa preenchia telefone e clicava Confirmar pra só então
+   * descobrir que o CPF já tinha outro tipo de acesso — passos perdidos por
+   * um erro que já era sabido desde o primeiro clique. Foi o que aconteceu
+   * de verdade com uma operadora de portão.
+   *
+   * `undefined` = ainda não verificado; `null` = verificado, sem conflito.
+   */
+  const [conflitoAcesso, setConflitoAcesso] = useState<string | null | undefined>(undefined)
+  const [verificandoAcesso, setVerificandoAcesso] = useState(false)
+
+  const abrirTornarSupervisor = () => {
+    setOkSupervisor(null)
+    setErroSupervisor(null)
+    setConfirmandoSupervisor(true)
+    setVerificandoAcesso(true)
+    situacaoDoAcesso(f.cpf).then(r => {
+      setConflitoAcesso(r.role && r.role !== 'supervisor' ? r.nomePapel : null)
+    }).catch(() => {
+      // Falhou a checagem prévia: não bloqueia o fluxo — o servidor confere
+      // de novo no envio de qualquer forma, ver `criarSupervisor`.
+      setConflitoAcesso(null)
+    }).finally(() => setVerificandoAcesso(false))
+  }
 
   const tornarSupervisor = () => {
     setErroSupervisor(null)
@@ -339,11 +367,33 @@ export default function FuncionarioDetalheModal({
 
                     {!confirmandoSupervisor ? (
                       <button
-                        onClick={() => { setOkSupervisor(null); setConfirmandoSupervisor(true) }}
+                        onClick={abrirTornarSupervisor}
                         className="btn btn-secundario w-full"
                       >
                         <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> Tornar {f.nome.split(' ')[0]} supervisor(a) de {setorNome}
                       </button>
+                    ) : verificandoAcesso ? (
+                      <div className="flex items-center gap-2 text-slate-400 text-xs py-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Conferindo o CPF…
+                      </div>
+                    ) : conflitoAcesso ? (
+                      /*
+                       * CPF já tem outro tipo de acesso — dito ANTES de pedir
+                       * telefone, não depois de um "Confirmar" que ia falhar.
+                       */
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                        <p className="text-red-700 text-xs">
+                          {f.nome} já tem acesso ao sistema como <strong>{conflitoAcesso}</strong>, com este mesmo CPF.
+                          Uma pessoa não pode ter dois tipos de acesso — desative o acesso atual dela antes de torná-la
+                          supervisor(a), em <Link href="/admin/usuarios" className="underline font-medium">Acessos</Link>.
+                        </p>
+                        <button
+                          onClick={() => setConfirmandoSupervisor(false)}
+                          className="btn btn-secundario btn-sm"
+                        >
+                          Entendi
+                        </button>
+                      </div>
                     ) : (
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
                         <p className="text-amber-800 text-xs">

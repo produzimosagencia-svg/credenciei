@@ -1056,6 +1056,10 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     })
     if (pendentes.length > MAX_NOMES) linhas.push(`…e mais ${pendentes.length - MAX_NOMES} no sistema.`)
 
+    // "Pendências" virou uma visão de /presenca, não uma tela própria — ver
+    // o comentário no topo de app/admin/eventos/[id]/presenca/page.tsx.
+    const VER_POR_MOMENTO: Record<MomentoRegistro, string> = { entrada: 'faltam', meio: 'sem_meio', fim: 'sem_saida' }
+
     return {
       template,
       params: [
@@ -1065,7 +1069,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         ROTULO_PENDENCIA[momento],
         `${pendentes[0].eventoNome} · ${formatarBR(`${msg.data_ref}T12:00:00-03:00`, 'data')}`,
         linhas.join('\n'),
-        `${SITE_URL}/admin/eventos/${msg.evento_id}/pendencias?dia=${msg.data_ref}`,
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/presenca?ver=${VER_POR_MOMENTO[momento]}&dia=${msg.data_ref}`,
       ],
     }
   }

@@ -22,6 +22,8 @@ import {
   podeEscanear,
   podeAcompanhar,
   ehMaster,
+  ROLE_LABELS,
+  type Role,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
@@ -454,6 +456,30 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
     .from('supervisor_setores')
     .upsert([{ perfil_id: perfilId, fornecedor_id: fornecedorId }], { onConflict: 'perfil_id,fornecedor_id' })
   if (error) console.error('[supervisor_setores] vínculo não gravado (migração pendente?)', error.message)
+}
+
+/**
+ * O CPF já tem outro tipo de acesso, antes de a pessoa preencher o resto?
+ *
+ * "Tornar supervisor" descobria isso só depois do telefone preenchido e do
+ * "Confirmar" clicado — a pessoa perdia esses passos pra ler um erro que já
+ * era sabido antes de começar. Aconteceu de verdade: uma operadora de portão
+ * (Keyci) recebeu esse erro depois de preencher tudo, quando o CPF dela já
+ * era conhecido desde o primeiro clique.
+ *
+ * Mesma permissão de `criarSupervisor`, porque é a mesma decisão — só que
+ * checada mais cedo.
+ */
+export async function situacaoDoAcesso(cpf: string): Promise<{ role: string | null; nomePapel: string | null }> {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para consultar acessos')
+
+  const digitos = normalizarCpf(cpf)
+  if (digitos.length !== 11) return { role: null, nomePapel: null }
+
+  const { data } = await supabaseAdmin.from('perfis').select('role').eq('cpf', digitos).maybeSingle()
+  const role = (data?.role as Role | undefined) ?? null
+  return { role, nomePapel: role ? (ROLE_LABELS[role] ?? role) : null }
 }
 
 export async function criarSupervisor(fornecedorId: string, eventoId: string, formData: FormData) {

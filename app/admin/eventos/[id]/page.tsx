@@ -236,14 +236,15 @@ export default async function EventoPage({
             <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
           </Link>
           {/*
-            * Mesma lista que o supervisor recebe no WhatsApp quando o horário
-            * de cada etapa passa — aqui dá pra abrir qualquer dia.
-            *
-            * Virou botão primário quando o feed de atividade se mudou para lá:
-            * é por aqui que se acompanha a operação acontecer, e um botão
-            * secundário no meio de outros cinco não anunciava isso.
+            * Leva pra /presenca, não mais pra /pendencias — as duas telas
+            * respondiam "quem fez, quem não fez" de dois jeitos diferentes o
+            * bastante pra confundir qual confiar; foram fundidas numa só (ver
+            * o comentário no topo de presenca/page.tsx). O link entra direto
+            * em "Ainda não chegaram" porque é a pendência que este botão
+            * promete no nome — as outras seis visões ficam a uma aba de
+            * distância, sem precisar voltar aqui.
             */}
-          <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-primario">
+          <Link href={`/admin/eventos/${id}/presenca?ver=faltam`} className="btn btn-primario">
             <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências e atividade
           </Link>
           <Link href={`/admin/eventos/${id}/relatorios`} className="btn btn-secundario">

@@ -259,7 +259,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             {/* Quem ficou faltando em cada etapa. É a mesma lista que chega no
                 WhatsApp do supervisor quando o horário passa — ter o atalho
                 aqui evita ele ter que caçar a mensagem no meio da operação. */}
-            <Link href={`/admin/eventos/${id}/pendencias`} className="btn btn-secundario">
+            <Link href={`/admin/eventos/${id}/presenca?ver=faltam`} className="btn btn-secundario">
               <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
             </Link>
             {/* O supervisor não credencia: quem lê o QR é o posto de

@@ -1,16 +1,18 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users, LogIn, Camera, LogOut, Clock, UserX } from 'lucide-react'
+import { ArrowLeft, LogIn, Camera, LogOut, Clock, UserX, CameraOff, LogOut as SaidaX } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { diaBRT } from '@/lib/janelas'
-import { formatCpf } from '@/lib/format'
-import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
+import { pendenciasDoDia } from '@/lib/pendencias'
+import { PageHeader } from '@/components/ui/Superficie'
+import TabelaPresenca, { type LinhaPresenca } from './TabelaPresenca'
 
 export const revalidate = 0
 
 /**
- * A lista por trás de cada número do painel do evento.
+ * A lista por trás de cada número do painel do evento — E o que "Pendências
+ * e atividade" abria antes.
  *
  * Os cartões de indicador respondem "quantos"; esta tela responde "quem" —
  * com nome, setor, CPF e a hora da batida daquele dia. Existe porque, no meio
@@ -18,19 +20,28 @@ export const revalidate = 0
  * é sempre "quem ainda falta", e antes disto ela só tinha resposta abrindo
  * setor por setor.
  *
- * Sempre de UM DIA. É a mesma correção que o painel recebeu junto: numa
- * operação de onze dias, misturar os dias faz quem trabalhou na montagem
- * aparecer como presente no dia do show.
+ * As duas telas — esta e a antiga "Pendências" — respondiam a mesma
+ * pergunta ("quem fez, quem não fez") de dois jeitos diferentes o bastante
+ * pra confundir qual confiar. Fundidas: as sete visões cobrem tanto "quem
+ * fez" (entrada/meio/saída/presentes) quanto "quem não fez"
+ * (sem_entrada/sem_meio/sem_saída) — as três últimas usando `pendenciasDoDia`,
+ * a MESMA função que já manda a mensagem de cobrança no WhatsApp, pra nunca
+ * existir uma pendência na tela e outra na mensagem.
+ *
+ * Sempre de UM DIA. Numa operação de onze dias, misturar os dias faz quem
+ * trabalhou na montagem aparecer como presente no dia do show.
  */
 
 type Etapa = 'entrada' | 'meio' | 'fim'
 
 const VISOES = {
-  entrada: { titulo: 'Registraram a entrada', icone: LogIn, etapa: 'entrada' as Etapa },
-  meio: { titulo: 'Registraram o meio', icone: Camera, etapa: 'meio' as Etapa },
-  fim: { titulo: 'Registraram a saída', icone: LogOut, etapa: 'fim' as Etapa },
-  presentes: { titulo: 'Presentes agora', icone: Clock, etapa: null },
-  faltam: { titulo: 'Ainda não chegaram', icone: UserX, etapa: null },
+  entrada: { titulo: 'Registraram a entrada', icone: LogIn, tipo: 'feito' as const, etapa: 'entrada' as Etapa },
+  meio: { titulo: 'Registraram o meio', icone: Camera, tipo: 'feito' as const, etapa: 'meio' as Etapa },
+  fim: { titulo: 'Registraram a saída', icone: LogOut, tipo: 'feito' as const, etapa: 'fim' as Etapa },
+  presentes: { titulo: 'Presentes agora', icone: Clock, tipo: 'presentes' as const },
+  faltam: { titulo: 'Ainda não chegaram', icone: UserX, tipo: 'pendencia' as const, etapa: 'entrada' as Etapa },
+  sem_meio: { titulo: 'Não fizeram o meio', icone: CameraOff, tipo: 'pendencia' as const, etapa: 'meio' as Etapa },
+  sem_saida: { titulo: 'Não fizeram a saída', icone: SaidaX, tipo: 'pendencia' as const, etapa: 'fim' as Etapa },
 } as const
 
 type Visao = keyof typeof VISOES
@@ -54,7 +65,8 @@ export default async function PresencaPage({
   if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   const visao: Visao = (ver && ver in VISOES ? ver : 'entrada') as Visao
-  const { titulo, icone: Icone, etapa } = VISOES[visao]
+  const config = VISOES[visao]
+  const Icone = config.icone
 
   const { data: dias } = await supabase
     .from('jornada_dias').select('data')
@@ -68,73 +80,83 @@ export default async function PresencaPage({
     ?? diasDaOperacao[0]
     ?? hoje
 
-  /*
-   * A equipe inteira do evento, e não só quem bateu: as visões "ainda não
-   * chegaram" e "presentes agora" se definem por AUSÊNCIA de registro, então
-   * precisam da lista completa para subtrair dela.
-   *
-   * Supervisor enxerga só o próprio setor — mesma régua do resto do sistema.
-   */
-  let equipeQuery = supabase
-    .from('funcionarios')
-    .select('id, nome, cpf, ativo, fornecedor_id, fornecedores!inner(nome, evento_id)')
-    .eq('fornecedores.evento_id', eventoId)
-    .order('nome')
-  if (perfil.role === 'supervisor' && perfil.fornecedor_id) {
-    equipeQuery = equipeQuery.eq('fornecedor_id', perfil.fornecedor_id)
-  }
-  const { data: equipe } = await equipeQuery
+  // Supervisor enxerga só a própria equipe — mesma régua do resto do sistema.
+  const setorDoSupervisor = perfil.role === 'supervisor' ? (perfil.fornecedor_id as string | null) : null
 
-  const { data: registros } = await supabase
-    .from('registros')
-    .select('funcionario_id, tipo, created_at, registro_manual')
-    .eq('evento_id', eventoId)
-    .eq('data_ref', diaEscolhido)
+  let linhas: LinhaPresenca[]
+  let colunaHora: string
 
-  const porPessoa = new Map<string, Partial<Record<Etapa, { em: string; manual: boolean }>>>()
-  for (const r of registros ?? []) {
-    const atual = porPessoa.get(r.funcionario_id) ?? {}
-    atual[r.tipo as Etapa] = { em: r.created_at as string, manual: r.registro_manual === true }
-    porPessoa.set(r.funcionario_id, atual)
-  }
-
-  type Linha = {
-    id: string; nome: string; cpf: string; setor: string
-    em: string | null; manual: boolean
-  }
-
-  const linhas: Linha[] = (equipe ?? [])
-    .map(f => {
-      const feito = porPessoa.get(f.id) ?? {}
-      const setor = (f.fornecedores as unknown as { nome: string } | null)?.nome ?? '—'
-      const base = { id: f.id as string, nome: f.nome as string, cpf: f.cpf as string, setor }
-
-      if (etapa) {
-        const r = feito[etapa]
-        return r ? { ...base, em: r.em, manual: r.manual } : null
-      }
-      if (visao === 'presentes') {
-        // Entrou e ainda não saiu — a hora mostrada é a da ENTRADA, que é o
-        // que responde "desde quando essa pessoa está aqui".
-        return feito.entrada && !feito.fim ? { ...base, em: feito.entrada.em, manual: feito.entrada.manual } : null
-      }
-      // faltam: sem entrada nenhuma no dia. Quem não está ativo não era
-      // esperado, então não conta como falta.
-      return !feito.entrada && f.ativo !== false ? { ...base, em: null, manual: false } : null
+  if (config.tipo === 'pendencia') {
+    /*
+     * "Quem não fez" reaproveita `pendenciasDoDia` — a MESMA função que
+     * decide quem entra na mensagem de cobrança do WhatsApp. Duas
+     * implementações da mesma regra (uma pra tela, outra pra mensagem)
+     * divergiriam no primeiro ajuste de horário, e essa era exatamente a
+     * razão de existirem duas telas ("Pendências" e "Presença") dizendo
+     * coisas diferentes sobre a mesma pessoa.
+     */
+    const pendencias = await pendenciasDoDia({
+      eventoId, data: diaEscolhido, fornecedorId: setorDoSupervisor ?? undefined, etapas: [config.etapa],
     })
-    .filter((l): l is Linha => l !== null)
-    // Quem bateu mais cedo primeiro; sem hora (os que faltam), por nome.
-    .sort((a, b) => (a.em && b.em ? a.em.localeCompare(b.em) : a.nome.localeCompare(b.nome)))
+    linhas = pendencias
+      .map(p => ({ id: p.funcionarioId, nome: p.nome, cpf: p.cpf, setor: p.setorNome, em: p.realizadoEm, manual: false }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    // Sem pendência de entrada não há "entrou às" pra mostrar — só nas outras duas.
+    colunaHora = config.etapa === 'entrada' ? '' : 'Entrou às'
+  } else {
+    /*
+     * A equipe inteira do evento, e não só quem bateu: "presentes" se define
+     * por AUSÊNCIA de saída depois da entrada, então precisa da lista
+     * completa pra cruzar.
+     */
+    let equipeQuery = supabase
+      .from('funcionarios')
+      .select('id, nome, cpf, ativo, fornecedor_id, fornecedores!inner(nome, evento_id)')
+      .eq('fornecedores.evento_id', eventoId)
+      .order('nome')
+    if (setorDoSupervisor) equipeQuery = equipeQuery.eq('fornecedor_id', setorDoSupervisor)
+    const { data: equipe } = await equipeQuery
 
-  const hora = (iso: string) =>
-    new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+    const { data: registros } = await supabase
+      .from('registros')
+      .select('funcionario_id, tipo, created_at, registro_manual')
+      .eq('evento_id', eventoId)
+      .eq('data_ref', diaEscolhido)
+
+    const porPessoa = new Map<string, Partial<Record<Etapa, { em: string; manual: boolean }>>>()
+    for (const r of registros ?? []) {
+      const atual = porPessoa.get(r.funcionario_id) ?? {}
+      atual[r.tipo as Etapa] = { em: r.created_at as string, manual: r.registro_manual === true }
+      porPessoa.set(r.funcionario_id, atual)
+    }
+
+    linhas = (equipe ?? [])
+      .map((f): LinhaPresenca | null => {
+        const feito = porPessoa.get(f.id) ?? {}
+        const setor = (f.fornecedores as unknown as { nome: string } | null)?.nome ?? '—'
+        const base = { id: f.id as string, nome: f.nome as string, cpf: f.cpf as string, setor }
+
+        if (config.tipo === 'feito') {
+          const r = feito[config.etapa]
+          return r ? { ...base, em: r.em, manual: r.manual } : null
+        }
+        // presentes: entrou e ainda não saiu — a hora mostrada é a da
+        // ENTRADA, que é o que responde "desde quando essa pessoa está aqui".
+        return feito.entrada && !feito.fim ? { ...base, em: feito.entrada.em, manual: feito.entrada.manual } : null
+      })
+      .filter((l): l is LinhaPresenca => l !== null)
+      .sort((a, b) => (a.em && b.em ? a.em.localeCompare(b.em) : a.nome.localeCompare(b.nome, 'pt-BR')))
+
+    colunaHora = visao === 'presentes' ? 'Entrou às' : 'Registrou às'
+  }
+
   const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
   const url = (v: Visao, d: string) => `/admin/eventos/${eventoId}/presenca?ver=${v}&dia=${d}`
 
   return (
     <div className="space-y-5">
       <PageHeader
-        titulo={titulo}
+        titulo={config.titulo}
         descricao={`${evento.nome} · ${rotuloDia(diaEscolhido)}${diaEscolhido === hoje ? ' (hoje)' : ''}`}
         acoes={
           <Link href={`/admin/eventos/${eventoId}`} className="btn btn-secundario btn-sm">
@@ -143,7 +165,7 @@ export default async function PresencaPage({
         }
       />
 
-      {/* Trocar de visão sem voltar: as cinco perguntas são lidas em sequência. */}
+      {/* Trocar de visão sem voltar: as sete perguntas são lidas em sequência. */}
       <div className="flex flex-wrap gap-2">
         {(Object.keys(VISOES) as Visao[]).map(v => (
           <Link
@@ -176,50 +198,12 @@ export default async function PresencaPage({
         </div>
       )}
 
-      <Secao
-        tom="acento"
+      <TabelaPresenca
+        linhas={linhas}
         icone={<Icone className="w-3.5 h-3.5" />}
-        titulo={`${linhas.length} ${linhas.length === 1 ? 'pessoa' : 'pessoas'}`}
-        corpoClassName={linhas.length ? '' : 'p-4'}
-      >
-        {!linhas.length ? (
-          <EmptyState icone={<Users className="w-7 h-7" />} titulo="Ninguém nesta lista" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-slate-400 text-2xs uppercase tracking-wide border-b border-slate-100">
-                  <th className="text-left font-semibold px-4 py-2.5">Nome</th>
-                  <th className="text-left font-semibold px-4 py-2.5">Setor</th>
-                  <th className="text-left font-semibold px-4 py-2.5">CPF</th>
-                  <th className="text-left font-semibold px-4 py-2.5">
-                    {visao === 'faltam' ? '' : visao === 'presentes' ? 'Entrou às' : 'Registrou às'}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {linhas.map(l => (
-                  <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5 text-slate-800 font-medium">{l.nome}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{l.setor}</td>
-                    <td className="px-4 py-2.5 text-slate-500 font-mono tabular-nums">{formatCpf(l.cpf)}</td>
-                    <td className="px-4 py-2.5 text-slate-700 tabular-nums whitespace-nowrap">
-                      {l.em ? hora(l.em) : <span className="text-slate-300">—</span>}
-                      {/* Batida registrada por outra pessoa: o fechamento
-                          precisa distinguir do que a própria pessoa marcou. */}
-                      {l.manual && (
-                        <span className="ml-2 text-2xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">
-                          manual
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Secao>
+        colunaHora={colunaHora}
+        mostrarSetor={!setorDoSupervisor}
+      />
     </div>
   )
 }
