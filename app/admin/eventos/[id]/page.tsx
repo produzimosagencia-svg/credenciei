@@ -4,7 +4,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, MapPin, CalendarDays, TrendingUp, CalendarCheck } from 'lucide-react'
+import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
@@ -12,7 +12,6 @@ import OperadorPortariaCard from './OperadorPortariaCard'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
-import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -22,16 +21,18 @@ export const revalidate = 0
 
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-detalhe',
-  versao: 1,
+  // Versão 2: "Progresso de presença" saiu — os números por etapa (entrada,
+  // meio, saída) passaram para dentro dos próprios cartões, como fração da
+  // equipe (02/09/2026). Quem já tinha visto o passo antigo vê o roteiro
+  // novo automaticamente.
+  versao: 2,
   passos: [
     { alvo: 'evt-editar', titulo: 'Configurar o evento', posicao: 'bottom',
       descricao: 'Aqui você ajusta datas, local e os horários do dia principal — o único dia em que entrada e saída ficam presas a um horário.' },
     { alvo: 'evt-scan', titulo: 'Escanear QR', posicao: 'bottom',
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
-      descricao: 'A situação agora: quantos setores e pessoas o evento tem, quantas estão presentes neste momento e quantas ainda não chegaram. O detalhe por etapa fica logo abaixo.' },
-    { alvo: 'evt-progresso', titulo: 'Progresso por etapa', posicao: 'top',
-      descricao: 'Mostra a porcentagem da equipe que já passou por cada etapa. Ideal para saber, durante o evento, quem ainda falta.' },
+      descricao: 'A situação agora: quantas pessoas o evento tem ao todo, quantas estão presentes neste momento, e quantas já passaram por cada etapa hoje (entrada, meio, saída) — como fração da equipe inteira.' },
     { alvo: 'evt-setores', titulo: 'Fornecedores e setores', posicao: 'right',
       descricao: 'Cadastre aqui cada setor ou fornecedor do evento. Cada um gera um link próprio de cadastro para a equipe se inscrever sozinha.' },
     { alvo: 'evt-atividade', titulo: 'Atividade ao vivo', posicao: 'left',
@@ -243,7 +244,7 @@ export default async function EventoPage({
   // fica no Progresso de presença, logo abaixo — repetir os dois seria dizer
   // a mesma coisa duas vezes na mesma tela.
   const presentesAgora = [...entraram].filter(fid => !sairam.has(fid)).length
-  const naoChegaram = Math.max(0, totalFuncionarios - totEntrada)
+  const pct = (v: number) => (totalFuncionarios > 0 ? Math.round((v / totalFuncionarios) * 100) : 0)
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
@@ -326,38 +327,38 @@ export default async function EventoPage({
         </div>
       )}
 
-      {/* Cada número tem uma lista por trás — ver /presenca. "Setores" e
-          "Funcionários" não linkam: a lista deles já está logo abaixo. */}
-      <div data-tutorial="evt-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Setores" value={fornecedores?.length ?? 0} icon={Users} tom="acento" />
-        <StatCard label="Funcionários" value={totalFuncionarios} icon={UserCheck} tom="info" />
+      {/*
+        * Cada número tem uma lista por trás — ver /presenca. "Funcionários do
+        * evento" não linka: a lista dele já está logo abaixo, na de setores.
+        *
+        * O "Progresso de presença" (o bloco com as três barras) saiu — dizia
+        * a mesma coisa que os três cartões de etapa abaixo, cada um já como
+        * fração da equipe. "Setores" e "Ainda não chegaram" também saíram:
+        * o primeiro não muda com o dia e não é pergunta operacional; o
+        * segundo virou a proporção de quem já entrou, no cartão de Entrada,
+        * que responde a mesma coisa em positivo. (Pedido do Juan, 02/09/2026.)
+        */}
+      <div data-tutorial="evt-stats" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <StatCard label="Funcionários do evento" value={totalFuncionarios} icon={UserCheck} tom="neutro" />
         <StatCard
-          label="Presentes agora" value={presentesAgora} icon={Clock} tom="sucesso"
+          label="Presentes no momento" value={presentesAgora} icon={Clock} tom="sucesso"
           href={`/admin/eventos/${id}/presenca?ver=presentes&dia=${diaEscolhido}`}
         />
         <StatCard
-          label="Ainda não chegaram" value={naoChegaram} icon={Clock} tom="aviso"
-          href={`/admin/eventos/${id}/presenca?ver=faltam&dia=${diaEscolhido}`}
+          label="Entradas hoje" value={`${totEntrada}/${totalFuncionarios}`} sub={`${pct(totEntrada)}% da equipe`}
+          icon={LogIn} tom="acento"
+          href={`/admin/eventos/${id}/presenca?ver=entrada&dia=${diaEscolhido}`}
         />
-      </div>
-
-      {/* Progresso de presença por etapa */}
-      <div data-tutorial="evt-progresso">
-        <Secao
-          tom="sucesso"
-          icone={<TrendingUp className="w-3.5 h-3.5" />}
-          titulo="Progresso de presença"
-          descricao={`Quantos dos ${totalFuncionarios} funcionários registraram cada etapa em ${diaEscolhido.split('-').reverse().slice(0, 2).join('/')}`}
-          corpoClassName="p-5"
-        >
-          <ProgressoEtapas
-            itens={[
-              { label: 'Entrada', valor: totEntrada, total: totalFuncionarios, cor: COR_ETAPA.entrada },
-              { label: 'Meio', valor: totMeio, total: totalFuncionarios, cor: COR_ETAPA.meio },
-              { label: 'Saída', valor: totFim, total: totalFuncionarios, cor: COR_ETAPA.fim },
-            ]}
-          />
-        </Secao>
+        <StatCard
+          label="Batida do meio hoje" value={`${totMeio}/${totalFuncionarios}`} sub={`${pct(totMeio)}% da equipe`}
+          icon={Camera} tom="aviso"
+          href={`/admin/eventos/${id}/presenca?ver=meio&dia=${diaEscolhido}`}
+        />
+        <StatCard
+          label="Saídas hoje" value={`${totFim}/${totalFuncionarios}`} sub={`${pct(totFim)}% da equipe`}
+          icon={LogOut} tom="info"
+          href={`/admin/eventos/${id}/presenca?ver=fim&dia=${diaEscolhido}`}
+        />
       </div>
 
       {/*
