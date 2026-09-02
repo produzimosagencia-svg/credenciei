@@ -72,6 +72,8 @@ export default function FuncionarioTable({
   podeMoverDeSetor = false,
   podeCriarSupervisor = false,
   podeEditarCpf = false,
+  podeEditarPonto = false,
+  role,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
@@ -95,6 +97,10 @@ export default function FuncionarioTable({
   podeExcluir?: boolean
   /** Mesma permissão que `editarCpfFuncionario` exige no servidor — ver `podeEditarIdentidade`. */
   podeEditarCpf?: boolean
+  /** Mesma permissão que `lancarPontoManual` exige no servidor — clique-pra-editar no Histórico. */
+  podeEditarPonto?: boolean
+  /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
+  role?: string
 }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -276,6 +282,8 @@ export default function FuncionarioTable({
                     podeMoverDeSetor={podeMoverDeSetor}
                     podeCriarSupervisor={podeCriarSupervisor}
                     podeEditarCpf={podeEditarCpf}
+                    podeEditarPonto={podeEditarPonto}
+                    role={role}
                     trigger={
                       <div className="flex items-center gap-2.5 min-w-0 text-left">
                         <Avatar url={f.fotoUrl} nome={f.nome} />
@@ -357,6 +365,8 @@ export default function FuncionarioTable({
                       podeMoverDeSetor={podeMoverDeSetor}
                       podeCriarSupervisor={podeCriarSupervisor}
                       podeEditarCpf={podeEditarCpf}
+                      podeEditarPonto={podeEditarPonto}
+                      role={role}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />

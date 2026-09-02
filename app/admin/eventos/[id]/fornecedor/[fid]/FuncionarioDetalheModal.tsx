@@ -45,6 +45,7 @@ export default function FuncionarioDetalheModal({
   podeCriarSupervisor = false,
   podeEditarCpf = false,
   podeAtivarDesativar = false,
+  podeEditarPonto = false,
   role,
 }: {
   funcionario: Funcionario
@@ -64,6 +65,8 @@ export default function FuncionarioDetalheModal({
   podeEditarCpf?: boolean
   /** Mesma régua de `alternarAtivacao` no servidor. */
   podeAtivarDesativar?: boolean
+  /** Mesma régua de `lancarPontoManual` no servidor — liga o clique-pra-editar na aba Histórico. */
+  podeEditarPonto?: boolean
   /**
    * O papel de quem está vendo o modal. Só usada pra uma coisa: quando é
    * `'suporte'`, o motivo passa de "ajuda a auditoria" pra OBRIGATÓRIO — é a
@@ -716,7 +719,7 @@ export default function FuncionarioDetalheModal({
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erroHistorico}
                   </div>
                 ) : historico ? (
-                  <HistoricoBatidas h={historico} />
+                  <HistoricoBatidas h={historico} podeEditar={podeEditarPonto} role={role} />
                 ) : null}
               </div>
             )}

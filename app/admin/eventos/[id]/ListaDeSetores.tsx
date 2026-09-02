@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Search, Users, X, User, MessageCircle, Phone } from 'lucide-react'
 import FornecedorCard from './FornecedorCard'
 import CopiarLinks, { type SetorParaCopiar } from './CopiarLinks'
+import FuncionarioDetalheModal from './fornecedor/[fid]/FuncionarioDetalheModal'
 import { formatCpf } from '@/lib/format'
 
 /**
@@ -32,7 +33,13 @@ type Supervisor = {
   cpf: string | null; telefone: string | null; ativo: boolean
 }
 
-type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string; cargo?: string | null; fornecedor_id?: string }
+type FuncionarioDoSetor = {
+  id: string; nome: string; cpf: string; telefone: string; cargo?: string | null; fornecedor_id?: string
+  /* Os campos abaixo só existem pra abrir a ficha completa (FuncionarioDetalheModal)
+     a partir da busca — "Criar Supervisor" e "Criar operador" não usam nenhum deles. */
+  empresa?: string | null; valor_receber?: number | null; chave_pix?: string | null
+  pago?: boolean | null; pago_em?: string | null; foto_perfil_path?: string | null; ativo?: boolean | null
+}
 type DiaDoEvento = { data: string; tipo: string }
 
 /*
@@ -55,6 +62,11 @@ export default function ListaDeSetores({
   setoresComMeio,
   podeGerenciarSupervisores,
   podeExcluir,
+  eventoNome,
+  podeMoverDeSetor,
+  podeEditarCpf,
+  podeEditarPonto,
+  role,
 }: {
   fornecedores: Fornecedor[]
   eventoId: string
@@ -66,6 +78,16 @@ export default function ListaDeSetores({
   setoresComMeio: Set<string>
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
+  /** Só pro cabeçalho do modal de "pessoa encontrada" — não muda nenhuma consulta. */
+  eventoNome: string
+  /** Mesma régua de `moverFuncionarioDeSetor`/`lancarPontoManual` no servidor. */
+  podeMoverDeSetor: boolean
+  /** Mesma régua de `editarCpfFuncionario` no servidor. */
+  podeEditarCpf: boolean
+  /** Mesma régua de `lancarPontoManual` no servidor. */
+  podeEditarPonto: boolean
+  /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
+  role?: string
 }) {
   const [busca, setBusca] = useState('')
 
@@ -104,6 +126,16 @@ export default function ListaDeSetores({
 
   const nomeDoSetor = useMemo(
     () => Object.fromEntries(fornecedores.map(f => [f.id, f.nome])),
+    [fornecedores],
+  )
+  const valorCombinadoDoSetor = useMemo(
+    () => Object.fromEntries(fornecedores.map(f => [f.id, f.valor_combinado])),
+    [fornecedores],
+  )
+  /* O cardápio de "mover para" no modal — cada setor exclui a si mesmo,
+     calculado por pessoa lá embaixo (o setor atual varia por linha). */
+  const todosOsSetores = useMemo(
+    () => fornecedores.map(f => ({ id: f.id, nome: f.nome })),
     [fornecedores],
   )
 
@@ -167,19 +199,56 @@ export default function ListaDeSetores({
           <div className="divide-y divide-slate-100">
             {pessoasEncontradas.map(f => {
               const zap = f.telefone ? `55${f.telefone.replace(/\D/g, '')}` : null
-              return (
-                <div key={f.id} className="px-4 py-2.5 flex items-center gap-3">
+              const setorNome = f.fornecedor_id ? (nomeDoSetor[f.fornecedor_id] ?? '—') : '—'
+              const linha = (
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
                     <User className="w-4 h-4 text-slate-400" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-slate-800 text-sm font-semibold truncate">{f.nome}</p>
                     <p className="text-slate-400 text-2xs truncate">
-                      {f.fornecedor_id ? (nomeDoSetor[f.fornecedor_id] ?? '—') : '—'}
+                      {setorNome}
                       {f.cargo ? ` · ${f.cargo}` : ''}
                       {f.cpf ? ` · ${formatCpf(f.cpf)}` : ''}
                     </p>
                   </div>
+                </div>
+              )
+              return (
+                <div key={f.id} className="px-4 py-2.5 flex items-center gap-3">
+                  {/*
+                    * Clicar no nome abre a mesma ficha completa de sempre
+                    * (Dados + Histórico) — era assim antes de a busca de
+                    * pessoa virar uma linha só de contato; voltou a ser.
+                    */}
+                  {f.fornecedor_id ? (
+                    <div className="flex-1 min-w-0">
+                    <FuncionarioDetalheModal
+                      funcionario={{
+                        id: f.id, nome: f.nome, cpf: f.cpf, telefone: f.telefone,
+                        empresa: f.empresa ?? '', cargo: f.cargo ?? '',
+                        valorReceber: f.valor_receber ?? 0, chavePix: f.chave_pix ?? null,
+                        pago: f.pago === true, pagoEm: f.pago_em ?? null,
+                        fotoUrl: null, ativo: f.ativo !== false,
+                        entrada: null, meio: null, fim: null,
+                      }}
+                      fornecedorId={f.fornecedor_id}
+                      eventoId={eventoId}
+                      eventoNome={eventoNome}
+                      setorNome={setorNome}
+                      valorCombinado={valorCombinadoDoSetor[f.fornecedor_id] ?? null}
+                      outrosSetores={todosOsSetores.filter(s => s.id !== f.fornecedor_id)}
+                      podeMoverDeSetor={podeMoverDeSetor}
+                      podeCriarSupervisor={podeGerenciarSupervisores}
+                      podeEditarCpf={podeEditarCpf}
+                      podeAtivarDesativar={podeMoverDeSetor}
+                      podeEditarPonto={podeEditarPonto}
+                      role={role}
+                      trigger={linha}
+                    />
+                    </div>
+                  ) : linha}
                   {zap ? (
                     <a
                       href={`https://wa.me/${zap}`}

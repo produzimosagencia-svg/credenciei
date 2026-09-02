@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, Ban, KeyRound } from 'lucide-react'
+import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, KeyRound } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeExcluir as podeExcluirDeVerdade } from '@/lib/permissions'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
@@ -125,17 +125,6 @@ function ComoFunciona() {
             <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{f.texto}</p>
           </div>
         ))}
-      </div>
-
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <p className="flex items-center gap-1.5 text-amber-800 text-sm font-semibold">
-          <Ban className="w-3.5 h-3.5 shrink-0" /> O que ele não consegue fazer
-        </p>
-        <p className="text-amber-700 text-xs mt-1 leading-relaxed">
-          Não edita o evento, não mexe na equipe, não vê valores nem pagamento, não cria nem apaga
-          usuários, e não enxerga eventos de outros clientes. É um acesso de portaria — pode ser
-          entregue a alguém contratado só para o dia sem abrir o resto do sistema.
-        </p>
       </div>
 
       <p className="text-slate-400 text-xs">

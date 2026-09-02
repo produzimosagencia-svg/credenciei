@@ -354,6 +354,9 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            */
           podeCriarSupervisor={podeGerenciarUsuarios(perfil.role)}
           podeEditarCpf={podeEditarIdentidade(perfil.role)}
+          /* Mesma régua de `lancarPontoManual` no servidor. */
+          podeEditarPonto={podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
+          role={perfil.role}
         />
       </div>
     </div>

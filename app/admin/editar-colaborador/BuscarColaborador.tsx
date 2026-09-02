@@ -133,6 +133,7 @@ export default function BuscarColaborador({
               podeCriarSupervisor={podeCriarSupervisor}
               podeEditarCpf={podeEditarCpf}
               podeAtivarDesativar={podeAtivarDesativar}
+              podeEditarPonto={podeAtivarDesativar}
               role={role}
               trigger={
                 <div className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition-colors">

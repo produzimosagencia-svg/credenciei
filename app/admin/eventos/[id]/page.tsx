@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
@@ -154,11 +154,17 @@ export default async function EventoPage({
     fornecedorIds.length
       ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
       : Promise.resolve(vazio),
-    // Serve aos dois botões (Criar operador e Criar Supervisor): lista do
-    // evento inteiro, porque setor recém-criado nasce vazio e a lista por
-    // setor viria em branco justo quando mais se precisa dela.
+    /*
+     * Serve a TRÊS coisas: Criar operador, Criar Supervisor, e a ficha
+     * completa de "pessoa encontrada" na busca — por isso o select é mais
+     * largo que só nome/cpf/telefone/cargo. Lista do evento inteiro, porque
+     * setor recém-criado nasce vazio e a lista por setor viria em branco
+     * justo quando mais se precisa dela.
+     */
     fornecedorIds.length
-      ? supabase.from('funcionarios').select('id, nome, cpf, telefone, cargo, fornecedor_id').in('fornecedor_id', fornecedorIds).order('nome')
+      ? supabase.from('funcionarios')
+          .select('id, nome, cpf, telefone, cargo, empresa, fornecedor_id, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo')
+          .in('fornecedor_id', fornecedorIds).order('nome')
       : Promise.resolve(vazio),
     /*
      * TODOS os vínculos de supervisor destes setores — de `supervisor_setores`,
@@ -423,6 +429,14 @@ export default async function EventoPage({
               setoresComMeio={setoresComMeio}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}
+              eventoNome={evento.nome}
+              podeMoverDeSetor={podeGerenciarEventos(perfil?.role)}
+              podeEditarCpf={podeEditarIdentidade(perfil?.role)}
+              /* Mesma régua de `lancarPontoManual` no servidor — supervisor não
+                 chega nesta tela (é redirecionado pro próprio setor), então
+                 basta cobrir gerente/admin/master/suporte. */
+              podeEditarPonto={podeGerenciarEventos(perfil?.role) || perfil?.role === 'suporte'}
+              role={perfil?.role}
             />
           )}
         </Secao>
