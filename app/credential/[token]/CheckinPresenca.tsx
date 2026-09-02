@@ -604,7 +604,15 @@ function Cartao({
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
-  const ehLivre = !ehFoto && podeAutoRegistrar
+  /*
+   * Saída livre desligada — decisão do Juan, não bug: "ainda não tá
+   * desenvolvido totalmente isso, não tá mapeado, não tá estudado como a
+   * gente pode fazer na prática". A saída volta a exigir sempre o QR
+   * mostrado no credenciamento, igual sempre foi. Mesma trava do lado do
+   * servidor em `registrarPresencaLivre` — aqui é só a tela não oferecer o
+   * que o servidor recusaria de qualquer forma.
+   */
+  const ehLivre = !ehFoto && info.momento !== 'fim' && podeAutoRegistrar
   const registrandoEsta = busyLivre === info.momento
 
   if (info.status === 'feito') {

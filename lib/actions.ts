@@ -2687,6 +2687,26 @@ export async function registrarPresencaLivre(
   tokenDoLocal?: string
 ): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
   if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
+  /*
+   * SAÍDA livre desligada — decisão do Juan, não limitação técnica.
+   *
+   * O auto-atendimento de entrada e saída (cartaz da portaria ou botão livre)
+   * foi construído e chegou a funcionar, mas a saída específica ainda não
+   * está madura pra operação real: "não tá mapeado, não tá estudado como a
+   * gente pode fazer na prática" — o risco é alguém sair sem ninguém
+   * confirmar de verdade que foi ela. Por ora a saída volta a exigir sempre
+   * o QR mostrado no credenciamento (Fluxo 1), igual sempre foi.
+   *
+   * A trava fica aqui, não só escondendo o botão em CheckinPresenca.tsx: uma
+   * recusa só na tela não impede quem chama esta action direto.
+   *
+   * Reversível: tirar este bloco (e o `info.momento !== 'fim'` equivalente em
+   * CheckinPresenca.tsx) religa exatamente o que já existia, sem reescrever
+   * nada — o resto da função continua intacto.
+   */
+  if (momento === 'fim') {
+    return { error: 'A saída ainda precisa ser feita mostrando o QR Code no credenciamento.' }
+  }
 
   // Mesmo teto da foto do meio: ação pública, protegida só pelo token.
   if (!podePassar(`livre:${token}`, 20, 10 * 60 * 1000)) {
@@ -2747,7 +2767,14 @@ export async function registrarPresencaLivre(
    */
   const observacoes: string[] = []
   if (tokenDoLocal) observacoes.push('Registrado escaneando o QR do local.')
-  if (momento === 'fim') {
+  /*
+   * Inalcançável ENQUANTO a saída livre estiver desligada (ver o retorno
+   * antecipado no topo da função) — `momento` só chega aqui como 'entrada'.
+   * Mantido de propósito, não apagado: é o que volta a valer sozinho no dia
+   * em que aquele bloqueio for removido. O `as string` só evita o TypeScript
+   * reclamar de uma comparação que, por enquanto, nunca é verdadeira.
+   */
+  if ((momento as string) === 'fim') {
     const semMeio = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
     if (semMeio) observacoes.push(semMeio)
   }
