@@ -2,8 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, alternarAtivacao } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -24,6 +24,7 @@ type Funcionario = {
   pago: boolean
   pagoEm: string | null
   fotoUrl: string | null
+  ativo?: boolean
   entrada: Presenca
   meio: Presenca
   fim: Presenca
@@ -43,6 +44,8 @@ export default function FuncionarioDetalheModal({
   podeMoverDeSetor = false,
   podeCriarSupervisor = false,
   podeEditarCpf = false,
+  podeAtivarDesativar = false,
+  role,
 }: {
   funcionario: Funcionario
   fornecedorId: string
@@ -59,7 +62,18 @@ export default function FuncionarioDetalheModal({
   podeCriarSupervisor?: boolean
   /** Mesma permissão que `editarCpfFuncionario` exige no servidor — ver `podeEditarIdentidade`. */
   podeEditarCpf?: boolean
+  /** Mesma régua de `alternarAtivacao` no servidor. */
+  podeAtivarDesativar?: boolean
+  /**
+   * O papel de quem está vendo o modal. Só usada pra uma coisa: quando é
+   * `'suporte'`, o motivo passa de "ajuda a auditoria" pra OBRIGATÓRIO — é a
+   * mesma régua que o servidor já aplica em `editarCpfFuncionario`,
+   * `moverFuncionarioDeSetor` e `alternarAtivacao`; aqui só se pede antes de
+   * tentar salvar, em vez de deixar a pessoa descobrir depois do clique.
+   */
+  role?: string
 }) {
+  const motivoObrigatorio = role === 'suporte'
   const [open, setOpen] = useState(false)
   const [aba, setAba] = useState<Aba>('dados')
   const [valor, setValor] = useState(String(f.valorReceber))
@@ -72,6 +86,7 @@ export default function FuncionarioDetalheModal({
   // ── Mover para outro setor ────────────────────────────────────────────────
   const [destino, setDestino] = useState('')
   const [confirmandoMover, setConfirmandoMover] = useState(false)
+  const [motivoMover, setMotivoMover] = useState('')
   const [erroMover, setErroMover] = useState<string | null>(null)
   const [isPendingMover, startTransitionMover] = useTransition()
 
@@ -79,7 +94,7 @@ export default function FuncionarioDetalheModal({
     setErroMover(null)
     startTransitionMover(async () => {
       try {
-        await moverFuncionarioDeSetor(f.id, eventoId, novoFornecedorId)
+        await moverFuncionarioDeSetor(f.id, eventoId, novoFornecedorId, motivoMover || undefined)
         /*
          * A pessoa some da lista deste setor assim que a página atualizar —
          * é o efeito esperado de mover, não um bug. Fechar o modal evita que
@@ -102,17 +117,20 @@ export default function FuncionarioDetalheModal({
    */
   const [editandoCpf, setEditandoCpf] = useState(false)
   const [novoCpf, setNovoCpf] = useState(f.cpf)
+  const [motivoCpf, setMotivoCpf] = useState('')
   const [erroCpf, setErroCpf] = useState<string | null>(null)
   const [isPendingCpf, startTransitionCpf] = useTransition()
 
   const abrirEditarCpf = () => {
     setErroCpf(null)
     setNovoCpf(f.cpf)
+    setMotivoCpf('')
     setEditandoCpf(true)
   }
 
   const salvarCpf = () => {
     setErroCpf(null)
+    if (motivoObrigatorio && !motivoCpf.trim()) { setErroCpf('Informe o motivo da correção.'); return }
     startTransitionCpf(async () => {
       try {
         /*
@@ -122,12 +140,32 @@ export default function FuncionarioDetalheModal({
          * comentário em `editarCpfFuncionario`. O `catch` fica só para a
          * falha de rede, que é a única exceção real possível aqui.
          */
-        const r = await editarCpfFuncionario(f.id, fornecedorId, eventoId, novoCpf)
+        const r = await editarCpfFuncionario(f.id, fornecedorId, eventoId, novoCpf, motivoCpf || undefined)
         if ('erro' in r) { setErroCpf(r.erro); return }
         router.refresh()
         setEditandoCpf(false)
       } catch (e: any) {
         setErroCpf(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  // ── Ativar / desativar ──────────────────────────────────────────────────
+  const [confirmandoAtivacao, setConfirmandoAtivacao] = useState(false)
+  const [motivoAtivacao, setMotivoAtivacao] = useState('')
+  const [erroAtivacao, setErroAtivacao] = useState<string | null>(null)
+  const [isPendingAtivacao, startTransitionAtivacao] = useTransition()
+
+  const confirmarAtivacao = () => {
+    setErroAtivacao(null)
+    if (motivoObrigatorio && !motivoAtivacao.trim()) { setErroAtivacao(`Informe o motivo da ${f.ativo ? 'desativação' : 'ativação'}.`); return }
+    startTransitionAtivacao(async () => {
+      try {
+        await alternarAtivacao(f.id, fornecedorId, eventoId, !f.ativo, motivoAtivacao || undefined)
+        router.refresh()
+        setConfirmandoAtivacao(false)
+      } catch (e: any) {
+        setErroAtivacao(mensagemAmigavel(e))
       }
     })
   }
@@ -370,6 +408,15 @@ export default function FuncionarioDetalheModal({
                       className="input text-sm font-mono tabular-nums"
                       placeholder="Só números"
                     />
+                    {motivoObrigatorio && (
+                      <input
+                        type="text"
+                        value={motivoCpf}
+                        onChange={e => setMotivoCpf(e.target.value)}
+                        className="input text-sm"
+                        placeholder="Motivo da correção (obrigatório)"
+                      />
+                    )}
                     <div className="flex gap-2">
                       <button
                         onClick={salvarCpf}
@@ -433,9 +480,21 @@ export default function FuncionarioDetalheModal({
                           O QR code, o CPF e as batidas já feitas continuam os mesmos — só o
                           setor muda.
                         </p>
+                        {motivoObrigatorio && (
+                          <input
+                            type="text"
+                            value={motivoMover}
+                            onChange={e => setMotivoMover(e.target.value)}
+                            className="input text-sm"
+                            placeholder="Motivo da mudança de setor (obrigatório)"
+                          />
+                        )}
                         <div className="flex gap-2">
                           <button
-                            onClick={() => moverPara(destino)}
+                            onClick={() => {
+                              if (motivoObrigatorio && !motivoMover.trim()) { setErroMover('Informe o motivo.'); return }
+                              moverPara(destino)
+                            }}
                             disabled={isPendingMover}
                             className="btn btn-primario btn-sm disabled:opacity-50"
                           >
@@ -530,6 +589,53 @@ export default function FuncionarioDetalheModal({
                     )}
                     {erroSupervisor && <p className="text-red-500 text-xs mt-1.5">{erroSupervisor}</p>}
                     {okSupervisor && <p className="text-green-600 text-xs mt-1.5">{okSupervisor}</p>}
+                  </div>
+                )}
+
+                {/*
+                  * Ativar/desativar — pra quem chega por "Editar colaborador"
+                  * (suporte, principalmente), que não tem a linha da tabela
+                  * do setor com o botão de sempre. Mesmo efeito, mesma action.
+                  */}
+                {podeAtivarDesativar && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide">Ativação</p>
+                      {!confirmandoAtivacao && (
+                        <button
+                          onClick={() => { setErroAtivacao(null); setMotivoAtivacao(''); setConfirmandoAtivacao(true) }}
+                          className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${f.ativo ? 'text-amber-600 hover:text-amber-700' : 'text-brand-600 hover:text-brand-700'}`}
+                        >
+                          {f.ativo ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                          {f.ativo ? 'Desativar' : 'Ativar'}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-slate-500 text-xs mt-1">
+                      {f.ativo ? 'Ativado — recebe lembretes e conta no fechamento.' : 'Não ativado — sem lembrete de WhatsApp e fora do fechamento, mas o cadastro continua.'}
+                    </p>
+                    {confirmandoAtivacao && (
+                      <div className={`mt-2 rounded-xl p-3 space-y-2.5 border ${f.ativo ? 'bg-amber-50 border-amber-200' : 'bg-brand-50 border-brand-200'}`}>
+                        {motivoObrigatorio && (
+                          <input
+                            type="text"
+                            value={motivoAtivacao}
+                            onChange={e => setMotivoAtivacao(e.target.value)}
+                            className="input text-sm"
+                            placeholder={`Motivo da ${f.ativo ? 'desativação' : 'ativação'} (obrigatório)`}
+                          />
+                        )}
+                        <div className="flex gap-2">
+                          <button onClick={confirmarAtivacao} disabled={isPendingAtivacao} className="btn btn-primario btn-sm disabled:opacity-50">
+                            {isPendingAtivacao ? 'Salvando…' : 'Confirmar'}
+                          </button>
+                          <button onClick={() => setConfirmandoAtivacao(false)} disabled={isPendingAtivacao} className="btn btn-secundario btn-sm">
+                            Cancelar
+                          </button>
+                        </div>
+                        {erroAtivacao && <p className="text-red-500 text-xs">{erroAtivacao}</p>}
+                      </div>
+                    )}
                   </div>
                 )}
 

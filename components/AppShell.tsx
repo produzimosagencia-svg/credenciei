@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck,
+  ClipboardPen, ShieldCheck, ClipboardList,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -60,6 +60,12 @@ function gruposPara(role: string): Grupo[] {
    */
   if (podeGerenciarEventos(role)) {
     doEvento.push({ href: '/admin/editar-evento', label: 'Editar evento', icon: Pencil })
+  }
+  // Editar colaborador também pro suporte, dentro do escopo dele — é a
+  // ferramenta principal do papel (CPF, setor, ativação). Editar evento
+  // (datas, janelas) fica de fora: isso reagenda a fila de WhatsApp do
+  // evento inteiro, é decisão de quem administra, não de quem apoia.
+  if (podeGerenciarEventos(role) || role === 'suporte') {
     doEvento.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
   }
   /*
@@ -93,7 +99,7 @@ function gruposPara(role: string): Grupo[] {
    * Sem operador de portão pelo mesmo motivo — escrever o passado com hora
    * arbitrária é ato de gestão. Mesma régua da action `lancarPontoManual`.
    */
-  if (podeGerenciarEventos(role) || role === 'supervisor') {
+  if (podeGerenciarEventos(role) || role === 'supervisor' || role === 'suporte') {
     administrativo.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
   }
   /*
@@ -107,6 +113,15 @@ function gruposPara(role: string): Grupo[] {
   if (podeGerenciarUsuarios(role)) {
     administrativo.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
   }
+  /*
+   * Auditoria: master vê tudo, admin a própria organização, suporte só o
+   * que ELE MESMO fez — ver `obterAuditoria` em lib/actions.ts, que já
+   * aplica essa régua de novo no servidor (a régua daqui é só pra mostrar
+   * ou não o item, não a proteção real).
+   */
+  if (podeGerenciarUsuarios(role) || role === 'suporte') {
+    administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
+  }
   if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
 
   // ─── Operacional ────────────────────────────────────────────────────────
@@ -117,6 +132,12 @@ function gruposPara(role: string): Grupo[] {
       titulo: 'Operacional',
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
+        /*
+         * Só master cria/edita: o escopo do suporte atravessa organizações
+         * ("Cliente A e Cliente B"), é a plataforma que contrata, não um
+         * admin de cliente específico. Ver lib/actions.ts (`criarSuporte`).
+         */
+        { href: '/admin/suporte', label: 'Suporte de Sistema', icon: UserCog },
         /*
          * Era duas entradas — "Base de funcionários" e "Encontre colaborador"
          * — para a mesma consulta com um filtro a menos. Agora é uma tela só,

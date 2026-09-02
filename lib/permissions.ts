@@ -15,11 +15,22 @@
 //                      gerencia evento, equipe ou usuários. É o papel de
 //                      quem opera fisicamente o credenciamento sem precisar
 //                      de senha de admin.
+//   suporte         → gente CONTRATADA pro dia do evento, pra resolver
+//                      problema de operação (CPF errado, setor errado, ponto
+//                      que não bateu, supervisor sem senha) sem ser dono da
+//                      conta. Vinculado a organizações e/ou eventos
+//                      específicos via `suporte_escopo` (nunca a organização
+//                      inteira do sistema, como o master) e pode ter
+//                      `perfis.acesso_expira_em` — passada a data, o acesso
+//                      para de funcionar sozinho. Corrige a operação; nunca
+//                      administra: não exclui, não mexe em financeiro, não
+//                      cria admin, não dispara WhatsApp em massa. Ver
+//                      supabase/upgrade-suporte.sql e lib/suporte.ts.
 //
 // Papéis legados ('gerente', 'cliente') continuam válidos no banco, mas não
 // são mais oferecidos na UI. Tratamos 'gerente' como equivalente a admin.
 
-export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao'
+export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao' | 'suporte'
 
 export const ROLE_LABELS: Record<Role, string> = {
   master: 'Master',
@@ -28,6 +39,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   gerente: 'Gerente',
   cliente: 'Cliente',
   operador_portao: 'Operador de portão',
+  suporte: 'Suporte de Sistema',
 }
 
 /** Dono da plataforma: acesso irrestrito a todas as organizações. */
@@ -62,19 +74,21 @@ export const podeExcluir = (role?: string) => role === 'master'
 /** @deprecated Use `podeExcluir`. Mantido porque já é chamado em algumas telas. */
 export const podeExcluirEventos = podeExcluir
 
+/** Dono de um acesso de apoio contratado pro evento — nunca administra. */
+export const ehSuporte = (role?: string) => role === 'suporte'
+
 /**
  * Pode corrigir um dado de identidade já cadastrado (hoje: só o CPF do
  * funcionário) — algo que a própria pessoa não tem como refazer sozinha sem
  * perder o QR, o histórico de batidas e o pagamento já vinculados ao
  * cadastro antigo.
  *
- * Só master, de propósito e por enquanto: decisão do Juan em 02/09/2026,
- * pensando num papel futuro de "suporte" (acesso de apoio no dia do evento,
- * que corrige cadastro e move gente entre setores sem ser dono da conta).
- * Esse papel ainda não existe no sistema — quando existir, esta função é o
- * único lugar que precisa mudar pra incluí-lo.
+ * Master sempre; suporte também, mas só DENTRO do escopo dele — a checagem
+ * de escopo (`suporteTemEscopo`, em lib/suporte.ts) mora na action, não
+ * aqui, porque esta função não recebe evento/organização pra comparar. É o
+ * papel previsto na decisão do Juan em 02/09/2026, construído em 03/09/2026.
  */
-export const podeEditarIdentidade = (role?: string) => role === 'master'
+export const podeEditarIdentidade = (role?: string) => role === 'master' || role === 'suporte'
 
 /**
  * Pode LER o QR e registrar presença pelo scanner.
@@ -101,4 +115,4 @@ export const podeEscanear = (role?: string) =>
  * cuida.
  */
 export const podeAcompanhar = (role?: string) =>
-  podeEscanear(role) || role === 'supervisor'
+  podeEscanear(role) || role === 'supervisor' || role === 'suporte'

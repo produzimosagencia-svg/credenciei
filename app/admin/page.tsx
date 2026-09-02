@@ -165,6 +165,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * Manda ele direto pro scanner, que já lista os eventos dele.
    */
   if (podeAcompanhar(perfil.role) && !podeGerenciarEventos(perfil.role)) {
+    // Suporte não é de UM setor (nem de uma organização, como o operador de
+    // portão) — o escopo dele são organizações/eventos inteiros via
+    // `suporte_escopo`. "Sem setor vinculado" seria a tela errada pra ele;
+    // manda direto pra ferramenta que ele de fato usa.
+    if (perfil.role === 'suporte') redirect('/admin/editar-colaborador')
     const setor = await meuSetor(perfil)
     if (!setor) {
       if (perfil.role === 'operador_portao') redirect('/scan')

@@ -46,6 +46,7 @@ const MINIMO = 2
  */
 export default function BuscarColaborador({
   colaboradores, eventoId, eventoNome, outrosSetores, podeMoverDeSetor, podeCriarSupervisor, podeEditarCpf,
+  podeAtivarDesativar, role,
 }: {
   colaboradores: ColaboradorDoEvento[]
   eventoId: string
@@ -54,6 +55,9 @@ export default function BuscarColaborador({
   podeMoverDeSetor: boolean
   podeCriarSupervisor: boolean
   podeEditarCpf: boolean
+  podeAtivarDesativar: boolean
+  /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
+  role?: string
 }) {
   const [busca, setBusca] = useState('')
 
@@ -128,6 +132,8 @@ export default function BuscarColaborador({
               podeMoverDeSetor={podeMoverDeSetor}
               podeCriarSupervisor={podeCriarSupervisor}
               podeEditarCpf={podeEditarCpf}
+              podeAtivarDesativar={podeAtivarDesativar}
+              role={role}
               trigger={
                 <div className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition-colors">
                   <div className="min-w-0">

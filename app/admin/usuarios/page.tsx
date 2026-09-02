@@ -44,6 +44,9 @@ const ROLE_BADGE: Record<Role, string> = {
   supervisor: 'selo-neutro',
   cliente: 'selo-neutro',
   operador_portao: 'selo-neutro',
+  // Cor própria: suporte é um acesso de risco diferente dos demais (atravessa
+  // organizações, tem prazo de validade) — vale destacar na lista.
+  suporte: 'selo-aviso',
 }
 
 type Aba = 'todos' | 'ativos' | 'inativos'

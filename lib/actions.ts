@@ -37,6 +37,8 @@ import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
 import { setoresComMeio, diasComMeio } from './meio'
+import { suporteTemEscopo } from './suporte'
+import { registrarAuditoria } from './auditoria'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
@@ -511,9 +513,15 @@ export async function situacaoDoAcesso(cpf: string): Promise<{ role: string | nu
   return { role, nomePapel: role ? (ROLE_LABELS[role] ?? role) : null }
 }
 
+/*
+ * Admin/master sempre; suporte também, dentro do escopo — sem risco de
+ * escalar privilégio, porque esta função só cria/reatribui `role:'supervisor'`,
+ * nunca admin/master, em qualquer um dos dois branches abaixo (novo ou já
+ * existente).
+ */
 export async function criarSupervisor(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar supervisores')
+  if (!perfil) throw new Error('Sem permissão para criar supervisores')
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -524,8 +532,17 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   if (fornecedor.evento_id !== eventoId) throw new Error('Este setor não pertence ao evento informado')
   const eventoDoFornecedor = fornecedor.eventos as any
   const organizacaoId = eventoDoFornecedor?.organizacao_id
-  if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
-    throw new Error('Sem permissão sobre este setor')
+
+  if (podeGerenciarUsuarios(perfil.role)) {
+    if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) {
+      throw new Error('Sem permissão sobre este setor')
+    }
+  } else if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      throw new Error('Este evento não está no seu escopo de atendimento.')
+    }
+  } else {
+    throw new Error('Sem permissão para criar supervisores')
   }
 
   const nome = ((formData.get('nome') as string) ?? '').trim()
@@ -592,6 +609,10 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     const jaEraDesteEvento = await jaSupervisionaNesteEvento(existente.id, eventoId)
 
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_SUPERVISOR', campoAlterado: 'setor', valorNovo: fornecedor.nome,
+      eventoId, organizacaoId: organizacaoId ?? undefined,
+    }))
 
     /*
      * Ganhar mais um setor no MESMO evento não gera mensagem.
@@ -724,6 +745,10 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   }
 
   await vincularSupervisorAoSetor(user.user!.id, fornecedorId)
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR', campoAlterado: 'setor', valorNovo: fornecedor.nome,
+    eventoId, organizacaoId: organizacaoId ?? undefined,
+  }))
 
   try {
     const linkSenha = await criarConviteSenhaSupervisor({
@@ -914,6 +939,219 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
   revalidatePath(`/admin/eventos/${eventoId}`)
 
   return { ok: true as const, novo: true as const, usuario: cpf, linkSenha, avisado: true as const }
+}
+
+// ─── Suporte de Sistema ─────────────────────────────────────────────────────
+/*
+ * Gente CONTRATADA pro dia do evento — corrige a operação, nunca administra.
+ * Ver lib/permissions.ts (`ehSuporte`, `podeEditarIdentidade`), lib/suporte.ts
+ * (o escopo) e supabase/upgrade-suporte.sql (o desenho das tabelas).
+ *
+ * SÓ MASTER cria/edita suporte, de propósito: diferente de supervisor
+ * (preso a UM setor da própria organização do admin), o escopo do suporte
+ * atravessa organizações — "Cliente A e Cliente B", no exemplo do pedido.
+ * É a mesma régua de quem cria organização: quem contrata pessoa pra apoiar
+ * vários clientes é a plataforma, não um admin de cliente específico.
+ */
+
+function escoposDoForm(formData: FormData): { organizacaoId?: string; eventoId?: string }[] {
+  const orgs = formData.getAll('escopo_organizacao_id').map(String).filter(Boolean)
+  const eventos = formData.getAll('escopo_evento_id').map(String).filter(Boolean)
+  return [
+    ...orgs.map(organizacaoId => ({ organizacaoId })),
+    ...eventos.map(eventoId => ({ eventoId })),
+  ]
+}
+
+async function gravarEscopoSuporte(perfilId: string, escopos: { organizacaoId?: string; eventoId?: string }[]) {
+  await supabaseAdmin.from('suporte_escopo').delete().eq('perfil_id', perfilId)
+  if (!escopos.length) return
+  const linhas = escopos.map(e => ({
+    perfil_id: perfilId, organizacao_id: e.organizacaoId ?? null, evento_id: e.eventoId ?? null,
+  }))
+  const { error } = await supabaseAdmin.from('suporte_escopo').insert(linhas)
+  if (error) throw new Error(mensagemAmigavel(error))
+}
+
+/** Só pro TEXTO do convite de senha — o acesso de verdade é `suporte_escopo`, não isto. */
+async function eventoDeReferencia(escopos: { organizacaoId?: string; eventoId?: string }[]): Promise<{ id: string; nome: string } | null> {
+  const direto = escopos.find(e => e.eventoId)
+  if (direto?.eventoId) {
+    const { data } = await supabaseAdmin.from('eventos').select('id, nome').eq('id', direto.eventoId).maybeSingle()
+    if (data) return data as { id: string; nome: string }
+  }
+  const porOrg = escopos.find(e => e.organizacaoId)
+  if (porOrg?.organizacaoId) {
+    const { data } = await supabaseAdmin
+      .from('eventos').select('id, nome').eq('organizacao_id', porOrg.organizacaoId)
+      .order('data_inicio', { ascending: false }).limit(1).maybeSingle()
+    if (data) return data as { id: string; nome: string }
+  }
+  return null
+}
+
+export async function criarSuporte(formData: FormData) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Só o master cria acesso de suporte.')
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const ativo = formData.get('ativo') !== 'false'
+  const expiraEmBruto = (formData.get('acesso_expira_em') as string) || ''
+  if (!nome) throw new Error('Informe o nome.')
+  if (telefone.length < 10 || telefone.length > 13) throw new Error('Informe um telefone válido para enviar o acesso pelo WhatsApp.')
+
+  const escopos = escoposDoForm(formData)
+  if (!escopos.length) throw new Error('Escolha ao menos uma organização ou evento de atendimento.')
+
+  const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
+  if (cpf.length !== 11) throw new Error('Informe o CPF, com 11 dígitos.')
+  const email = cpfParaEmail(cpf)
+  const acessoExpiraEm = expiraEmBruto ? inputParaISO(`${expiraEmBruto}T23:59`) : null
+
+  const admin = getAdminSupabase()
+
+  const { data: existente } = await admin.from('perfis').select('id').eq('cpf', cpf).maybeSingle()
+  if (existente) throw new Error(`Já existe um acesso com o CPF ${cpf}. Edite esse acesso em vez de criar outro.`)
+
+  const { data: user, error } = await admin.auth.admin.createUser({
+    email, password: randomBytes(32).toString('base64url'), email_confirm: true,
+  })
+  if (error) throw new Error(mensagemAuth(error.message))
+
+  const { error: erroPerfil } = await admin.from('perfis').insert([{
+    id: user.user!.id, nome, email, telefone, ativo, cpf,
+    role: 'suporte', organizacao_id: null, fornecedor_id: null,
+    acesso_expira_em: acessoExpiraEm,
+  }])
+  if (erroPerfil) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    throw new Error(mensagemAmigavel(erroPerfil))
+  }
+
+  await gravarEscopoSuporte(user.user!.id, escopos)
+
+  const referencia = await eventoDeReferencia(escopos)
+  let linkSenha: string | null = null
+  try {
+    linkSenha = await criarConviteSenhaSupervisor({
+      cpf, perfilId: user.user!.id, nome,
+      eventoId: referencia?.id ?? '', evento: referencia?.nome ?? 'Credenciei', setor: 'Suporte de Sistema',
+    })
+  } catch (erro) {
+    // O acesso já existe mesmo sem o link — o master gera um novo depois,
+    // pela mesma tela (mesmo caminho de `gerarLinkDeAcesso`).
+    console.error('[criarSuporte] falha ao gerar link de senha', erro)
+  }
+
+  revalidatePath('/admin/suporte')
+  return { ok: true as const, linkSenha }
+}
+
+/** Edita nome/telefone/status/expiração/escopo de um suporte já existente. */
+export async function editarSuporte(perfilId: string, formData: FormData) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Só o master edita acesso de suporte.')
+
+  const { data: alvo } = await supabaseAdmin.from('perfis').select('id, role').eq('id', perfilId).single()
+  if (!alvo || alvo.role !== 'suporte') throw new Error('Acesso de suporte não encontrado.')
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const ativo = formData.get('ativo') !== 'false'
+  const expiraEmBruto = (formData.get('acesso_expira_em') as string) || ''
+  if (!nome) throw new Error('Informe o nome.')
+
+  const escopos = escoposDoForm(formData)
+  if (!escopos.length) throw new Error('Escolha ao menos uma organização ou evento de atendimento.')
+
+  const { error } = await supabaseAdmin.from('perfis').update({
+    nome, telefone, ativo,
+    acesso_expira_em: expiraEmBruto ? inputParaISO(`${expiraEmBruto}T23:59`) : null,
+  }).eq('id', perfilId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  await gravarEscopoSuporte(perfilId, escopos)
+
+  revalidatePath('/admin/suporte')
+  return { ok: true as const }
+}
+
+export type LinhaAuditoria = {
+  id: string; acao: string; usuarioResponsavel: string; campoAlterado: string | null
+  valorAnterior: string | null; valorNovo: string | null; motivo: string | null
+  eventoNome: string | null; funcionarioNome: string | null; criadoEm: string
+}
+
+/**
+ * A trilha de auditoria — filtrada pelo escopo de quem consulta: master vê
+ * tudo, admin só a própria organização, suporte só o próprio escopo (o que
+ * ele mesmo fez, dentro do que tem acesso).
+ */
+export async function obterAuditoria(opcoes: { eventoId?: string; limite?: number } = {}): Promise<LinhaAuditoria[]> {
+  const perfil = await getPerfil()
+  if (!perfil) return []
+
+  let query = supabaseAdmin
+    .from('alteracoes_cadastro')
+    .select('id, acao, usuario_responsavel, campo_alterado, valor_anterior, valor_novo, motivo, created_at, eventos(nome), funcionarios(nome)')
+    .order('created_at', { ascending: false })
+    .limit(opcoes.limite ?? 100)
+
+  if (opcoes.eventoId) query = query.eq('evento_id', opcoes.eventoId)
+
+  if (perfil.role === 'suporte') {
+    query = query.eq('usuario_responsavel_id', perfil.id)
+  } else if (!ehMaster(perfil.role)) {
+    if (!podeGerenciarUsuarios(perfil.role)) return []
+    query = query.eq('organizacao_id', perfil.organizacao_id)
+  }
+
+  const { data } = await query
+  return (data ?? []).map(a => ({
+    id: a.id as string,
+    acao: a.acao as string,
+    usuarioResponsavel: a.usuario_responsavel as string,
+    campoAlterado: (a.campo_alterado as string | null) ?? null,
+    valorAnterior: (a.valor_anterior as string | null) ?? null,
+    valorNovo: (a.valor_novo as string | null) ?? null,
+    motivo: (a.motivo as string | null) ?? null,
+    eventoNome: (a.eventos as unknown as { nome: string } | null)?.nome ?? null,
+    funcionarioNome: (a.funcionarios as unknown as { nome: string } | null)?.nome ?? null,
+    criadoEm: a.created_at as string,
+  }))
+}
+
+export type EscopoSuporte = { organizacaoNome: string | null; eventoNome: string | null }
+
+/** O escopo de um suporte, com nomes prontos pra tela — não IDs crus. */
+export async function obterEscopoDoSuporte(perfilId: string): Promise<EscopoSuporte[]> {
+  const { data } = await supabaseAdmin
+    .from('suporte_escopo')
+    .select('organizacao_id, evento_id, organizacoes(nome), eventos(nome)')
+    .eq('perfil_id', perfilId)
+  return (data ?? []).map(e => ({
+    organizacaoNome: (e.organizacoes as unknown as { nome: string } | null)?.nome ?? null,
+    eventoNome: (e.eventos as unknown as { nome: string } | null)?.nome ?? null,
+  }))
+}
+
+/**
+ * Revoga na hora — não espera a data marcada. Zera `acesso_expira_em` pra
+ * "agora": `getPerfil()` já trata isso como deslogado no próximo request,
+ * sem precisar de um campo/estado novo.
+ */
+export async function revogarSuporte(perfilId: string) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Só o master revoga acesso de suporte.')
+
+  const { error } = await supabaseAdmin.from('perfis')
+    .update({ acesso_expira_em: new Date().toISOString(), ativo: false })
+    .eq('id', perfilId).eq('role', 'suporte')
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  revalidatePath('/admin/suporte')
+  return { ok: true as const }
 }
 
 /**
@@ -1236,29 +1474,47 @@ export async function atribuirEventoAOrganizacao(eventoId: string, organizacaoId
  * admin e master não tinham nenhum caminho, e quem esquece a senha fica de
  * fora do próprio sistema no dia do evento.
  *
- * Master mexe em qualquer um; admin só na própria equipe. Ninguém redefine a
- * própria senha por aqui: para isso existe o fluxo de conta, e um caminho
- * administrativo sobre si mesmo só serve pra confundir.
+ * Master mexe em qualquer um; admin só na própria equipe; suporte só em
+ * supervisor/operador de portão dentro do escopo dele — nunca em admin ou
+ * master, mesmo que por algum acidente estivesse "na mesma organização".
+ * Ninguém redefine a própria senha por aqui: para isso existe o fluxo de
+ * conta, e um caminho administrativo sobre si mesmo só serve pra confundir.
  */
-export async function redefinirSenha(usuarioId: string, novaSenha: string) {
+export async function redefinirSenha(usuarioId: string, novaSenha: string, motivo?: string) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para redefinir senhas')
+  if (!perfil) throw new Error('Sem permissão para redefinir senhas')
   if (!novaSenha || novaSenha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('id, nome, email, role, organizacao_id').eq('id', usuarioId).single()
+  const { data: alvo } = await admin.from('perfis').select('id, nome, email, role, organizacao_id, fornecedor_id').eq('id', usuarioId).single()
   if (!alvo) throw new Error('Usuário não encontrado')
 
-  // Admin não mexe em quem é de outra organização, nem em master.
-  if (!ehMaster(perfil!.role)) {
-    if (alvo.organizacao_id !== perfil!.organizacao_id) throw new Error('Sem permissão sobre este usuário')
-    if (alvo.role === 'master') throw new Error('Sem permissão sobre este usuário')
+  if (podeGerenciarUsuarios(perfil.role)) {
+    // Admin não mexe em quem é de outra organização, nem em master.
+    if (!ehMaster(perfil.role)) {
+      if (alvo.organizacao_id !== perfil.organizacao_id) throw new Error('Sem permissão sobre este usuário')
+      if (alvo.role === 'master') throw new Error('Sem permissão sobre este usuário')
+    }
+  } else if (perfil.role === 'suporte') {
+    if (alvo.role !== 'supervisor' && alvo.role !== 'operador_portao') {
+      throw new Error('Suporte só redefine senha de supervisor ou operador de portão.')
+    }
+    if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da redefinição.')
+    const escopo = alvo.organizacao_id
+      ? await suporteTemEscopo(perfil.id, { organizacaoId: alvo.organizacao_id })
+      : false
+    if (!escopo) throw new Error('Esta pessoa não está no seu escopo de atendimento.')
+  } else {
+    throw new Error('Sem permissão para redefinir senhas')
   }
 
   const { error } = await admin.auth.admin.updateUserById(usuarioId, { password: novaSenha })
   if (error) throw new Error(mensagemAuth(error.message))
 
-  console.warn(`[redefinirSenha] ${perfil!.email} redefiniu a senha de ${alvo.email}`)
+  console.warn(`[redefinirSenha] ${perfil.email} redefiniu a senha de ${alvo.email}`)
+  after(() => registrarAuditoria({
+    perfil, acao: 'RESET_SENHA', motivo: motivo ?? null, organizacaoId: alvo.organizacao_id ?? undefined,
+  }))
   revalidatePath('/admin/usuarios')
   return { ok: true as const, nome: alvo.nome as string, email: alvo.email as string }
 }
@@ -1376,22 +1632,35 @@ export async function deletarFornecedor(id: string, eventoId: string) {
  * histórico dela migra junto, automaticamente, sem precisar tocar em
  * `registros`.
  *
- * Só admin e master, de propósito — não o supervisor. Mover gente de setor
- * afeta a equipe de OUTRO supervisor sem ele saber; deixar cada supervisor
- * mexer na composição alheia seria o tipo de ação que exige alguém com visão
- * do evento inteiro.
+ * Admin e master sempre; suporte também, mas só dentro do escopo dele — não
+ * o supervisor. Mover gente de setor afeta a equipe de OUTRO supervisor sem
+ * ele saber; deixar cada supervisor mexer na composição alheia seria o tipo
+ * de ação que exige alguém com visão do evento inteiro.
  */
 export async function moverFuncionarioDeSetor(
   funcionarioId: string,
   eventoId: string,
   novoFornecedorId: string,
+  motivo?: string,
 ) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await getPerfil()
+  if (!perfil) throw new Error('Sem permissão')
+  const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+
+  const podeSempre = podeGerenciarEventos(perfil.role) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+  if (!podeSempre) {
+    if (perfil.role !== 'suporte') throw new Error('Sem permissão sobre este evento')
+    if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da mudança de setor.')
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      throw new Error('Este evento não está no seu escopo de atendimento.')
+    }
+  }
   const db = supabaseAdmin
 
   const { data: func } = await db
     .from('funcionarios')
-    .select('id, cpf, fornecedor_id, fornecedores!inner(evento_id)')
+    .select('id, nome, cpf, fornecedor_id, fornecedores!inner(evento_id, nome)')
     .eq('id', funcionarioId)
     .single()
   if (!func) throw new Error('Funcionário não encontrado.')
@@ -1439,6 +1708,13 @@ export async function moverFuncionarioDeSetor(
     .update({ fornecedor_id: novoFornecedorId })
     .eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível mover o funcionário. Tente de novo.')
+
+  const setorAntigo = (func.fornecedores as unknown as { nome: string }).nome
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SETOR', campoAlterado: 'setor',
+    valorAnterior: setorAntigo, valorNovo: destino.nome, motivo: motivo ?? null,
+    funcionarioId, eventoId, organizacaoId: evento.organizacao_id ?? undefined,
+  }))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${func.fornecedor_id}`)
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${novoFornecedorId}`)
@@ -1746,10 +2022,11 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
  * já impresso/salvo, o histórico de batidas e o vínculo de pagamento — tudo
  * amarrado ao `id` antigo. Corrigir o CPF NO MESMO registro preserva os três.
  *
- * Só master edita, por enquanto — ver `podeEditarIdentidade`. CPF é a
- * identidade da pessoa em todo o sistema (login de supervisor, base
- * regional, histórico entre eventos); trocá-lo sem cuidado troca quem a
- * pessoa É pro sistema, não só um campo de formulário.
+ * Master sempre; suporte também, mas só dentro do escopo dele — ver
+ * `podeEditarIdentidade`. CPF é a identidade da pessoa em todo o sistema
+ * (login de supervisor, base regional, histórico entre eventos); trocá-lo
+ * sem cuidado troca quem a pessoa É pro sistema, não só um campo de
+ * formulário — por isso exige motivo e fica na auditoria.
  */
 /*
  * ⚠️ DEVOLVE o erro, nunca o LANÇA — e isto não é estilo, é o que faz a
@@ -1770,18 +2047,27 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
  * funcionaram.
  */
 export async function editarCpfFuncionario(
-  funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string,
+  funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string, motivo?: string,
 ): Promise<{ ok: true } | { erro: string }> {
   const perfil = await getPerfil()
-  if (!podeEditarIdentidade(perfil?.role)) return { erro: 'Só o master pode corrigir o CPF de um cadastro.' }
+  if (!podeEditarIdentidade(perfil?.role)) return { erro: 'Sem permissão para corrigir CPF.' }
 
   const novoCpf = normalizarCpf(novoCpfBruto)
   if (!validarCpf(novoCpf)) return { erro: 'O CPF precisa ter 11 dígitos.' }
 
-  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
+  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
   if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
 
-  const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, cpf, fornecedor_id').eq('id', funcionarioId).single()
+  // Suporte só corrige dentro do próprio escopo — master passa direto.
+  if (perfil!.role === 'suporte') {
+    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+    const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+    if (!(await suporteTemEscopo(perfil!.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { erro: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  }
+
+  const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', funcionarioId).single()
   if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste setor.' }
   if (atual.cpf === novoCpf) return { ok: true } // nada mudou
 
@@ -1812,6 +2098,12 @@ export async function editarCpfFuncionario(
 
   const { error } = await supabaseAdmin.from('funcionarios').update({ cpf: novoCpf }).eq('id', funcionarioId)
   if (error) return { erro: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil: perfil!, acao: 'ALTERACAO_CPF', campoAlterado: 'cpf',
+    valorAnterior: atual.cpf, valorNovo: novoCpf, motivo: motivo ?? null,
+    funcionarioId, eventoId,
+  }))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
   return { ok: true }
@@ -1888,12 +2180,42 @@ export async function trocarSetorAtivo(fornecedorId: string) {
   return { ok: true as const, eventoId: setor?.evento_id as string | undefined }
 }
 
-export async function alternarAtivacao(funcionarioId: string, fornecedorId: string, eventoId: string, ativo: boolean) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
-  const db = supabaseAdmin
+/**
+ * Ativa/desativa um funcionário. Supervisor do próprio setor, admin/master
+ * da organização, ou suporte dentro do escopo — nunca por `exigirAcessoFuncionarios`
+ * puro, de propósito: essa mesma checagem também guarda `atualizarValorReceber`
+ * e `alternarPagamento` (financeiro), que o suporte NUNCA pode tocar. Juntar
+ * os dois deixaria fácil, num ajuste futuro, abrir financeiro pro suporte
+ * sem querer.
+ */
+export async function alternarAtivacao(funcionarioId: string, fornecedorId: string, eventoId: string, ativo: boolean, motivo?: string) {
+  const perfil = await getPerfil()
+  if (!perfil) throw new Error('Sem permissão')
 
+  if (perfil.role === 'supervisor') {
+    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+  } else {
+    const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+    if (!evento) throw new Error('Evento não encontrado')
+    const podeSempre = podeGerenciarEventos(perfil.role) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+    if (!podeSempre) {
+      if (perfil.role !== 'suporte') throw new Error('Sem permissão')
+      if (!(motivo ?? '').trim()) throw new Error(`Informe o motivo da ${ativo ? 'ativação' : 'desativação'}.`)
+      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+        throw new Error('Este evento não está no seu escopo de atendimento.')
+      }
+    }
+  }
+
+  const db = supabaseAdmin
   const { error } = await db.from('funcionarios').update({ ativo }).eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível alterar a ativação desta pessoa. Tente de novo.')
+
+  after(() => registrarAuditoria({
+    perfil, acao: ativo ? 'ATIVACAO_FUNCIONARIO' : 'DESATIVACAO_FUNCIONARIO',
+    motivo: motivo ?? null, funcionarioId, eventoId,
+  }))
+
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
@@ -3089,6 +3411,54 @@ export async function cadastrarFuncionarioPublico(
 }
 
 /**
+ * Cadastro emergencial — a mesma `cadastrarFuncionarioPublico` de sempre
+ * (formulário, QR, boas-vindas, tudo igual), só que chamada de dentro do
+ * admin, por alguém autenticado, no lugar do link público.
+ *
+ * Existe pro caso "chegou gente sem estar em lista nenhuma e o link não
+ * está à mão" — hoje só resolvia enviando o link público pra pessoa
+ * preencher sozinha. `cadastrarFuncionarioPublico` não tem checagem de
+ * permissão nenhuma (ela nasceu pra ser chamada por qualquer um com o link);
+ * aqui é o inverso: quem chama já provou quem é, então a checagem entra
+ * ANTES de delegar pra ela — não duplica a lógica de cadastro, só decide
+ * quem pode disparar.
+ */
+export async function cadastrarFuncionarioEmergencial(
+  fornecedorId: string,
+  eventoId: string,
+  dados: { nome: string; cpf: string; telefone: string; cargo: string },
+  motivo?: string,
+): Promise<{ qrToken?: string; error?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil) return { error: 'Sem permissão.' }
+
+  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
+  if (!fornecedor || fornecedor.evento_id !== eventoId) return { error: 'Setor não encontrado neste evento.' }
+  const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+
+  if (podeGerenciarEventos(perfil.role)) {
+    if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) return { error: 'Sem permissão sobre este evento.' }
+  } else if (perfil.role === 'suporte') {
+    if (!(motivo ?? '').trim()) return { error: 'Informe o motivo do cadastro emergencial.' }
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { error: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  } else {
+    return { error: 'Sem permissão para cadastrar funcionário.' }
+  }
+
+  const r = await cadastrarFuncionarioPublico(fornecedorId, { ...dados, origem: 'admin' })
+  if (r.error) return r
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'CADASTRO_EMERGENCIAL', valorNovo: dados.nome, motivo: motivo ?? null,
+    eventoId, organizacaoId: organizacaoId ?? undefined,
+  }))
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return r
+}
+
+/**
  * Base central de cadastros: busca o cadastro mais recente deste CPF para
  * pré-preencher o formulário público — quem já trabalhou antes não digita tudo
  * de novo.
@@ -3286,6 +3656,15 @@ export type CandidatoLocalizado = {
 const SELECT_LOCALIZAR =
   'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, ativo, organizacao_id))'
 
+/** O escopo de um suporte, como dois Sets — pra checar filtro síncrono sem uma consulta por linha. */
+async function escopoDoSuporteComoConjuntos(perfilId: string): Promise<{ eventos: Set<string>; orgs: Set<string> }> {
+  const { data } = await supabaseAdmin.from('suporte_escopo').select('organizacao_id, evento_id').eq('perfil_id', perfilId)
+  return {
+    eventos: new Set((data ?? []).map(e => e.evento_id).filter((v): v is string => !!v)),
+    orgs: new Set((data ?? []).map(e => e.organizacao_id).filter((v): v is string => !!v)),
+  }
+}
+
 /** Teto de resultados por busca — lista maior que isso não se escolhe, se refina. */
 const MAX_CANDIDATOS = 25
 
@@ -3347,11 +3726,19 @@ export async function localizarFuncionario(
 
   const { data: achados } = await consulta
 
+  // Escopo do suporte é async (consulta `suporte_escopo`) — resolvido ANTES
+  // do filtro síncrono abaixo, uma vez só, não por candidato.
+  const escopoSuporte = perfil.role === 'suporte' ? await escopoDoSuporteComoConjuntos(perfil.id) : null
+
   // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
   // "não encontrado" também protege quem está fora do escopo dele.
   const visiveis = (achados ?? []).filter(f => {
     if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
     if (ehMaster(perfil.role)) return true
+    if (perfil.role === 'suporte') {
+      const evento = comEvento(f.fornecedores)?.eventos
+      return !!evento && (escopoSuporte!.eventos.has(evento.id) || escopoSuporte!.orgs.has(evento.organizacao_id ?? ''))
+    }
     return comEvento(f.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
   })
 
@@ -3403,9 +3790,15 @@ export async function abrirFuncionarioLocalizado(
   // O escopo é conferido de novo aqui: o id chega do navegador, então não dá
   // pra confiar que veio de uma lista que já tinha sido filtrada.
   if (!func) return { error: 'Esta pessoa não está em nenhum evento ativo.' }
-  const dentroDoEscopo = perfil.role === 'supervisor'
-    ? func.fornecedor_id === perfil.fornecedor_id
-    : ehMaster(perfil.role) || comEvento(func.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
+  const eventoDoFunc = comEvento(func.fornecedores)?.eventos
+  let dentroDoEscopo: boolean
+  if (perfil.role === 'supervisor') {
+    dentroDoEscopo = func.fornecedor_id === perfil.fornecedor_id
+  } else if (perfil.role === 'suporte') {
+    dentroDoEscopo = !!eventoDoFunc && (await suporteTemEscopo(perfil.id, { eventoId: eventoDoFunc.id, organizacaoId: eventoDoFunc.organizacao_id ?? undefined }))
+  } else {
+    dentroDoEscopo = ehMaster(perfil.role) || eventoDoFunc?.organizacao_id === perfil.organizacao_id
+  }
   if (!dentroDoEscopo) return { error: 'Esta pessoa está fora do seu acesso.' }
 
   return fichaDoFuncionario(func)
@@ -3523,7 +3916,8 @@ const JUSTIFICATIVA_ASSISTIDO =
 export async function registrarPresencaAssistida(
   funcionarioId: string,
   momento: MomentoPresenca,
-  dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string }
+  dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string },
+  motivo?: string,
 ): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
   const perfil = await getPerfil()
   if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
@@ -3544,6 +3938,10 @@ export async function registrarPresencaAssistida(
 
   if (perfil.role === 'supervisor') {
     if (func.fornecedor_id !== perfil.fornecedor_id) return { error: 'Esta pessoa é de outro setor. Você só registra a sua equipe.' }
+  } else if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento?.id, organizacaoId: evento?.organizacao_id ?? undefined }))) {
+      return { error: 'Este evento não está no seu escopo de atendimento.' }
+    }
   } else if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
     return { error: 'Esta pessoa é de outra organização.' }
   }
@@ -3572,11 +3970,16 @@ export async function registrarPresencaAssistida(
     foto_url: path,
     criado_por_perfil_id: perfil.id,
     registro_manual: true,
-    justificativa: JUSTIFICATIVA_ASSISTIDO,
+    justificativa: (motivo ?? '').trim() || JUSTIFICATIVA_ASSISTIDO,
     dispositivo: dados.dispositivo?.slice(0, 300) ?? null,
     ...(temGps ? { latitude: dados.latitude, longitude: dados.longitude } : {}),
   }, refAssistido.dataRef, refAssistido.jornadaDiaId)
   if (error) return { error: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil, acao: momento === 'entrada' ? 'REGISTRO_ENTRADA_ASSISTIDA' : momento === 'fim' ? 'REGISTRO_SAIDA_ASSISTIDA' : 'CORRECAO_PONTO',
+    motivo: motivo ?? null, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+  }))
 
   if (registro && temGps) {
     after(() => sincronizarEndereco(registro.id, dados.latitude!, dados.longitude!).catch(console.error))
@@ -3647,7 +4050,7 @@ export async function lancarPontoManual(
    * passado, com hora arbitrária, e isso é ato de gestão. Supervisor entra
    * porque é quem sabe quem de fato trabalhou no setor dele.
    */
-  if (!perfil || !(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor')) {
+  if (!perfil || !(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte')) {
     return { error: 'Sem permissão para lançar ponto manualmente.' }
   }
 
@@ -3679,6 +4082,10 @@ export async function lancarPontoManual(
     const meus = await meusSetores(perfil)
     if (!meus.some(s => s.id === func.fornecedor_id)) {
       return { error: 'Esta pessoa é de outro setor. Você só lança ponto da sua equipe.' }
+    }
+  } else if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      return { error: 'Este evento não está no seu escopo de atendimento.' }
     }
   } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
     return { error: 'Esta pessoa é de outra organização.' }
@@ -3717,6 +4124,11 @@ export async function lancarPontoManual(
     justificativa,
   }, dataRef, dia.id ?? null)
   if (error) return { error: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'CORRECAO_PONTO', campoAlterado: etapaEscolhida.rotulo, valorNovo: quandoLocal,
+    motivo: justificativa, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+  }))
 
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
   revalidatePath(`/admin/eventos/${evento.id}/presenca`)

@@ -5,6 +5,7 @@ import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import {
   veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade,
 } from '@/lib/permissions'
+import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
 import { PageHeader } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
@@ -34,7 +35,7 @@ export default async function EditarColaboradorPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarEventos(perfil.role) && perfil.role !== 'suporte') redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -58,7 +59,11 @@ export default async function EditarColaboradorPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
+  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    notFound()
+  }
 
   // Um instante só para o render inteiro: duas leituras de relógio na mesma
   // página podiam cair em dias diferentes na virada da meia-noite.
@@ -180,9 +185,13 @@ export default async function EditarColaboradorPage({
         eventoId={eventoParam}
         eventoNome={evento.nome as string}
         outrosSetores={(setores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string }))}
-        podeMoverDeSetor={podeGerenciarEventos(perfil.role)}
-        podeCriarSupervisor={podeGerenciarUsuarios(perfil.role)}
+        /* Já provamos o escopo de suporte acima (senão a página nem chegava
+           aqui) — dentro dele, ele pode as mesmas três coisas de admin/master. */
+        podeMoverDeSetor={podeGerenciarEventos(perfil.role) || perfil.role === 'suporte'}
+        podeCriarSupervisor={podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte'}
         podeEditarCpf={podeEditarIdentidade(perfil.role)}
+        podeAtivarDesativar={podeGerenciarEventos(perfil.role) || perfil.role === 'suporte'}
+        role={perfil.role}
       />
     </div>
   )

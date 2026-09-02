@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ClipboardPen, CalendarDays } from 'lucide-react'
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
+import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT } from '@/lib/janelas'
 import { PageHeader, Aviso } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
@@ -32,8 +33,8 @@ export default async function LancarPontoPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Mesma régua da action: quem gerencia o evento, ou o supervisor da equipe.
-  if (!(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor')) redirect('/admin')
+  // Mesma régua da action: quem gerencia o evento, o supervisor da equipe, ou suporte.
+  if (!(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte')) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -57,7 +58,11 @@ export default async function LancarPontoPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
+  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    notFound()
+  }
 
   // Supervisor só lança da própria equipe — a lista já sai restrita, e a
   // action confere de novo (a lista esconde, quem barra é ela).

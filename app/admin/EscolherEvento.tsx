@@ -19,7 +19,9 @@ export type EventoEscolhivel = {
  *
  * Master vê todos; admin vê os da própria organização; supervisor vê só
  * aqueles onde ele tem setor (é o que `lib/relatorios.ts` já permite a ele,
- * e esconder aqui o que lá é permitido seria uma inconsistência).
+ * e esconder aqui o que lá é permitido seria uma inconsistência); suporte vê
+ * os do próprio escopo (`suporte_escopo` — organização inteira, ou eventos
+ * avulsos).
  *
  * Isto ESCONDE, não protege: quem barra de verdade é a checagem que cada
  * tela faz ao abrir um evento pelo `?evento=` da URL. As duas precisam
@@ -40,6 +42,14 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
     const ids = [...new Set(meus.map(s => s.evento_id as string))]
     if (!ids.length) return []
     consulta = consulta.in('id', ids)
+  } else if (perfil.role === 'suporte') {
+    const { data: escopos } = await supabase.from('suporte_escopo').select('organizacao_id, evento_id').eq('perfil_id', perfil.id)
+    const eventoIds = (escopos ?? []).map(e => e.evento_id).filter((v): v is string => !!v)
+    const orgIds = (escopos ?? []).map(e => e.organizacao_id).filter((v): v is string => !!v)
+    if (!eventoIds.length && !orgIds.length) return []
+    // "id in (eventos avulsos) OU organizacao_id in (organizações inteiras)"
+    const filtros = [eventoIds.length ? `id.in.(${eventoIds.join(',')})` : null, orgIds.length ? `organizacao_id.in.(${orgIds.join(',')})` : null].filter(Boolean)
+    consulta = consulta.or(filtros.join(','))
   } else if (!veTodosEventos(perfil.role)) {
     consulta = consulta.eq('organizacao_id', perfil.organizacao_id)
   }

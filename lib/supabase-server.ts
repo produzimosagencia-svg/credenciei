@@ -51,6 +51,13 @@ export const getPerfil = cache(async () => {
   const { data } = await admin.from('perfis').select('*').eq('id', user.id).single()
   // Conta desativada (Status = Inativo) é tratada como não-logada em todo o app
   if (data && data.ativo === false) return null
+  /*
+   * Acesso com prazo (hoje só o suporte usa `acesso_expira_em`): passada a
+   * data, mesmo tratamento de `ativo = false` — sem isso, um acesso
+   * contratado só pro fim de semana do evento continuaria valendo pra
+   * sempre, porque ninguém lembra de desligar na segunda-feira.
+   */
+  if (data?.acesso_expira_em && new Date(data.acesso_expira_em as string) < new Date()) return null
   return data
 })
 
