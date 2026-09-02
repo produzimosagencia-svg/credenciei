@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
-  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet,
+  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -28,65 +28,69 @@ type NavItem = { href: string; label: string; icon: React.ElementType }
 type Grupo = { titulo?: string; itens: NavItem[] }
 
 /**
- * O menu em grupos, como na referência: um bloco sem rótulo no topo com o
- * que se usa todo dia, e abaixo os blocos rotulados por assunto. Agrupar só
- * vale a pena quando os grupos têm nome — uma lista corrida de sete itens
- * obriga a ler todos pra achar um.
+ * O menu em três blocos rotulados, na ordem definida pelo Juan em
+ * 02/09/2026: Operacional (o que se usa DURANTE o evento), Administrativo (o
+ * que se prepara e se presta conta), Gerenciador (o que é da plataforma, não
+ * de um evento).
+ *
+ * O cabeçalho da tela do evento ficou sem botões de ação: tudo que estava lá
+ * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
+ * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
 function gruposPara(role: string): Grupo[] {
   const grupos: Grupo[] = []
 
-  /*
-   * Lista corrida, na ordem do trabalho de um dia de evento: abre o painel,
-   * escaneia, regulariza quem perdeu a batida, confere as atividades. Recrutar
-   * e gerenciar acesso vêm depois porque são de antes ou depois do evento.
-   *
-   * Sem rótulo de grupo aqui: os sete itens já contam essa sequência sozinhos,
-   * e um cabeçalho no meio quebraria a leitura de cima pra baixo.
-   *
-   * "Eventos" não está na lista de propósito: a lista de eventos vive dentro
-   * do Painel, e o item levaria pra mesma tela em que a pessoa já está.
-   */
-  const principal: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
-  // Escanear QR fica só com quem credencia. O supervisor cuida da equipe, não
+  // ─── Operacional ────────────────────────────────────────────────────────
+  // Na ordem do trabalho de um dia de evento: abre o painel, escaneia,
+  // ajusta o evento, regulariza quem perdeu a batida, confere as atividades.
+  const operacional: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
+  // O scanner fica só com quem credencia. O supervisor cuida da equipe, não
   // do portão — mesma separação que as mensagens já dizem à equipe.
   if (podeEscanear(role)) {
-    principal.push({ href: '/scan', label: 'Escanear QR', icon: ScanLine })
+    operacional.push({ href: '/scan', label: 'Scanner', icon: ScanLine })
+  }
+  /*
+   * Editar evento e Editar colaborador pedem o evento antes — mesmo padrão de
+   * Avisos e Relatórios. "Editar colaborador" não é funcionalidade nova: é o
+   * mesmo modal que já existia dentro do setor, alcançável agora sem precisar
+   * saber em qual dos 35 setores a pessoa está.
+   */
+  if (podeGerenciarEventos(role)) {
+    operacional.push({ href: '/admin/editar-evento', label: 'Editar evento', icon: Pencil })
+    operacional.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.
   if (podeAcompanhar(role)) {
-    principal.push({ href: '/admin/localizar', label: 'Registrar ponto', icon: ClipboardCheck })
-    principal.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
+    operacional.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
+    operacional.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
-  /*
-   * Avisos fica na lista principal, e não dentro do evento só: é daqui que
-   * se manda um recado sem ter que lembrar em qual evento a pessoa está. A
-   * tela pede o evento primeiro — e o admin só enxerga os da própria
-   * organização, o master enxerga todos (a régua é a mesma do resto do
-   * sistema, aplicada no servidor em /admin/avisos).
-   */
+  grupos.push({ titulo: 'Operacional', itens: operacional })
+
+  // ─── Administrativo ─────────────────────────────────────────────────────
+  const administrativo: NavItem[] = []
   if (podeGerenciarEventos(role)) {
-    principal.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
+    administrativo.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
   }
   /*
-   * Relatórios também pede o evento antes — mesmo padrão de Avisos. Aparece
-   * pro supervisor também: `lib/relatorios.ts` já permite que ele exporte o
-   * próprio setor, e ele já tinha esse botão dentro da tela da equipe dele.
+   * Relatórios aparece pro supervisor também: `lib/relatorios.ts` já permite
+   * que ele exporte o próprio setor, e ele já tinha esse botão dentro da tela
+   * da equipe dele.
    */
   if (podeGerenciarEventos(role) || role === 'supervisor') {
-    principal.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
+    administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
   }
   if (podeGerenciarUsuarios(role)) {
-    principal.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
+    administrativo.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
   }
-  grupos.push({ itens: principal })
+  if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
 
-  // Plataforma continua rotulado: é o que só o dono da plataforma enxerga, e
-  // separar deixa claro que não faz parte da operação de um evento.
+  // ─── Gerenciador ────────────────────────────────────────────────────────
+  // O que só o dono da plataforma enxerga: não faz parte da operação de um
+  // evento, é de cima dela.
   if (ehMaster(role)) {
     grupos.push({
-      titulo: 'Plataforma',
+      titulo: 'Gerenciador',
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
         /*
@@ -101,6 +105,16 @@ function gruposPara(role: string): Grupo[] {
         { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
       ],
     })
+    /*
+     * Configurações fica sozinha no fim, sem rótulo de grupo: ela não é um
+     * assunto com vários itens, é uma tela só — e é a de maior alcance do
+     * sistema (liga e desliga funcionalidade pros outros). Separá-la das
+     * outras é o que evita clicar nela por engano.
+     *
+     * Só master por enquanto; o papel de "suporte" (ver `podeEditarIdentidade`
+     * em lib/permissions.ts) vai entrar aqui quando existir.
+     */
+    grupos.push({ itens: [{ href: '/admin/configuracoes', label: 'Configurações', icon: Settings }] })
   }
 
   return grupos

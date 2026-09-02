@@ -4,7 +4,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, Pencil, MapPin, CalendarDays, ScanLine, TrendingUp, CalendarCheck, ClipboardList, FileSpreadsheet } from 'lucide-react'
+import { Users, UserCheck, Clock, MapPin, CalendarDays, TrendingUp, CalendarCheck } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
@@ -231,30 +231,20 @@ export default async function EventoPage({
             )}
           </div>
         </div>
+        {/*
+          * Cabeçalho sem botões de ação, a pedido (02/09/2026).
+          *
+          * Editar evento, Pendências, Relatórios e Scanner viraram itens do
+          * menu lateral, e cada um pergunta o evento quando precisa — um
+          * caminho só por função, em vez de dois. Os cartões de indicador
+          * logo abaixo continuam levando às listas de presença, que é como se
+          * chega em "quem" a partir de "quantos".
+          *
+          * A planilha do Google fica: ela é deste evento e não tem equivalente
+          * no menu — tirá-la daqui seria perder o acesso, não movê-lo.
+          */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <TutorialButton />
-          <Link href={`/admin/eventos/${id}/editar`} data-tutorial="evt-editar" className="btn btn-secundario">
-            <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar evento
-          </Link>
-          {/*
-            * Leva pra /presenca, não mais pra /pendencias — as duas telas
-            * respondiam "quem fez, quem não fez" de dois jeitos diferentes o
-            * bastante pra confundir qual confiar; foram fundidas numa só (ver
-            * o comentário no topo de presenca/page.tsx). O link entra direto
-            * em "Ainda não chegaram" porque é a pendência que este botão
-            * promete no nome — as outras seis visões ficam a uma aba de
-            * distância, sem precisar voltar aqui.
-            */}
-          <Link href={`/admin/eventos/${id}/presenca?ver=faltam`} className="btn btn-primario">
-            <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências e atividade
-          </Link>
-          {/* Avisos saiu daqui: virou item do menu lateral, onde se escolhe o
-              evento primeiro (ver /admin/avisos). Relatórios continua também
-              aqui de propósito — quem já está dentro do evento não deveria
-              ter que voltar ao menu e escolher o evento de novo. */}
-          <Link href={`/admin/eventos/${id}/relatorios`} className="btn btn-secundario">
-            <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Relatórios
-          </Link>
           {evento.spreadsheet_id && (
             <a
               href={`https://docs.google.com/spreadsheets/d/${evento.spreadsheet_id}`}
@@ -266,9 +256,6 @@ export default async function EventoPage({
               Planilha
             </a>
           )}
-          <Link href={`/scan?evento=${id}`} data-tutorial="evt-scan" className="btn btn-primario">
-            <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
-          </Link>
         </div>
       </div>
 
