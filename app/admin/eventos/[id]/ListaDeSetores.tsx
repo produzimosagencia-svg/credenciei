@@ -118,35 +118,41 @@ export default function ListaDeSetores({
 
   return (
     <div className="space-y-3">
-      {/* Barra de ferramentas: o resumo à esquerda diz o que a lista tem sem
-          precisar contar cartão por cartão. */}
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <p className="text-slate-500 text-xs tabular-nums">
+      {/*
+        * Busca, contagem e "copiar links" numa LINHA só.
+        *
+        * Eram três faixas empilhadas — resumo, botão e campo — antes de
+        * qualquer cartão aparecer. Como o campo de busca é o que se usa e os
+        * outros dois são apoio, eles passam a acompanhá-lo em vez de
+        * empurrá-lo pra baixo. No celular a linha quebra, e aí a busca vem
+        * primeiro de propósito.
+        */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[14rem]">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            value={busca}
+            onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar setor, supervisor ou funcionário…"
+            aria-label="Buscar setor ou funcionário"
+            className="input pl-9 pr-9 text-sm"
+          />
+          {busca && (
+            <button
+              onClick={() => setBusca('')}
+              aria-label="Limpar busca"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        <p className="text-slate-500 text-xs tabular-nums shrink-0 whitespace-nowrap">
           <span className="font-semibold text-slate-700">{fornecedores.length}</span> setor{fornecedores.length === 1 ? '' : 'es'}
           {' · '}
           <span className="font-semibold text-slate-700">{totalEquipe}</span> na equipe
         </p>
         <CopiarLinks setores={paraCopiar} />
-      </div>
-
-      <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          value={busca}
-          onChange={e => setBusca(e.target.value)}
-          placeholder="Buscar setor, supervisor ou funcionário…"
-          aria-label="Buscar setor ou funcionário"
-          className="input pl-9 pr-9 text-sm"
-        />
-        {busca && (
-          <button
-            onClick={() => setBusca('')}
-            aria-label="Limpar busca"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
       </div>
 
       {/*

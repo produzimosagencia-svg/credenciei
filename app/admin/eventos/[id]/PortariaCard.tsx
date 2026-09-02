@@ -63,7 +63,12 @@ export default function PortariaCard({
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+    <div className="bg-white border border-slate-200 rounded-2xl h-full flex flex-col">
+      {/*
+        * Cabeçalho com o interruptor como pastilha, não caixa de seleção.
+        * "Aberto/fechado" é um ESTADO do evento que se lê de longe — a caixa
+        * de marcar fazia parecer uma preferência escondida num formulário.
+        */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
         <div className="min-w-0">
           <h3 className="text-slate-800 font-semibold text-base flex items-center gap-2">
@@ -76,18 +81,22 @@ export default function PortariaCard({
           </p>
         </div>
 
-        <label className="flex items-center gap-2 shrink-0 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={ativa}
-            disabled={pendente}
-            onChange={e => executar(() => alternarPortaria(eventoId, e.target.checked))}
-            className="w-4 h-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400"
-          />
-          <span className={`text-xs font-semibold ${ativa ? 'text-sucesso-700' : 'text-slate-400'}`}>
-            {ativa ? 'aberto' : 'fechado'}
-          </span>
-        </label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={ativa}
+          aria-label={ativa ? 'Fechar o cadastro na portaria' : 'Abrir o cadastro na portaria'}
+          disabled={pendente}
+          onClick={() => executar(() => alternarPortaria(eventoId, !ativa))}
+          className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-bold uppercase tracking-wide transition-colors disabled:opacity-60 ${
+            ativa
+              ? 'bg-sucesso-50 border-sucesso-200 text-sucesso-700 hover:bg-white'
+              : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-white'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${ativa ? 'bg-sucesso-600' : 'bg-slate-300'}`} />
+          {ativa ? 'Aberto' : 'Fechado'}
+        </button>
       </div>
 
       {erro && (
@@ -103,73 +112,78 @@ export default function PortariaCard({
               // Já existiu: o cartaz impresso continua válido e volta a
               // funcionar ao religar. Dizer isso evita reimprimir à toa.
               ? 'Fechado. Os cartazes já impressos voltam a funcionar quando você abrir de novo.'
-              : 'Ligue para gerar o QR Code e imprimir.'}
+              : 'Abra para gerar o QR Code e imprimir.'}
           </p>
         </div>
       ) : (
-        <>
-          <div className="px-4 pb-4 space-y-3">
-            {/*
-              * O QR é gerado no navegador, a partir do endereço.
-              *
-              * Fazer no servidor obrigaria uma rota nova só para devolver uma
-              * imagem que só esta tela usa — e a imagem precisaria ser
-              * regerada a cada troca de token.
-              */}
-            {endereco && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-3">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(endereco)}`}
-                  alt="QR Code do cadastro na portaria"
-                  width={90}
-                  height={90}
-                  className="rounded-lg bg-white shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-slate-500 text-2xs uppercase tracking-wide font-semibold">
-                    Endereço do cartaz
-                  </p>
-                  <p className="text-slate-700 text-xs break-all mt-0.5 font-mono">{endereco}</p>
-                </div>
+        <div className="px-4 pb-4 flex-1 flex flex-col gap-3">
+          {/*
+            * QR e endereço numa linha só, e o endereço TRUNCADO.
+            *
+            * Ele ocupava a largura inteira em fonte mono, quebrando em três
+            * linhas — um dado que ninguém digita à mão (existe o botão de
+            * copiar e o cartaz impresso) roubando o espaço de tudo que se
+            * clica. Agora ele indica qual é o link, não o soletra.
+            *
+            * O QR é gerado no navegador, a partir do endereço: fazer no
+            * servidor obrigaria uma rota nova só para devolver uma imagem que
+            * só esta tela usa, regerada a cada troca de token.
+            */}
+          {endereco && (
+            <div className="flex items-center gap-3">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(endereco)}`}
+                alt="QR Code do cadastro na portaria"
+                width={72}
+                height={72}
+                className="rounded-lg border border-slate-200 bg-white shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-400 text-2xs uppercase tracking-wide font-semibold">
+                  Endereço do cartaz
+                </p>
+                <p className="text-slate-600 text-xs font-mono truncate mt-0.5" title={endereco}>
+                  {endereco.replace(/^https?:\/\//, '')}
+                </p>
+                <p className="flex items-center gap-1.5 text-slate-500 text-xs tabular-nums mt-1.5">
+                  <Users className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                  <strong className="text-slate-800">{cadastrados}</strong>
+                  {cadastrados === 1 ? ' pessoa entrou' : ' pessoas entraram'} por aqui
+                </p>
               </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <a
-                href={`/admin/eventos/${eventoId}/portaria`}
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-primario btn-sm"
-              >
-                <Printer className="w-3.5 h-3.5 shrink-0" /> Imprimir cartaz
-              </a>
-              <button onClick={copiar} className="btn btn-secundario btn-sm">
-                {copiado
-                  ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
-                  : <Copy className="w-3.5 h-3.5 shrink-0" />}
-                {copiado ? 'Copiado' : 'Copiar endereço'}
-              </button>
             </div>
+          )}
 
-            <p className="flex items-center gap-1.5 text-slate-600 text-xs tabular-nums pt-1">
-              <Users className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-              <strong className="text-slate-800">{cadastrados}</strong>
-              {cadastrados === 1 ? ' pessoa entrou' : ' pessoas entraram'} por aqui
-            </p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/admin/eventos/${eventoId}/portaria`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-primario btn-sm flex-1 justify-center"
+            >
+              <Printer className="w-3.5 h-3.5 shrink-0" /> Imprimir cartaz
+            </a>
+            <button onClick={copiar} className="btn btn-secundario btn-sm shrink-0">
+              {copiado
+                ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
+                : <Copy className="w-3.5 h-3.5 shrink-0" />}
+              {copiado ? 'Copiado' : 'Copiar'}
+            </button>
           </div>
 
-          {/* Trocar o QR fica separado e discreto: é raro, e é destrutivo para
-              todo cartaz já impresso. */}
-          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60">
+          {/* Trocar o QR é raro e destrutivo para todo cartaz já impresso —
+              fica no rodapé do bloco, em texto, e só vira formulário depois
+              do primeiro clique. */}
+          <div className="mt-auto pt-1">
             {!confirmandoTroca ? (
               <button
                 onClick={() => setConfirmandoTroca(true)}
-                className="text-slate-500 text-2xs hover:text-slate-800 inline-flex items-center gap-1.5"
+                className="text-slate-400 text-2xs hover:text-slate-700 inline-flex items-center gap-1.5 transition-colors"
               >
                 <RefreshCw className="w-3 h-3" /> O QR vazou? Gerar um novo
               </button>
             ) : (
-              <div className="space-y-2">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
                 <p className="flex items-start gap-1.5 text-amber-800 text-xs">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px text-amber-600" />
                   Todo cartaz já impresso para de funcionar. Quem já se cadastrou não é
@@ -182,7 +196,7 @@ export default function PortariaCard({
                       setConfirmandoTroca(false)
                     })}
                     disabled={pendente}
-                    className="btn btn-secundario btn-sm"
+                    className="btn btn-primario btn-sm"
                   >
                     Gerar novo e reimprimir
                   </button>
@@ -193,7 +207,7 @@ export default function PortariaCard({
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

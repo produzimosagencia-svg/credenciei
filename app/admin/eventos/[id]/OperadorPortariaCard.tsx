@@ -38,37 +38,55 @@ export default function OperadorPortariaCard({
   const [modalAberto, setModalAberto] = useState<'criar' | Operador | null>(null)
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="flex items-center gap-1.5 text-slate-500 text-2xs font-semibold uppercase tracking-wide">
-          <ShieldCheck className="w-3.5 h-3.5" /> Operadores de portão
-        </p>
-        <button onClick={() => setModalAberto('criar')} className="btn btn-secundario btn-sm">
-          <UserPlus className="w-3 h-3" /> Criar operador
-        </button>
-      </div>
-
-      <p className="text-slate-400 text-xs mb-2">
-        Lê o QR e registra ponto manual no portão — sem acesso a editar evento, equipe ou usuários.
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 h-full flex flex-col">
+      {/*
+        * Mesmo desenho do card de setor: o cabeçalho apenas nomeia, a lista
+        * vem no meio e a ação de criar fecha o bloco — discreta quando já há
+        * gente (criar mais um é a ação menos provável ali) e de largura cheia
+        * quando não há nenhum, que é quando ela é o que falta fazer.
+        */}
+      <h3 className="text-slate-800 font-semibold text-base flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-brand-500 shrink-0" />
+        Operadores de portão
+      </h3>
+      <p className="text-slate-500 text-xs mt-1">
+        Lê o QR e registra ponto no portão — sem acesso a editar evento, equipe ou usuários.
       </p>
 
-      {!operadores.length ? (
-        <p className="text-slate-400 text-xs">Nenhum operador cadastrado nesta organização.</p>
-      ) : (
-        <div className="-mx-1">
-          {operadores.map(o => (
-            <button
-              key={o.id}
-              onClick={() => setModalAberto(o)}
-              className="w-full flex items-center gap-1.5 text-left text-sm px-2 py-1.5 rounded-lg text-slate-700 hover:text-brand-500 hover:bg-slate-50 transition-colors"
-            >
-              <span className="truncate flex-1">{o.nome}</span>
-              {!o.ativo && <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>}
-              <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex-1 mt-3">
+        {!operadores.length ? (
+          <p className="text-slate-400 text-xs">Nenhum operador cadastrado nesta organização.</p>
+        ) : (
+          <div className="-mx-1">
+            {operadores.map(o => (
+              <button
+                key={o.id}
+                onClick={() => setModalAberto(o)}
+                className="w-full flex items-center gap-1.5 text-left text-sm px-2 py-1.5 rounded-lg text-slate-700 hover:text-brand-500 hover:bg-slate-50 transition-colors"
+              >
+                <span className="truncate flex-1">{o.nome}</span>
+                {!o.ativo && <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>}
+                <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3">
+        {operadores.length ? (
+          <button
+            onClick={() => setModalAberto('criar')}
+            className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-semibold transition-colors"
+          >
+            <UserPlus className="w-3 h-3 shrink-0" /> Adicionar operador
+          </button>
+        ) : (
+          <button onClick={() => setModalAberto('criar')} className="btn btn-secundario btn-sm w-full justify-center">
+            <UserPlus className="w-3 h-3 shrink-0" /> Criar operador
+          </button>
+        )}
+      </div>
 
       {modalAberto && (
         <ModalOperador

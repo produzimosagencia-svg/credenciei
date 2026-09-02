@@ -382,25 +382,32 @@ export default async function EventoPage({
             * fácil imprimir o cartaz antes de cadastrar os setores e não
             * entender por que a página abre vazia.
             */}
-          {podeGerenciarEventos(perfil?.role) && (
-            <div className="mb-4">
-              <PortariaCard
-                eventoId={id}
-                ativa={evento.portaria_ativa === true}
-                token={(evento.token_portaria as string | null) ?? null}
-                cadastrados={viaPortaria ?? 0}
-              />
-            </div>
-          )}
-
-          {podeGerenciarUsuarios(perfil?.role) && (
-            <div className="mb-4">
-              <OperadorPortariaCard
-                eventoId={id}
-                operadores={operadoresRows ?? []}
-                funcionariosDoEvento={funcionariosDoEventoRows ?? []}
-                podeExcluir={podeExcluir(perfil?.role)}
-              />
+          {/*
+            * Portaria e operadores LADO A LADO: os dois são a mesma coisa
+            * vista de dois ângulos — a porta do evento. O cartaz é por onde
+            * a pessoa entra sozinha; o operador é quem fica lá quando ela não
+            * consegue. Empilhados, eram duas faixas largas empurrando a lista
+            * de setores (o conteúdo principal desta seção) pra baixo da
+            * dobra.
+            */}
+          {(podeGerenciarEventos(perfil?.role) || podeGerenciarUsuarios(perfil?.role)) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch">
+              {podeGerenciarEventos(perfil?.role) && (
+                <PortariaCard
+                  eventoId={id}
+                  ativa={evento.portaria_ativa === true}
+                  token={(evento.token_portaria as string | null) ?? null}
+                  cadastrados={viaPortaria ?? 0}
+                />
+              )}
+              {podeGerenciarUsuarios(perfil?.role) && (
+                <OperadorPortariaCard
+                  eventoId={id}
+                  operadores={operadoresRows ?? []}
+                  funcionariosDoEvento={funcionariosDoEventoRows ?? []}
+                  podeExcluir={podeExcluir(perfil?.role)}
+                />
+              )}
             </div>
           )}
 
