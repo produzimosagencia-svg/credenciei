@@ -14,6 +14,8 @@ import {
   TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
+import { avisosPendentesFuncionario } from '@/lib/avisos'
+import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
 
 export const revalidate = 0
 
@@ -64,7 +66,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, empresa, cargo, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, cpf, empresa, cargo, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
@@ -261,8 +263,15 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const { codigo } = gerarCodigoQR(token, faseHoje)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 
+  const avisos = evento
+    ? await avisosPendentesFuncionario({
+        eventoId: evento.id, funcionarioId: funcionario.id, fornecedorId: funcionario.fornecedor_id, cpf: funcionario.cpf,
+      })
+    : []
+
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
+      {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="funcionario" token={token} />}
       {/* A tela se atualiza sozinha — ninguém aqui vai recarregar a página. */}
       <ManterAtualizado />
       <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">

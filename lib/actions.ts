@@ -3645,3 +3645,237 @@ export async function trocarTokenDaPortaria(eventoId: string) {
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
 }
+
+// ─── Avisos ───────────────────────────────────────────────────────────────
+/*
+ * Comunicado do admin, mostrado em modal ao funcionário (credencial pública)
+ * e/ou ao supervisor (painel do setor) — ver `lib/avisos.ts` para a lógica
+ * de "quem recebe o quê". Vive por EVENTO, mesmo padrão de Presença e
+ * Relatórios (ver supabase/upgrade-avisos.sql para o desenho da tabela).
+ */
+
+/** Lê e valida os campos comuns a criar/editar aviso. */
+function dadosAvisoDoForm(formData: FormData) {
+  const titulo = ((formData.get('titulo') as string) || '').trim()
+  const mensagem = ((formData.get('mensagem') as string) || '').trim()
+  if (!titulo) throw new Error('Dê um título para o aviso.')
+  if (!mensagem) throw new Error('Escreva a mensagem do aviso.')
+
+  const publico = formData.get('publico') as string
+  if (!['todos', 'setores', 'pessoa', 'supervisores'].includes(publico)) {
+    throw new Error('Escolha quem recebe o aviso.')
+  }
+
+  const dataInicio = (formData.get('data_inicio') as string) || diaBRT()
+  const dataFim = (formData.get('data_fim') as string) || null
+  if (dataFim && dataFim < dataInicio) {
+    throw new Error('A data de término precisa vir depois (ou no mesmo dia) da data de início.')
+  }
+
+  let cpfPessoa: string | null = null
+  if (publico === 'pessoa') {
+    cpfPessoa = normalizarCpf((formData.get('cpf_pessoa') as string) || '')
+    if (!validarCpf(cpfPessoa)) throw new Error('Escolha uma pessoa específica pra este aviso.')
+  }
+
+  // Mesmo cuidado de `batida_livre`/`exige_meio`: caixa desmarcada não é
+  // enviada, então "veio marcado?" é a pergunta certa, não "qual o valor?".
+  const fornecedorIds = publico === 'setores' ? formData.getAll('fornecedor_id').map(String).filter(Boolean) : []
+  if (publico === 'setores' && !fornecedorIds.length) {
+    throw new Error('Escolha ao menos um setor pra este aviso.')
+  }
+
+  return {
+    titulo, mensagem,
+    publico: publico as 'todos' | 'setores' | 'pessoa' | 'supervisores',
+    ativo: formData.get('ativo') === 'on',
+    recorrente: formData.get('recorrente') === 'on',
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    cpf_pessoa: cpfPessoa,
+    fornecedorIds,
+  }
+}
+
+/** Confere que os setores/pessoa escolhidos realmente pertencem a este evento. */
+async function exigirDestinatariosDoEvento(eventoId: string, dados: ReturnType<typeof dadosAvisoDoForm>) {
+  if (dados.publico === 'setores') {
+    const { data: setoresDoEvento } = await supabaseAdmin
+      .from('fornecedores').select('id').eq('evento_id', eventoId).in('id', dados.fornecedorIds)
+    if (!setoresDoEvento || setoresDoEvento.length !== dados.fornecedorIds.length) {
+      throw new Error('Um dos setores escolhidos não pertence a este evento.')
+    }
+  }
+  if (dados.publico === 'pessoa') {
+    const { data: pessoa } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, fornecedores!inner(evento_id)')
+      .eq('cpf', dados.cpf_pessoa as string)
+      .eq('fornecedores.evento_id', eventoId)
+      .maybeSingle()
+    if (!pessoa) throw new Error('Não encontrei ninguém com esse CPF neste evento.')
+  }
+}
+
+export async function criarAviso(eventoId: string, formData: FormData) {
+  const perfil = await exigirEventoDaOrg(eventoId)
+  const dados = dadosAvisoDoForm(formData)
+  await exigirDestinatariosDoEvento(eventoId, dados)
+
+  const { data: novo, error } = await supabaseAdmin.from('avisos').insert([{
+    evento_id: eventoId,
+    titulo: dados.titulo,
+    mensagem: dados.mensagem,
+    ativo: dados.ativo,
+    data_inicio: dados.data_inicio,
+    data_fim: dados.data_fim,
+    publico: dados.publico,
+    cpf_pessoa: dados.cpf_pessoa,
+    recorrente: dados.recorrente,
+    criado_por: perfil.id,
+  }]).select('id').single()
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  if (dados.publico === 'setores') {
+    const { error: erroSetores } = await supabaseAdmin
+      .from('aviso_setores')
+      .insert(dados.fornecedorIds.map(fornecedor_id => ({ aviso_id: novo.id, fornecedor_id })))
+    if (erroSetores) throw new Error(mensagemAmigavel(erroSetores))
+  }
+
+  revalidatePath(`/admin/eventos/${eventoId}/avisos`)
+}
+
+export async function editarAviso(avisoId: string, eventoId: string, formData: FormData) {
+  await exigirEventoDaOrg(eventoId)
+  const dados = dadosAvisoDoForm(formData)
+  await exigirDestinatariosDoEvento(eventoId, dados)
+
+  const { data: atual } = await supabaseAdmin.from('avisos').select('id, evento_id').eq('id', avisoId).single()
+  if (!atual || atual.evento_id !== eventoId) throw new Error('Aviso não encontrado neste evento.')
+
+  const { error } = await supabaseAdmin.from('avisos').update({
+    titulo: dados.titulo,
+    mensagem: dados.mensagem,
+    ativo: dados.ativo,
+    data_inicio: dados.data_inicio,
+    data_fim: dados.data_fim,
+    publico: dados.publico,
+    cpf_pessoa: dados.cpf_pessoa,
+    recorrente: dados.recorrente,
+  }).eq('id', avisoId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  // Substitui os setores do zero — mais simples que calcular o diff, e o
+  // volume (poucas dezenas de setores por evento) não justifica a economia.
+  await supabaseAdmin.from('aviso_setores').delete().eq('aviso_id', avisoId)
+  if (dados.publico === 'setores') {
+    const { error: erroSetores } = await supabaseAdmin
+      .from('aviso_setores')
+      .insert(dados.fornecedorIds.map(fornecedor_id => ({ aviso_id: avisoId, fornecedor_id })))
+    if (erroSetores) throw new Error(mensagemAmigavel(erroSetores))
+  }
+
+  revalidatePath(`/admin/eventos/${eventoId}/avisos`)
+}
+
+export async function alternarAtivoAviso(avisoId: string, eventoId: string, ativo: boolean) {
+  await exigirEventoDaOrg(eventoId)
+  const { error } = await supabaseAdmin.from('avisos').update({ ativo }).eq('id', avisoId).eq('evento_id', eventoId)
+  if (error) throw new Error(mensagemAmigavel(error))
+  revalidatePath(`/admin/eventos/${eventoId}/avisos`)
+}
+
+/**
+ * Exclui um aviso. Diferente da regra geral de exclusão (`podeExcluir`, só
+ * master): aviso é conteúdo de comunicação, sem histórico de presença nem
+ * pagamento embaixo — o próprio admin que criou pode apagar, é o que o
+ * pedido descreve.
+ */
+export async function excluirAviso(avisoId: string, eventoId: string) {
+  await exigirEventoDaOrg(eventoId)
+  const { error } = await supabaseAdmin.from('avisos').delete().eq('id', avisoId).eq('evento_id', eventoId)
+  if (error) throw new Error(mensagemAmigavel(error))
+  revalidatePath(`/admin/eventos/${eventoId}/avisos`)
+}
+
+/**
+ * Grava (ou atualiza) a confirmação de "Entendi" — sempre por `aviso_id` +
+ * UM dos dois identificadores (`funcionario_id` OU `perfil_id`, nunca os
+ * dois; ver `aviso_visualizacoes_um_identificador` na migração).
+ *
+ * Não usa `upsert`/`ON CONFLICT`: os dois índices únicos são PARCIAIS (só
+ * valem quando a respectiva coluna não é nula), e o Postgres só aceita um
+ * índice parcial como alvo de `ON CONFLICT` se a cláusula repetir o mesmo
+ * predicado — o que o `upsert` do supabase-js não expõe. Seleciona e decide
+ * entre update/insert; corrida rara (duplo clique) é tratada pelo índice
+ * único mesmo assim — só vira erro de verdade se não for 23505.
+ */
+async function marcarVisualizacao(avisoId: string, coluna: 'funcionario_id' | 'perfil_id', valor: string) {
+  const { data: existente } = await supabaseAdmin
+    .from('aviso_visualizacoes').select('id').eq('aviso_id', avisoId).eq(coluna, valor).maybeSingle()
+  if (existente) {
+    await supabaseAdmin.from('aviso_visualizacoes').update({ visualizado_em: new Date().toISOString() }).eq('id', existente.id)
+    return
+  }
+  const { error } = await supabaseAdmin.from('aviso_visualizacoes').insert([{ aviso_id: avisoId, [coluna]: valor }])
+  if (error && error.code !== '23505') throw new Error(mensagemAmigavel(error))
+}
+
+/**
+ * Confirma que a pessoa VIU o aviso, a partir da credencial pública — sem
+ * login. Resolve o funcionário de novo a partir do TOKEN, não de um id
+ * vindo do client: mesmo cuidado de `registrarPresencaLivre`.
+ */
+export async function visualizarAvisoPorToken(avisoId: string, token: string) {
+  const { data: funcionario } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, fornecedores(evento_id)')
+    .eq('qr_token', token)
+    .single()
+  if (!funcionario) throw new Error('Credencial não encontrada.')
+
+  const eventoId = (funcionario.fornecedores as unknown as { evento_id: string } | null)?.evento_id
+  const { data: aviso } = await supabaseAdmin.from('avisos').select('id, evento_id').eq('id', avisoId).single()
+  if (!aviso || !eventoId || aviso.evento_id !== eventoId) throw new Error('Aviso não encontrado.')
+
+  await marcarVisualizacao(avisoId, 'funcionario_id', funcionario.id)
+  return { ok: true as const }
+}
+
+/** Mesma confirmação, pro supervisor logado no painel — via `perfis`, não `funcionarios`. */
+export async function visualizarAvisoSupervisor(avisoId: string, eventoId: string) {
+  const perfil = await getPerfil()
+  if (!perfil || perfil.role !== 'supervisor') throw new Error('Sem permissão')
+
+  const { data: aviso } = await supabaseAdmin.from('avisos').select('id, evento_id').eq('id', avisoId).single()
+  if (!aviso || aviso.evento_id !== eventoId) throw new Error('Aviso não encontrado.')
+
+  await marcarVisualizacao(avisoId, 'perfil_id', perfil.id)
+  return { ok: true as const }
+}
+
+export type VisualizacaoAviso = { nome: string; via: 'credencial' | 'painel'; em: string }
+
+/** Pro "Ver quem já visualizou" — busca só quando o admin abre, não de graça. */
+export async function obterVisualizacoesDoAviso(avisoId: string, eventoId: string): Promise<VisualizacaoAviso[]> {
+  await exigirEventoDaOrg(eventoId)
+  const { data: aviso } = await supabaseAdmin.from('avisos').select('id, evento_id').eq('id', avisoId).single()
+  if (!aviso || aviso.evento_id !== eventoId) throw new Error('Aviso não encontrado.')
+
+  const { data: vis } = await supabaseAdmin
+    .from('aviso_visualizacoes')
+    .select('funcionario_id, perfil_id, visualizado_em, funcionarios(nome), perfis(nome)')
+    .eq('aviso_id', avisoId)
+    .order('visualizado_em', { ascending: false })
+
+  return (vis ?? []).map(v => {
+    const nomeFuncionario = (v.funcionarios as unknown as { nome: string } | null)?.nome
+    const nomePerfil = (v.perfis as unknown as { nome: string } | null)?.nome
+    return {
+      nome: (v.funcionario_id ? nomeFuncionario : nomePerfil) ?? '—',
+      via: v.funcionario_id ? ('credencial' as const) : ('painel' as const),
+      em: v.visualizado_em as string,
+    }
+  })
+}

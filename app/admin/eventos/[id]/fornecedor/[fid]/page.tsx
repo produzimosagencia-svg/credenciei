@@ -16,6 +16,8 @@ import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
+import { avisosPendentesSupervisor } from '@/lib/avisos'
+import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
 
 export const revalidate = 0
 
@@ -241,8 +243,19 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     },
   ]
 
+  /*
+   * Aviso só interrompe quem É supervisor — admin/master navegando pra
+   * gerenciar a equipe não são o público de "Supervisores", e "Todos"/
+   * "Setores" também não fazem sentido interromper quem só está de
+   * passagem administrando. Ver decisão em lib/avisos.ts.
+   */
+  const avisos = perfil.role === 'supervisor'
+    ? await avisosPendentesSupervisor({ eventoId: id, perfilId: perfil.id, fornecedorId: fid, cpf: perfil.cpf ?? null })
+    : []
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
+    {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="supervisor" eventoId={id} />}
     <div className="space-y-5">
       <AutoRefresh />
       <PageHeader
