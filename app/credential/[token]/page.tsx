@@ -119,8 +119,36 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   for (const r of registros ?? []) feitoMap[r.tipo] = r.created_at
 
   const periodo = evento ? periodoDoEvento(evento) : null
-  const dentroDoPeriodo = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
+  const dentroDoPeriodoBase = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
   const diaPrincipal = !!evento && ehDiaPrincipal(evento, dataRef)
+
+  /*
+   * "Dentro do período" NÃO PODE olhar só `data_inicio`/`data_fim`.
+   *
+   * `periodoDoEvento` conhece só as datas do EVENTO em si (o dia do show).
+   * Ele nunca soube de `jornada_dias` — os dias de montagem e desmontagem,
+   * que existem exatamente para a equipe trabalhar ANTES e DEPOIS dessas
+   * datas. Resultado real: durante toda a montagem, entrada, meio e saída
+   * apareciam "Fora do período do evento" nesta página — mesmo a pessoa
+   * podendo bater normalmente pelo QR do portão, que usa outra checagem
+   * (`avaliarEntradaSaida`, que sempre soube de `jornada_dias`).
+   *
+   * O auto-atendimento do meio é o mais afetado: ele só existe AQUI, na
+   * credencial — não tem QR físico equivalente. Um setor com o meio ligado
+   * durante a montagem nunca conseguiu deixar ninguém bater sozinho.
+   */
+  let dentroDoPeriodo = dentroDoPeriodoBase
+  if (!dentroDoPeriodo && evento) {
+    const { data: diaDaJornada } = await supabase
+      .from('jornada_dias')
+      .select('id')
+      .eq('evento_id', evento.id)
+      .eq('data', dataRef)
+      .eq('cancelado', false)
+      .limit(1)
+      .maybeSingle()
+    dentroDoPeriodo = !!diaDaJornada
+  }
 
   /*
    * Setor de pacote fechado não pede o meio — o cartão some da credencial.
