@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen,
+  ClipboardPen, ShieldCheck,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -30,9 +30,11 @@ type Grupo = { titulo?: string; itens: NavItem[] }
 
 /**
  * O menu em três blocos rotulados, na ordem definida pelo Juan em
- * 02/09/2026: Operacional (o que se usa DURANTE o evento), Administrativo (o
- * que se prepara e se presta conta), Gerenciador (o que é da plataforma, não
- * de um evento).
+ * 02/09/2026:
+ *
+ *   Evento         — o que se usa DURANTE um evento, na ordem do dia
+ *   Administrativo — o que se prepara, se regulariza e se presta conta
+ *   Operacional    — o que é da plataforma inteira, não de um evento (master)
  *
  * O cabeçalho da tela do evento ficou sem botões de ação: tudo que estava lá
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
@@ -41,14 +43,14 @@ type Grupo = { titulo?: string; itens: NavItem[] }
 function gruposPara(role: string): Grupo[] {
   const grupos: Grupo[] = []
 
-  // ─── Operacional ────────────────────────────────────────────────────────
+  // ─── Evento ─────────────────────────────────────────────────────────────
   // Na ordem do trabalho de um dia de evento: abre o painel, escaneia,
   // ajusta o evento, regulariza quem perdeu a batida, confere as atividades.
-  const operacional: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
+  const doEvento: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
   // O scanner fica só com quem credencia. O supervisor cuida da equipe, não
   // do portão — mesma separação que as mensagens já dizem à equipe.
   if (podeEscanear(role)) {
-    operacional.push({ href: '/scan', label: 'Scanner', icon: ScanLine })
+    doEvento.push({ href: '/scan', label: 'Scanner', icon: ScanLine })
   }
   /*
    * Editar evento e Editar colaborador pedem o evento antes — mesmo padrão de
@@ -57,35 +59,42 @@ function gruposPara(role: string): Grupo[] {
    * saber em qual dos 35 setores a pessoa está.
    */
   if (podeGerenciarEventos(role)) {
-    operacional.push({ href: '/admin/editar-evento', label: 'Editar evento', icon: Pencil })
-    operacional.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
+    doEvento.push({ href: '/admin/editar-evento', label: 'Editar evento', icon: Pencil })
+    doEvento.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
+  }
+  /*
+   * "Criar porteiro" é o acesso que o sistema chama de operador de portão —
+   * o nome do menu usa a palavra de quem contrata, e a tela explica o que o
+   * papel faz e o que NÃO faz. Mesma régua da action `criarOperadorPortaria`.
+   */
+  if (podeGerenciarUsuarios(role)) {
+    doEvento.push({ href: '/admin/criar-porteiro', label: 'Criar porteiro', icon: ShieldCheck })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.
   if (podeAcompanhar(role)) {
-    operacional.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
+    doEvento.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
+    doEvento.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
-  /*
-   * Lançamento manual fica ao lado do Registro de ponto porque respondem a
-   * mesma pergunta em tempos diferentes: lá a pessoa está na frente (foto do
-   * rosto é a prova, hora é agora); aqui ela já foi embora (a prova é o
-   * motivo escrito, e a hora é escolhida). Ver /admin/lancar-ponto.
-   *
-   * Sem operador de portão: escrever o passado com hora arbitrária é ato de
-   * gestão, não de portaria — mesma régua da action `lancarPontoManual`.
-   */
-  if (podeGerenciarEventos(role) || role === 'supervisor') {
-    operacional.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
-  }
-  if (podeAcompanhar(role)) {
-    operacional.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
-  }
-  grupos.push({ titulo: 'Operacional', itens: operacional })
+  grupos.push({ titulo: 'Evento', itens: doEvento })
 
   // ─── Administrativo ─────────────────────────────────────────────────────
   const administrativo: NavItem[] = []
   if (podeGerenciarEventos(role)) {
     administrativo.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
+  }
+  /*
+   * Lançamento manual mora aqui, e não ao lado do Registro de ponto, embora
+   * os dois gravem uma batida: o Registro de ponto é operação de portaria
+   * (a pessoa está na frente, a foto do rosto é a prova, a hora é agora);
+   * este é regularização feita na mesa, depois, com hora escolhida e motivo
+   * escrito. É trabalho administrativo, não de portão.
+   *
+   * Sem operador de portão pelo mesmo motivo — escrever o passado com hora
+   * arbitrária é ato de gestão. Mesma régua da action `lancarPontoManual`.
+   */
+  if (podeGerenciarEventos(role) || role === 'supervisor') {
+    administrativo.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
   }
   /*
    * Relatórios aparece pro supervisor também: `lib/relatorios.ts` já permite
@@ -100,12 +109,12 @@ function gruposPara(role: string): Grupo[] {
   }
   if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
 
-  // ─── Gerenciador ────────────────────────────────────────────────────────
-  // O que só o dono da plataforma enxerga: não faz parte da operação de um
-  // evento, é de cima dela.
+  // ─── Operacional ────────────────────────────────────────────────────────
+  // O que só o dono da plataforma enxerga: não é o trabalho DE um evento, é
+  // o de manter a operação que atende todos eles.
   if (ehMaster(role)) {
     grupos.push({
-      titulo: 'Gerenciador',
+      titulo: 'Operacional',
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
         /*
