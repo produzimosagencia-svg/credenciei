@@ -6,7 +6,7 @@ import type { Periodo } from '@/lib/relatorios'
 import { gerarRelatorioCompleto, gerarRelatorioSetor } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
 import { Secao } from '@/components/ui/Superficie'
-import DateTimePicker from '@/components/DateTimePicker'
+import SeletorDePeriodo from '@/components/SeletorDePeriodo'
 
 type Setor = { id: string; nome: string }
 
@@ -31,16 +31,14 @@ export default function ExportarRelatorio({
   setores: Setor[]
   totalFuncionarios: number
 }) {
-  const [de, setDe] = useState(periodoCompleto.de)
-  const [ate, setAte] = useState(periodoCompleto.ate)
+  const [periodo, setPeriodo] = useState<Periodo>(periodoCompleto)
   const [setorId, setSetorId] = useState(setores[0]?.id ?? '')
   const [erroCompleto, setErroCompleto] = useState<string | null>(null)
   const [erroSetor, setErroSetor] = useState<string | null>(null)
   const [gerandoCompleto, startCompleto] = useTransition()
   const [gerandoSetor, startSetor] = useTransition()
 
-  const periodo: Periodo = { de, ate }
-  const periodoValido = de <= ate
+  const periodoValido = periodo.de <= periodo.ate
 
   const exportarCompleto = () => {
     setErroCompleto(null)
@@ -77,25 +75,7 @@ export default function ExportarRelatorio({
         * uma pergunta, não duas.
         */}
       <Secao icone={<CalendarRange className="w-3.5 h-3.5" />} titulo="Período" corpoClassName="p-5">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-slate-500 text-xs font-medium block mb-1.5">Data inicial</label>
-            <DateTimePicker modo="data" value={de} onChange={setDe} className="w-40" />
-          </div>
-          <div>
-            <label className="text-slate-500 text-xs font-medium block mb-1.5">Data final</label>
-            <DateTimePicker modo="data" value={ate} onChange={setAte} className="w-40" />
-          </div>
-          {(de !== periodoCompleto.de || ate !== periodoCompleto.ate) && (
-            <button
-              type="button"
-              onClick={() => { setDe(periodoCompleto.de); setAte(periodoCompleto.ate) }}
-              className="text-slate-400 hover:text-slate-600 text-xs underline"
-            >
-              Usar o período inteiro do evento
-            </button>
-          )}
-        </div>
+        <SeletorDePeriodo value={periodo} onChange={setPeriodo} periodoCompleto={periodoCompleto} className="w-64" />
         {!periodoValido && (
           <p className="text-red-500 text-xs mt-2">A data inicial precisa vir antes (ou no mesmo dia) da data final.</p>
         )}

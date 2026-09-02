@@ -6,6 +6,7 @@ import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { diaBRT } from '@/lib/janelas'
 import { pendenciasDoDia } from '@/lib/pendencias'
 import { PageHeader } from '@/components/ui/Superficie'
+import SeletorDeDia from '@/components/SeletorDeDia'
 import TabelaPresenca, { type LinhaPresenca } from './TabelaPresenca'
 
 export const revalidate = 0
@@ -182,20 +183,7 @@ export default async function PresencaPage({
       </div>
 
       {diasDaOperacao.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {diasDaOperacao.map(d => (
-            <Link
-              key={d}
-              href={url(visao, d)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                d === diaEscolhido ? 'bg-slate-800 border-slate-800 text-white'
-                                   : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
-              }`}
-            >
-              {rotuloDia(d)}{d === hoje ? ' · hoje' : ''}
-            </Link>
-          ))}
-        </div>
+        <SeletorDeDia dias={diasDaOperacao} diaEscolhido={diaEscolhido} hoje={hoje} hrefBase={`/admin/eventos/${eventoId}/presenca?ver=${visao}`} />
       )}
 
       <TabelaPresenca

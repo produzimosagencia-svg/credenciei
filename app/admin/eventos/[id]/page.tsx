@@ -9,6 +9,7 @@ import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
+import SeletorDeDia from '@/components/SeletorDeDia'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -288,24 +289,9 @@ export default async function EventoPage({
         * inteira — incluindo a lista de setores, que não muda com o dia.
         */}
       {diasDaOperacao.length > 1 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-400 text-2xs uppercase tracking-wide font-semibold mr-1">Dia</span>
-          {diasDaOperacao.map(d => {
-            const [, mes, dd] = d.split('-')
-            return (
-              <Link
-                key={d}
-                href={`/admin/eventos/${id}?dia=${d}`}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  d === diaEscolhido
-                    ? 'bg-brand-500 border-brand-500 text-white'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
-                }`}
-              >
-                {dd}/{mes}{d === hojeBRT ? ' · hoje' : ''}
-              </Link>
-            )
-          })}
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-2xs uppercase tracking-wide font-semibold">Dia</span>
+          <SeletorDeDia dias={diasDaOperacao} diaEscolhido={diaEscolhido} hoje={hojeBRT} hrefBase={`/admin/eventos/${id}`} />
         </div>
       )}
 
