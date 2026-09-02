@@ -223,15 +223,20 @@ const desligado = (fluxos: Record<string, boolean>, chave: string) => fluxos[cha
  * Este dia tem um horário de verdade combinado — não o padrão genérico que
  * `horariosEsperados` usa quando ninguém configurou nada?
  *
- * Verdadeiro no dia principal (o evento sempre tem `janela_entrada_fim`/
- * `janela_fim_fim` configurados — é o formulário de editar evento) ou em
- * qualquer dia de preparação com horário próprio setado em `jornada_dias`.
+ * SÓ PARA O ALERTA AO SUPERVISOR. Verdadeiro no dia principal, ou em
+ * qualquer dia de preparação com horário próprio setado em `jornada_dias` —
+ * um fechamento real da operação (ex.: 8h da manhã do dia seguinte), que
+ * vale a pena avisar o SUPERVISOR mesmo quando `avaliarEntradaSaida` nunca
+ * bloqueia ninguém por horário nesse dia (dia de preparação é sempre livre
+ * na trava — ver `lib/janelas.ts`). É informação, não cobrança.
  *
- * Independe de `batida_livre`: ela decide se a PESSOA é cobrada por esse
- * horário (lembrete/reforço ao funcionário) — não se o horário EXISTE. O
- * fechamento real da operação (ex.: 8h da manhã do dia seguinte) continua
- * valendo pra avisar o SUPERVISOR de quem nunca saiu, mesmo quando a entrada
- * e a saída de cada pessoa, individualmente, são livres.
+ * NÃO USAR para lembrete/reforço AO FUNCIONÁRIO. Esses dois só fazem sentido
+ * no dia PRINCIPAL, porque é o único dia em que o sistema de verdade RECUSA
+ * fora do horário — ameaçar um prazo que o próprio sistema aceita passar é
+ * cobrança vazia. Foi exatamente isso que reapareceu na fila: um dia de
+ * montagem com horário configurado em `jornada_dias` (para orientar a
+ * equipe) reagendou lembrete/reforço de entrada e saída para 92 pessoas,
+ * mesmo a entrada e a saída daquele dia sendo livres o tempo todo.
  */
 function temHorarioReal(ehPrincipal: boolean, jornadaDia: DiaDaJornada | null | undefined): boolean {
   return ehPrincipal || !!jornadaDia?.entrada_fim || !!jornadaDia?.saida_fim
@@ -458,7 +463,12 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        */
       const livre = (evento as EventoJanelas).batida_livre === true
       const ehPrincipal = dia.data === diaPrincipal
-      const diaComTrava = temHorarioReal(ehPrincipal, dia.jornadaDia) && !(livre && ehPrincipal)
+      /*
+       * SÓ o dia principal, e só sem batida livre — nunca `temHorarioReal`.
+       * Ver o comentário da função: aquele fallback de jornada configurada
+       * serve ao alerta do SUPERVISOR, não à cobrança ao funcionário.
+       */
+      const diaComTrava = ehPrincipal && !livre
 
       if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
@@ -958,7 +968,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         .order('turno').limit(1)
       const ehPrincipal = dia?.[0]?.tipo === 'principal'
       const livre = (evento as { batida_livre?: boolean | null }).batida_livre === true
-      const diaComTrava = temHorarioReal(ehPrincipal, dia?.[0] as DiaDaJornada | undefined) && !(livre && ehPrincipal)
+      // Mesma régua do agendamento: só o dia principal, sem batida livre.
+      const diaComTrava = ehPrincipal && !livre
       if (!diaComTrava) return null
     }
 
