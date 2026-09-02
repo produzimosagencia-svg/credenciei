@@ -2,7 +2,7 @@
 import { useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
-  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw,
+  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch,
 } from 'lucide-react'
 import {
   localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida,
@@ -10,6 +10,7 @@ import {
 } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
+import { Secao, Cartao, EmptyState } from '@/components/ui/Superficie'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
 function comprimir(file: File): Promise<string> {
@@ -156,29 +157,50 @@ export default function LocalizarFuncionario() {
   return (
     <div className="space-y-4">
       {/* Busca por CPF ou nome */}
-      <form onSubmit={buscar} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-busca">
-        <label className="text-sm font-medium text-slate-700 block">CPF ou nome do funcionário</label>
-        <div className="flex gap-2">
-          <input
-            required
-            autoFocus
-            value={termo}
-            onChange={e => { setTermo(mascarar(e.target.value)); setErro(null) }}
-            placeholder="000.000.000-00 ou Maria Silva"
-            className="input flex-1"
-            autoComplete="off"
+      <Secao
+        tom="acento"
+        icone={<UserSearch className="w-3.5 h-3.5" />}
+        titulo="Buscar funcionário"
+        descricao="Você só localiza pessoas dos setores sob sua responsabilidade"
+        corpoClassName="p-5"
+      >
+        <form onSubmit={buscar} className="space-y-3" data-tutorial="loc-busca">
+          <label className="text-sm font-medium text-slate-700 block">CPF ou nome do funcionário</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                required
+                autoFocus
+                value={termo}
+                onChange={e => { setTermo(mascarar(e.target.value)); setErro(null) }}
+                placeholder="000.000.000-00 ou Maria Silva"
+                className="input pl-9 w-full"
+                autoComplete="off"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={buscando}
+              className="btn-press shrink-0 flex items-center gap-1.5 btn btn-primario"
+            >
+              {buscando ? 'Buscando...' : 'Buscar'}
+            </button>
+          </div>
+        </form>
+      </Secao>
+
+      {/* Nada buscado ainda: sem isto a tela parece vazia embaixo do cartão de
+          busca, um retângulo branco boiando num fundo cinza enorme. */}
+      {!termo && !candidatos && !func && !erro && (
+        <Cartao padding="nenhum">
+          <EmptyState
+            icone={<UserSearch className="w-8 h-8" />}
+            titulo="Busque para começar"
+            descricao="Digite o CPF ou o nome de quem perdeu o horário. A ficha e a etapa pendente aparecem aqui."
           />
-          <button
-            type="submit"
-            disabled={buscando}
-            className="btn-press shrink-0 flex items-center gap-1.5 btn btn-primario"
-          >
-            <Search className="w-4 h-4" />
-            {buscando ? '...' : 'Buscar'}
-          </button>
-        </div>
-        <p className="text-slate-400 text-2xs">Você só localiza pessoas dos setores sob sua responsabilidade.</p>
-      </form>
+        </Cartao>
+      )}
 
       {/* Nome quase nunca é único: quem escolhe a pessoa certa é o supervisor. */}
       {candidatos && (

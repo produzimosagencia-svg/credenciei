@@ -1,4 +1,5 @@
 'use client'
+import { createPortal } from 'react-dom'
 import { AlertTriangle } from 'lucide-react'
 
 /**
@@ -23,8 +24,25 @@ export default function ConfirmModal({
   isPending?: boolean
   zIndexClassName?: string
 }) {
+  /*
+   * Renderiza num portal, fora da árvore de quem chamou.
+   *
+   * Sem isto, o cartão "Ao vivo" (`.evento-vivo`, `overflow: hidden` pro
+   * canto arredondado) cortava o fundo escurecido do modal nas bordas dele —
+   * a confirmação de excluir evento aparecia com o "AO VIVO" e o título
+   * vazando por cima, sem escurecer. `overflow: hidden` corta QUALQUER
+   * descendente, mesmo um com `position: fixed`, contanto que ele continue
+   * dentro da árvore — só escapar de verdade (portal pro body) resolve, e
+   * resolve pros outros nove lugares que usam este componente também.
+   *
+   * `open` sempre começa `false` em quem chama (é o `useState` inicial de
+   * todo mundo que usa este modal) e só vira `true` num clique — nunca na
+   * primeira renderização —, então chegar aqui já significa client-side, sem
+   * precisar do estado "montado" que o portal costuma pedir.
+   */
   if (!open) return null
-  return (
+
+  return createPortal(
     <div className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center p-4`} onClick={() => !isPending && onClose()}>
       <div className="overlay-fade-in absolute inset-0 bg-black/45" />
       <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
@@ -56,6 +74,7 @@ export default function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

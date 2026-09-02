@@ -175,19 +175,32 @@ export default async function AtividadesPage({
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(VISOES) as Visao[]).map(v => (
-          <Link
-            key={v}
-            href={url(v, diaEscolhido)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              v === visao ? 'bg-brand-500 border-brand-500 text-white'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
-            }`}
-          >
-            {VISOES[v].titulo}
-          </Link>
-        ))}
+      {/*
+        * Antes: pills soltas direto no fundo cinza da página, sem moldura —
+        * pareciam sete botões perdidos, não um seletor. Agora é uma faixa só,
+        * com ícone (o mesmo da coluna da tabela abaixo, `ICONE`) reforçando o
+        * que cada visão mostra, dentro de um cartão com scroll horizontal no
+        * celular em vez de quebrar linha.
+        */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-1.5 overflow-x-auto">
+        <div className="flex items-center gap-1 min-w-max">
+          {(Object.keys(VISOES) as Visao[]).map(v => {
+            const VisaoIcone = ICONE[v]
+            const ativa = v === visao
+            return (
+              <Link
+                key={v}
+                href={url(v, diaEscolhido)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                  ativa ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                }`}
+              >
+                <VisaoIcone className={`w-3.5 h-3.5 shrink-0 ${ativa ? 'text-white' : 'text-slate-400'}`} />
+                {VISOES[v].titulo}
+              </Link>
+            )
+          })}
+        </div>
       </div>
 
       {diasDaOperacao.length > 1 && (
