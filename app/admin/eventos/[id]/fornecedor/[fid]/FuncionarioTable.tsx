@@ -71,6 +71,7 @@ export default function FuncionarioTable({
   outrosSetores = [],
   podeMoverDeSetor = false,
   podeCriarSupervisor = false,
+  podeEditarCpf = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
@@ -92,6 +93,8 @@ export default function FuncionarioTable({
    * depois, se alguém contestar pagamento.
    */
   podeExcluir?: boolean
+  /** Mesma permissão que `editarCpfFuncionario` exige no servidor — ver `podeEditarIdentidade`. */
+  podeEditarCpf?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -272,6 +275,7 @@ export default function FuncionarioTable({
                     outrosSetores={outrosSetores}
                     podeMoverDeSetor={podeMoverDeSetor}
                     podeCriarSupervisor={podeCriarSupervisor}
+                    podeEditarCpf={podeEditarCpf}
                     trigger={
                       <div className="flex items-center gap-2.5 min-w-0 text-left">
                         <Avatar url={f.fotoUrl} nome={f.nome} />
@@ -352,6 +356,7 @@ export default function FuncionarioTable({
                       outrosSetores={outrosSetores}
                       podeMoverDeSetor={podeMoverDeSetor}
                       podeCriarSupervisor={podeCriarSupervisor}
+                      podeEditarCpf={podeEditarCpf}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />

@@ -19,6 +19,7 @@ import {
   podeGerenciarOrganizacoes,
   podeExcluirEventos,
   podeExcluir,
+  podeEditarIdentidade,
   podeEscanear,
   podeAcompanhar,
   ehMaster,
@@ -1684,6 +1685,58 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
   after(() => sincronizarValorNaPlanilha(funcionarioId, valor).catch(console.error))
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+}
+
+/**
+ * Corrige o CPF de um funcionário já cadastrado.
+ *
+ * Existe porque refazer o cadastro do zero (a alternativa óbvia) perde o QR
+ * já impresso/salvo, o histórico de batidas e o vínculo de pagamento — tudo
+ * amarrado ao `id` antigo. Corrigir o CPF NO MESMO registro preserva os três.
+ *
+ * Só master edita, por enquanto — ver `podeEditarIdentidade`. CPF é a
+ * identidade da pessoa em todo o sistema (login de supervisor, base
+ * regional, histórico entre eventos); trocá-lo sem cuidado troca quem a
+ * pessoa É pro sistema, não só um campo de formulário.
+ */
+export async function editarCpfFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string,
+) {
+  const perfil = await getPerfil()
+  if (!podeEditarIdentidade(perfil?.role)) throw new Error('Só o master pode corrigir o CPF de um cadastro.')
+
+  const novoCpf = normalizarCpf(novoCpfBruto)
+  if (!validarCpf(novoCpf)) throw new Error('O CPF precisa ter 11 dígitos válidos.')
+
+  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
+  if (!fornecedor || fornecedor.evento_id !== eventoId) throw new Error('Setor não encontrado neste evento.')
+
+  const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, cpf, fornecedor_id').eq('id', funcionarioId).single()
+  if (!atual || atual.fornecedor_id !== fornecedorId) throw new Error('Funcionário não encontrado neste setor.')
+  if (atual.cpf === novoCpf) return { ok: true as const } // nada mudou
+
+  /*
+   * Mesma régua do cadastro público: uma pessoa não pode estar em dois
+   * setores do mesmo evento. Corrigir o CPF pra um que já é de OUTRA pessoa
+   * neste evento fundiria as duas identidades — o oposto do que se quer.
+   */
+  const { data: conflito } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, fornecedores!inner(evento_id, nome)')
+    .eq('cpf', novoCpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .neq('id', funcionarioId)
+    .maybeSingle()
+  if (conflito) {
+    const setorConflito = (conflito.fornecedores as unknown as { nome: string })?.nome ?? 'outro setor'
+    throw new Error(`Este CPF já é de ${conflito.nome}, no setor ${setorConflito}. Confira o número antes de salvar.`)
+  }
+
+  const { error } = await supabaseAdmin.from('funcionarios').update({ cpf: novoCpf }).eq('id', funcionarioId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const }
 }
 
 /** Marca/desmarca a baixa de pagamento do valor a receber do setor. */

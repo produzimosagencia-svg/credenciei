@@ -63,6 +63,20 @@ export const podeExcluir = (role?: string) => role === 'master'
 export const podeExcluirEventos = podeExcluir
 
 /**
+ * Pode corrigir um dado de identidade já cadastrado (hoje: só o CPF do
+ * funcionário) — algo que a própria pessoa não tem como refazer sozinha sem
+ * perder o QR, o histórico de batidas e o pagamento já vinculados ao
+ * cadastro antigo.
+ *
+ * Só master, de propósito e por enquanto: decisão do Juan em 02/09/2026,
+ * pensando num papel futuro de "suporte" (acesso de apoio no dia do evento,
+ * que corrige cadastro e move gente entre setores sem ser dono da conta).
+ * Esse papel ainda não existe no sistema — quando existir, esta função é o
+ * único lugar que precisa mudar pra incluí-lo.
+ */
+export const podeEditarIdentidade = (role?: string) => role === 'master'
+
+/**
  * Pode LER o QR e registrar presença pelo scanner.
  *
  * O supervisor ficou de fora a pedido. Quem credencia é o posto de

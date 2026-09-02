@@ -1,5 +1,5 @@
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
@@ -340,6 +340,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            * que não podia depois de já ter tentado.
            */
           podeCriarSupervisor={podeGerenciarUsuarios(perfil.role)}
+          podeEditarCpf={podeEditarIdentidade(perfil.role)}
         />
       </div>
     </div>

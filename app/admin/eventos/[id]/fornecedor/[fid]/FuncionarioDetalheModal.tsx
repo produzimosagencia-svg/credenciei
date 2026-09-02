@@ -2,8 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -42,6 +42,7 @@ export default function FuncionarioDetalheModal({
   outrosSetores = [],
   podeMoverDeSetor = false,
   podeCriarSupervisor = false,
+  podeEditarCpf = false,
 }: {
   funcionario: Funcionario
   fornecedorId: string
@@ -56,6 +57,8 @@ export default function FuncionarioDetalheModal({
   podeMoverDeSetor?: boolean
   /** Mesma permissão que `criarSupervisor` exige no servidor. */
   podeCriarSupervisor?: boolean
+  /** Mesma permissão que `editarCpfFuncionario` exige no servidor — ver `podeEditarIdentidade`. */
+  podeEditarCpf?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [aba, setAba] = useState<Aba>('dados')
@@ -87,6 +90,36 @@ export default function FuncionarioDetalheModal({
       } catch (e: any) {
         setErroMover(mensagemAmigavel(e))
         setConfirmandoMover(false)
+      }
+    })
+  }
+
+  // ── Corrigir CPF ───────────────────────────────────────────────────────────
+  /*
+   * Só master, por enquanto — ver `podeEditarIdentidade`. Existe porque
+   * "refazer o cadastro" perde QR, histórico e pagamento já vinculados ao
+   * registro antigo; corrigir no mesmo registro preserva os três.
+   */
+  const [editandoCpf, setEditandoCpf] = useState(false)
+  const [novoCpf, setNovoCpf] = useState(f.cpf)
+  const [erroCpf, setErroCpf] = useState<string | null>(null)
+  const [isPendingCpf, startTransitionCpf] = useTransition()
+
+  const abrirEditarCpf = () => {
+    setErroCpf(null)
+    setNovoCpf(f.cpf)
+    setEditandoCpf(true)
+  }
+
+  const salvarCpf = () => {
+    setErroCpf(null)
+    startTransitionCpf(async () => {
+      try {
+        await editarCpfFuncionario(f.id, fornecedorId, eventoId, novoCpf)
+        router.refresh()
+        setEditandoCpf(false)
+      } catch (e: any) {
+        setErroCpf(mensagemAmigavel(e))
       }
     })
   }
@@ -283,13 +316,67 @@ export default function FuncionarioDetalheModal({
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-slate-400 text-xs">CPF</p>
-                    <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
+                    {!editandoCpf ? (
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
+                        {podeEditarCpf && (
+                          <button
+                            onClick={abrirEditarCpf}
+                            className="p-0.5 text-slate-300 hover:text-brand-500"
+                            title="Corrigir CPF"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-slate-700 font-medium font-mono tabular-nums">{f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</p>
+                    )}
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs">Telefone</p>
                     <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
                   </div>
                 </div>
+
+                {/*
+                  * Corrigir CPF — separado do bloco acima (não inline no grid)
+                  * porque o aviso e o formulário precisam da largura toda, e
+                  * porque errar o CPF muda quem a pessoa É pro sistema: merece
+                  * mais destaque que um campo qualquer.
+                  */}
+                {editandoCpf && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                    <p className="text-amber-800 text-xs">
+                      Corrige o CPF neste mesmo cadastro — o QR, o histórico de batidas e o pagamento continuam os mesmos, só o número muda.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={novoCpf}
+                      onChange={e => setNovoCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      className="input text-sm font-mono tabular-nums"
+                      placeholder="Só números"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={salvarCpf}
+                        disabled={isPendingCpf || novoCpf.length !== 11}
+                        className="btn btn-primario btn-sm disabled:opacity-50"
+                      >
+                        {isPendingCpf ? 'Salvando…' : 'Confirmar'}
+                      </button>
+                      <button
+                        onClick={() => setEditandoCpf(false)}
+                        disabled={isPendingCpf}
+                        className="btn btn-secundario btn-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {erroCpf && <p className="text-red-500 text-xs">{erroCpf}</p>}
+                  </div>
+                )}
 
                 {/*
                   * Mover para outro setor — só quem gerencia o evento inteiro.
