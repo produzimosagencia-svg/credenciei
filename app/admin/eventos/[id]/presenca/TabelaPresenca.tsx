@@ -4,14 +4,8 @@ import { Search, Users, X } from 'lucide-react'
 import { formatCpf } from '@/lib/format'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 
-export type LinhaPresenca = {
-  id: string
-  nome: string
-  cpf: string
-  setor: string
-  em: string | null
-  manual: boolean
-}
+import type { LinhaPresenca } from '@/lib/presenca-visoes'
+export type { LinhaPresenca }
 
 const hora = (iso: string) =>
   new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })

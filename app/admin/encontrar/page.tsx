@@ -154,12 +154,9 @@ export default async function EncontrarPage({
    * exigiria uma coluna gerada só para isso.
    */
 
-  const [{ data: cadastros, count: totalCadastros }, { count: semAceite }] = await Promise.all([
-    consulta,
-    escopo === 'recrutar'
-      ? supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true }).eq('consentimento_base', false)
-      : Promise.resolve({ count: 0 }),
-  ])
+  // A contagem de quem não tem `consentimento_base` saiu junto com o aviso
+  // que a exibia — o alternador "Toda a base" já leva a essas pessoas.
+  const { data: cadastros, count: totalCadastros } = await consulta
 
   // Quem de fato apareceu nos eventos: é o dado que separa "já foi chamado"
   // de "já trabalhou". Sem isso a tela recomendaria quem nunca compareceu.
@@ -275,30 +272,27 @@ export default async function EncontrarPage({
         </div>
       )}
 
-      {escopo === 'recrutar' ? (
-        <Aviso tom="marca">
-          Fale com a pessoa pelo seu WhatsApp para combinar função, valor e horário — o sistema não manda
-          convite automático. Fechado o combinado, abra o perfil dela e atribua ao evento do cliente.
-        </Aviso>
-      ) : (
+      {escopo === 'todos' && (
         <Aviso tom="marca">
           Quando um cliente novo enviar a planilha da equipe dele, quem já estiver aqui é reconhecido
           pelo CPF e tem o cadastro preenchido sozinho — a pessoa não digita tudo de novo.
         </Aviso>
       )}
 
-      {/* Transparência do tamanho real: sem isto, o master acha que a base é
-          pequena quando na verdade a maior parte só não foi perguntada. Só
-          faz sentido no escopo "recrutar" — em "todos" essas pessoas já
-          estão na lista, o aviso ficaria falando de gente que está ali embaixo. */}
-      {escopo === 'recrutar' && !!semAceite && (
-        <Aviso tom="atencao">
-          {semAceite.toLocaleString('pt-BR')} cadastro{semAceite !== 1 ? 's' : ''} da base não
-          {semAceite !== 1 ? ' aparecem' : ' aparece'} aqui: {semAceite !== 1 ? 'são' : 'é'} de antes da
-          autorização existir no formulário.{' '}
-          <Link href={urlEscopo('todos')} className="underline font-medium">Ver toda a base</Link>.
-        </Aviso>
-      )}
+      {/*
+        * Dois avisos saíram daqui a pedido (02/09/2026):
+        *
+        *  • "Fale com a pessoa pelo seu WhatsApp…" — instrução de como
+        *    recrutar, que quem usa a tela já sabe de cor;
+        *  • "N cadastros da base não aparecem aqui…" — contagem de quem não
+        *    tem `consentimento_base`. O alternador "Toda a base" logo acima
+        *    já leva a eles, então o aviso era um segundo caminho pro mesmo
+        *    lugar, ocupando espaço em toda visita.
+        *
+        * A REGRA NÃO MUDOU: "Prontas para recrutar" continua mostrando só
+        * quem autorizou (`consentimento_base`) — o que saiu foi o letreiro,
+        * não o filtro.
+        */}
 
       {/* Filtros num form GET: a busca vira URL, então dá pra mandar o link
           "garçons em Vila Velha" pra outra pessoa da produção. */}

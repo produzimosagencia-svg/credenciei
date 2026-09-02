@@ -1,47 +1,48 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Activity, QrCode, Camera, UserCheck, Clock, MapPin, ShieldCheck } from 'lucide-react'
+import { Activity, LogIn, Camera, LogOut, Clock, UserX, CameraOff, LogOut as SaidaX, UserCheck, AlertTriangle } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
-import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
-import { formatCpf } from '@/lib/format'
-import { COR_ETAPA } from '@/components/charts'
+import { diaBRT } from '@/lib/janelas'
+import { VISOES, ehVisao, linhasDaVisao, numerosDoDia, type Visao } from '@/lib/presenca-visoes'
 import StatCard from '@/components/StatCard'
-import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
+import SeletorDeDia from '@/components/SeletorDeDia'
+import { Secao, PageHeader, EmptyState } from '@/components/ui/Superficie'
+import TabelaPresenca from '../eventos/[id]/presenca/TabelaPresenca'
 
 export const revalidate = 0
 
 /**
- * Atividades do evento — o log detalhado da operação.
+ * Atividades do evento — a mesma tela de "Pendências e atividade", entrando
+ * pelo menu em vez de por dentro do evento.
  *
- * Não é o Painel. O Painel responde "como está"; esta tela responde "o que
- * aconteceu, na ordem, e por quem". Cada leitura de QR e cada check-in por foto
- * aparece aqui com horário, quem registrou e onde — é a tela que se abre quando
- * alguém contesta uma batida, e a que mostra nome por nome quem ainda não
- * chegou, em vez de só o número.
+ * As sete visões, as linhas e os números vêm de `lib/presenca-visoes.ts`,
+ * compartilhados com `/admin/eventos/[id]/presenca`. Antes esta tela tinha a
+ * sua própria linha do tempo e os seus próprios números, calculados de outro
+ * jeito — e por isso dizia coisas diferentes da tela de Presença sobre o
+ * mesmo dia. Uma régua só, agora.
+ *
+ * ── Os números ──
+ *
+ * "Ainda não chegaram" saiu dos cartões: ele contava a equipe inteira menos
+ * quem tinha batido, então num dia de montagem mostrava "587 não chegaram"
+ * de 679 pessoas que nem estavam escaladas pra aquele dia — um número grande,
+ * assustador e inútil. No lugar entrou "Pendências", que vem de
+ * `pendenciasDoDia`: só quem JÁ passou da hora, que é o que dá pra cobrar.
+ *
+ * "Batidas hoje" também saiu: era a soma de presentes + já saíram, ou seja,
+ * um cartão que não dizia nada que os outros já não dissessem.
+ *
+ * ── Escopo ──
+ *
+ * Master vê todos os eventos, admin só os da própria organização, supervisor
+ * só o evento do próprio setor (e, dentro dele, só a própria equipe).
  */
 
-const ETAPAS = ['entrada', 'meio', 'fim'] as const
-type Etapa = (typeof ETAPAS)[number]
-
-const ROTULO: Record<Etapa, string> = { entrada: 'Entrada', meio: 'Meio', fim: 'Saída' }
-
-/** Teto do log. Acima disso a página fica pesada e ninguém rola até o fim. */
-const LIMITE_LOG = 200
-
-type Linha = {
-  id: string
-  nome: string
-  cpf: string
-  setor: string
-  etapa: Etapa
-  em: string
-  assistido: boolean
-  temFoto: boolean
-  local: string | null
-  registradoPor: string | null
-  justificativa: string | null
+const ICONE: Record<Visao, React.ElementType> = {
+  entrada: LogIn, meio: Camera, fim: LogOut,
+  presentes: Clock, faltam: UserX, sem_meio: CameraOff, sem_saida: SaidaX,
 }
 
 /**
@@ -65,22 +66,17 @@ function rotuloEvento(e: { nome: string; ativo: boolean; data_inicio: string; or
 export default async function AtividadesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ evento?: string; etapa?: string }>
+  searchParams: Promise<{ evento?: string; ver?: string; dia?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!podeAcompanhar(perfil.role)) redirect('/admin')
 
-  const { evento: eventoParam, etapa: etapaParam } = await searchParams
-
-  // Um instante só para o render inteiro: duas leituras de relógio na mesma
-  // página podiam cair em dias diferentes na virada da meia-noite.
-  const agoraDoRender = new Date()
-  const filtroEtapa = ETAPAS.includes(etapaParam as Etapa) ? (etapaParam as Etapa) : null
+  const { evento: eventoParam, ver, dia: diaParam } = await searchParams
+  const visao: Visao = ehVisao(ver) ? ver : 'entrada'
+  const Icone = ICONE[visao]
 
   // ─── Escopo ───────────────────────────────────────────────────────────────
-  // Mesma régua do resto do sistema: supervisor enxerga só o evento do próprio
-  // setor, admin só a própria organização, master tudo.
   let setorDoSupervisor: string | null = null
   const listaQuery = supabaseAdmin
     .from('eventos')
@@ -102,192 +98,61 @@ export default async function AtividadesPage({
   if (!eventos?.length) {
     return (
       <div className="space-y-5">
-        <PageHeader titulo="Atividades do evento" descricao="Cada batida registrada, na ordem em que aconteceu" />
+        <PageHeader titulo="Atividades do evento" descricao="Quem já registrou cada etapa, e quem ainda não" />
         <Secao titulo="Nenhum evento">
           <EmptyState
             icone={<Activity className="w-7 h-7" />}
             titulo="Não há evento para acompanhar"
-            descricao="Crie um evento no Início para começar a registrar presenças."
+            descricao="Crie um evento no Painel para começar a registrar presenças."
           />
         </Secao>
       </div>
     )
   }
 
-  // Sem escolha explícita, abre no evento que está acontecendo — é o que se
-  // quer ver quando se abre esta tela no meio da operação.
+  /*
+   * A lista acima já é filtrada pelo escopo, e é dela que sai o evento
+   * escolhido — então um id de outro cliente colado na URL simplesmente não
+   * é encontrado e cai no evento ativo. A régua não depende do `<select>`.
+   */
   const escolhido = eventos.find(e => e.id === eventoParam) ?? eventos.find(e => e.ativo) ?? eventos[0]
 
-  // ─── Dados do evento escolhido ────────────────────────────────────────────
-  const setoresQuery = supabaseAdmin
-    .from('fornecedores').select('id, nome').eq('evento_id', escolhido.id)
-  if (setorDoSupervisor) setoresQuery.eq('id', setorDoSupervisor)
-  const { data: setores } = await setoresQuery
-  const idsSetores = (setores ?? []).map(s => s.id)
-  const nomeSetor = new Map((setores ?? []).map(s => [s.id, s.nome]))
+  // ─── O dia ────────────────────────────────────────────────────────────────
+  const { data: dias } = await supabaseAdmin
+    .from('jornada_dias').select('data')
+    .eq('evento_id', escolhido.id).eq('cancelado', false).order('data')
+  const diasDaOperacao = (dias ?? []).map(d => d.data as string)
+  const hoje = diaBRT()
+  const diaEscolhido =
+    (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
+    ?? (diasDaOperacao.includes(hoje) ? hoje : null)
+    ?? [...diasDaOperacao].reverse().find(d => d <= hoje)
+    ?? diasDaOperacao[0]
+    ?? hoje
 
-  if (!idsSetores.length) {
-    return (
-      <div className="space-y-5">
-        <PageHeader titulo="Atividades do evento" descricao={escolhido.nome} />
-        <Secao titulo="Sem setores">
-          <EmptyState
-            icone={<Activity className="w-7 h-7" />}
-            titulo="Este evento ainda não tem setores"
-            descricao="Sem setor não há equipe, e sem equipe não há batida para registrar."
-          />
-        </Secao>
-      </div>
-    )
-  }
-
-  const [{ data: equipe }, { data: registros }] = await Promise.all([
-    supabaseAdmin
-      .from('funcionarios')
-      .select('id, nome, cpf, telefone, ativo, fornecedor_id')
-      .in('fornecedor_id', idsSetores),
-    supabaseAdmin
-      .from('registros')
-      .select('id, funcionario_id, tipo, created_at, foto_url, endereco_aproximado, registro_manual, justificativa, criado_por_perfil_id')
-      .eq('evento_id', escolhido.id)
-      .in('tipo', ETAPAS as unknown as string[])
-      .order('created_at', { ascending: false })
-      .limit(LIMITE_LOG),
+  const [{ linhas, colunaHora }, numeros] = await Promise.all([
+    linhasDaVisao({ eventoId: escolhido.id, visao, dia: diaEscolhido, fornecedorId: setorDoSupervisor }),
+    numerosDoDia({ eventoId: escolhido.id, dia: diaEscolhido, fornecedorId: setorDoSupervisor }),
   ])
 
-  const dadosFunc = new Map((equipe ?? []).map(f => [f.id, f]))
-
-  // Nome de quem registrou: só o log precisa disso, e são poucos perfis.
-  const idsPerfis = [...new Set((registros ?? []).map(r => r.criado_por_perfil_id).filter((v): v is string => !!v))]
-  const nomePerfil = new Map<string, string>()
-  if (idsPerfis.length) {
-    const { data: perfis } = await supabaseAdmin.from('perfis').select('id, nome').in('id', idsPerfis)
-    for (const p of perfis ?? []) nomePerfil.set(p.id, p.nome)
-  }
-
-  // O registro traz o funcionário de qualquer setor do evento; quando é
-  // supervisor, filtra pelos que são do setor dele.
-  const linhas: Linha[] = (registros ?? [])
-    .filter(r => dadosFunc.has(r.funcionario_id))
-    .map(r => {
-      const f = dadosFunc.get(r.funcionario_id)!
-      return {
-        id: r.id as string,
-        nome: f.nome as string,
-        cpf: f.cpf as string,
-        setor: nomeSetor.get(f.fornecedor_id as string) ?? '—',
-        etapa: r.tipo as Etapa,
-        em: r.created_at as string,
-        assistido: r.registro_manual === true,
-        temFoto: !!r.foto_url,
-        local: (r.endereco_aproximado as string | null) ?? null,
-        registradoPor: r.criado_por_perfil_id ? nomePerfil.get(r.criado_por_perfil_id) ?? null : null,
-        justificativa: (r.justificativa as string | null) ?? null,
-      }
-    })
-
-  // ─── Números ──────────────────────────────────────────────────────────────
-  // Contam sobre TODOS os registros do evento (não só os do log, que é
-  // limitado), então vêm de uma consulta própria de contagem.
-  const { data: todosRegistros } = await supabaseAdmin
-    .from('registros')
-    .select('funcionario_id, tipo, created_at, data_ref')
-    .eq('evento_id', escolhido.id)
-    /*
-     * Só hoje e ontem.
-     *
-     * "Quem não chegou" e "presentes agora" são perguntas sobre o DIA. Olhando
-     * o evento inteiro, a partir do dia 2 ninguém apareceria como faltante (a
-     * entrada de ontem conta) e todo mundo que já trabalhou algum dia contaria
-     * como presente. Ontem entra por causa do turno que vira a madrugada.
-     */
-    .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
-    .in('tipo', ETAPAS as unknown as string[])
-
-  const idsEquipe = new Set((equipe ?? []).map(f => f.id))
-
-  // O ciclo aberto de cada pessoa: o dia da entrada mais recente dentro do
-  // teto de turno, ou hoje. Mesma regra do scanner (ver TETO_TURNO_H).
-  const agoraMs = agoraDoRender.getTime()
-  const hojeRef = diaBRT(agoraDoRender)
-  const diaPorFunc = new Map<string, string>()
-  for (const r of todosRegistros ?? []) {
-    if (r.tipo !== 'entrada') continue
-    if (agoraMs - new Date(r.created_at as string).getTime() > TETO_TURNO_H * 60 * 60 * 1000) continue
-    const dia = (r.data_ref as string | null) ?? diaBRT(r.created_at as string)
-    const atual = diaPorFunc.get(r.funcionario_id as string)
-    if (!atual || dia > atual) diaPorFunc.set(r.funcionario_id as string, dia)
-  }
-
-  const meus = (todosRegistros ?? []).filter(r =>
-    idsEquipe.has(r.funcionario_id) &&
-    ((r.data_ref as string | null) ?? hojeRef) === (diaPorFunc.get(r.funcionario_id as string) ?? hojeRef)
-  )
-  const quemFez = (t: Etapa) => new Set(meus.filter(r => r.tipo === t).map(r => r.funcionario_id))
-  const entraram = quemFez('entrada')
-  const sairam = quemFez('fim')
-
-  const ativos = (equipe ?? []).filter(f => f.ativo !== false)
-  // O dia em BRASÍLIA, não o do relógio do servidor.
-  // A Vercel roda em UTC: das 21:00 à meia-noite de Brasília lá já é o dia
-  // seguinte, então "batidas hoje" zerava justamente no auge do evento.
-  const hojeStr = diaBRT(agoraDoRender)
-
-  const linhasNaTela = linhas
-  const doFiltro = filtroEtapa ? linhasNaTela.filter(l => l.etapa === filtroEtapa) : linhasNaTela
-
-  const naoChegaram = ativos.filter(f => !entraram.has(f.id)).map(f => ({
-        id: f.id as string,
-        nome: f.nome as string,
-        setor: nomeSetor.get(f.fornecedor_id as string) ?? '—',
-        telefone: (f.telefone as string | null) ?? '',
-  }))
-
-  // "Presente agora" é quem entrou e ainda não bateu saída — é o número que o
-  // produtor pergunta no rádio.
-  const presentes = ativos.filter(f => entraram.has(f.id) && !sairam.has(f.id)).map(f => ({
-        id: f.id as string,
-        nome: f.nome as string,
-        setor: nomeSetor.get(f.fornecedor_id as string) ?? '—',
-        telefone: (f.telefone as string | null) ?? '',
-      }))
-
-  const totalEquipe = ativos.length
-  const jaSairam = sairam.size
-  const batidasHoje = meus.filter(r => diaBRT(r.created_at as string) === hojeStr).length
-
-  /** Preserva o evento ao trocar de filtro, e vice-versa. */
-  const url = (mudanca: { evento?: string; etapa?: string | null }) => {
-    const p = new URLSearchParams()
-    const ev = mudanca.evento ?? escolhido.id
-    const et = mudanca.etapa === undefined ? filtroEtapa : mudanca.etapa
-    p.set('evento', ev)
-    if (et) p.set('etapa', et)
-    return `/admin/atividades?${p.toString()}`
-  }
+  const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
+  const url = (v: Visao, d: string) => `/admin/atividades?evento=${escolhido.id}&ver=${v}&dia=${d}`
 
   return (
     <div className="space-y-5">
       <PageHeader
         titulo="Atividades do evento"
-        descricao={`${escolhido.nome} — cada batida registrada, na ordem em que aconteceu`}
+        descricao={`${escolhido.nome} · ${rotuloDia(diaEscolhido)}${diaEscolhido === hoje ? ' (hoje)' : ''}`}
         acoes={
-          eventos.length ? (
+          eventos.length > 1 ? (
             /* Sem JS: um <select> dentro de form GET troca de evento. Esta tela
                é aberta no celular no meio do evento — não vale carregar um
                componente cliente só pra um seletor. */
             <form className="flex items-center gap-2">
               <label htmlFor="evento" className="text-slate-500 text-xs">Evento</label>
-              <select
-                id="evento"
-                name="evento"
-                defaultValue={escolhido.id}
-                className="input w-auto"
-              >
+              <select id="evento" name="evento" defaultValue={escolhido.id} className="input w-auto">
                 {eventos.map(e => (
-                  <option key={e.id} value={e.id}>
-                    {rotuloEvento(e)}
-                  </option>
+                  <option key={e.id} value={e.id}>{rotuloEvento(e)}</option>
                 ))}
               </select>
               <button type="submit" className="btn btn-secundario">Ver</button>
@@ -296,144 +161,48 @@ export default async function AtividadesPage({
         }
       />
 
+      {/*
+        * Cada cartão leva à lista que ele conta — o número sozinho nunca é a
+        * pergunta final, a seguinte é sempre "quem?".
+        */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Batidas hoje" value={batidasHoje} icon={Activity} tom="acento" />
-        <StatCard label="Presentes agora" value={presentes.length} sub={`de ${totalEquipe} na equipe`} icon={UserCheck} tom="sucesso" />
-        <StatCard label="Ainda não chegaram" value={naoChegaram.length} icon={Clock} tom="aviso" />
-        <StatCard label="Já saíram" value={jaSairam} icon={ShieldCheck} tom="info" />
+        <StatCard label="Presentes agora" value={numeros.presentes} icon={UserCheck} tom="sucesso" href={url('presentes', diaEscolhido)} />
+        <StatCard label="Entradas no dia" value={numeros.entradas} icon={LogIn} tom="acento" href={url('entrada', diaEscolhido)} />
+        <StatCard label="Saídas no dia" value={numeros.saidas} icon={LogOut} tom="info" href={url('fim', diaEscolhido)} />
+        <StatCard
+          label="Pendências" value={numeros.pendencias} icon={AlertTriangle} tom="aviso"
+          sub="já passou da hora" href={url('faltam', diaEscolhido)}
+        />
       </div>
 
-      {/* Filtro por etapa — o log inteiro é longo, e quase sempre a pergunta é
-          sobre uma etapa só ("quem bateu a saída?"). */}
-      <div className="abas">
-        <Link href={url({ etapa: null })} className={`aba ${!filtroEtapa ? 'aba-ativa' : ''}`}>
-          Tudo
-          <span className="aba-contador">{linhasNaTela.length}</span>
-        </Link>
-        {ETAPAS.map(t => (
-          <Link key={t} href={url({ etapa: t })} className={`aba ${filtroEtapa === t ? 'aba-ativa' : ''}`}>
-            {ROTULO[t]}
-            <span className="aba-contador">{linhasNaTela.filter(l => l.etapa === t).length}</span>
+      <div className="flex flex-wrap gap-2">
+        {(Object.keys(VISOES) as Visao[]).map(v => (
+          <Link
+            key={v}
+            href={url(v, diaEscolhido)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              v === visao ? 'bg-brand-500 border-brand-500 text-white'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
+            }`}
+          >
+            {VISOES[v].titulo}
           </Link>
         ))}
       </div>
 
-      <Secao
-        titulo="Linha do tempo"
-        descricao={
-          linhasNaTela.length >= LIMITE_LOG
-            ? `Mostrando as ${LIMITE_LOG} batidas mais recentes deste evento`
-            : 'Da mais recente para a mais antiga'
-        }
-      >
-        {!doFiltro.length ? (
-          <EmptyState
-            icone={<Activity className="w-7 h-7" />}
-            titulo={filtroEtapa ? `Nenhuma batida de ${ROTULO[filtroEtapa].toLowerCase()} ainda` : 'Nenhuma batida registrada ainda'}
-            descricao="Assim que a equipe começar a passar pelo QR ou pelo check-in por foto, aparece aqui."
-          />
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {doFiltro.map(l => (
-              <div key={l.id} className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors">
-                <span
-                  className="mt-1.5 w-2 h-2 rounded-full shrink-0"
-                  style={{ background: COR_ETAPA[l.etapa] }}
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-slate-800 text-sm font-medium truncate">{l.nome}</p>
-                    <Badge tom={l.etapa === 'entrada' ? 'positivo' : l.etapa === 'meio' ? 'marca' : 'neutro'}>
-                      {ROTULO[l.etapa]}
-                    </Badge>
-                    {/* Como foi registrado é o que separa uma batida normal de
-                        uma que alguém fez pela pessoa — é a primeira coisa que
-                        se olha quando um registro é contestado. */}
-                    {l.assistido ? (
-                      <Badge tom="atencao">
-                        <ShieldCheck className="w-3 h-3" /> Registro assistido
-                      </Badge>
-                    ) : l.temFoto ? (
-                      <Badge tom="neutro">
-                        <Camera className="w-3 h-3" /> Foto
-                      </Badge>
-                    ) : (
-                      <Badge tom="neutro">
-                        <QrCode className="w-3 h-3" /> QR Code
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
-                    <span className="tabular-nums">{formatarBR(l.em)}</span>
-                    <span className="truncate">{l.setor}</span>
-                    <span className="tabular-nums">{formatCpf(l.cpf)}</span>
-                    {l.registradoPor && <span className="truncate">por {l.registradoPor}</span>}
-                    {l.local && (
-                      <span className="flex items-center gap-1 min-w-0">
-                        <MapPin className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{l.local}</span>
-                      </span>
-                    )}
-                  </div>
-                  {l.justificativa && (
-                    <p className="text-slate-500 text-2xs italic">Justificativa: {l.justificativa}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Secao>
+      {diasDaOperacao.length > 1 && (
+        <SeletorDeDia
+          dias={diasDaOperacao} diaEscolhido={diaEscolhido} hoje={hoje}
+          hrefBase={`/admin/atividades?evento=${escolhido.id}&ver=${visao}`}
+        />
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <Secao
-          titulo="Ainda não chegaram"
-          descricao="Equipe ativa sem registro de entrada"
-          acoes={
-            <span className={`indicador-selo ${naoChegaram.length ? 'selo-aviso' : 'selo-sucesso'}`}>
-              {naoChegaram.length}
-            </span>
-          }
-        >
-          {!naoChegaram.length ? (
-            <EmptyState titulo="Todo mundo já bateu a entrada" />
-          ) : (
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {naoChegaram.map(f => (
-                <div key={f.id} className="px-4 py-2.5">
-                  <p className="text-slate-800 text-sm font-medium truncate">{f.nome}</p>
-                  <p className="text-slate-500 text-xs">
-                    {f.setor}
-                    {f.telefone ? ` · ${f.telefone}` : ''}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Secao>
-
-        <Secao
-          titulo="Ainda no evento"
-          descricao="Bateram entrada e não bateram saída"
-          acoes={<span className="indicador-selo selo-sucesso">{presentes.length}</span>}
-        >
-          {!presentes.length ? (
-            <EmptyState titulo="Ninguém dentro do evento agora" />
-          ) : (
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {presentes.map(f => (
-                <div key={f.id} className="px-4 py-2.5">
-                  <p className="text-slate-800 text-sm font-medium truncate">{f.nome}</p>
-                  <p className="text-slate-500 text-xs">
-                    {f.setor}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Secao>
-      </div>
+      <TabelaPresenca
+        linhas={linhas}
+        icone={<Icone className="w-3.5 h-3.5" />}
+        colunaHora={colunaHora}
+        mostrarSetor={!setorDoSupervisor}
+      />
     </div>
   )
 }
