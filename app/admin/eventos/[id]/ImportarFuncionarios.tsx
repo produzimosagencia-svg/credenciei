@@ -9,7 +9,18 @@ import { lerPlanilhaDeEquipe } from '@/lib/planilha'
 
 type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; reaproveitados?: number; error?: string } | null
 
-export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: string }) {
+/**
+ * Duas aparências, o mesmo comportamento:
+ *   'botao' — o botão solto, como na tela da equipe do setor;
+ *   'item'  — linha de menu, dentro do modal de planilhas do card do setor,
+ *             onde as três ações de planilha foram reunidas.
+ */
+export default function ImportarFuncionarios({
+  fornecedorId, variante = 'botao',
+}: {
+  fornecedorId: string
+  variante?: 'botao' | 'item'
+}) {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<Status>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -52,31 +63,60 @@ export default function ImportarFuncionarios({ fornecedorId }: { fornecedorId: s
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  const entrada = <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
+
   return (
-    <div className="flex flex-col gap-2">
+    <div className={variante === 'item' ? 'space-y-1' : 'flex flex-col gap-2'}>
       {loading && <LoadingOverlay mensagem="Importando funcionários..." />}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={loading}
-          className="btn btn-secundario btn-sm"
-        >
-          {loading
-            ? <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
-            : <Upload className="w-3.5 h-3.5 shrink-0" />
-          }
-          {loading ? 'Importando...' : 'Importar planilha'}
-        </button>
-        <a
-          href="/modelo-importacao.xlsx"
-          download="modelo-importacao.xlsx"
-          className="btn btn-secundario btn-sm"
-        >
-          <Download className="w-3.5 h-3.5 shrink-0" />
-          Baixar modelo
-        </a>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
-      </div>
+
+      {variante === 'item' ? (
+        <>
+          <button onClick={() => fileRef.current?.click()} disabled={loading} className="linha-acao">
+            {loading
+              ? <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              : <Upload className="w-4 h-4 shrink-0 text-brand-500" />}
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-slate-800">
+                {loading ? 'Importando…' : 'Importar lista'}
+              </span>
+              <span className="block text-slate-400 text-xs">
+                Sobe uma planilha e cadastra a equipe de uma vez
+              </span>
+            </span>
+          </button>
+          <a href="/modelo-importacao.xlsx" download="modelo-importacao.xlsx" className="linha-acao">
+            <Download className="w-4 h-4 shrink-0 text-brand-500" />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-slate-800">Baixar modelo</span>
+              <span className="block text-slate-400 text-xs">A planilha em branco, com as colunas certas</span>
+            </span>
+          </a>
+          {entrada}
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={loading}
+            className="btn btn-secundario btn-sm"
+          >
+            {loading
+              ? <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              : <Upload className="w-3.5 h-3.5 shrink-0" />
+            }
+            {loading ? 'Importando...' : 'Importar planilha'}
+          </button>
+          <a
+            href="/modelo-importacao.xlsx"
+            download="modelo-importacao.xlsx"
+            className="btn btn-secundario btn-sm"
+          >
+            <Download className="w-3.5 h-3.5 shrink-0" />
+            Baixar modelo
+          </a>
+          {entrada}
+        </div>
+      )}
 
       {status && (
         <div className="space-y-1">

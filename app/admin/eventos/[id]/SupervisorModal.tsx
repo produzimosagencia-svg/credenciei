@@ -10,8 +10,18 @@ import { mensagemAmigavel } from '@/lib/erros'
 
 type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
 
+/**
+ * `variante` só muda o BOTÃO que abre o modal, nunca o que ele faz:
+ *   'botao'    — o botão de sempre (padrão), usado fora do card do setor;
+ *   'discreto' — link em texto, para quando o setor JÁ tem supervisor e
+ *                criar outro é a ação menos provável;
+ *   'vazio'    — botão de largura cheia, para o setor sem nenhum supervisor,
+ *                onde criar é justamente o que falta fazer.
+ */
+type Variante = 'botao' | 'discreto' | 'vazio'
+
 type Props =
-  | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string; funcionariosDoEvento?: FuncionarioDoEvento[] }
+  | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string; funcionariosDoEvento?: FuncionarioDoEvento[]; variante?: Variante }
   | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean } }
 
 /** A partir de quantos nomes a lista de escolha ganha busca. */
@@ -118,6 +128,19 @@ export default function SupervisorModal(props: Props) {
             <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>
           )}
           <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
+        </button>
+      ) : props.variante === 'discreto' ? (
+        <button
+          onClick={abrir}
+          className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-semibold transition-colors"
+        >
+          <UserPlus className="w-3 h-3 shrink-0" />
+          Adicionar supervisor
+        </button>
+      ) : props.variante === 'vazio' ? (
+        <button onClick={abrir} className="btn btn-secundario btn-sm w-full justify-center">
+          <UserPlus className="w-3 h-3 shrink-0" />
+          Criar supervisor
         </button>
       ) : (
         <button

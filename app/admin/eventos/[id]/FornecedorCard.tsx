@@ -2,11 +2,10 @@
 import Link from 'next/link'
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Copy, Check, Trash2, Users, ArrowRight, Shield, Wallet } from 'lucide-react'
+import { Check, Trash2, Users, ArrowRight, Shield, Wallet, Link2 } from 'lucide-react'
 import { deletarFornecedor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
-import ImportarFuncionarios from './ImportarFuncionarios'
-import ExportarEquipe from './ExportarEquipe'
+import PlanilhaModal from './PlanilhaModal'
 import SupervisorModal from './SupervisorModal'
 import ConfirmModal from '@/components/ConfirmModal'
 
@@ -124,7 +123,11 @@ export default function FornecedorCard({
             )}
           </p>
         </Link>
+        {/* Ícones de manutenção do setor: planilhas, editar, excluir. Ficam
+            juntos e discretos porque nenhum deles é do dia a dia — o que se
+            usa toda hora está na faixa de ações, abaixo. */}
         <div className="flex items-center gap-0.5 shrink-0 -mr-1.5 -mt-1">
+          <PlanilhaModal fornecedorId={f.id} eventoId={eventoId} setorNome={f.nome} dias={diasDoEvento} />
           <FornecedorModal
             mode="editar"
             eventoId={eventoId}
@@ -165,47 +168,71 @@ export default function FornecedorCard({
         </div>
       )}
 
-      {/* Ações, todas no mesmo estilo. Antes eram quatro botões com três
-          aparências diferentes (cinza cheio, azul vazado, cinza vazado), o
-          que fazia parecer que tinham importâncias diferentes — e não têm. */}
-      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
-            className="btn btn-secundario btn-sm"
-          >
-            <Users className="w-3.5 h-3.5 shrink-0" />
-            Ver equipe
-            <ArrowRight className="w-3 h-3 shrink-0 opacity-50" />
-          </Link>
-          <button onClick={copyLink} className="btn btn-secundario btn-sm">
-            {copied
-              ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
-              : <Copy className="w-3.5 h-3.5 shrink-0" />}
+      {/*
+        * Duas ações, com pesos diferentes — e agora isso é correto.
+        *
+        * Eram cinco botões iguais lado a lado, o que fazia o cartão parecer
+        * uma barra de ferramentas e escondia o que se usa de fato. As três de
+        * planilha foram pro ícone no cabeçalho (ver `PlanilhaModal`), e das
+        * duas que sobraram "Ver equipe" é a principal: é pra onde se vai o
+        * tempo todo. O link do formulário é apoio, e vira só ícone no celular,
+        * onde o nome do setor já disputa a largura.
+        */}
+      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2">
+        <Link
+          href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
+          className="btn btn-primario btn-sm flex-1 justify-center"
+        >
+          <Users className="w-3.5 h-3.5 shrink-0" />
+          Ver equipe
+          <ArrowRight className="w-3 h-3 shrink-0 opacity-60" />
+        </Link>
+        <button
+          onClick={copyLink}
+          title="Copiar o link de cadastro deste setor"
+          aria-label={copied ? 'Link copiado' : `Copiar link do formulário de ${f.nome}`}
+          className={`btn btn-secundario btn-sm shrink-0 ${copied ? 'text-sucesso-700' : ''}`}
+        >
+          {copied
+            ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
+            : <Link2 className="w-3.5 h-3.5 shrink-0" />}
+          <span className={copied ? '' : 'hidden sm:inline'}>
             {copied ? 'Link copiado' : 'Link do formulário'}
-          </button>
-        </div>
-        <ImportarFuncionarios fornecedorId={f.id} />
-        <ExportarEquipe fornecedorId={f.id} eventoId={eventoId} dias={diasDoEvento} />
+          </span>
+        </button>
       </div>
 
+      {/*
+        * Supervisores: os nomes primeiro, o botão de criar por último.
+        *
+        * Antes o "Criar Supervisor" ficava no alto, alinhado ao rótulo, e
+        * competia em peso com a lista — num setor que já tem supervisor, ele
+        * é a coisa menos provável de se clicar. Agora ele fecha o bloco, em
+        * texto, e só ganha corpo de botão quando não há ninguém: aí ele É a
+        * ação que falta.
+        */}
       {podeGerenciarSupervisores && (
-        <div className="px-4 py-2.5 border-t border-slate-100">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <p className="flex items-center gap-1.5 text-slate-500 text-2xs font-semibold uppercase tracking-wide">
-              <Shield className="w-3 h-3" /> Supervisores
-            </p>
-            <SupervisorModal mode="criar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} funcionariosDoEvento={funcionariosDoEvento} />
-          </div>
-          {!supervisores.length ? (
-            <p className="text-slate-400 text-xs">Nenhum supervisor vinculado a este setor</p>
-          ) : (
+        <div className="px-4 py-3 border-t border-slate-100 space-y-2">
+          <p className="flex items-center gap-1.5 text-slate-400 text-2xs font-semibold uppercase tracking-wide">
+            <Shield className="w-3 h-3" /> Supervisores
+          </p>
+
+          {supervisores.length > 0 && (
             <div className="-mx-1">
               {supervisores.map(s => (
                 <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} supervisor={s} podeExcluir={podeExcluir} />
               ))}
             </div>
           )}
+
+          <SupervisorModal
+            mode="criar"
+            eventoId={eventoId}
+            fornecedorId={f.id}
+            setorNome={f.nome}
+            funcionariosDoEvento={funcionariosDoEvento}
+            variante={supervisores.length ? 'discreto' : 'vazio'}
+          />
         </div>
       )}
 

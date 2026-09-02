@@ -16,7 +16,18 @@ function dataCurta(data: string): string {
   return `${dia}/${mes}`
 }
 
-export default function ExportarEquipe({ fornecedorId, eventoId, dias = [] }: { fornecedorId: string; eventoId: string; dias?: Dia[] }) {
+/**
+ * Duas aparências, o mesmo comportamento — ver `ImportarFuncionarios`.
+ * `'item'` é a linha dentro do modal de planilhas do card do setor.
+ */
+export default function ExportarEquipe({
+  fornecedorId, eventoId, dias = [], variante = 'botao',
+}: {
+  fornecedorId: string
+  eventoId: string
+  dias?: Dia[]
+  variante?: 'botao' | 'item'
+}) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -51,17 +62,27 @@ export default function ExportarEquipe({ fornecedorId, eventoId, dias = [] }: { 
 
   return (
     <>
-      <button onClick={() => { setErro(null); setOpen(true) }} className="btn btn-secundario btn-sm">
-        <FileDown className="w-3.5 h-3.5 shrink-0" />
-        Exportar planilha
-      </button>
+      {variante === 'item' ? (
+        <button onClick={() => { setErro(null); setOpen(true) }} className="linha-acao">
+          <FileDown className="w-4 h-4 shrink-0 text-brand-500" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-slate-800">Lista de funcionários</span>
+            <span className="block text-slate-400 text-xs">Baixa a equipe deste setor em planilha</span>
+          </span>
+        </button>
+      ) : (
+        <button onClick={() => { setErro(null); setOpen(true) }} className="btn btn-secundario btn-sm">
+          <FileDown className="w-3.5 h-3.5 shrink-0" />
+          Lista de funcionários
+        </button>
+      )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !loading && setOpen(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => !loading && setOpen(false)}>
           <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
-              <h2 className="text-slate-800 font-bold">Exportar planilha</h2>
+              <h2 className="text-slate-800 font-bold">Lista de funcionários</h2>
               <button onClick={() => setOpen(false)} disabled={loading} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
                 <X className="w-4 h-4" />
               </button>

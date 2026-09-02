@@ -354,6 +354,33 @@ button, [role='button'], a.btn-press {
     box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
   }
   .input::placeholder { color: var(--color-neutro-400); }
+
+  /*
+   * Linha de ação — item clicável de um menu em modal, com ícone à esquerda,
+   * título e uma linha de explicação. Usada onde um botão sozinho não diria
+   * o suficiente (ex.: as três ações de planilha do card do setor).
+   *
+   * Dentro de @layer components pelo mesmo motivo do `.input`: fora dele, um
+   * utilitário do Tailwind no call site perderia a disputa de cascata em
+   * silêncio.
+   */
+  .linha-acao {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    text-align: left;
+    padding: 0.75rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-neutro-200);
+    background: #ffffff;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+  .linha-acao:hover {
+    border-color: var(--color-acento-200);
+    background: var(--color-acento-50);
+  }
+  .linha-acao:disabled { opacity: 0.6; }
 }
 
 /* ============================================================
