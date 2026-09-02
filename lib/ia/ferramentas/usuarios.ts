@@ -62,7 +62,9 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         if (!gerencia) return 'Seu papel não tem acesso à lista de usuários do sistema.'
         const q = supabaseAdmin
           .from('perfis')
-          .select('id, nome, email, telefone, role, ativo, fornecedor_id, fornecedores(nome, evento_id)')
+          // Hint obrigatório desde supervisor_setores — ver o comentário em
+          // app/admin/usuarios/page.tsx, mesma causa e mesmo defeito.
+          .select('id, nome, email, telefone, role, ativo, fornecedor_id, fornecedores!perfis_fornecedor_id_fkey(nome, evento_id)')
         if (!ehMaster(perfil.role)) q.eq('organizacao_id', perfil.organizacao_id)
         const { data } = await q
         return JSON.stringify(

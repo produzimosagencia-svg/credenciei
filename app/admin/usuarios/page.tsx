@@ -73,7 +73,19 @@ export default async function UsuariosPage({
   const base = () => {
     const query = supabaseAdmin
       .from('perfis')
-      .select('*, eventos!eventos_cliente_id_fkey(count), fornecedores(nome)', { count: 'exact' })
+      /*
+       * `fornecedores!perfis_fornecedor_id_fkey` — hint OBRIGATÓRIO agora.
+       *
+       * A migração de hoje (supabase/upgrade-supervisor-multi-setor.sql)
+       * criou `supervisor_setores`, que liga `perfis` a `fornecedores` por
+       * uma segunda rota (via junção, N:N). O PostgREST passou a enxergar
+       * DUAS relações entre as duas tabelas e recusa a consulta inteira com
+       * "more than one relationship was found" — foi isso que fez a tela
+       * mostrar "0 acessos" com a organização cheia de gente cadastrada.
+       * O hint aponta explicitamente pela FK direta e antiga, que é a que
+       * esta tela sempre quis dizer (o setor ATIVO do perfil).
+       */
+      .select('*, eventos!eventos_cliente_id_fkey(count), fornecedores!perfis_fornecedor_id_fkey(nome)', { count: 'exact' })
     // Admin enxerga apenas a equipe da própria organização
     if (!ehMaster(perfil?.role)) query.eq('organizacao_id', perfil!.organizacao_id)
     if (busca) query.or(`nome.ilike.%${busca}%,email.ilike.%${busca}%`)

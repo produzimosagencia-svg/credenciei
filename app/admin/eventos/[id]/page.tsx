@@ -59,45 +59,42 @@ export default async function EventoPage({
     redirect(setor ? `/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}` : '/admin')
   }
 
-  // Todas dependem apenas do id → uma única wave em paralelo
-  // A consulta das últimas leituras saiu daqui junto com o feed: ela agora é
-  // feita na tela de pendências, que é quem mostra o resultado.
-  const [{ data: evento }, { data: fornecedores }, todosRegistros] = await Promise.all([
-    supabase.from('eventos').select('*').eq('id', id).single(),
-    supabase
-      .from('fornecedores')
-      .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
-      .eq('evento_id', id)
-      .order('created_at'),
-    supabase
-      .from('registros')
-      .select('funcionario_id, tipo, data_ref')
-      .eq('evento_id', id),
-  ])
-
   /*
-   * Os dias de trabalho deste evento.
+   * DUAS IDAS AO BANCO, NÃO SETE.
    *
-   * Vem direto de `jornada_dias`, que é a fonte única — a tabela de regra
-   * recorrente (`evento_jornadas`) saiu de cena junto com a tela que a
-   * alimentava. Ter duas formas de dizer "quais dias este evento tem" fazia
-   * uma apagar o que a outra gravava, sem avisar ninguém.
-   */
-  /*
-   * Quantos entraram pelo cartaz da portaria.
+   * Esta tela fazia sete consultas, seis delas em fila: cada uma só começava
+   * quando a anterior voltava. Somadas, davam segundos de espera em cada
+   * navegação — e o efeito colateral era pior que a lentidão em si. Depois de
+   * criar ou excluir um supervisor, o `router.refresh()` dispara, mas a tela
+   * só se redesenha quando essa fila inteira termina; nesse intervalo a lista
+   * continua igual, e a conclusão natural é "não atualizou, vou recarregar".
    *
-   * Consulta separada e com `head: true`: só o número interessa, e trazer as
-   * linhas para contar no servidor seria carregar a equipe inteira de novo.
+   * Só existem duas dependências reais: o resto precisa dos ids dos setores
+   * (que vêm de `fornecedores`) e do dia escolhido (que vem de
+   * `jornada_dias`). Então são duas ondas — e dentro de cada uma, tudo em
+   * paralelo.
+   *
+   * `registros` passou a ser filtrado por dia no BANCO. Antes vinha o evento
+   * inteiro para o servidor descartar quase tudo em memória; num evento de
+   * onze dias isso cresce sem teto a cada dia que passa.
    */
-  const { count: viaPortaria } = await supabase
-    .from('funcionarios')
-    .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
-    .eq('origem', 'portaria')
-    .eq('fornecedores.evento_id', id)
-
-  const { data: diasTrabalho } = await supabase
-    .from('jornada_dias').select('data, tipo, cancelado')
-    .eq('evento_id', id).eq('cancelado', false).order('data')
+  const [{ data: evento }, { data: fornecedores }, { data: diasTrabalho }, { count: viaPortaria }] =
+    await Promise.all([
+      supabase.from('eventos').select('*').eq('id', id).single(),
+      supabase
+        .from('fornecedores')
+        .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
+        .eq('evento_id', id)
+        .order('created_at'),
+      // Fonte única dos dias de operação — a tabela de regra recorrente saiu
+      // de cena junto com a tela que a alimentava.
+      supabase.from('jornada_dias').select('data, tipo, cancelado')
+        .eq('evento_id', id).eq('cancelado', false).order('data'),
+      // Só o número: `head` evita trazer a equipe inteira para contar.
+      supabase.from('funcionarios')
+        .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
+        .eq('origem', 'portaria').eq('fornecedores.evento_id', id),
+    ])
   const diasPreparacao = (diasTrabalho ?? []).filter(d => d.tipo !== 'principal')
 
   if (!evento) notFound()
@@ -105,54 +102,72 @@ export default async function EventoPage({
   // Isolamento por organização: admin só acessa eventos da própria org
   if (!veTodosEventos(perfil?.role) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
 
-  /*
-   * Operadores de portão — da ORGANIZAÇÃO, não deste evento especificamente.
-   *
-   * Ao contrário do supervisor (preso a um setor via `fornecedor_id`), o
-   * operador escaneia o evento inteiro, e o sistema hoje não tem como
-   * prender um perfil a UM evento sem prendê-lo a UM setor. Por isso a
-   * mesma organização mostra os mesmos operadores em qualquer evento dela —
-   * mesma regra que já vale pra admin/cliente escanearem.
-   */
-  const { data: operadoresRows } = evento.organizacao_id
-    ? await supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo').eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id)
-    : { data: [] as any[] }
-
-  // Supervisores vinculados a cada setor (fornecedor) deste evento
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
+  const vazio = { data: [] as never[] }
 
   /*
-   * Quem já está credenciado NESTE EVENTO, de qualquer setor.
+   * O DIA que os números descrevem — precisa vir antes da segunda onda,
+   * porque é ele que filtra os registros no banco.
    *
-   * Serve aos dois botões — "Criar operador" e "Criar Supervisor" —, e é
-   * uma lista só, do evento inteiro, de propósito: setor recém-criado nasce
-   * vazio, e uma lista por setor viria em branco justo quando mais se
-   * precisa dela. Quem vira supervisor quase sempre já está em outro setor.
+   * Hoje quando hoje é dia de operação; senão o último que já passou (o mais
+   * provável de se querer conferir) ou, antes de o evento começar, o primeiro.
    */
+  const diasDaOperacao = (diasTrabalho ?? []).map(d => d.data as string)
+  const hojeBRT = diaBRT()
+  const diaEscolhido =
+    (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
+    ?? (diasDaOperacao.includes(hojeBRT) ? hojeBRT : null)
+    ?? [...diasDaOperacao].reverse().find(d => d <= hojeBRT)
+    ?? diasDaOperacao[0]
+    ?? hojeBRT
+
   /*
-   * Quais setores pedem o meio — CONSULTA SEPARADA, nunca no select acima.
+   * SEGUNDA ONDA — tudo que dependia dos ids dos setores ou do dia, junto.
    *
-   * `exige_meio` é coluna nova. No Supabase, pedir uma coluna que ainda não
-   * existe derruba a consulta INTEIRA — e foi exatamente isso que fez a tela
-   * mostrar "nenhum fornecedor ainda" em produção, com 33 setores e 387
-   * pessoas intactos no banco, só porque a migração não tinha sido aplicada.
+   * Duas notas que valem a leitura:
    *
-   * Isolada, a falha custa no máximo o recurso novo (nenhum setor marcado),
-   * e nunca a lista de setores do evento.
+   * • `exige_meio` vem em consulta SEPARADA de propósito, nunca no select dos
+   *   fornecedores. É coluna nova, e no Supabase pedir uma coluna que ainda
+   *   não existe derruba a consulta INTEIRA. Foi exatamente isso que fez a
+   *   tela mostrar "nenhum fornecedor ainda" em produção, com 33 setores e
+   *   387 pessoas intactos no banco, só porque a migração não tinha rodado.
+   *   Isolada, a falha custa o recurso novo — nunca a lista de setores.
+   *
+   * • Operadores de portão são da ORGANIZAÇÃO, não deste evento: ao contrário
+   *   do supervisor (preso a um setor), o operador cobre o evento inteiro, e
+   *   não há como prender um perfil a um evento sem prendê-lo a um setor.
    */
-  const { data: setoresComMeioRows } = fornecedorIds.length
-    ? await supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
-    : { data: null }
+  const [
+    { data: registrosDoDia },
+    { data: operadoresRows },
+    { data: setoresComMeioRows },
+    { data: funcionariosDoEventoRows },
+    { data: supervisoresRows },
+  ] = await Promise.all([
+    supabase.from('registros').select('funcionario_id, tipo')
+      .eq('evento_id', id).eq('data_ref', diaEscolhido),
+    evento.organizacao_id
+      ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo')
+          .eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id)
+      : Promise.resolve(vazio),
+    fornecedorIds.length
+      ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
+      : Promise.resolve(vazio),
+    // Serve aos dois botões (Criar operador e Criar Supervisor): lista do
+    // evento inteiro, porque setor recém-criado nasce vazio e a lista por
+    // setor viria em branco justo quando mais se precisa dela.
+    fornecedorIds.length
+      ? supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
+      : Promise.resolve(vazio),
+    fornecedorIds.length
+      ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
+      : Promise.resolve(vazio),
+  ])
+
   const setoresComMeio = new Set(
     (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
   )
 
-  const { data: funcionariosDoEventoRows } = fornecedorIds.length
-    ? await supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', fornecedorIds).order('nome')
-    : { data: [] as any[] }
-  const { data: supervisoresRows } = fornecedorIds.length
-    ? await supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo, fornecedor_id').in('fornecedor_id', fornecedorIds)
-    : { data: [] as any[] }
   const supervisoresPorFornecedor: Record<string, { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]> = {}
   for (const s of supervisoresRows ?? []) {
     (supervisoresPorFornecedor[s.fornecedor_id] ??= []).push(s)
@@ -171,22 +186,12 @@ export default async function EventoPage({
    * entrada esquecida na montagem fazia a pessoa aparecer presente para
    * sempre. Numa operação de 11 dias, os quatro cartões viravam ruído.
    *
-   * O dia escolhido é o de hoje quando hoje é dia de operação; senão, o
-   * último dia que já passou (o mais provável de se querer conferir) ou,
-   * antes de o evento começar, o primeiro.
+   * O dia escolhido (`diaEscolhido`) é calculado antes da segunda onda de
+   * consultas, porque é ele que filtra os registros no banco.
    */
-  const diasDaOperacao = (diasTrabalho ?? []).map(d => d.data as string)
-  const hojeBRT = diaBRT()
-  const diaEscolhido =
-    (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
-    ?? (diasDaOperacao.includes(hojeBRT) ? hojeBRT : null)
-    ?? [...diasDaOperacao].reverse().find(d => d <= hojeBRT)
-    ?? diasDaOperacao[0]
-    ?? hojeBRT
-
-  // Presença por foto: quantos funcionários já registraram cada etapa
-  const regs = (todosRegistros.data ?? []).filter(r => (r.data_ref as string | null) === diaEscolhido)
-  const quemFez = (t: string) => new Set(regs.filter(r => r.tipo === t).map(r => r.funcionario_id))
+  // Quantos funcionários já registraram cada etapa NO DIA ESCOLHIDO.
+  const quemFez = (t: string) =>
+    new Set((registrosDoDia ?? []).filter(r => r.tipo === t).map(r => r.funcionario_id))
   const entraram = quemFez('entrada')
   const sairam = quemFez('fim')
   const totEntrada = entraram.size
