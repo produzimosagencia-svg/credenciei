@@ -25,13 +25,23 @@ import type { DiaDoHistorico, HistoricoNoEvento } from '@/lib/historico'
  * ponto, só um segundo lugar de chegar até ela.
  */
 export default function HistoricoBatidas({
-  h, podeEditar = false, role,
+  h, podeEditar = false, role, onSalvo,
 }: {
   h: HistoricoNoEvento
   /** Mesma régua de `lancarPontoManual` no servidor. */
   podeEditar?: boolean
   /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
   role?: string
+  /**
+   * Chamado depois de salvar uma correção. Quando existe (aberto num modal
+   * que já tem o histórico em estado de cliente), busca os dados de novo em
+   * vez de `router.refresh()`: o refresh atualiza o Server Component por
+   * trás, mas não refaz uma busca de cliente já resolvida — sem isto, a
+   * correção só aparecia depois de recarregar a página inteira. Na página
+   * cheia (`/admin/funcionarios/[id]/historico`), que não recebe este prop,
+   * o refresh sozinho já basta — ali o histórico É o Server Component.
+   */
+  onSalvo?: () => void
 }) {
   const { resumo } = h
   const router = useRouter()
@@ -60,7 +70,8 @@ export default function HistoricoBatidas({
       const r = await lancarPontoManual(h.funcionarioId, editando.momento, editando.data, quando, motivo || `Corrigido no histórico (era ${ROTULO_MOMENTO[editando.momento]}${editando.atual ? ` às ${formatarBR(editando.atual, 'hora')}` : ', não registrada'}).`)
       if (r.error) { setErro(r.error); return }
       setEditando(null)
-      router.refresh()
+      if (onSalvo) onSalvo()
+      else router.refresh()
     })
   }
 

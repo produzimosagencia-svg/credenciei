@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { registrarPresencaQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
-import { ScanLine, LogIn, LogOut, CameraOff, Copy, CheckCheck } from 'lucide-react'
+import { ScanLine, CameraOff, Copy, CheckCheck } from 'lucide-react'
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -22,7 +22,6 @@ export default function ScannerView({
   initialEventoId?: string
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
-  const [momento, setMomento] = useState<'entrada' | 'fim'>('entrada')
   const [result, setResult] = useState<ScanResult | null>(null)
   const [show, setShow] = useState(false)
   const [conferindo, setConferindo] = useState(false)
@@ -32,20 +31,26 @@ export default function ScannerView({
   const [linkCopiado, setLinkCopiado] = useState(false)
   const scanningRef = useRef(false)
   const scannerRef = useRef<any>(null)
-  // Refs para o callback do scanner (que captura o estado do primeiro render)
+  // Ref para o callback do scanner (que captura o estado do primeiro render).
+  // Atualizada num efeito, não durante o render — o linter do React passou a
+  // recusar escrever em `.current` no corpo do componente.
   const eventoIdRef = useRef(eventoId)
-  const momentoRef = useRef(momento)
-  eventoIdRef.current = eventoId
-  momentoRef.current = momento
+  useEffect(() => { eventoIdRef.current = eventoId }, [eventoId])
 
   const processQR = async (data: string) => {
     if (scanningRef.current) return
     scanningRef.current = true
 
-    // Validação e registro acontecem no servidor (service role)
+    /*
+     * Sem escolher "Entrada" ou "Saída" antes: o servidor decide sozinho, pela
+     * própria pessoa — primeira leitura do turno é entrada, segunda é saída,
+     * terceira é recusada (ver `inferirMomentoQR` em lib/actions.ts). Os dois
+     * botões confundiam quem estava no portão, com fila andando — decisão do
+     * Juan em 03/09/2026.
+     */
     let resultado: ScanResult | null = null
     try {
-      resultado = await registrarPresencaQR(eventoIdRef.current, data, momentoRef.current)
+      resultado = await registrarPresencaQR(eventoIdRef.current, data)
     } catch {
       resultado = { success: false, message: 'Erro ao processar QR Code' }
     }
@@ -141,33 +146,15 @@ export default function ScannerView({
           </select>
         </div>
 
-        {/* Momento: entrada ou saída */}
-        <div className="grid grid-cols-2 gap-2" data-tutorial="scan-momento">
-          <button
-            onClick={() => setMomento('entrada')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all border ${
-              momento === 'entrada'
-                ? 'bg-green-600 border-green-500 text-white'
-                : 'bg-[#161b22] border-[#30363d] text-slate-400 hover:text-white'
-            }`}
-          >
-            <LogIn className="w-4 h-4" />
-            Entrada
-          </button>
-          <button
-            onClick={() => setMomento('fim')}
-            className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all border ${
-              momento === 'fim'
-                ? 'bg-brand-500 border-brand-400 text-white'
-                : 'bg-[#161b22] border-[#30363d] text-slate-400 hover:text-white'
-            }`}
-          >
-            <LogOut className="w-4 h-4" />
-            Saída
-          </button>
-        </div>
+        {/*
+          * Sem botão de Entrada/Saída — de propósito, a pedido do Juan
+          * (03/09/2026). O sistema decide sozinho, pela própria pessoa: quem
+          * não tem turno aberto está entrando; quem tem, está saindo. Ver
+          * `inferirMomentoQR` em lib/actions.ts pra regra inteira.
+          */}
         <p className="text-slate-500 text-xs text-center">
-          A etapa do <strong>meio</strong> é registrada pelo próprio funcionário, com foto, na credencial dele.
+          A câmera decide sozinha se é entrada ou saída, pelo que a pessoa já registrou hoje.
+          O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
         </p>
       </div>
 
@@ -219,7 +206,10 @@ export default function ScannerView({
         <div className="relative w-full max-w-sm" data-tutorial="scan-camera">
           <div id="qr-reader" className="rounded-xl overflow-hidden" />
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className={`w-64 h-64 border-2 rounded-2xl opacity-60 ${momento === 'entrada' ? 'border-green-400' : 'border-brand-400'}`} />
+            {/* Uma cor só: antes ela seguia o botão Entrada/Saída que a
+                pessoa escolhia antes de ler — sem o botão, não há mais o
+                que a moldura precise antecipar. */}
+            <div className="w-64 h-64 border-2 rounded-2xl opacity-60 border-brand-400" />
           </div>
         </div>
       )}

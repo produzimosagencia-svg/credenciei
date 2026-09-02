@@ -2464,6 +2464,43 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
   }
 }
 
+/**
+ * Decide sozinho se esta leitura de QR é ENTRADA ou SAÍDA — a pessoa no
+ * portão não escolhe mais o botão, e o operador também não.
+ *
+ * Regra pedida pelo Juan (03/09/2026): os dois botões (Entrada/Saída)
+ * confundiam quem estava escaneando, com fila andando. Primeira leitura do
+ * turno = entrada. Segunda = saída. Terceira = recusada — a pessoa já
+ * fechou o dia, e deixar passar criaria uma segunda entrada por cima da
+ * saída que já valeu.
+ *
+ * "Turno em aberto" é o mesmo conceito de `entradaDoTurno` (a âncora do
+ * turno, usada em todo o resto do fluxo): uma entrada dos últimos
+ * TETO_TURNO_H sem uma saída ainda. Achou entrada sem saída → é a saída.
+ * Achou entrada COM saída → o turno já fechou.
+ */
+async function inferirMomentoQR(
+  funcionarioId: string, eventoId: string, agora: Date,
+): Promise<{ momento: 'entrada' | 'fim' } | { erro: string }> {
+  const entrada = await entradaDoTurno(funcionarioId, eventoId, agora)
+  if (!entrada) return { momento: 'entrada' }
+
+  const { data: fim } = await supabaseAdmin
+    .from('registros')
+    .select('created_at')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+    .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+    .limit(1)
+
+  if (fim?.length) {
+    return {
+      erro: `Esta pessoa já registrou entrada e saída hoje (saída às ${formatarBR(fim[0].created_at as string, 'hora')}). `
+        + 'Se isso estiver errado, corrija pelo histórico dela em vez de escanear de novo.',
+    }
+  }
+  return { momento: 'fim' }
+}
+
 type DiaDeTrabalho = DiaDaJornada & { id: string; data: string }
 
 /**
@@ -2838,12 +2875,16 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
 /**
  * Scanner (admin/equipe logada): lê o QR da credencial e registra ENTRADA ou
  * SAÍDA (fim), validando organização e janela de horário no servidor.
+ *
+ * A ETAPA NÃO VEM MAIS DA TELA — o sistema decide sozinho (ver
+ * `inferirMomentoQR`). Antes quem estava no portão escolhia "Entrada" ou
+ * "Saída" antes de cada leitura, e a fila confundia o botão errado —
+ * decisão do Juan em 03/09/2026: um só leitor, sem escolha nenhuma.
  */
-export async function registrarPresencaQR(eventoId: string, qrData: string, momento: 'entrada' | 'fim'): Promise<ResultadoScan> {
+export async function registrarPresencaQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
   if (!perfil || !podeEscanear(perfil.role)) return { success: false, message: 'Sem permissão' }
-  if (momento !== 'entrada' && momento !== 'fim') return { success: false, message: 'Momento inválido' }
 
   // O QR carrega um código ASSINADO e com prazo, não o token cru — ver
   // lib/credencial-qr.ts. O split de "|" sobrevive só por causa de um formato
@@ -2926,7 +2967,12 @@ export async function registrarPresencaQR(eventoId: string, qrData: string, mome
     return { success: false, message: 'Funcionário não pertence ao seu setor', funcionario: funcInfo }
   }
 
-  const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento)
+  const agora = new Date()
+  const decidido = await inferirMomentoQR(func.id, eventoId, agora)
+  if ('erro' in decidido) return { success: false, message: decidido.erro, funcionario: funcInfo }
+  const momento = decidido.momento
+
+  const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento, agora)
   if (!resolucao.ok) return { success: false, message: resolucao.erro, funcionario: funcInfo }
 
   /*

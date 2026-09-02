@@ -256,18 +256,32 @@ export default function FuncionarioDetalheModal({
   const [erroHistorico, setErroHistorico] = useState<string | null>(null)
   const [carregandoHistorico, startCarregarHistorico] = useTransition()
 
+  /*
+   * Extraída à parte de `abrirAba` porque o histórico precisa ser buscado de
+   * novo em DOIS momentos: ao abrir a aba pela primeira vez, e depois de
+   * salvar uma correção de ponto ali dentro (ver `podeEditarPonto` em
+   * HistoricoBatidas). `router.refresh()` sozinho não bastava — ele
+   * atualiza a árvore do Server Component, mas este `historico` é estado de
+   * cliente, já resolvido; sem refazer a busca, a correção só aparecia
+   * depois de recarregar a página inteira.
+   */
+  const recarregarHistorico = () => {
+    startCarregarHistorico(async () => {
+      const r = await obterHistoricoDoFuncionario(f.id)
+      if (r.historico) {
+        setErroHistorico(null)
+        setHistorico(r.historico)
+      } else {
+        setErroHistorico(r.error ?? 'Não foi possível carregar o histórico.')
+        setHistorico(null)
+      }
+    })
+  }
+
   const abrirAba = (a: Aba) => {
     setAba(a)
     if (a === 'historico' && historico === undefined && !carregandoHistorico) {
-      startCarregarHistorico(async () => {
-        const r = await obterHistoricoDoFuncionario(f.id)
-        if (r.historico) {
-          setHistorico(r.historico)
-        } else {
-          setErroHistorico(r.error ?? 'Não foi possível carregar o histórico.')
-          setHistorico(null)
-        }
-      })
+      recarregarHistorico()
     }
   }
 
@@ -719,7 +733,7 @@ export default function FuncionarioDetalheModal({
                     <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erroHistorico}
                   </div>
                 ) : historico ? (
-                  <HistoricoBatidas h={historico} podeEditar={podeEditarPonto} role={role} />
+                  <HistoricoBatidas h={historico} podeEditar={podeEditarPonto} role={role} onSalvo={recarregarHistorico} />
                 ) : null}
               </div>
             )}
