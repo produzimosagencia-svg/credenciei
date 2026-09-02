@@ -17,6 +17,7 @@ import {
   type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
+import { setorExigeMeio, diaExigeMeio } from './meio'
 import { registrarEstadoWhatsApp } from './saude'
 import { formatCpf } from './format'
 import { formatarNumeroWhatsApp, enviarMensagem, estadoDaInstancia, ESPACAMENTO_MS, provedor, type ResultadoEnvio } from './whatsapp'
@@ -598,28 +599,21 @@ async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada
 }
 
 /**
- * O setor desta pessoa pede a confirmação do meio?
+ * Esta pessoa, NESTE dia, pede a confirmação do meio?
  *
- * Uma consulta só, pelo funcionário, porque é assim que os dois chamadores
- * têm a informação em mãos — nenhum deles conhece o setor de antemão.
- * Ausente/nulo conta como `true`: a coluna nasceu com padrão ligado, e
- * tratar a falta como "não pede" faria um erro de consulta silenciar o meio
- * do evento inteiro.
+ * Duas chaves, as duas precisam estar ligadas: o setor dela e o dia da
+ * operação — a regra inteira vive em `lib/meio.ts`, e a leitura de cada
+ * coluna é tolerante a migração pendente lá.
+ *
+ * Uma consulta a mais pelo funcionário porque é assim que os chamadores têm
+ * a informação em mãos: nenhum deles conhece o setor de antemão.
  */
-async function setorExigeMeio(funcionarioId: string): Promise<boolean> {
+async function pedeMeio(funcionarioId: string, eventoId: string, dataRef: string): Promise<boolean> {
   const { data: func } = await supabase
     .from('funcionarios').select('fornecedor_id').eq('id', funcionarioId).single()
   if (!func?.fornecedor_id) return false
-  /*
-   * Consulta separada, não um join — ver `setoresComMeio` em lib/pendencias.
-   * Pedir uma coluna que ainda não existe derruba a consulta inteira no
-   * Supabase, e aqui isso silenciaria o agendamento de mensagens sem
-   * ninguém perceber. Erro = ninguém pede o meio, que é o padrão.
-   */
-  const { data, error } = await supabase
-    .from('fornecedores').select('exige_meio').eq('id', func.fornecedor_id).single()
-  if (error) return false
-  return data?.exige_meio === true
+  if (!(await diaExigeMeio(eventoId, dataRef))) return false
+  return setorExigeMeio(func.fornecedor_id as string)
 }
 
 /**
@@ -645,13 +639,14 @@ export async function agendarMeioAposEntrada(params: {
   if (desligado(fluxos, 'lembrete') && desligado(fluxos, 'reforco')) return
 
   /*
-   * Setor que não pede o meio não gera mensagem de meio.
+   * Setor que não pede o meio — ou DIA que não pede — não gera mensagem.
    *
-   * É aqui que a economia de WhatsApp do `exige_meio` acontece de verdade:
-   * são duas mensagens por pessoa por dia (lembrete + reforço), e cada uma é
-   * cobrada. Ver `fornecedores.exige_meio`.
+   * É aqui que a economia de WhatsApp acontece de verdade: são duas
+   * mensagens por pessoa por dia (lembrete + reforço), e cada uma é cobrada.
+   * Com 630 pessoas, um dia de meio ligado sem necessidade passa de mil
+   * mensagens. Ver `lib/meio.ts`.
    */
-  if (!(await setorExigeMeio(params.funcionarioId))) return
+  if (!(await pedeMeio(params.funcionarioId, params.eventoId, params.dataRef))) return
 
   const janela = janelaMeio(params.entradaEm)
   const reforco = new Date(new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString()

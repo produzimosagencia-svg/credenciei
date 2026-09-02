@@ -14,6 +14,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { janelaDoMeio, horariosEsperados, diaBRT, type EventoJanelas, type DiaDaJornada } from './janelas'
+import { setoresComMeio, diaExigeMeio } from './meio'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,27 +58,6 @@ type Opcoes = {
   /** Supervisor: restringe ao próprio setor. */
   fornecedorId?: string
   etapas?: EtapaPendente[]
-}
-
-/**
- * Quais destes setores pedem a confirmação do meio.
- *
- * Consulta SEPARADA, e não um join — de propósito. `exige_meio` é uma coluna
- * nova, e no Supabase pedir uma coluna que ainda não existe derruba a
- * consulta INTEIRA, não só aquele campo. Junto no `select` da equipe, isso
- * fez a tela do evento aparecer com "nenhum fornecedor ainda" em produção,
- * com 33 setores e 387 pessoas intactos no banco — só porque a migração
- * ainda não tinha sido aplicada.
- *
- * Isolada aqui, a falha custa no máximo o recurso novo (nenhum setor pede o
- * meio, que é o padrão de qualquer forma) e nunca a tela.
- */
-async function setoresComMeio(fornecedorIds: string[]): Promise<Set<string>> {
-  if (!fornecedorIds.length) return new Set()
-  const { data, error } = await supabase
-    .from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
-  if (error) return new Set()
-  return new Set((data ?? []).filter(f => f.exige_meio === true).map(f => f.id as string))
 }
 
 /**
@@ -144,7 +124,12 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
   const dia = (diasJornada?.[0] as DiaDaJornada | undefined) ?? null
   if (!dia || dia.cancelado) return []
 
-  const comMeio = etapas.includes('meio')
+  /*
+   * O meio tem DUAS chaves: o setor e o dia (ver `lib/meio.ts`). Se ESTE dia
+   * não pede o meio, nenhum setor pede nele — nem adianta consultar quais.
+   */
+  const diaPedeMeio = etapas.includes('meio') ? await diaExigeMeio(eventoId, data) : false
+  const comMeio = diaPedeMeio
     ? await setoresComMeio([...new Set(equipe.map(f => f.fornecedor_id as string))])
     : new Set<string>()
 

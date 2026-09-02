@@ -15,6 +15,7 @@ import {
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
 import { avisosPendentesFuncionario } from '@/lib/avisos'
+import { setorExigeMeio, diaExigeMeio } from '@/lib/meio'
 import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
 
 export const revalidate = 0
@@ -160,16 +161,14 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * passar quando existe `feitoMap.meio`.
    */
   /*
-   * Consulta separada da coluna nova — ver `setoresComMeio` em lib/pendencias.
-   * Dentro do join acima, uma coluna ainda não migrada derrubaria a busca
-   * inteira e a credencial abriria como "não encontrada".
+   * Duas chaves: o setor E o dia de hoje — a regra inteira em `lib/meio.ts`,
+   * onde cada leitura é isolada e tolerante a migração pendente. Dentro do
+   * join acima, uma coluna ainda não migrada derrubaria a busca inteira e a
+   * credencial abriria como "não encontrada".
    */
-  let exigeMeio = false
-  if (funcionario.fornecedor_id) {
-    const { data: cfg } = await supabase
-      .from('fornecedores').select('exige_meio').eq('id', funcionario.fornecedor_id).maybeSingle()
-    exigeMeio = cfg?.exige_meio === true
-  }
+  const exigeMeio = evento
+    ? (await diaExigeMeio(evento.id, hoje)) && (await setorExigeMeio(funcionario.fornecedor_id))
+    : false
 
   const momentos: MomentoInfo[] = ROTULOS
     .filter(({ momento }) => momento !== 'meio' || exigeMeio || feitoMap.meio)

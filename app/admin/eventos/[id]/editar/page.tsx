@@ -1,14 +1,15 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, diasDoEvento } from '@/lib/actions'
+import { editarEvento, diasDoEvento, obterConfiguracaoDoMeio } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
+import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, CalendarRange, MapPin, LogIn, LogOut, Camera, Save } from 'lucide-react'
+import { CalendarDays, CalendarRange, MapPin, LogIn, LogOut, Save } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -69,7 +70,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const dias = await diasDoEvento(id)
+  const [dias, configMeio] = await Promise.all([diasDoEvento(id), obterConfiguracaoDoMeio(id)])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
   return (
@@ -218,26 +219,11 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             ))}
           </div>
 
-          {/* O meio perdeu o campo, mas NÃO pode perder a explicação.
-              Sem esta caixa, o produtor vê "Entrada" e "Saída" e conclui que o
-              meio deixou de existir — quando na verdade ele virou automático. */}
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
-            <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-              <Camera className="w-3.5 h-3.5 text-blue-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-700">Meio — automático</p>
-              <p className="text-slate-600 text-xs mt-0.5">
-                O sistema solicita a batida por foto <strong>4 horas depois da entrada</strong> de
-                cada pessoa. Quem entrar às 08:00 registra às 12:00; quem entrar às 10:30 registra
-                às 14:30.
-              </p>
-              <p className="text-slate-500 text-2xs mt-1">
-                É pedido uma vez só, e não tem horário para configurar — a equipe não entra junta,
-                e um horário fixo cobraria de quem acabou de chegar.
-              </p>
-            </div>
-          </div>
+          {/* O meio não tem HORÁRIO para configurar (ele é a entrada real de
+              cada pessoa + 4h), mas tem PÚBLICO e DIAS — e essa é a decisão
+              de custo mais cara do sistema: duas mensagens cobradas por
+              pessoa por dia. Ver lib/meio.ts. */}
+          <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
         </div>
 
         {/*

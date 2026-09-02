@@ -5,10 +5,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
-  Activity, ClipboardCheck, MessageCircle,
+  Activity, ClipboardCheck, MessageCircle, Megaphone,
 } from 'lucide-react'
 import {
-  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar, type Role,
+  ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
+  podeGerenciarEventos, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -57,6 +58,16 @@ function gruposPara(role: string): Grupo[] {
   if (podeAcompanhar(role)) {
     principal.push({ href: '/admin/localizar', label: 'Registrar ponto', icon: ClipboardCheck })
     principal.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
+  }
+  /*
+   * Avisos fica na lista principal, e não dentro do evento só: é daqui que
+   * se manda um recado sem ter que lembrar em qual evento a pessoa está. A
+   * tela pede o evento primeiro — e o admin só enxerga os da própria
+   * organização, o master enxerga todos (a régua é a mesma do resto do
+   * sistema, aplicada no servidor em /admin/avisos).
+   */
+  if (podeGerenciarEventos(role)) {
+    principal.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
   }
   if (podeGerenciarUsuarios(role)) {
     principal.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })

@@ -36,6 +36,7 @@ import { normalizarCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
+import { setoresComMeio, diasComMeio } from './meio'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
@@ -3644,6 +3645,100 @@ export async function trocarTokenDaPortaria(eventoId: string) {
   if (error) throw new Error('Não foi possível gerar um novo QR. Tente de novo.')
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
+}
+
+// ─── Configuração do meio (setores × dias) ────────────────────────────────
+
+export type ConfiguracaoDoMeio = {
+  setores: { id: string; nome: string; exigeMeio: boolean }[]
+  dias: { data: string; tipo: 'principal' | 'preparacao'; exigeMeio: boolean }[]
+  /** false = a migração `upgrade-meio-por-dia.sql` ainda não rodou. */
+  diasDisponiveis: boolean
+}
+
+/**
+ * O que a tela de "Batida do meio" mostra: os setores do evento e os dias da
+ * operação, cada um com o seu interruptor.
+ *
+ * Três consultas separadas, nunca um join — as duas colunas `exige_meio` são
+ * novas, e no Supabase pedir uma coluna inexistente derruba a consulta
+ * inteira. Ver o comentário no topo de `lib/meio.ts`.
+ */
+export async function obterConfiguracaoDoMeio(eventoId: string): Promise<ConfiguracaoDoMeio> {
+  await exigirEventoDaOrg(eventoId)
+
+  const [{ data: setoresBase }, { data: diasBase }] = await Promise.all([
+    supabaseAdmin.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome'),
+    supabaseAdmin.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).order('data'),
+  ])
+
+  const comMeio = await setoresComMeio((setoresBase ?? []).map(s => s.id as string))
+  const { ok: diasDisponiveis, dias: diasComMeioSet } = await diasComMeio(eventoId)
+
+  return {
+    setores: (setoresBase ?? []).map(s => ({ id: s.id as string, nome: s.nome as string, exigeMeio: comMeio.has(s.id as string) })),
+    dias: (diasBase ?? []).map(d => ({
+      data: d.data as string,
+      tipo: ((d.tipo as string) === 'principal' ? 'principal' : 'preparacao') as 'principal' | 'preparacao',
+      // Migração pendente ⇒ todos ligados, que é o padrão da coluna.
+      exigeMeio: diasDisponiveis ? diasComMeioSet.has(d.data as string) : true,
+    })),
+    diasDisponiveis,
+  }
+}
+
+/**
+ * Liga/desliga a batida do meio: quais SETORES pedem, e em quais DIAS.
+ *
+ * Escreve os dois lados de uma vez porque a regra é um E entre eles (ver
+ * `lib/meio.ts`) — salvar metade deixaria a tela dizendo uma coisa e o
+ * sistema fazendo outra.
+ *
+ * Grava explicitamente `false` em quem NÃO foi escolhido, e não só `true` no
+ * que foi: sem isso, desmarcar um setor não desligaria nada — só deixaria de
+ * ligar de novo.
+ *
+ * E chama `sincronizarAgendamentos` no fim, que é a parte que realmente
+ * economiza: desligar o meio sem cancelar a fila já enfileirada não pararia
+ * mensagem nenhuma — foi exatamente esse buraco que deixou 2.249 mensagens
+ * agendadas depois de uma mudança de regra.
+ */
+export async function salvarConfiguracaoDoMeio(
+  eventoId: string, setoresLigados: string[], diasLigados: string[],
+) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { data: setoresDoEvento } = await supabaseAdmin
+    .from('fornecedores').select('id').eq('evento_id', eventoId)
+  const idsDoEvento = (setoresDoEvento ?? []).map(s => s.id as string)
+  const ligados = idsDoEvento.filter(id => setoresLigados.includes(id))
+  const desligados = idsDoEvento.filter(id => !setoresLigados.includes(id))
+
+  // Dois updates em massa, não um por setor: o Henrique e Juliano tem 33.
+  // O `.in()` com lista vazia é evitado — ele não é um no-op em todo driver.
+  const erroSetor = (
+    (ligados.length ? (await supabaseAdmin.from('fornecedores').update({ exige_meio: true }).in('id', ligados)).error : null)
+    ?? (desligados.length ? (await supabaseAdmin.from('fornecedores').update({ exige_meio: false }).in('id', desligados)).error : null)
+  )
+  if (erroSetor) throw new Error('A configuração por setor precisa da migração supabase/upgrade-meio-por-setor.sql aplicada no banco.')
+
+  const { data: diasDoEvento } = await supabaseAdmin
+    .from('jornada_dias').select('data').eq('evento_id', eventoId)
+  const datasDoEvento = (diasDoEvento ?? []).map(d => d.data as string)
+  const datasLigadas = datasDoEvento.filter(d => diasLigados.includes(d))
+  const datasDesligadas = datasDoEvento.filter(d => !diasLigados.includes(d))
+
+  const erroDia = (
+    (datasLigadas.length ? (await supabaseAdmin.from('jornada_dias').update({ exige_meio: true }).eq('evento_id', eventoId).in('data', datasLigadas)).error : null)
+    ?? (datasDesligadas.length ? (await supabaseAdmin.from('jornada_dias').update({ exige_meio: false }).eq('evento_id', eventoId).in('data', datasDesligadas)).error : null)
+  )
+  if (erroDia) throw new Error('A configuração por dia precisa da migração supabase/upgrade-meio-por-dia.sql aplicada no banco.')
+
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath(`/admin/eventos/${eventoId}/editar`)
+  return { ok: true as const, setores: ligados.length, dias: datasLigadas.length }
 }
 
 // ─── Avisos ───────────────────────────────────────────────────────────────
