@@ -75,12 +75,17 @@ const TUTORIAL: TutorialConfig = {
 /*
  * Teto de leitura, por escopo.
  *
- * "Recrutar" é vitrine curada: sem filtro, 300 linhas já enchem a lista, e com
- * filtro o banco corta antes — então dá pra varrer bem mais fundo sem custo.
  * "Todos" é o registro completo (era o teto único de Base de funcionários,
  * 3000): quem entra aqui está caçando um cadastro específico, não navegando.
+ *
+ * "Recrutar" tinha teto menor sem filtro (300, de quando a base cabia numa
+ * "vitrine curada") — corrigido em 03/09/2026: a base passou disso (1001
+ * pessoas autorizadas confirmadas no banco) e a tela escondia a maior parte
+ * dela sem avisar — quem abria via "300" e achava que era o total. Agora o
+ * teto sem filtro é o mesmo do filtrado: 2000 já é o tamanho que o sistema
+ * aceita sem filtro nenhum na consulta de "todos", então não é carga nova.
  */
-const TETO_RECRUTAR_SEM_FILTRO = 300
+const TETO_RECRUTAR_SEM_FILTRO = 2000
 const TETO_RECRUTAR_COM_FILTRO = 2000
 const TETO_TODOS = 3000
 
