@@ -2445,6 +2445,19 @@ const JANELA_SELECT = 'data_inicio, data_fim, batida_livre, checkin_autonomo, ja
  * O teto de 18h existe pra uma entrada esquecida da semana passada não capturar
  * a saída de hoje — ver TETO_TURNO_H.
  */
+/**
+ * Quanto tempo depois da ENTRADA o scanner passa a aceitar a saída.
+ *
+ * Trava contra a leitura dupla acidental no portão: o QR continua na tela
+ * da pessoa, o operador aponta a câmera de novo sem querer, e a entrada
+ * que acabou de ser gravada virava entrada + saída no mesmo minuto. Vale
+ * só pro scanner (`inferirMomentoQR`) — o registro assistido com foto e o
+ * lançamento manual não passam por aqui, de propósito: os dois são
+ * conscientes, e o manual existe justamente pra consertar o que o portão
+ * errou.
+ */
+const CARENCIA_SAIDA_MIN = 5
+
 async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Date) {
   const desde = new Date(agora.getTime() - TETO_TURNO_H * 60 * 60 * 1000).toISOString()
   const { data } = await supabaseAdmin
@@ -2489,6 +2502,7 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
  *
  *   1. Turno em aberto (entrada sem saída, dentro de TETO_TURNO_H)?
  *      → é a SAÍDA. É isto que fecha certo quem virou a madrugada.
+ *      Exceto se a entrada foi agorinha — ver CARENCIA_SAIDA_MIN.
  *   2. Já tem entrada E saída com a data de HOJE? → recusa (3ª leitura).
  *   3. Caso contrário → ENTRADA. Dia novo, turno novo.
  */
@@ -2504,8 +2518,33 @@ async function inferirMomentoQR(
       .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
       .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
       .limit(1)
-    // Turno aberto: a leitura de agora é a saída dele.
-    if (!fimDoTurno?.length) return { momento: 'fim' }
+
+    if (!fimDoTurno?.length) {
+      /*
+       * Turno aberto: a leitura de agora seria a saída. Mas se a ENTRADA
+       * acabou de acontecer, quase certamente é a mesma pessoa sendo lida
+       * duas vezes seguidas — o QR fica na tela, o operador aponta a câmera
+       * de novo, e o que era pra ser uma entrada virava entrada + saída
+       * imediata. Tirar os botões resolveu a confusão de escolher a etapa
+       * errada, mas não esta (relato do Juan, 03/09/2026).
+       *
+       * Ninguém trabalha 5 minutos: dentro da carência a segunda leitura é
+       * recusada com um aviso que explica ao operador o que aconteceu, em
+       * vez de gravar uma saída falsa. Passados os 5 minutos, a saída
+       * registra normalmente — quem de fato entrou e precisou sair logo
+       * depois só espera um pouco.
+       */
+      const desdeEntradaMs = agora.getTime() - new Date(entrada.em).getTime()
+      const carenciaMs = CARENCIA_SAIDA_MIN * 60 * 1000
+      if (desdeEntradaMs < carenciaMs) {
+        const faltam = Math.max(1, Math.ceil((carenciaMs - desdeEntradaMs) / 60_000))
+        return {
+          erro: `Esta pessoa acabou de registrar a ENTRADA (às ${formatarBR(entrada.em, 'hora')}). `
+            + `Se for saída mesmo, aguarde ${faltam} min e leia de novo.`,
+        }
+      }
+      return { momento: 'fim' }
+    }
   }
 
   /*

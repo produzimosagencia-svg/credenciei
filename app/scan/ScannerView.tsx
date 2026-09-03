@@ -60,20 +60,28 @@ export default function ScannerView({
     /*
      * Crachá de outra etapa NÃO some sozinho.
      *
-     * Nos outros resultados o aviso passar em 2,5s é o certo: a fila anda e o
+     * Nos outros resultados o aviso passar sozinho é o certo: a fila anda e o
      * próximo já está com o celular na mão. Aqui não — há uma decisão a tomar
      * com a pessoa parada na frente, e apagar a tela no meio dela devolveria o
      * operador ao escuro, sem saber o que fazer com quem está ali.
      */
     if (resultado?.faseErrada) return
 
+    /*
+     * Recusa fica mais tempo que confirmação.
+     *
+     * Confirmação é uma palavra e um ✓ — 2,5s sobra, e a fila precisa andar.
+     * Recusa é uma frase com instrução ("aguarde 4 min e leia de novo") e o
+     * operador não tem como voltar pra reler: se sumir antes, ele fica sem
+     * saber por que aquela pessoa não passou.
+     */
     setTimeout(() => {
       setShow(false)
       setTimeout(() => {
         setResult(null)
         scanningRef.current = false
       }, 400)
-    }, 2500)
+    }, resultado?.success ? 2500 : 4500)
   }
 
   /** Volta a ler QR. Usado pelos botões da recusa por etapa. */
