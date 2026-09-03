@@ -5014,6 +5014,87 @@ function normalizarPlaca(v: string): string {
   return (v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
+/**
+ * Sobe a foto do veículo e devolve o caminho salvo, ou null quando não veio
+ * foto (o campo é opcional — ver upgrade-veiculo-foto.sql).
+ *
+ * Mesmo bucket privado das outras fotos do sistema (`presencas`), com
+ * `upsert: true` no caminho fixo do veículo: trocar a foto substitui a
+ * anterior em vez de acumular arquivo órfão no storage.
+ */
+async function subirFotoVeiculo(veiculoId: string, arquivo: FormDataEntryValue | null): Promise<string | null> {
+  if (!(arquivo instanceof File) || arquivo.size === 0) return null
+  if (!TIPOS_FOTO_ACEITOS.has(arquivo.type)) {
+    throw new Error('Formato de imagem não suportado. Use JPG, PNG ou WEBP.')
+  }
+  const ext = arquivo.type.split('/')[1] === 'jpeg' ? 'jpg' : arquivo.type.split('/')[1]
+  const path = `veiculos/${veiculoId}.${ext}`
+  const buffer = Buffer.from(await arquivo.arrayBuffer())
+  const { error } = await supabaseAdmin.storage.from('presencas').upload(path, buffer, {
+    contentType: arquivo.type,
+    upsert: true,
+  })
+  if (error) throw new Error('Erro ao enviar a foto do veículo. Tente novamente.')
+  return path
+}
+
+/**
+ * Troca (ou remove) a foto de um veículo já cadastrado.
+ *
+ * Existe separada do cadastro porque a foto quase sempre vem DEPOIS: o
+ * veículo é cadastrado às pressas na chegada e a foto é tirada quando ele
+ * já está parado no portão.
+ */
+export async function atualizarFotoVeiculo(veiculoId: string, eventoId: string, formData: FormData) {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+
+  const { data: atual } = await supabaseAdmin
+    .from('veiculos').select('id, foto_path').eq('id', veiculoId).eq('evento_id', eventoId).single()
+  if (!atual) return { error: 'Veículo não encontrado.' }
+
+  const remover = formData.get('remover') === '1'
+  if (remover) {
+    if (atual.foto_path) await supabaseAdmin.storage.from('presencas').remove([atual.foto_path as string])
+    await supabaseAdmin.from('veiculos').update({ foto_path: null }).eq('id', veiculoId)
+    revalidatePath('/admin/veiculos')
+    return { ok: true as const }
+  }
+
+  let path: string | null
+  try {
+    path = await subirFotoVeiculo(veiculoId, formData.get('foto'))
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Erro ao enviar a foto.' }
+  }
+  if (!path) return { error: 'Escolha uma imagem.' }
+
+  /*
+   * Se a extensão mudou (JPG -> PNG), o arquivo antigo continuaria no bucket
+   * sem ninguém apontando pra ele — o `upsert` só cobre o mesmo caminho.
+   */
+  if (atual.foto_path && atual.foto_path !== path) {
+    await supabaseAdmin.storage.from('presencas').remove([atual.foto_path as string])
+  }
+
+  const { error } = await supabaseAdmin.from('veiculos').update({ foto_path: path }).eq('id', veiculoId)
+  if (error) return { error: mensagemAmigavel(error) }
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const }
+}
+
+/** URL assinada da foto de um veículo, pra exibir na lista. Bucket é privado. */
+export async function urlFotoVeiculo(veiculoId: string, eventoId: string): Promise<string | null> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return null
+  const { data } = await supabaseAdmin
+    .from('veiculos').select('foto_path').eq('id', veiculoId).eq('evento_id', eventoId).single()
+  if (!data?.foto_path) return null
+  const { data: assinada } = await supabaseAdmin.storage
+    .from('presencas').createSignedUrl(data.foto_path as string, 60 * 30)
+  return assinada?.signedUrl ?? null
+}
+
 export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
   const acesso = await exigirAcessoAVeiculos(eventoId)
   if (!acesso.perfil) return { error: acesso.error }
@@ -5069,6 +5150,19 @@ export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
       .from('veiculo_dias')
       .insert(dias.map(data => ({ veiculo_id: novo.id, data })))
     if (erroDias) return { error: mensagemAmigavel(erroDias) }
+  }
+
+  /*
+   * Foto por último, e sem derrubar o cadastro se falhar: o caminho precisa
+   * do id que só existe depois do insert, e um erro de upload não pode
+   * desfazer um veículo que já está autorizado a entrar — a foto é opcional
+   * e pode ser adicionada depois por `atualizarFotoVeiculo`.
+   */
+  try {
+    const fotoPath = await subirFotoVeiculo(novo.id, formData.get('foto'))
+    if (fotoPath) await supabaseAdmin.from('veiculos').update({ foto_path: fotoPath }).eq('id', novo.id)
+  } catch (erroFoto) {
+    console.error('[cadastrarVeiculo] falha ao subir foto', { veiculoId: novo.id, erro: erroFoto })
   }
 
   revalidatePath('/admin/veiculos')

@@ -847,6 +847,23 @@ type MensagemClaimada = {
 async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
   const momento = MOMENTO_POR_TIPO[msg.tipo]
 
+  /*
+   * ─── 0. O MEIO PODE TER SIDO DESLIGADO DEPOIS DO AGENDAMENTO ─────────────
+   *
+   * `agendarMeioAposEntrada` decide na hora da ENTRADA se o meio vale pra
+   * aquela pessoa. Se o setor (ou o dia) for desligado DEPOIS disso, as
+   * mensagens já agendadas continuavam na fila e eram enviadas — e cobradas.
+   * Quem desliga um setor no meio da operação espera que o efeito seja
+   * imediato, não só pra quem ainda vai bater a entrada (pergunta do Juan,
+   * 03/09/2026).
+   *
+   * A conferência é aqui, no envio, porque é o único ponto que enxerga o
+   * estado ATUAL da configuração — a fila guarda a decisão de horas atrás.
+   */
+  if (momento === 'meio' && msg.funcionario_id) {
+    if (!(await pedeMeio(msg.funcionario_id, msg.evento_id, msg.data_ref))) return false
+  }
+
   if ((momento === 'meio' || momento === 'fim') && msg.funcionario_id) {
     const { data: entrou } = await supabase
       .from('registros')

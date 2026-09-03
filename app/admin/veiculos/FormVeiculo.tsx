@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Truck, Search, Check, AlertTriangle, User } from 'lucide-react'
+import { Truck, Search, Check, AlertTriangle, User, Camera, X } from 'lucide-react'
 import { buscarCondutorPorCpf, cadastrarVeiculo, type CondutorEncontrado } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -36,6 +36,9 @@ export default function FormVeiculo({
   const [ok, setOk] = useState<string | null>(null)
   const [salvando, startSalvar] = useTransition()
   const [diasMarcados, setDiasMarcados] = useState<string[]>([])
+  // Prévia da foto escolhida. `File` fica no próprio input (FormData pega de
+  // lá); aqui guardamos só a URL local pra mostrar o que foi escolhido.
+  const [previa, setPrevia] = useState<string | null>(null)
 
   const buscar = (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,6 +62,7 @@ export default function FormVeiculo({
       setCondutor(null)
       setCpf('')
       setDiasMarcados([])
+      setPrevia(null)
       router.refresh()
     })
   }
@@ -195,6 +199,49 @@ export default function FormVeiculo({
               </div>
             </div>
           )}
+
+          {/*
+            * Foto opcional, e opcional de verdade: quem cadastra na chegada
+            * do veículo nem sempre tem como parar pra fotografar. Dá pra
+            * adicionar depois, pela lista.
+            */}
+          <div>
+            <label className="text-slate-600 text-xs font-medium block mb-1">
+              Foto do veículo <span className="text-slate-400 font-normal">(opcional)</span>
+            </label>
+            {previa ? (
+              <div className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={previa} alt="Foto escolhida" className="w-24 h-20 object-cover rounded-xl border border-slate-200" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrevia(null)
+                    const el = document.getElementById('foto-veiculo') as HTMLInputElement | null
+                    if (el) el.value = ''
+                  }}
+                  className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 text-xs font-semibold"
+                >
+                  <X className="w-3.5 h-3.5" /> Tirar foto de novo
+                </button>
+              </div>
+            ) : (
+              <label
+                htmlFor="foto-veiculo"
+                className="flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-4 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-600 cursor-pointer transition-colors"
+              >
+                <Camera className="w-4 h-4" /> Adicionar foto
+              </label>
+            )}
+            <input
+              id="foto-veiculo" type="file" name="foto" accept="image/*" capture="environment"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                setPrevia(f ? URL.createObjectURL(f) : null)
+              }}
+            />
+          </div>
 
           <div>
             <label className="text-slate-600 text-xs font-medium block mb-1">
