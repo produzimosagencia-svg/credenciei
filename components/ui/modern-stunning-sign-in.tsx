@@ -36,18 +36,19 @@ export function SignIn1({ onEntrar, carregando, erro }: {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden w-full px-4 py-10"
-      style={{ background: 'radial-gradient(1000px 520px at 50% -10%, rgba(255,74,15,.24), transparent 60%), radial-gradient(700px 420px at 100% 100%, rgba(163,27,5,.16), transparent 60%), #0d0c0c' }}
+      className="min-h-screen w-full relative overflow-hidden flex flex-col items-center justify-center px-4 py-10 md:flex-row md:items-center md:justify-center md:gap-16 lg:gap-28 md:px-12"
+      style={{ background: 'radial-gradient(1000px 520px at 30% 40%, rgba(255,74,15,.22), transparent 60%), radial-gradient(700px 420px at 100% 100%, rgba(163,27,5,.16), transparent 60%), #0d0c0c' }}
     >
-      {/* Ícone 3D flutuando acima do cartão, com a luz por trás. */}
-      <div className="relative z-10 -mb-12">
-        <span className="absolute inset-0 rounded-full blur-2xl" style={{ background: 'radial-gradient(circle, rgba(255,74,15,.55), transparent 70%)' }} aria-hidden="true" />
+      {/* Ícone 3D com a luz por trás. No celular fica pequeno, encaixado no
+          topo do cartão; no desktop vira a coluna da esquerda, bem grande. */}
+      <div className="relative z-10 -mb-12 md:mb-0 md:flex-none">
+        <span className="absolute inset-0 rounded-full blur-2xl md:blur-3xl" style={{ background: 'radial-gradient(circle, rgba(255,74,15,.55), transparent 70%)' }} aria-hidden="true" />
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/marca/iso-3d.png" alt="Credenciei" className="relative w-28 h-28 object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.6)]" style={{ animation: 'flutua-login 6s ease-in-out infinite' }} />
+        <img src="/marca/iso-3d.png" alt="Credenciei" className="relative w-28 h-28 md:w-[min(40vw,520px)] md:h-[min(40vw,520px)] object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.6)] md:drop-shadow-[0_40px_80px_rgba(0,0,0,.7)]" />
       </div>
 
       {/* Cartão de vidro */}
-      <div className="relative z-0 w-full max-w-sm rounded-[28px] bg-gradient-to-b from-white/[.08] to-white/[.02] border border-white/10 backdrop-blur-sm shadow-[0_40px_100px_rgba(0,0,0,.6),inset_0_1px_0_rgba(255,255,255,.08)] pt-16 px-8 pb-8 flex flex-col items-center">
+      <div className="relative z-0 w-full max-w-sm md:max-w-md md:flex-none rounded-[28px] bg-gradient-to-b from-white/[.08] to-white/[.02] border border-white/10 backdrop-blur-sm shadow-[0_40px_100px_rgba(0,0,0,.6),inset_0_1px_0_rgba(255,255,255,.08)] pt-16 md:pt-10 px-8 md:px-10 pb-8 md:pb-10 flex flex-col items-center">
         <h1 className="text-white text-[22px] font-extrabold tracking-tight text-center leading-tight">
           Toda a equipe do seu evento, <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(135deg,#FF8A4C,#FF4A0F 55%,#E9C58A)' }}>credenciada.</span>
         </h1>
@@ -94,7 +95,7 @@ export function SignIn1({ onEntrar, carregando, erro }: {
           <button
             type="submit"
             disabled={carregando}
-            className="btn-press w-full px-5 py-3.5 mt-1 rounded-full text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition"
+            className="btn-press w-full px-5 py-3.5 mt-1 rounded-xl text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition"
             style={{ background: 'linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%)', boxShadow: '0 10px 30px rgba(255,74,15,.45), inset 0 1px 0 rgba(255,255,255,.25)' }}
           >
             {carregando ? 'Entrando…' : 'Entrar'}
@@ -112,11 +113,9 @@ export function SignIn1({ onEntrar, carregando, erro }: {
         </form>
       </div>
 
-      <p className="relative z-10 mt-10 text-white/35 text-xs text-center">
+      <p className="relative z-10 mt-10 md:mt-0 md:absolute md:bottom-6 md:left-0 md:right-0 text-white/35 text-xs text-center">
         Credenciei © {new Date().getFullYear()} — Produzimos
       </p>
-
-      <style>{`@keyframes flutua-login { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-8px) } } @media (prefers-reduced-motion: reduce) { img[alt="Credenciei"] { animation: none !important } }`}</style>
     </div>
   )
 }

@@ -234,7 +234,8 @@
 .ctaCaixa > * { position: relative; }
 .ctaLuz { position: absolute; left: 50%; top: -160px; width: 520px; height: 520px; transform: translateX(-50%); border-radius: 999px; background: radial-gradient(circle, rgba(255, 74, 15, 0.28), transparent 70%); pointer-events: none; }
 @media (max-width: 640px) { .ctaCaixa { padding: 44px 20px; border-radius: 20px; } }
-.ctaIso { height: 64px; width: auto; margin: 0 auto; filter: drop-shadow(0 0 24px rgba(255, 74, 15, 0.6)); }
+.ctaIso { height: 120px; width: auto; margin: 0 auto; filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 30px rgba(255, 74, 15, 0.45)); }
+@media (max-width: 640px) { .ctaIso { height: 88px; } }
 .cta h2 { margin: 28px auto 0; max-width: 760px; font-size: clamp(34px, 4.4vw, 52px); line-height: 1.02; letter-spacing: -0.03em; color: #fff; font-weight: 800; }
 .cta p { margin: 20px auto 0; max-width: 520px; font-size: 17px; color: rgba(243, 242, 242, 0.6); }
 .cta a { margin-top: 36px; }

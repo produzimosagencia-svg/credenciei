@@ -186,7 +186,7 @@ export default function Landing() {
         <div className={s.ctaCaixa}>
           <span className={s.ctaLuz} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marca/iso-laranja.png" alt="" className={s.ctaIso} />
+          <img src="/marca/iso-3d.png" alt="" className={s.ctaIso} />
           <h2>Seu próximo evento começa com a equipe certa passando pelo portão certo.</h2>
           <p>Conte quantas pessoas você credencia e a gente monta o evento com você. Resposta em horas, não em dias.</p>
           <a href={WHATSAPP_COMERCIAL} target="_blank" rel="noopener" className={`${s.btn} ${s.btnPrimario} ${s.btnEnorme}`}><MessageCircle size={20} />Fale com o nosso time no WhatsApp</a>
