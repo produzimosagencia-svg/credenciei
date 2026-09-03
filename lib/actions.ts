@@ -40,7 +40,7 @@ import { podePassar } from './limite'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria } from './auditoria'
-import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado } from './mensagens'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
 import { urlBase } from './ia/ferramentas/base'
@@ -4661,11 +4661,23 @@ export async function salvarConfiguracaoDoMeio(
   )
   if (erroDia) throw new Error('A configuração por dia precisa da migração supabase/upgrade-meio-por-dia.sql aplicada no banco.')
 
+  /*
+   * O cancelamento do MEIO é SÍNCRONO; o resto continua em background.
+   *
+   * `sincronizarAgendamentos` só varre os tipos que ela mesma agenda, e as
+   * do meio nascem em `agendarMeioAposEntrada` (na hora da entrada da
+   * pessoa) — ninguém limpava essas. E ele precisa ser síncrono porque o
+   * pedido é o número da fila cair NA HORA de desligar: em `after()` só
+   * cairia no refresh seguinte, e a tela pareceria ter ignorado o clique.
+   */
+  const canceladas = await cancelarMeioDesligado(eventoId)
+
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   revalidatePath(`/admin/eventos/${eventoId}/editar`)
-  return { ok: true as const, setores: ligados.length, dias: datasLigadas.length }
+  revalidatePath('/admin/whatsapp')
+  return { ok: true as const, setores: ligados.length, dias: datasLigadas.length, canceladas }
 }
 
 // ─── Avisos ───────────────────────────────────────────────────────────────

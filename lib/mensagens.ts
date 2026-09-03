@@ -599,6 +599,70 @@ async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada
 }
 
 /**
+ * Cancela na hora as mensagens do MEIO que a nova configuração desligou.
+ *
+ * `cancelarOqueNaoValeMais` não dá conta destas: ela só varre os tipos que
+ * ela mesma agenda, e `lembrete_meio`/`reforco_meio` nascem em
+ * `agendarMeioAposEntrada`, na hora que a pessoa bate a entrada. Resultado:
+ * desligar o meio de um setor parava de criar mensagem nova, mas as de quem
+ * já tinha entrado ficavam na fila — e o número não caía (pedido do Juan,
+ * 03/09/2026: "precisa diminuir imediato").
+ *
+ * Roda SÍNCRONA no salvar, não em `after()`: o ponto é o número mudar na
+ * frente de quem acabou de desligar. Em background, ele só cairia no
+ * próximo refresh, e a tela pareceria ter ignorado o clique.
+ *
+ * Cancela (não apaga) pelo mesmo motivo do resto do arquivo: `cancelado`
+ * some da fila e do custo, mas continua explicando no histórico por que
+ * aquela mensagem não saiu.
+ */
+export async function cancelarMeioDesligado(eventoId: string): Promise<number> {
+  const { data: naFila } = await supabase
+    .from('mensagens_agendadas')
+    .select('id, funcionario_id, data_ref')
+    .eq('evento_id', eventoId)
+    .eq('status', 'pendente')
+    .in('tipo', ['lembrete_meio', 'reforco_meio'])
+  if (!naFila?.length) return 0
+
+  // Os dias que AINDA pedem meio. Um dia desligado derruba todo mundo dele,
+  // independente do setor.
+  const { data: dias } = await supabase
+    .from('jornada_dias').select('data, exige_meio').eq('evento_id', eventoId)
+  const diaPede = new Map((dias ?? []).map(d => [d.data as string, d.exige_meio === true]))
+
+  // Os setores que AINDA pedem meio, e o setor de cada pessoa da fila.
+  const { data: setores } = await supabase
+    .from('fornecedores').select('id, exige_meio').eq('evento_id', eventoId)
+  const setorPede = new Map((setores ?? []).map(f => [f.id as string, f.exige_meio === true]))
+
+  const ids = [...new Set(naFila.map(m => m.funcionario_id).filter(Boolean))] as string[]
+  const setorDe = new Map<string, string>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase
+      .from('funcionarios').select('id, fornecedor_id').in('id', ids.slice(i, i + 200))
+    for (const f of data ?? []) setorDe.set(f.id as string, f.fornecedor_id as string)
+  }
+
+  const orfas = naFila.filter(m => {
+    if (diaPede.get(m.data_ref as string) === false) return true
+    const setor = setorDe.get(m.funcionario_id as string)
+    return !!setor && setorPede.get(setor) === false
+  }).map(m => m.id as string)
+  if (!orfas.length) return 0
+
+  // Em lotes: `in` com milhares de ids estoura o tamanho da URL do PostgREST.
+  for (let i = 0; i < orfas.length; i += 200) {
+    await supabase
+      .from('mensagens_agendadas')
+      .update({ status: 'cancelado', erro: 'Cancelada: o meio foi desligado para este setor/dia.' })
+      .in('id', orfas.slice(i, i + 200))
+  }
+  console.log(`[agendamentos] ${orfas.length} mensagens de meio canceladas (evento ${eventoId})`)
+  return orfas.length
+}
+
+/**
  * Esta pessoa, NESTE dia, pede a confirmação do meio?
  *
  * Duas chaves, as duas precisam estar ligadas: o setor dela e o dia da
