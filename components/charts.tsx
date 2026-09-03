@@ -16,8 +16,10 @@
  */
 export const COR_ETAPA = {
   entrada: '#FF4A0F',
-  meio: '#f3f2f2',
-  fim: '#9b9797',
+  // Variáveis (globals.css) porque o "meio" é branco no tema escuro e
+  // quase preto no claro — um valor fixo sumiria num dos dois.
+  meio: 'var(--grafico-meio)',
+  fim: 'var(--grafico-fim)',
 } as const
 
 const pct = (valor: number, total: number) => (total > 0 ? Math.round((valor / total) * 100) : 0)

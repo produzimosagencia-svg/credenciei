@@ -55,12 +55,16 @@ export function calcularResumoPorFuncao(setor: SetorRelatorio): ResumoFuncao[] {
 // APARÊNCIA — mesma identidade visual de antes, com menos elementos
 // ════════════════════════════════════════════════════════════════════════
 
-/** A cor de marca do Credenciei (`--color-marca` do sistema), em ARGB. */
-const COR_MARCA = 'FF4940DF'
-const COR_ACENTO = 'FF6D46FF'
-const COR_FAIXA_CLARA = 'FFF1EDFF'
-const COR_BORDA = 'FFDCDFE8'
-const COR_TEXTO = 'FF1E2028'
+/**
+ * O laranja Credenciei (`--laranja` do sistema), em ARGB. A faixa do título
+ * leva o tom cheio; os cabeçalhos de tabela, um degrau mais escuro, pra
+ * manter contraste com o texto branco; a faixa clara é o laranja a 6%.
+ */
+const COR_MARCA = 'FFFF4A0F'
+const COR_ACENTO = 'FFE33C06'
+const COR_FAIXA_CLARA = 'FFFFF2EC'
+const COR_BORDA = 'FFE5E1DF'
+const COR_TEXTO = 'FF201E1D'
 const BRANCO = 'FFFFFFFF'
 
 const bordaFina = { style: 'thin' as const, color: { argb: COR_BORDA } }

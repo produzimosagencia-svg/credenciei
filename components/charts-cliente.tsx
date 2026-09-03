@@ -20,15 +20,17 @@ import {
  * arrays de dados — nada de componente vindo do servidor.
  */
 
+// Variáveis do globals.css: mudam junto com o tema claro/escuro. SVG aceita
+// `var()` em atributo de apresentação (stroke, fill), então funciona direto.
 const COR = {
   entrada: '#FF4A0F',
-  meio: '#f3f2f2',
-  fim: '#9b9797',
-  eixo: 'rgba(243,242,242,0.4)',
-  grade: 'rgba(255,255,255,0.07)',
-  superficie: '#161515',
-  borda: 'rgba(255,255,255,0.12)',
-  texto: '#f3f2f2',
+  meio: 'var(--grafico-meio)',
+  fim: 'var(--grafico-fim)',
+  eixo: 'var(--grafico-eixo)',
+  grade: 'var(--grafico-grade)',
+  superficie: 'var(--grafico-superficie)',
+  borda: 'var(--grafico-borda)',
+  texto: 'var(--grafico-texto)',
 }
 
 const EIXO = { fontSize: 11, fill: COR.eixo }
@@ -145,7 +147,7 @@ export function PresencaPorSetor({ dados }: { dados: BarraSetor[] }) {
           width={110}
         />
         <Tooltip
-          cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+          cursor={{ fill: 'var(--grafico-grade)' }}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <Caixa
@@ -162,7 +164,7 @@ export function PresencaPorSetor({ dados }: { dados: BarraSetor[] }) {
         <Bar dataKey="faltam" stackId="a" radius={[0, 3, 3, 0]}>
           {dados.map((d, i) => (
             // Setor completo não tem faixa cinza — a barra fica verde inteira.
-            <Cell key={i} fill={d.faltam === 0 ? COR.entrada : 'rgba(255,255,255,0.12)'} />
+            <Cell key={i} fill={d.faltam === 0 ? COR.entrada : 'var(--grafico-borda)'} />
           ))}
         </Bar>
       </BarChart>

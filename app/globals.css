@@ -41,6 +41,15 @@
   --laranja-rotulo: #E8541A;
   --gradiente-marca: linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%);
   --brilho-marca: 0 8px 28px rgba(255, 74, 15, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+  /* Gráficos (components/charts*.tsx) — mudam com o tema. */
+  --grafico-meio: #f3f2f2;
+  --grafico-fim: #9b9797;
+  --grafico-eixo: rgba(243, 242, 242, 0.4);
+  --grafico-grade: rgba(255, 255, 255, 0.07);
+  --grafico-superficie: #161515;
+  --grafico-borda: rgba(255, 255, 255, 0.12);
+  --grafico-texto: #f3f2f2;
 }
 
 @theme inline {
@@ -941,4 +950,217 @@ button, [role='button'], a.btn-press {
      escuros de verdade pra continuar legíveis depois de impressos. */
   .cracha-impressao p { color: #141414 !important; }
   .cracha-impressao img { filter: none; }
+}
+
+/* ============================================================
+   TEMA CLARO — `data-tema="claro"` no <html> (ver components/Tema.tsx).
+
+   O mesmo desenho, com o chão claro da variante 1b do Claude Design: fundo
+   #f3f2f2, superfícies brancas, texto quase preto, o laranja igual. O
+   menu lateral e o cartaz "ao vivo" continuam escuros de propósito — no
+   desenho claro eles são os únicos blocos escuros da tela, e é isso que
+   os destaca.
+
+   Só sobrescreve: tudo que não está aqui vale o valor do tema escuro.
+   ============================================================ */
+html[data-tema="claro"] {
+  --background: #f3f2f2;
+  --foreground: #201e1d;
+  --fundo-luz:
+    radial-gradient(900px 500px at 0% 0%, rgba(255, 74, 15, 0.08), transparent 60%),
+    radial-gradient(700px 400px at 100% 100%, rgba(163, 27, 5, 0.06), transparent 60%);
+  --vidro: linear-gradient(180deg, #ffffff, #fbfafa);
+  --vidro-suave: linear-gradient(180deg, #ffffff, #f8f7f7);
+  --vidro-solido: #ffffff;
+  --vidro-borda: rgba(32, 30, 29, 0.12);
+  --vidro-borda-suave: rgba(32, 30, 29, 0.07);
+  --brilho-marca: 0 8px 24px rgba(255, 74, 15, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+  --grafico-meio: #201e1d;
+  --grafico-fim: #7d7979;
+  --grafico-eixo: rgba(32, 30, 29, 0.5);
+  --grafico-grade: rgba(32, 30, 29, 0.08);
+  --grafico-superficie: #ffffff;
+  --grafico-borda: rgba(32, 30, 29, 0.14);
+  --grafico-texto: #201e1d;
+
+  /* Neutros e slate: preto sobre claro. */
+  --color-neutro-0: #ffffff;
+  --color-neutro-25: #fbfafa;
+  --color-neutro-50: rgba(32, 30, 29, 0.04);
+  --color-neutro-100: rgba(32, 30, 29, 0.07);
+  --color-neutro-200: rgba(32, 30, 29, 0.12);
+  --color-neutro-300: rgba(32, 30, 29, 0.2);
+  --color-neutro-400: rgba(32, 30, 29, 0.45);
+  --color-neutro-500: rgba(32, 30, 29, 0.6);
+  --color-neutro-600: rgba(32, 30, 29, 0.72);
+  --color-neutro-700: rgba(32, 30, 29, 0.85);
+  --color-neutro-800: #201e1d;
+  --color-neutro-900: #111010;
+  --color-neutro-950: #000000;
+  --color-slate-50: rgba(32, 30, 29, 0.04);
+  --color-slate-100: rgba(32, 30, 29, 0.07);
+  --color-slate-200: rgba(32, 30, 29, 0.12);
+  --color-slate-300: rgba(32, 30, 29, 0.2);
+  --color-slate-400: rgba(32, 30, 29, 0.45);
+  --color-slate-500: rgba(32, 30, 29, 0.6);
+  --color-slate-600: rgba(32, 30, 29, 0.72);
+  --color-slate-700: rgba(32, 30, 29, 0.85);
+  --color-slate-800: #201e1d;
+  --color-slate-900: #111010;
+
+  /* Acento em texto precisa de um degrau mais fechado sobre o claro. */
+  --color-brand-300: #E33C06;
+  --color-brand-400: #DD2B0F;
+  --color-brand-700: #7c1405;
+  --color-acento-700: #7c1405;
+
+  /* Status: tinta continua transparente; o texto vai pro tom fechado. */
+  --color-sucesso-600: #16a34a; --color-sucesso-700: #15803d;
+  --color-aviso-600: #d97706;   --color-aviso-700: #b45309;
+  --color-erro-600: #dc2626;    --color-erro-700: #b91c1c;
+  --color-info-600: #2563eb;    --color-info-700: #1d4ed8;
+  --color-red-300: #b91c1c; --color-red-400: #dc2626; --color-red-600: #dc2626; --color-red-700: #b91c1c; --color-red-800: #991b1b; --color-red-900: #7f1d1d;
+  --color-amber-600: #d97706; --color-amber-700: #b45309; --color-amber-800: #92400e; --color-amber-900: #78350f;
+  --color-green-600: #16a34a; --color-green-700: #15803d; --color-green-800: #166534;
+  --color-blue-600: #2563eb; --color-blue-700: #1d4ed8;
+
+  --shadow-2xs: 0 1px 1px rgba(32, 30, 29, 0.04);
+  --shadow-xs: 0 1px 2px rgba(32, 30, 29, 0.05);
+  --shadow-sm: 0 1px 3px rgba(32, 30, 29, 0.08);
+  --shadow-md: 0 3px 10px rgba(32, 30, 29, 0.1);
+  --shadow-lg: 0 12px 32px rgba(32, 30, 29, 0.14);
+  --shadow-xl: 0 20px 50px rgba(32, 30, 29, 0.18);
+  --shadow-2xl: 0 30px 80px rgba(32, 30, 29, 0.22);
+
+  color-scheme: light;
+  scrollbar-color: rgba(32, 30, 29, 0.25) transparent;
+}
+html[data-tema="claro"] * { scrollbar-color: rgba(32, 30, 29, 0.25) transparent; }
+html[data-tema="claro"] ::selection { background: rgba(255, 74, 15, 0.25); }
+
+/* Superfícies */
+html[data-tema="claro"] .bg-white, html[data-tema="claro"] .hover\:bg-white:hover { background: #ffffff; }
+html[data-tema="claro"] .bg-slate-50, html[data-tema="claro"] .bg-slate-100 { background-color: rgba(32, 30, 29, 0.04); }
+html[data-tema="claro"] .hover\:bg-slate-50:hover, html[data-tema="claro"] .hover\:bg-slate-100:hover { background-color: rgba(32, 30, 29, 0.06); }
+
+/* Botões e campos */
+html[data-tema="claro"] .btn-secundario { background: #ffffff; border-color: rgba(32, 30, 29, 0.16); color: #201e1d; }
+html[data-tema="claro"] .btn-secundario:hover:not(:disabled) { background: rgba(32, 30, 29, 0.04); border-color: rgba(32, 30, 29, 0.28); color: #111010; }
+html[data-tema="claro"] .btn-secundario:active:not(:disabled) { background: rgba(32, 30, 29, 0.08); }
+html[data-tema="claro"] .btn-fantasma { color: rgba(32, 30, 29, 0.65); }
+html[data-tema="claro"] .btn-fantasma:hover:not(:disabled) { color: #111010; background: rgba(32, 30, 29, 0.06); }
+html[data-tema="claro"] .btn-acento { background: rgba(255, 74, 15, 0.06); border-color: rgba(255, 74, 15, 0.45); color: #DD2B0F; }
+html[data-tema="claro"] .btn-acento:hover:not(:disabled) { background: rgba(255, 74, 15, 0.12); color: #A31B05; }
+html[data-tema="claro"] .input { background: #ffffff; border-color: rgba(32, 30, 29, 0.16); color: #201e1d; }
+html[data-tema="claro"] .input:hover { border-color: rgba(32, 30, 29, 0.28); }
+html[data-tema="claro"] .input:focus { background: #ffffff; }
+html[data-tema="claro"] .input::placeholder { color: rgba(32, 30, 29, 0.4); }
+html[data-tema="claro"] select.input option { background: #ffffff; color: #201e1d; }
+html[data-tema="claro"] .input[type='date'], html[data-tema="claro"] .input[type='time'], html[data-tema="claro"] .input[type='datetime-local'] { color-scheme: light; }
+html[data-tema="claro"] .linha-acao { background: #ffffff; border-color: rgba(32, 30, 29, 0.12); }
+html[data-tema="claro"] .linha-acao:hover { background: rgba(255, 74, 15, 0.04); }
+
+/* Moldura */
+html[data-tema="claro"] .topo-app { background: rgba(255, 255, 255, 0.75); border-bottom-color: rgba(32, 30, 29, 0.12); }
+html[data-tema="claro"] .pilula-contexto { color: rgba(32, 30, 29, 0.6); border-color: rgba(32, 30, 29, 0.14); }
+html[data-tema="claro"] .avatar-anel > * { background: #ffffff; color: #201e1d; }
+html[data-tema="claro"] .avatar-anel .text-white { color: #201e1d; }
+html[data-tema="claro"] .chip-contexto { color: #201e1d; }
+html[data-tema="claro"] .chip-contexto:hover { background-color: rgba(32, 30, 29, 0.05); }
+html[data-tema="claro"] .pagina-titulo { color: #201e1d; }
+html[data-tema="claro"] .pagina-descricao { color: rgba(32, 30, 29, 0.6); }
+
+/* O menu lateral continua escuro; só o texto claro dele precisa continuar
+   claro mesmo com a escala slate invertida. */
+html[data-tema="claro"] .menu-lateral {
+  --color-slate-400: rgba(243, 242, 242, 0.45); --color-slate-500: rgba(243, 242, 242, 0.6);
+  --color-slate-600: rgba(243, 242, 242, 0.72); --color-slate-700: rgba(243, 242, 242, 0.85);
+  --color-slate-800: #f3f2f2; --color-slate-900: #ffffff;
+  --color-slate-50: rgba(255, 255, 255, 0.04); --color-slate-100: rgba(255, 255, 255, 0.07); --color-slate-200: rgba(255, 255, 255, 0.1);
+}
+
+/* Seções e cartões */
+html[data-tema="claro"] .secao { border-color: rgba(32, 30, 29, 0.12); box-shadow: var(--shadow-sm); }
+html[data-tema="claro"] .secao-titulo { color: rgba(32, 30, 29, 0.6); }
+html[data-tema="claro"] .secao-descricao { color: rgba(32, 30, 29, 0.5); }
+html[data-tema="claro"] .secao-corpo { background: #ffffff; border-color: rgba(32, 30, 29, 0.08); }
+html[data-tema="claro"] .secao-destaque { background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.16), #ffffff 60%); border-color: rgba(255, 74, 15, 0.35); }
+html[data-tema="claro"] .secao-acento { background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.12), #ffffff 60%); }
+html[data-tema="claro"] .secao-info { background: radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.12), #ffffff 60%); }
+html[data-tema="claro"] .secao-sucesso { background: radial-gradient(120% 120% at 0% 0%, rgba(34, 197, 94, 0.12), #ffffff 60%); }
+html[data-tema="claro"] .secao-aviso { background: radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.12), #ffffff 60%); }
+html[data-tema="claro"] .secao-destaque .secao-titulo, html[data-tema="claro"] .secao-acento .secao-titulo { color: #A31B05; }
+html[data-tema="claro"] .secao-info .secao-titulo { color: #1d4ed8; }
+html[data-tema="claro"] .secao-sucesso .secao-titulo { color: #15803d; }
+html[data-tema="claro"] .secao-aviso .secao-titulo { color: #b45309; }
+html[data-tema="claro"] .secao-icone { background: rgba(32, 30, 29, 0.06); color: rgba(32, 30, 29, 0.75); }
+
+/* O cartaz ao vivo é o bloco escuro do desenho claro: mantém as cores
+   claras de texto dentro dele. */
+html[data-tema="claro"] .evento-vivo {
+  background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.3), #201e1d 60%);
+  --color-slate-400: rgba(243, 242, 242, 0.45); --color-slate-500: rgba(243, 242, 242, 0.6);
+  --color-slate-600: rgba(243, 242, 242, 0.72); --color-slate-700: rgba(243, 242, 242, 0.85);
+  --color-slate-800: #f3f2f2; --color-slate-900: #ffffff;
+}
+
+/* Indicadores, selos, tabela, abas */
+html[data-tema="claro"] .indicador { border-color: rgba(32, 30, 29, 0.1); box-shadow: var(--shadow-sm); }
+html[data-tema="claro"] .indicador-valor { color: #201e1d; text-shadow: none; }
+html[data-tema="claro"] .indicador-sub { color: rgba(32, 30, 29, 0.55); }
+html[data-tema="claro"] .indicador-acento { --ind-rotulo: #DD2B0F; }
+html[data-tema="claro"] .indicador-sucesso { --ind-rotulo: #15803d; }
+html[data-tema="claro"] .indicador-aviso { --ind-rotulo: #b45309; }
+html[data-tema="claro"] .indicador-info { --ind-rotulo: #1d4ed8; }
+html[data-tema="claro"] .indicador-erro { --ind-rotulo: #b91c1c; }
+html[data-tema="claro"] .selo-sucesso { color: #15803d; }
+html[data-tema="claro"] .selo-aviso { color: #b45309; }
+html[data-tema="claro"] .selo-erro { color: #b91c1c; }
+html[data-tema="claro"] .selo-neutro { background: rgba(32, 30, 29, 0.06); border-color: rgba(32, 30, 29, 0.12); color: rgba(32, 30, 29, 0.7); }
+html[data-tema="claro"] .selo-acento { color: #A31B05; }
+html[data-tema="claro"] .tabela thead th { background: rgba(243, 242, 242, 0.95); border-bottom-color: rgba(32, 30, 29, 0.1); color: rgba(32, 30, 29, 0.5); }
+html[data-tema="claro"] .tabela tbody td { border-bottom-color: rgba(32, 30, 29, 0.07); color: rgba(32, 30, 29, 0.8); }
+html[data-tema="claro"] .tabela tbody tr:hover { background-color: rgba(255, 74, 15, 0.04); }
+html[data-tema="claro"] .abas { border-bottom-color: rgba(32, 30, 29, 0.12); }
+html[data-tema="claro"] .aba { color: rgba(32, 30, 29, 0.55); }
+html[data-tema="claro"] .aba:hover, html[data-tema="claro"] .aba-ativa { color: #201e1d; }
+html[data-tema="claro"] .aba-contador { background: rgba(32, 30, 29, 0.07); color: rgba(32, 30, 29, 0.6); }
+html[data-tema="claro"] .aba-ativa .aba-contador { background: rgba(255, 74, 15, 0.14); color: #A31B05; }
+html[data-tema="claro"] .acoes-no-escuro button { color: rgba(255, 255, 255, 0.6); }
+html[data-tema="claro"] .tutorial-spotlight { box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 0 3px #FF4A0F, 0 0 0 8px rgba(255, 74, 15, 0.25); }
+
+/* Troca de imagem por tema: `.so-claro` só aparece no claro, `.so-escuro`
+   só no escuro (o logo do topo, por exemplo). */
+.so-claro { display: none; }
+html[data-tema="claro"] .so-claro { display: block; }
+html[data-tema="claro"] .so-escuro { display: none; }
+
+/*
+ * `text-white` no tema claro.
+ *
+ * Quarenta lugares escrevem `text-white` querendo dizer "o texto principal"
+ * (nome na atividade recente, título de cartão…) — no escuro branco É o
+ * texto principal. No claro esse branco some no fundo. Aqui ele vira o texto
+ * escuro, EXCETO onde branco continua certo: dentro de fundo escuro ou
+ * colorido (menu lateral, cartaz ao vivo, botões em gradiente/vermelho/
+ * verde, blocos bg-slate-900, ícones em bolinha colorida).
+ */
+html[data-tema="claro"] .text-white:not(
+  .btn-primario, .btn-perigo, .menu-item-ia, .logo-marca, .indicador-icone,
+  [class*="bg-brand-"], [class*="bg-acento-"], [class*="bg-red-"], [class*="bg-green-"],
+  [class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-slate-8"], [class*="bg-slate-9"],
+  [class*="bg-black"], [class*="bg-gradient"],
+  .menu-lateral *, .evento-vivo *, .btn-primario *, .btn-perigo *, .menu-item-ia *,
+  .logo-marca *, .indicador-icone *, .secao-icone *, .acoes-no-escuro *,
+  [class*="bg-brand-"] *, [class*="bg-acento-"] *, [class*="bg-red-"] *, [class*="bg-green-"] *,
+  [class*="bg-amber-"] *, [class*="bg-blue-"] *, [class*="bg-slate-8"] *, [class*="bg-slate-9"] *,
+  [class*="bg-black"] *, [class*="bg-gradient"] *
+) { color: #201e1d; }
+html[data-tema="claro"] .ring-white { --tw-ring-color: #ffffff; }
+
+/* O cartaz ao vivo no claro: escuro de verdade, com a luz laranja no canto,
+   pra "AO VIVO" e o título continuarem legíveis. */
+html[data-tema="claro"] .evento-vivo {
+  background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.35), #262322 45%, #1a1817 100%);
 }

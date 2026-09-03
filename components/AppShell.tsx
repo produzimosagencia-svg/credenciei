@@ -14,6 +14,7 @@ import {
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
+import { BotaoTema } from '@/components/Tema'
 
 type Perfil = { id: string; nome: string; email: string; role: Role }
 
@@ -324,6 +325,7 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
           <div className="px-3 py-2 border-b border-slate-100">
             <span className="indicador-selo selo-neutro">{ROLE_LABELS[perfil.role] ?? perfil.role}</span>
           </div>
+          <BotaoTema className="border-b border-slate-100" />
           <button
             role="menuitem"
             onClick={onLogout}
@@ -388,7 +390,9 @@ export default function AppShell({
 
             <Link href="/admin" className="shrink-0 flex items-center" aria-label="Painel">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/marca/logo-branco.png" alt="Credenciei" className="h-[18px] md:h-[22px] w-auto" />
+              <img src="/marca/logo-branco.png" alt="Credenciei" className="so-escuro h-[18px] md:h-[22px] w-auto" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/marca/logo-preto.png" alt="Credenciei" className="so-claro h-[18px] md:h-[22px] w-auto" />
             </Link>
           </div>
 
@@ -458,7 +462,8 @@ export default function AppShell({
 
             <NavLinks grupos={grupos} pathname={pathname} setores={setores} setorAtualId={setorAtualId} onNavigate={() => setMenuAberto(false)} />
             <BotaoAssistente onNavigate={() => setMenuAberto(false)} />
-            <div className="px-3 pb-3 shrink-0 border-t border-white/10 pt-3">
+            <div className="px-3 pb-3 shrink-0 border-t border-white/10 pt-3 space-y-0.5">
+              <BotaoTema className="menu-item !py-2" />
               <button onClick={handleLogout} className="menu-item w-full">
                 <LogOut className="w-4 h-4 shrink-0" />
                 Sair
