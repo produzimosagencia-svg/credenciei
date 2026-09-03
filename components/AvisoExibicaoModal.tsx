@@ -44,31 +44,47 @@ export default function AvisoExibicaoModal(
     })
   }
 
+  /*
+   * Três camadas empilhadas, com o BOTÃO FIXO no rodapé.
+   *
+   * Antes o modal não tinha teto de altura nem rolagem: com aviso longo
+   * (e os avisos do evento são longos — passo a passo de credenciamento,
+   * o que acontece se não bater o meio) ele crescia além da tela e
+   * empurrava o "Entendi" pra fora. Quem estava na recepção preenchendo
+   * o cadastro de quem acabou de chegar ficava com a tela tampada e sem
+   * como fechar (relato do Juan, 03/09/2026).
+   *
+   * Agora quem rola é só o TEXTO (`flex-1 overflow-y-auto`); cabeçalho e
+   * botão ficam presos. O botão nunca sai de alcance, não importa o
+   * tamanho do aviso — e no celular ele fica na altura do polegar.
+   */
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3">
       <div className="overlay-fade-in absolute inset-0 bg-black/45" />
-      <div className="modal-pop-in relative bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="bg-gradient-to-r from-brand-500 to-brand-600 px-6 pt-6 pb-8 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-white/20 rounded-2xl mb-3">
-            <Megaphone className="w-6 h-6 text-white" />
-          </div>
-          <p className="text-brand-100 text-xs uppercase tracking-widest font-semibold">Aviso importante</p>
+      <div className="modal-pop-in relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden">
+        {/* Cabeçalho compacto: era um bloco alto com ícone grande, e num
+            aviso longo ele custava espaço que o texto precisava. */}
+        <div className="bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-3 flex items-center gap-2.5 shrink-0">
+          <Megaphone className="w-4 h-4 text-white shrink-0" />
+          <p className="text-white text-xs uppercase tracking-widest font-semibold">Aviso importante</p>
           {avisos.length > 1 && (
-            <p className="text-brand-100/80 text-2xs mt-1">{indice + 1} de {avisos.length}</p>
+            <span className="ml-auto text-brand-100/90 text-2xs shrink-0">{indice + 1} de {avisos.length}</span>
           )}
         </div>
 
-        <div className="px-6 py-6 -mt-4">
-          <div className="bg-white rounded-2xl shadow-md border border-slate-100 px-5 py-5 text-center">
-            <h2 className="text-slate-800 font-bold text-lg leading-snug">{aviso.titulo}</h2>
-            <p className="text-slate-500 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{aviso.mensagem}</p>
-          </div>
+        {/* O único pedaço que rola. */}
+        <div className="px-4 py-4 overflow-y-auto flex-1">
+          <h2 className="text-slate-800 font-bold text-base leading-snug">{aviso.titulo}</h2>
+          <p className="text-slate-600 text-sm mt-2 leading-relaxed whitespace-pre-wrap">{aviso.mensagem}</p>
+        </div>
 
+        {/* Rodapé preso: o botão está sempre à vista e à mão. */}
+        <div className="px-4 py-3 border-t border-slate-100 shrink-0">
           <button
             type="button"
             onClick={confirmar}
             disabled={isPending}
-            className="btn btn-primario w-full justify-center mt-5 disabled:opacity-60"
+            className="btn btn-primario w-full justify-center py-3 text-base disabled:opacity-60"
           >
             {isPending ? 'Um instante…' : 'Entendi'}
           </button>
