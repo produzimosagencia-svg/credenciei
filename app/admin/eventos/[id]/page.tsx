@@ -351,12 +351,12 @@ export default async function EventoPage({
         />
         <StatCard
           label="Batida do meio hoje" value={`${totMeio}/${totalFuncionarios}`} sub={`${pct(totMeio)}% da equipe`}
-          icon={Camera} tom="aviso"
+          icon={Camera} tom="info"
           href={`/admin/eventos/${id}/presenca?ver=meio&dia=${diaEscolhido}`}
         />
         <StatCard
           label="Saídas hoje" value={`${totFim}/${totalFuncionarios}`} sub={`${pct(totFim)}% da equipe`}
-          icon={LogOut} tom="info"
+          icon={LogOut} tom="aviso"
           href={`/admin/eventos/${id}/presenca?ver=fim&dia=${diaEscolhido}`}
         />
       </div>

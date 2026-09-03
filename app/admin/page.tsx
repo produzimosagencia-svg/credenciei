@@ -6,7 +6,7 @@ import {
 import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
-import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos } from '@/lib/permissions'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -115,9 +115,6 @@ function SemSetorVinculado() {
   )
 }
 
-/** Teto de leitura da base — bem acima do tamanho real de hoje (poucos milhares). */
-const TETO_BASE_FUNCIONARIOS = 20_000
-
 type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; custoMensagens: number }
 
 /**
@@ -133,15 +130,20 @@ type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; cust
  * ao lado). "Custo de disparo" reaproveita `resumoFinanceiroWhatsApp` — o
  * mesmo cálculo que o painel de WhatsApp já mostra — pra nunca existirem
  * dois números diferentes pra a mesma pergunta em duas telas.
+ *
+ * `buscarTudo` (não `.limit()`) porque a base já passou de 1000 — ver o
+ * comentário dela em lib/supabase-server.ts.
  */
 async function calcularStatsMestre(): Promise<StatsMestre> {
-  const [{ data: funcionarios }, templates] = await Promise.all([
-    supabaseAdmin.from('funcionarios').select('cpf, valor_receber').limit(TETO_BASE_FUNCIONARIOS),
+  const [funcionarios, templates] = await Promise.all([
+    buscarTudo<{ cpf: string; valor_receber: number | null }>((de, ate) =>
+      supabaseAdmin.from('funcionarios').select('cpf, valor_receber').range(de, ate)
+    ),
     templatesAprovados(),
   ])
 
-  const funcionariosNaBase = new Set((funcionarios ?? []).map(f => f.cpf)).size
-  const valorTotalCobrado = (funcionarios ?? []).reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
+  const funcionariosNaBase = new Set(funcionarios.map(f => f.cpf)).size
+  const valorTotalCobrado = funcionarios.reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
   const { custoEstimado } = await resumoFinanceiroWhatsApp(templates)
 
   return { funcionariosNaBase, valorTotalCobrado, custoMensagens: custoEstimado }
@@ -260,24 +262,38 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * Tamanho da equipe e quem já bateu entrada, por evento. Duas consultas
    * para a página inteira — não duas por evento, que era o padrão antigo e
    * multiplicava requisição conforme a lista crescia.
+   *
+   * As três primeiras usam `buscarTudo` (não `select()` direto): um evento
+   * grande sozinho já passa de 1000 linhas (o teto do PostgREST, ver o
+   * comentário de `buscarTudo` em lib/supabase-server.ts) — foi o que fez
+   * "Funcionários do evento" travar em 1000 com 1008 pessoas de verdade. A
+   * quarta (o feed "Atividade recente") continua com `.limit(10)` direto:
+   * é uma lista pequena de propósito, não tem teto pra estourar.
    */
-  const [{ data: funcionarios }, { data: entradas }, { data: registrosDaJanela }, { data: ultimosRegistros }] =
+  const [funcionarios, entradas, registrosDaJanela, { data: ultimosRegistros }] =
     await Promise.all([
       idsNaTela.length
-        ? db.from('funcionarios').select('id, fornecedores!inner(evento_id)').in('fornecedores.evento_id', idsNaTela)
-        : Promise.resolve({ data: [] }),
+        ? buscarTudo<{ id: string; fornecedores: { evento_id: string }[] }>((de, ate) =>
+            db.from('funcionarios').select('id, fornecedores!inner(evento_id)').in('fornecedores.evento_id', idsNaTela).range(de, ate)
+          )
+        : Promise.resolve([]),
       idsNaTela.length
-        ? db.from('registros').select('funcionario_id, evento_id').in('evento_id', idsNaTela).eq('tipo', 'entrada')
-        : Promise.resolve({ data: [] }),
+        ? buscarTudo<{ funcionario_id: string; evento_id: string }>((de, ate) =>
+            db.from('registros').select('funcionario_id, evento_id').in('evento_id', idsNaTela).eq('tipo', 'entrada').range(de, ate)
+          )
+        : Promise.resolve([]),
       // Só os registros DO evento do gráfico, dentro da janela dele. Antes isto
       // varria todos os eventos numa faixa de 24h — misturava a curva de um
       // evento com a de outro quando havia mais de um em andamento.
       janela && eventoDoGrafico
-        ? db.from('registros').select('created_at, tipo')
-            .eq('evento_id', eventoDoGrafico.id as string)
-            .gte('created_at', new Date(janela.de).toISOString())
-            .lte('created_at', new Date(janela.ate).toISOString())
-        : Promise.resolve({ data: [] }),
+        ? buscarTudo<{ created_at: string; tipo: string }>((de, ate) =>
+            db.from('registros').select('created_at, tipo')
+              .eq('evento_id', eventoDoGrafico.id as string)
+              .gte('created_at', new Date(janela.de).toISOString())
+              .lte('created_at', new Date(janela.ate).toISOString())
+              .range(de, ate)
+          )
+        : Promise.resolve([]),
       idsNaTela.length
         ? db.from('registros').select('id, tipo, created_at, funcionarios(nome, cargo, empresa)').in('evento_id', idsNaTela).order('created_at', { ascending: false }).limit(10)
         : Promise.resolve({ data: [] }),

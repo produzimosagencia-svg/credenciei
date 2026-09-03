@@ -4,7 +4,7 @@ import {
   Search, X, MapPin, Briefcase, MessageCircle, UserSearch, Users, CalendarPlus,
   IdCard, Building2, CalendarDays, ShieldCheck,
 } from 'lucide-react'
-import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -129,36 +129,58 @@ export default async function EncontrarPage({
    * então trazer o nome do evento e o da organização de cada uma das linhas
    * era transportar texto que nada renderiza. Contar id distinto dá o mesmo
    * número com uma fração do payload.
-   */
-  const consulta = supabaseAdmin
-    .from('funcionarios')
-    .select('id, nome, cpf, telefone, cargo, cidade, created_at, consentimento_base, fornecedores!inner(evento_id, eventos!inner(organizacao_id))', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .limit(teto)
-
-  /*
+   *
    * O filtro de autorização só existe no escopo "recrutar" — é isto que dá
    * sentido à caixa de aceite no formulário. No escopo "todos" a pessoa
-   * aparece de qualquer forma (é o registro completo), mas cada linha mostra
-   * se ela autorizou ou não, pra nunca fingir que autorizou quando não.
-   */
-  if (escopo === 'recrutar') consulta.eq('consentimento_base', true)
-
-  const digitos = busca.replace(/\D/g, '')
-  if (digitos.length >= 3) consulta.like('cpf', `%${digitos}%`)
-  else if (busca) consulta.ilike('nome', `%${busca}%`)
-  /*
+   * aparece de qualquer forma (é o registro completo), mas cada linha
+   * mostra se ela autorizou ou não, pra nunca fingir que autorizou quando
+   * não.
+   *
    * A cidade NÃO entra na consulta do banco.
    *
    * `ilike` compara acento com acento: procurar "Vitória" perderia os
    * cadastros gravados como "Vitoria". O filtro acontece em memória, sobre a
    * chave normalizada — o volume aqui é de centenas, e um índice sem acento
    * exigiria uma coluna gerada só para isso.
+   *
+   * Os dois `if` de filtro se repetem na contagem e na consulta paginada
+   * abaixo — o construtor do Supabase muda de tipo a cada `.eq`/`.like`
+   * encadeado, então uma função genérica pra "aplicar filtro nos dois" luta
+   * contra o tipo em vez de ajudar. Duas consultas pequenas e diretas.
    */
+  const digitos = busca.replace(/\D/g, '')
 
-  // A contagem de quem não tem `consentimento_base` saiu junto com o aviso
-  // que a exibia — o alternador "Toda a base" já leva a essas pessoas.
-  const { data: cadastros, count: totalCadastros } = await consulta
+  let consultaContagem = supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true })
+  if (escopo === 'recrutar') consultaContagem = consultaContagem.eq('consentimento_base', true)
+  if (digitos.length >= 3) consultaContagem = consultaContagem.like('cpf', `%${digitos}%`)
+  else if (busca) consultaContagem = consultaContagem.ilike('nome', `%${busca}%`)
+  const { count: totalCadastros } = await consultaContagem
+
+  type Cadastro = {
+    id: string; nome: string; cpf: string; telefone: string | null; cargo: string | null
+    cidade: string | null; created_at: string; consentimento_base: boolean
+    fornecedores: { evento_id: string; eventos: { organizacao_id: string | null }[] }[]
+  }
+
+  /*
+   * `buscarTudo`, não `.limit(teto)` puro: o Supabase corta em 1000 linhas
+   * por resposta não importa o que `.limit()` peça (ver o comentário da
+   * função em lib/supabase-server.ts) — um `.limit(2000)` aqui devolvia 1000
+   * do mesmo jeito, e a tela continuava escondendo gente mesmo depois do
+   * teto ter subido. `teto` continua valendo, só que agora como TETO DE
+   * VERDADE (`tetoTotal`), paginando de 1000 em 1000 até chegar nele.
+   */
+  const cadastros = await buscarTudo<Cadastro>((de, ate) => {
+    let consulta = supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, cargo, cidade, created_at, consentimento_base, fornecedores!inner(evento_id, eventos!inner(organizacao_id))')
+      .order('created_at', { ascending: false })
+      .range(de, ate)
+    if (escopo === 'recrutar') consulta = consulta.eq('consentimento_base', true)
+    if (digitos.length >= 3) consulta = consulta.like('cpf', `%${digitos}%`)
+    else if (busca) consulta = consulta.ilike('nome', `%${busca}%`)
+    return consulta
+  }, { tetoTotal: teto })
 
   // Quem de fato apareceu nos eventos: é o dado que separa "já foi chamado"
   // de "já trabalhou". Sem isso a tela recomendaria quem nunca compareceu.

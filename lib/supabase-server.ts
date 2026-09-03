@@ -41,6 +41,47 @@ export const supabaseAdmin = createAdminClient(
 )
 const admin = supabaseAdmin
 
+/**
+ * Busca TODAS as linhas de uma consulta, sem o teto de 1000 do PostgREST.
+ *
+ * Descoberto em 03/09/2026: o Supabase/PostgREST tem um limite de linhas por
+ * resposta (`db.max_rows` do projeto, 1000 aqui) que NENHUM `.limit()` do
+ * lado do cliente consegue passar — pedir `.limit(20000)` e receber 1000 de
+ * volta é esse teto agindo, não um bug de quem escreveu a consulta. Foi o
+ * que fez "Funcionários na base" no Painel e a equipe de um evento com mais
+ * de 1000 pessoas mostrarem 1000 fixo, escondendo o resto sem avisar —
+ * mesma família do bug do teto de 300 em Encontre colaborador, só que este
+ * vinha do próprio Supabase, não de um `.limit()` nosso.
+ *
+ * Só entra aqui quem precisa da LINHA em si — pra somar, agrupar,
+ * deduplicar. Se o precisa é só uma contagem, `{ count: 'exact', head: true
+ * }` já resolve sem paginar nada (é como `/admin/eventos/[id]` conta
+ * "Funcionários do evento" sem cair neste teto).
+ *
+ * `tetoTotal` é opcional — pra quem quer manter um teto de segurança
+ * proposital (ex.: "Encontre colaborador" já tinha um teto por design, não
+ * por limitação do Supabase; ele continua existindo, só que agora paginando
+ * de verdade até chegar nele, em vez de um `.limit()` que o Supabase ignora
+ * acima de 1000).
+ */
+export async function buscarTudo<T>(
+  montarPagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  { tamanhoDaPagina = 1000, tetoTotal = Infinity }: { tamanhoDaPagina?: number; tetoTotal?: number } = {},
+): Promise<T[]> {
+  const tudo: T[] = []
+  let de = 0
+  while (de < tetoTotal) {
+    const ate = Math.min(de + tamanhoDaPagina, tetoTotal) - 1
+    const { data, error } = await montarPagina(de, ate)
+    if (error) throw new Error(error.message)
+    if (!data || !data.length) break
+    tudo.push(...data)
+    if (data.length < ate - de + 1) break
+    de += tamanhoDaPagina
+  }
+  return tudo
+}
+
 // cache() deduplica por requisição: layout e página compartilham o mesmo
 // resultado em vez de repetir getUser + select em cada chamada.
 export const getPerfil = cache(async () => {
