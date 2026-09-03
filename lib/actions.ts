@@ -2513,11 +2513,22 @@ async function inferirMomentoQR(
   const entrada = await entradaDoTurno(funcionarioId, eventoId, agora)
 
   if (entrada) {
+    /*
+     * A saída só FECHA esta entrada se veio DEPOIS dela.
+     *
+     * Quem dobra o turno tem duas jornadas no mesmo `data_ref`: sai 08:46
+     * da manhã, volta 18:21 da noite e vai embora só às 08:00 do dia
+     * seguinte (caso real do Juan, 03/09/2026). Perguntar só "existe
+     * saída neste dia?" acha a saída DA MANHÃ, conclui que o turno da
+     * noite está fechado, e manda ENTRADA pra quem está indo embora —
+     * jogando fora a saída de quem virou a noite trabalhando.
+     */
     const { data: fimDoTurno } = await supabaseAdmin
       .from('registros')
       .select('created_at')
       .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
       .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+      .gt('created_at', entrada.em)
       .limit(1)
 
     if (!fimDoTurno?.length) {
@@ -2802,11 +2813,15 @@ async function diaDeReferencia(
 
   let dataRef = diaBRT(agora)
   if (entrada) {
+    // `.gt(created_at, entrada.em)`: só a saída POSTERIOR fecha o turno —
+    // quem dobra o turno tem a saída da manhã no mesmo dia da entrada da
+    // noite, e ela não pode fazer o turno da noite parecer fechado.
     const { data: fimDoTurno } = await supabaseAdmin
       .from('registros')
       .select('id')
       .eq('funcionario_id', funcionarioId).eq('evento_id', evento.id)
       .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+      .gt('created_at', entrada.em)
       .limit(1)
     // Só um turno AINDA ABERTO puxa o registro pro dia dele.
     if (!fimDoTurno?.length) dataRef = entrada.dataRef

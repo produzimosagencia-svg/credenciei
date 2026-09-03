@@ -121,6 +121,13 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * Turno com saída = turno fechado = dia encerrado. A credencial volta
    * pra hoje, zerada, que é o que a pessoa precisa ver.
    */
+  /*
+   * A saída só fecha ESTA entrada se veio depois dela (`.gt`).
+   *
+   * Quem dobra o turno tem duas jornadas no mesmo dia: sai 08:46 da
+   * manhã, volta 18:21 da noite e vai embora só no dia seguinte. Sem o
+   * `.gt`, a saída DA MANHÃ faria o turno da noite parecer fechado.
+   */
   const { data: fimDoTurno } = entrada
     ? await supabase
         .from('registros')
@@ -129,6 +136,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         .eq('evento_id', evento?.id ?? '')
         .eq('tipo', 'fim')
         .eq('data_ref', entrada.dataRef)
+        .gt('created_at', entrada.em)
         .limit(1)
     : { data: null }
 
@@ -144,8 +152,18 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     .eq('evento_id', evento?.id ?? '')
     .eq('data_ref', dataRef)
 
+  /*
+   * Com o turno aberto, meio e saída de ANTES da entrada são de outra
+   * jornada do mesmo dia — a de quem dobrou o turno. Mostrá-los aqui
+   * faria a pessoa que está no meio do turno da noite ver "Saída
+   * registrada às 08:46" e achar que já fechou o dia. A entrada em si
+   * nunca é filtrada: ela é a âncora.
+   */
   const feitoMap: Record<string, string> = {}
-  for (const r of registros ?? []) feitoMap[r.tipo] = r.created_at
+  for (const r of registros ?? []) {
+    if (turnoAberto && r.tipo !== 'entrada' && r.created_at < entrada!.em) continue
+    feitoMap[r.tipo] = r.created_at
+  }
 
   const periodo = evento ? periodoDoEvento(evento) : null
   const dentroDoPeriodoBase = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
@@ -299,7 +317,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="funcionario" token={token} />}
       {/* A tela se atualiza sozinha — ninguém aqui vai recarregar a página. */}
       <ManterAtualizado />
-      <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
           <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">
             {/* Header */}
