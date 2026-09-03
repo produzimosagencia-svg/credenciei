@@ -561,12 +561,16 @@ export default function FuncionarioDetalheModal({
                   <div className="border-t border-slate-100 pt-4">
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Supervisor</p>
 
+                    {/* O nome do setor pode ser comprido ("Tecnica (som Luz Led e
+                        Gerador) - Gynlight/gabisom"): o rótulo do botão quebra em
+                        linhas em vez de vazar pra fora do modal no celular. */}
                     {!confirmandoSupervisor ? (
                       <button
                         onClick={abrirTornarSupervisor}
-                        className="btn btn-secundario w-full"
+                        className="btn btn-secundario w-full whitespace-normal text-left justify-start items-start gap-2 py-2.5"
                       >
-                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> Tornar {f.nome.split(' ')[0]} supervisor(a) de {setorNome}
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span className="min-w-0">Tornar {f.nome.split(' ')[0]} supervisor(a) de {setorNome}</span>
                       </button>
                     ) : verificandoAcesso ? (
                       <div className="flex items-center gap-2 text-slate-400 text-xs py-2">

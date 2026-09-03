@@ -322,6 +322,9 @@ button, [role='button'], a.btn-press {
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease, box-shadow 120ms ease;
   }
   .btn:disabled { opacity: 0.45; pointer-events: none; }
+  /* Botão de largura total quebra o rótulo em vez de vazar: no celular, um
+     texto comprido (nome de setor, por exemplo) saía pra fora do modal. */
+  .btn.w-full { white-space: normal; }
 
   .btn-sm { padding: 0.3125rem 0.625rem; font-size: 0.75rem; }
   .btn-lg { padding: 0.6875rem 1.125rem; font-size: 0.875rem; border-radius: var(--radius-xl); }
