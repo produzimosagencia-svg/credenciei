@@ -35,6 +35,7 @@ type EventoDaPortaria = EventoJanelas & {
   local: string | null
   ativo: boolean
   portaria_ativa: boolean
+  cadastro_suspenso?: boolean | null
 }
 
 export default async function PortariaPage({ params }: { params: Promise<{ token: string }> }) {
@@ -42,7 +43,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
 
   const { data: evento } = await supabase
     .from('eventos')
-    .select('id, nome, local, ativo, portaria_ativa, data_inicio, data_fim')
+    .select('id, nome, local, ativo, portaria_ativa, cadastro_suspenso, data_inicio, data_fim')
     .eq('token_portaria', token)
     .maybeSingle<EventoDaPortaria>()
 
@@ -54,7 +55,8 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
   const hoje = diaBRT()
   const forado = !!periodo && hoje > periodo.ultimo
 
-  if (!evento.ativo || !evento.portaria_ativa || forado) {
+  // `cadastro_suspenso`: a organização fechou a lista (botão na tela do evento).
+  if (!evento.ativo || !evento.portaria_ativa || evento.cadastro_suspenso || forado) {
     return <Fechado motivo={forado ? 'O evento já terminou.' : null} />
   }
 

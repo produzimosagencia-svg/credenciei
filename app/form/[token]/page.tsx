@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import FormularioFuncionario from './FormularioFuncionario'
-import { QrCode } from 'lucide-react'
+import { QrCode, Link2Off } from 'lucide-react'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
@@ -43,13 +43,35 @@ export default async function FormPage({
 
   const { data: fornecedor } = await supabase
     .from('fornecedores')
-    .select('*, eventos(id, nome, local, data_inicio)')
+    .select('*, eventos(id, nome, local, data_inicio, cadastro_suspenso)')
     .eq('token_formulario', token)
     .single()
 
   if (!fornecedor) notFound()
 
   const evento = (fornecedor.eventos as any)
+
+  /*
+   * Cadastro suspenso pela organização (botão "Suspender cadastro" na tela
+   * do evento). O link continua o mesmo — só a resposta muda. Quem já se
+   * cadastrou não passa por aqui: a credencial dele é outra página.
+   */
+  if (evento?.cadastro_suspenso) {
+    return (
+      <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 bg-amber-500/15 text-amber-500">
+            <Link2Off className="w-7 h-7" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-800">Cadastro encerrado</h1>
+          <p className="text-slate-600 text-sm font-medium mt-1">{evento?.nome}</p>
+          <p className="text-slate-500 text-sm mt-4">
+            A organização fechou a lista de <strong className="text-slate-700">{fornecedor.nome}</strong>. Se você já se cadastrou, sua credencial continua valendo — use o link que recebeu no WhatsApp. Se ainda precisa entrar na equipe, fale com quem te contratou.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>

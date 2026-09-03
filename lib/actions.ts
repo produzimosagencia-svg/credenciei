@@ -3465,10 +3465,16 @@ export async function cadastrarFuncionarioPublico(
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome')
+    .select('id, evento_id, nome, eventos(cadastro_suspenso)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
+
+  // A tranca do "Suspender cadastro" (ver `alternarCadastroPorLink`): a tela
+  // já avisa, mas é aqui que uma chamada direta é recusada.
+  if ((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso) {
+    return { error: 'O cadastro para este evento foi encerrado pela organização.' }
+  }
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
   // enche o setor de cadastros falsos e trava a operação no dia do evento.
@@ -4549,6 +4555,37 @@ export async function alternarPortaria(eventoId: string, ligar: boolean) {
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const, token }
+}
+
+/**
+ * Suspende (ou reabre) o cadastro por link do evento inteiro.
+ *
+ * Os links dos setores circulam em grupo e não têm como ser recolhidos;
+ * quando a lista fecha, é isto que faz todos eles — e o cartaz da portaria —
+ * recusarem cadastro novo, sem trocar link e sem tocar em quem já está
+ * dentro. Checado no formulário público (app/form), no cartaz (app/portaria)
+ * e na action `cadastrarFuncionarioPublico`, que é a tranca de verdade.
+ *
+ * Mesma permissão de ligar a portaria: quem administra o evento.
+ */
+export async function alternarCadastroPorLink(eventoId: string, suspender: boolean) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { error } = await supabaseAdmin
+    .from('eventos')
+    .update({ cadastro_suspenso: suspender })
+    .eq('id', eventoId)
+
+  if (error) {
+    // Coluna ainda não existe no banco → a migração não rodou.
+    if (/cadastro_suspenso/.test(error.message)) {
+      throw new Error('O banco ainda não tem o campo de suspensão. Rode supabase/upgrade-cadastro-suspenso.sql no SQL Editor.')
+    }
+    throw new Error('Não foi possível mudar o cadastro por link. Tente de novo.')
+  }
+
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  return { ok: true as const }
 }
 
 /**

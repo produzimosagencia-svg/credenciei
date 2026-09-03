@@ -8,6 +8,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
+import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import StatCard from '@/components/StatCard'
@@ -397,6 +398,11 @@ export default async function EventoPage({
             * de setores (o conteúdo principal desta seção) pra baixo da
             * dobra.
             */}
+          {/* O interruptor do cadastro por link vem ANTES da portaria e dos
+              setores: é a decisão que vale pra todos eles de uma vez. */}
+          {podeGerenciarEventos(perfil?.role) && (
+            <CadastroPorLinkCard eventoId={id} suspenso={evento.cadastro_suspenso === true} />
+          )}
           {(podeGerenciarEventos(perfil?.role) || podeGerenciarUsuarios(perfil?.role)) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch">
               {podeGerenciarEventos(perfil?.role) && (
