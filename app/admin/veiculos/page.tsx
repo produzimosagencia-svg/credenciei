@@ -2,7 +2,8 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Truck, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarVeiculos } from '@/lib/permissions'
+import { suporteTemEscopo } from '@/lib/suporte'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
@@ -30,7 +31,9 @@ export default async function VeiculosPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  // Mesma régua de `exigirAcessoAVeiculos` no servidor — aqui só evita a
+  // tela abrir pra quem não pode; quem barra de verdade é a action.
+  if (!podeGerenciarVeiculos(perfil.role)) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -57,7 +60,19 @@ export default async function VeiculosPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  /*
+   * O suporte não é da organização do evento — o escopo dele vem de
+   * `suporte_escopo`, e comparar `organizacao_id` o expulsaria de um evento
+   * que ele foi contratado justamente pra atender. Mesma régua que
+   * `exigirAcessoAVeiculos` aplica no servidor.
+   */
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      notFound()
+    }
+  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    notFound()
+  }
 
   const [{ data: dias }, { data: veiculos }] = await Promise.all([
     supabase.from('jornada_dias').select('data, tipo')

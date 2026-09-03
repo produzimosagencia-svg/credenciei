@@ -91,6 +91,21 @@ export const ehSuporte = (role?: string) => role === 'suporte'
 export const podeEditarIdentidade = (role?: string) => role === 'master' || role === 'suporte'
 
 /**
+ * Pode cadastrar/excluir VEÍCULOS autorizados a entrar no evento.
+ *
+ * Mais estreito que `podeGerenciarEventos` de propósito (decisão do Juan,
+ * 03/09/2026): fica de fora `gerente` e `cliente`, que gerenciam evento mas
+ * não respondem pelo portão. Entra `suporte`, que é justamente quem conserta
+ * a operação no dia — e, como sempre, só DENTRO do escopo dele (a checagem
+ * de escopo mora na action, ver `exigirAcessoAVeiculos`).
+ *
+ * Autorizar um veículo é dizer quem entra dirigindo no evento; é decisão de
+ * quem administra ou de quem apoia a operação, não de quem só acompanha.
+ */
+export const podeGerenciarVeiculos = (role?: string) =>
+  role === 'master' || role === 'admin' || role === 'suporte'
+
+/**
  * Pode LER o QR e registrar presença pelo scanner.
  *
  * O supervisor ficou de fora a pedido. Quem credencia é o posto de

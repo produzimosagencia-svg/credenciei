@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
-  podeGerenciarEventos, type Role,
+  podeGerenciarEventos, podeGerenciarVeiculos, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -77,11 +77,12 @@ function gruposPara(role: string): Grupo[] {
     doEvento.push({ href: '/admin/criar-porteiro', label: 'Gestor de credenciamento', icon: ShieldCheck })
   }
   /*
-   * Veículos: mesma régua de quem gerencia o evento (a autorização é do
-   * evento, e o condutor precisa estar credenciado nele). Fica no grupo
+   * Veículos: master, admin e suporte — não é `podeGerenciarEventos`, que
+   * inclui gerente e cliente. Autorizar um veículo é dizer quem entra
+   * dirigindo no evento (decisão do Juan, 03/09/2026). Fica no grupo
    * Evento, junto do resto que se usa durante a operação.
    */
-  if (podeGerenciarEventos(role)) {
+  if (podeGerenciarVeiculos(role)) {
     doEvento.push({ href: '/admin/veiculos', label: 'Cadastrar veículo', icon: Truck })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo

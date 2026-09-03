@@ -16,6 +16,7 @@ import {
 import {
   podeGerenciarUsuarios,
   podeGerenciarEventos,
+  podeGerenciarVeiculos,
   podeGerenciarOrganizacoes,
   podeExcluirEventos,
   podeExcluir,
@@ -4914,6 +4915,43 @@ export async function obterVisualizacoesDoAviso(avisoId: string, eventoId: strin
  * ninguém a quem perguntar.
  */
 
+/**
+ * Quem pode mexer nos veículos DESTE evento, com o escopo já conferido.
+ *
+ * `podeGerenciarVeiculos` diz o papel (master/admin/suporte); aqui vem a
+ * outra metade, que o papel sozinho não responde — QUAL evento cada um
+ * alcança:
+ *
+ *   master  → todos
+ *   admin   → só os da própria organização
+ *   suporte → só os do escopo contratado dele (`suporteTemEscopo`)
+ *
+ * Devolve o perfil quando pode, ou a mensagem de erro quando não — as três
+ * actions de veículo chamam isto antes de qualquer coisa.
+ */
+async function exigirAcessoAVeiculos(
+  eventoId: string,
+): Promise<{ perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>; error?: undefined } | { perfil?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeGerenciarVeiculos(perfil.role)) {
+    return { error: 'Só master, admin e suporte podem cadastrar veículos.' }
+  }
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+  if (!evento) return { error: 'Evento não encontrado.' }
+
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      return { error: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    return { error: 'Sem permissão sobre este evento.' }
+  }
+
+  return { perfil }
+}
+
 export type CondutorEncontrado = {
   id: string
   nome: string
@@ -4937,19 +4975,12 @@ export async function buscarCondutorPorCpf(
   eventoId: string,
   cpfDigitado: string,
 ): Promise<{ condutor: CondutorEncontrado; error?: undefined } | { condutor?: undefined; error: string }> {
-  const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarEventos(perfil.role)) return { error: 'Sem permissão.' }
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
 
   const cpf = normalizarCpf(cpfDigitado ?? '')
   if (cpf.length !== 11) return { error: 'O CPF precisa ter 11 dígitos.' }
   if (!validarCpf(cpf)) return { error: 'Este CPF não é válido. Confira os números.' }
-
-  const { data: evento } = await supabaseAdmin
-    .from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
-  if (!evento) return { error: 'Evento não encontrado.' }
-  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
-    return { error: 'Sem permissão sobre este evento.' }
-  }
 
   const { data } = await supabaseAdmin
     .from('funcionarios')
@@ -4984,7 +5015,9 @@ function normalizarPlaca(v: string): string {
 }
 
 export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
-  const perfil = await exigirEventoDaOrg(eventoId)
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (!acesso.perfil) return { error: acesso.error }
+  const perfil = acesso.perfil
 
   const placa = normalizarPlaca(String(formData.get('placa') ?? ''))
   const modelo = String(formData.get('modelo') ?? '').trim()
@@ -5043,7 +5076,8 @@ export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
 }
 
 export async function excluirVeiculo(veiculoId: string, eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
   const { error } = await supabaseAdmin.from('veiculos').delete().eq('id', veiculoId).eq('evento_id', eventoId)
   if (error) return { error: mensagemAmigavel(error) }
   revalidatePath('/admin/veiculos')
