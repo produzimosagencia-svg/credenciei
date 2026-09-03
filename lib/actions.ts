@@ -2770,12 +2770,48 @@ async function upsertRegistro(
  *
  * O registro assistido existe justamente pra quando o horário já passou, então
  * `resolverRegistro` não serve aqui — ele recusaria. A regra é a mesma do
- * resto: o dia da entrada em aberto, ou hoje quando não há nenhuma.
+ * resto: o dia da entrada em ABERTO, ou hoje quando não há nenhuma.
+ *
+ * ── O BUG QUE ESTA FUNÇÃO CAUSOU (03/09/2026, manhã) ──────────────────
+ *
+ * Faltavam as duas travas abaixo, e o estrago foi real: quem trabalhou
+ * ontem à noite e teve a entrada de hoje lançada no registro assistido
+ * recebia `dataRef` de ONTEM (a entrada de ontem ainda estava dentro das
+ * 18h de `entradaDoTurno`, mesmo com o turno já fechado). Como
+ * `upsertRegistro` APAGA a linha daquela chave antes de inserir, a
+ * entrada de ontem era destruída e substituída pelo horário de hoje —
+ * daí a ficha mostrando "entrada 03/09 08:07, saída 02/09 20:12", que é
+ * cronologicamente impossível. Duas pessoas atingidas antes da correção.
+ *
+ * 1. ENTRADA nunca herda dia de turno nenhum — ela ABRE o turno, então é
+ *    sempre hoje. É o que `resolverRegistro` já fazia (`momento ===
+ *    'entrada' ? null : ...`) e o que faltava aqui.
+ * 2. Turno com saída é turno FECHADO: não manda mais no dia de hoje.
  */
-async function diaDeReferencia(evento: { id: string; data_inicio?: string | null }, funcionarioId: string) {
+async function diaDeReferencia(
+  evento: { id: string; data_inicio?: string | null },
+  funcionarioId: string,
+  momento?: MomentoPresenca,
+) {
   const agora = new Date()
-  const entrada = await entradaDoTurno(funcionarioId, evento.id, agora)
-  const dataRef = entrada?.dataRef ?? diaBRT(agora)
+
+  // A entrada abre o turno; nunca pertence a um turno anterior.
+  const entrada = momento === 'entrada'
+    ? null
+    : await entradaDoTurno(funcionarioId, evento.id, agora)
+
+  let dataRef = diaBRT(agora)
+  if (entrada) {
+    const { data: fimDoTurno } = await supabaseAdmin
+      .from('registros')
+      .select('id')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', evento.id)
+      .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+      .limit(1)
+    // Só um turno AINDA ABERTO puxa o registro pro dia dele.
+    if (!fimDoTurno?.length) dataRef = entrada.dataRef
+  }
+
   const dia = await diaDeTrabalho(evento.id, dataRef)
   return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal: dia?.tipo === 'principal' }
 }
@@ -4131,7 +4167,7 @@ export async function registrarPresencaAssistida(
    * um erro: `upsertRegistro` grava por cima, e o índice único do banco
    * garante que nunca vira uma segunda linha.
    */
-  const refAssistido = await diaDeReferencia(evento, func.id)
+  const refAssistido = await diaDeReferencia(evento, func.id, momento)
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'

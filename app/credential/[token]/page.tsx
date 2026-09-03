@@ -107,7 +107,33 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       }
     : null
 
-  const dataRef = entrada?.dataRef ?? hoje
+  /*
+   * O turno de ontem só manda nesta tela enquanto estiver ABERTO.
+   *
+   * A janela de TETO_TURNO_H acima existe pro turno que vira a madrugada,
+   * mas 18h atrás, de manhã, também alcança a TARDE DE ONTEM. Sem esta
+   * conferência, quem entrou 17h e saiu 20h ontem abria a credencial hoje
+   * de manhã e via "Entrada registrada / Saída registrada" com os horários
+   * de ONTEM — parecia que já tinha batido tudo, quando hoje não tinha
+   * batido nada. É o mesmo erro que estava no scanner
+   * (`inferirMomentoQR`), corrigido junto em 03/09/2026.
+   *
+   * Turno com saída = turno fechado = dia encerrado. A credencial volta
+   * pra hoje, zerada, que é o que a pessoa precisa ver.
+   */
+  const { data: fimDoTurno } = entrada
+    ? await supabase
+        .from('registros')
+        .select('created_at')
+        .eq('funcionario_id', funcionario.id)
+        .eq('evento_id', evento?.id ?? '')
+        .eq('tipo', 'fim')
+        .eq('data_ref', entrada.dataRef)
+        .limit(1)
+    : { data: null }
+
+  const turnoAberto = !!entrada && !fimDoTurno?.length
+  const dataRef = turnoAberto ? entrada.dataRef : hoje
 
   // Só os registros DESTE dia. Olhar o evento inteiro faria os cartões
   // aparecerem verdes já no segundo dia de uma operação de vários dias.
