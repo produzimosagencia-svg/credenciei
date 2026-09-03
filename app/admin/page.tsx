@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
-  CalendarDays, MapPin, Users, Plus, ChevronLeft, ChevronRight, Search, X,
+  CalendarDays, Plus, ChevronLeft, ChevronRight, Search, X, ArrowRight,
   TrendingUp, Activity, Radio, UserCheck, Clock, AlertTriangle } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
@@ -514,20 +514,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * inteira. Form GET, então o filtro vira URL e dá pra mandar o link pronto
    * pra outra pessoa da produção.
    */
+  /*
+   * Busca de eventos. No Arena ela mora na MESMA linha do título
+   * "Acontecendo agora": filtra os eventos, não os indicadores. Form GET,
+   * então o filtro vira URL e dá pra mandar o link pronto pra alguém.
+   */
   const barraDeBusca = (
-    <form className="flex gap-2">
-      <div className="relative flex-1 max-w-md">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+    <form className="flex gap-2 w-full sm:w-auto">
+      <div className="relative flex-1 sm:w-[360px]">
+        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
           name="q"
           defaultValue={busca}
-          placeholder="Buscar evento por nome ou local..."
+          placeholder="Buscar evento por nome ou local"
           className="input"
-          style={{ paddingLeft: 36 }}
+          style={{ paddingLeft: 38 }}
         />
       </div>
       {busca && (
-        <Link href="/admin" className="btn btn-secundario btn-icone shrink-0" aria-label="Limpar busca">
+        <Link href="/admin" className="btn btn-secundario btn-icone-lg shrink-0" aria-label="Limpar busca">
           <X className="w-4 h-4" />
         </Link>
       )}
@@ -541,6 +546,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <Secao
       titulo={busca ? 'Busca de eventos' : 'Eventos'}
       descricao={busca ? `Nenhum resultado para "${busca}"` : 'Cada evento reúne os setores, a equipe e as presenças do dia'}
+      acoes={barraDeBusca}
     >
       {busca ? (
         <EmptyState
@@ -569,39 +575,57 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       )}
     </Secao>
   ) : (
-    <div className="space-y-4">
-      {/* O evento ativo não é linha de lista: é o que está acontecendo agora,
-          e ganha cartão próprio. A moldura escura com uma tira branca dentro
-          espremia tudo à esquerda e deixava um vão no meio — aqui o conteúdo
-          ocupa o cartão inteiro. */}
-      {!!linhasAtivas.length && (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="menu-grupo-titulo">Acontecendo agora</span>
-            <span className="indicador-selo selo-sucesso">{linhasAtivas.length}</span>
+    <div className="space-y-6">
+      {/* Os eventos ao vivo são cartazes com aura laranja — o único bloco
+          que pulsa na tela. A busca fica na mesma linha do título. */}
+      <section className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="secao-titulo">Acontecendo agora</span>
+            <span className="indicador-selo selo-acento">{linhasAtivas.length}</span>
           </div>
-          <div className={`grid gap-3 ${linhasAtivas.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+          {barraDeBusca}
+        </div>
+        {linhasAtivas.length ? (
+          <div className={`grid gap-4 ${linhasAtivas.length > 1 ? 'lg:grid-cols-2' : ''}`}>
             {linhasAtivas.map((e, i) => (
               <EventoAoVivo key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} destacar={i === 0} />
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="secao">
+            <EmptyState
+              titulo={busca ? 'Nenhum evento ativo com esse nome' : 'Nenhum evento acontecendo agora'}
+              descricao={busca ? undefined : 'Os eventos ativos aparecem aqui como cartazes ao vivo.'}
+            />
+          </div>
+        )}
+      </section>
 
       {!!linhasEncerradas.length && (
-        <Secao
-          icone={<CalendarDays className="w-3.5 h-3.5" />}
-          titulo="Eventos encerrados"
-          descricao="Já terminaram e não aceitam novas presenças"
-          acoes={<span className="indicador-selo selo-neutro">{totalEncerradosCount}</span>}
-        >
-          <div className="divide-y divide-slate-100">
+        <section className="secao !p-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="secao-titulo">Eventos encerrados</span>
+              <span className="indicador-selo selo-neutro">{totalEncerradosCount}</span>
+            </div>
+            <span className="hidden md:inline text-xs text-slate-400">Já terminaram e não aceitam novas presenças</span>
+          </div>
+
+          {/* Cabeçalho da grade — só no desktop; no celular a linha vira lista. */}
+          <div className="hidden md:grid grid-cols-[2fr_1fr_1.6fr_.6fr_.6fr_.9fr_48px] px-5 py-2 text-[10px] font-extrabold tracking-[.14em] uppercase text-slate-400 border-b border-white/[.08]">
+            <span>Evento</span><span>Data</span><span>Local</span>
+            <span className="text-right">Setores</span><span className="text-right">Equipe</span>
+            <span className="pl-4">Status</span><span />
+          </div>
+          <div>
             {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} />)}
           </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50">
-              <p className="text-slate-500 text-xs">Página {page} de {totalPages}</p>
-              <div className="flex items-center gap-1">
+
+          <div className="flex items-center justify-between px-5 py-3">
+            <p className="text-slate-400 text-xs">Página {page} de {totalPages} · {totalEncerradosCount} evento{totalEncerradosCount !== 1 ? 's' : ''}</p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
                 <Link
                   href={urlPagina(page - 1)}
                   aria-disabled={page <= 1}
@@ -614,31 +638,29 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                   href={urlPagina(page + 1)}
                   aria-disabled={page >= totalPages}
                   aria-label="Próxima página"
-                  className={`btn btn-secundario btn-icone ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}
+                  className={`btn btn-icone ${page >= totalPages ? 'btn-secundario pointer-events-none opacity-40' : 'btn-acento'}`}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>
-            </div>
-          )}
-        </Secao>
+            )}
+          </div>
+        </section>
       )}
     </div>
   )
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Aviso de canal caído. Fica ACIMA do título de propósito: é a única
-          coisa da tela que exige ação imediata, e enterrá-la no meio dos
-          indicadores faria o produtor descobrir no dia do evento que a equipe
-          não recebeu lembrete nenhum. */}
+          coisa da tela que exige ação imediata. */}
       {alertaWhatsApp && (
-        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <div className="min-w-0">
-            <p className="text-red-700 text-sm font-semibold">{alertaWhatsApp.titulo}</p>
-            <p className="text-red-600 text-xs mt-0.5">{alertaWhatsApp.detalhe}</p>
+            <p className="text-red-300 text-sm font-extrabold">{alertaWhatsApp.titulo}</p>
+            <p className="text-red-200/80 text-xs mt-0.5">{alertaWhatsApp.detalhe}</p>
           </div>
         </div>
       )}
@@ -650,26 +672,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <>
             <TutorialButton/>
             {podeCriarEvento ? (
-              <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario">
-                <Plus className="w-3.5 h-3.5" />
+              <Link href="/admin/eventos/novo" data-tutorial="dash-novo-evento" className="btn btn-primario btn-lg sm:min-w-[180px] sm:justify-start">
+                <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">Novo evento</span>
                 <span className="sm:hidden">Novo</span>
               </Link>
             ) : (
               /* Sem isto o botão sumia e nada explicava por quê. */
-              <span className="flex items-center gap-1.5 text-slate-500 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5">
-                <span className="sm:hidden">Sem licença</span>
-              </span>
+              <span className="pilula-contexto">Sem licença</span>
             )}
           </>
         }
       />
 
-      <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {stats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
-
-      {(!!totalEventos || busca) && barraDeBusca}
 
       {blocoEventos}
 
@@ -678,23 +696,21 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             e isso só se responde com eixo do tempo. */}
         <div data-tutorial="dash-graficos" className="lg:col-span-2">
           <Secao
-            tom="acento"
-            icone={<TrendingUp className="w-3.5 h-3.5" />}
             titulo="Fluxo de credenciamento"
             /* Diz de QUE janela é a curva: sem isso, o gráfico de um evento da
                semana passada pareceria movimento de agora. */
             descricao={legendaJanela}
             acoes={
-              <div className="hidden sm:flex items-center gap-3">
-                {([['Entrada', COR_ETAPA.entrada], ['Meio', COR_ETAPA.meio], ['Saída', COR_ETAPA.fim]] as const).map(([rotulo, cor]) => (
-                  <span key={rotulo} className="flex items-center gap-1.5 text-slate-500 text-xs">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: cor }} />
+              <div className="hidden sm:flex items-center gap-4">
+                {([['Entrada', COR_ETAPA.entrada, true], ['Meio', COR_ETAPA.meio, false], ['Saída', COR_ETAPA.fim, false]] as const).map(([rotulo, cor, brilho]) => (
+                  <span key={rotulo} className="flex items-center gap-1.5 text-slate-600 text-xs">
+                    <span className="w-2 h-2 rounded-full" style={{ background: cor, boxShadow: brilho ? `0 0 8px ${cor}` : undefined }} />
                     {rotulo}
                   </span>
                 ))}
               </div>
             }
-            corpoClassName="p-4 pl-1"
+            corpoClassName="p-4 pl-1 !bg-transparent !border-0"
           >
             <FluxoDoDia
               dados={dadosFluxo}
@@ -707,42 +723,38 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </Secao>
         </div>
 
-        {/* Atividade ao vivo — timeline: a linha vertical liga os registros no
-            tempo e é o que dá a sensação de "acontecendo agora". */}
+        {/* Atividade ao vivo: ponto colorido por etapa, nome, empresa e hora. */}
         <Secao
-          tom="info"
-          icone={<Activity className="w-3.5 h-3.5" />}
           titulo="Atividade recente"
-          corpoClassName={registrosNaTela?.length ? 'p-4' : ''}
+          corpoClassName="!bg-transparent !border-0 px-4 pb-2"
         >
           {!registrosNaTela?.length ? (
             <EmptyState titulo="Sem atividade ainda" />
           ) : (
-            <div className="relative overflow-y-auto max-h-60 pl-4">
-              <span className="absolute left-[3px] top-1.5 bottom-1.5 w-px bg-slate-200" aria-hidden="true" />
-              <div className="space-y-3.5">
-                {registrosNaTela.map(r => {
-                  const func = r.funcionarios as unknown as { nome?: string; empresa?: string; cargo?: string } | null
-                  const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
-                  return (
-                    <div key={r.id as string} className="relative">
-                      <span
-                        className="absolute -left-4 top-1.5 w-[7px] h-[7px] rounded-full ring-2 ring-white"
-                        style={{ background: cor }}
-                        aria-hidden="true"
-                      />
-                      <p className="text-slate-800 text-xs font-medium truncate">{func?.nome}</p>
-                      <p className="text-slate-500 text-2xs truncate">
-                        {func?.empresa}{func?.cargo ? ` · ${func.cargo}` : ''}
-                      </p>
-                      <p className="text-slate-400 text-2xs mt-0.5 tabular-nums">
-                        {r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'} ·{' '}
-                        {formatarBR(r.created_at as string, 'hora')}
+            <div className="overflow-y-auto max-h-72">
+              {registrosNaTela.map(r => {
+                const func = r.funcionarios as unknown as { nome?: string; empresa?: string; cargo?: string } | null
+                const tipo = r.tipo === 'entrada' ? 'Entrada' : r.tipo === 'meio' ? 'Meio' : 'Saída'
+                const cor = r.tipo === 'entrada' ? COR_ETAPA.entrada : r.tipo === 'meio' ? COR_ETAPA.meio : COR_ETAPA.fim
+                return (
+                  <div key={r.id as string} className="flex items-start gap-3 py-2.5 border-b border-white/[.06] last:border-0">
+                    <span
+                      className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                      style={{ background: cor, boxShadow: r.tipo === 'entrada' ? '0 0 10px rgba(255,74,15,.8)' : undefined }}
+                      aria-hidden="true"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-[13px] font-extrabold truncate">{func?.nome}</p>
+                      <p className="text-slate-500 text-xs truncate">
+                        {func?.empresa}{func?.empresa ? ' · ' : ''}{tipo}
                       </p>
                     </div>
-                  )
-                })}
-              </div>
+                    <span className="text-slate-500 text-xs tabular-nums shrink-0">
+                      {formatarBR(r.created_at as string, 'hora')}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </Secao>
@@ -754,66 +766,49 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 }
 
 /**
- * Cartão do evento que está acontecendo agora.
+ * Cartaz do evento que está acontecendo agora.
  *
- * Escuro e grande de propósito: é a única coisa da tela que exige ação neste
- * momento, e disputa atenção com quatro indicadores coloridos logo acima. O
- * número de presentes vira a métrica do cartão — durante o evento é a pergunta
- * que se repete no rádio a cada dez minutos.
+ * Aura laranja pulsando, nome grande, e a ficha Data / Local / Equipe em
+ * duas colunas. "Abrir evento" é o botão em gradiente; o "…" ao lado abre
+ * editar / encerrar / excluir.
  */
 function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
   return (
-    <div className="evento-vivo">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="evento-vivo-selo">
-            <span className="ponto-vivo" aria-hidden="true" />
-            Ao vivo
-          </span>
-          <Link
-            href={`/admin/eventos/${evento.id}`}
-            data-tutorial={destacar ? 'eventos-card' : undefined}
-            className="block mt-2"
-          >
-            <h3 className="text-white text-lg font-semibold truncate hover:underline">{evento.nome}</h3>
-          </Link>
-          <div className="flex items-center gap-3 flex-wrap text-white/60 text-xs mt-1.5">
-            <span className="flex items-center gap-1">
-              <CalendarDays className="w-3 h-3 shrink-0" />
-              {extensoBR(evento.data_inicio, { day: '2-digit', month: 'short', year: 'numeric' })}
-            </span>
-            {evento.local && (
-              <span className="flex items-center gap-1 min-w-0">
-                <MapPin className="w-3 h-3 shrink-0" />
-                <span className="truncate">{evento.local}</span>
-              </span>
-            )}
-            <span className="flex items-center gap-1">
-              <Users className="w-3 h-3 shrink-0" />
-              {evento.setores} setor{evento.setores !== 1 ? 'es' : ''}
-            </span>
-            {/*
-              * "Presentes agora" saiu daqui — a pedido do Juan ("muito feio",
-              * "deixar apenas os números de funcionário cadastrado"). Ela
-              * também tinha um problema real de dado, não só de visual: o
-              * número somava quem teve entrada em QUALQUER dia da montagem,
-              * sem checar se a pessoa já tinha saído — a mesma conta que já
-              * foi corrigida na tela do evento (ver comentário lá, "OS
-              * NÚMEROS SÃO DE UM DIA"). Sem essa conta certa pra um card
-              * pequeno feito pra ser lido rápido, o número certo do dia
-              * certo mora em `/admin/eventos/[id]`, um clique adiante — aqui
-              * fica só o tamanho da equipe.
-              */}
-            <span className="flex items-center gap-1">
-              <UserCheck className="w-3 h-3 shrink-0" />
-              {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
-            </span>
-          </div>
-        </div>
+    <div className="evento-vivo flex flex-col">
+      <span className="evento-vivo-selo">
+        <span className="ponto-vivo" aria-hidden="true" />
+        Ao vivo
+      </span>
+      <Link
+        href={`/admin/eventos/${evento.id}`}
+        data-tutorial={destacar ? 'eventos-card' : undefined}
+        className="block mt-2.5"
+      >
+        <h3 className="text-white text-[22px] md:text-[26px] leading-[1.1] hover:text-brand-300 transition-colors">{evento.nome}</h3>
+      </Link>
 
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 mt-4 text-[13px]">
+        <dt className="text-slate-500">Data</dt>
+        <dd className="text-slate-800">{extensoBR(evento.data_inicio, { day: '2-digit', month: 'short', year: 'numeric' })}</dd>
+        {evento.local && (
+          <>
+            <dt className="text-slate-500">Local</dt>
+            <dd className="text-slate-800 truncate">{evento.local}</dd>
+          </>
+        )}
+        <dt className="text-slate-500">Equipe</dt>
+        <dd className="text-slate-800 tabular-nums">
+          {evento.setores} setor{evento.setores !== 1 ? 'es' : ''} · {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
+        </dd>
+      </dl>
+
+      <div className="flex items-center gap-2 mt-5">
+        <Link href={`/admin/eventos/${evento.id}`} className="btn btn-primario flex-1 sm:flex-none sm:min-w-[170px] justify-start">
+          Abrir evento
+          <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+        </Link>
         {podeGerir && (
-          /* O menu vem com cores de tema claro; aqui ele herda o branco. */
-          <div className="acoes-no-escuro shrink-0 -mr-1 -mt-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
+          <div className="acoes-no-escuro shrink-0 flex items-center justify-center w-10 h-10 rounded-[10px] bg-white/[.06] border border-white/[.12]" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
             <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
           </div>
         )}
@@ -823,55 +818,42 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
 }
 
 /**
- * Uma linha da lista de eventos encerrados — linha de tabela, não cartão
- * solto: dentro de uma seção com título, repetir borda e canto arredondado em
- * cada item cria caixa dentro de caixa e engorda a lista sem informar nada.
+ * Uma linha da grade de eventos encerrados. No desktop segue as colunas do
+ * cabeçalho (Evento / Data / Local / Setores / Equipe / Status / ações); no
+ * celular vira uma linha de lista com nome e "data · local".
  */
 function EventoLinha({ evento, podeExcluir, podeGerir, destacar }: { evento: LinhaEvento; podeExcluir: boolean; podeGerir: boolean; destacar?: boolean }) {
+  const data = extensoBR(evento.data_inicio, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const href = `/admin/eventos/${evento.id}`
   return (
-    <div className={`px-4 py-3 flex items-center gap-4 hover:bg-slate-50 transition-colors ${evento.ativo ? '' : 'opacity-70'}`}>
-      <Link
-        href={`/admin/eventos/${evento.id}`}
-        data-tutorial={destacar ? 'eventos-card' : undefined}
-        className="flex-1 min-w-0 space-y-1"
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Roxo: é o link que leva pra dentro do evento, e a lista inteira
-              existe pra ser clicada aqui. */}
-          <h3 className="text-brand-500 font-medium text-sm truncate">{evento.nome}</h3>
-          {evento.ativo ? (
-            <Badge tom="positivo">
-              <span className="w-1.5 h-1.5 rounded-full bg-sucesso-600" />
-              Ativo
-            </Badge>
-          ) : (
-            <Badge tom="neutro">Encerrado</Badge>
-          )}
-        </div>
+    <div className="border-b border-white/[.06] last:border-0 hover:bg-brand-50 transition-colors">
+      {/* Desktop */}
+      <div className="hidden md:grid grid-cols-[2fr_1fr_1.6fr_.6fr_.6fr_.9fr_48px] items-center px-5 py-3 text-[13px]">
+        <Link href={href} data-tutorial={destacar ? 'eventos-card' : undefined} className="text-white font-extrabold truncate pr-3 hover:text-brand-300 transition-colors">
+          {evento.nome}
+        </Link>
+        <span className="tabular-nums text-slate-600">{data}</span>
+        <span className="text-slate-500 truncate pr-3">{evento.local ?? '—'}</span>
+        <span className="text-right tabular-nums text-slate-800">{evento.setores}</span>
+        <span className="text-right tabular-nums text-slate-800">{evento.equipe}</span>
+        <span className="pl-4">
+          {evento.ativo ? <Badge tom="positivo">Ativo</Badge> : <Badge tom="neutro">Encerrado</Badge>}
+        </span>
+        <span className="flex justify-end" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
+          {podeGerir && <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />}
+        </span>
+      </div>
 
-        <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
-          <span className="flex items-center gap-1">
-            <CalendarDays className="w-3 h-3 shrink-0" />
-            {extensoBR(evento.data_inicio, { day: '2-digit', month: 'short', year: 'numeric' })}
-          </span>
-          {evento.local && (
-            <span className="flex items-center gap-1 min-w-0">
-              <MapPin className="w-3 h-3 shrink-0" />
-              <span className="truncate">{evento.local}</span>
-            </span>
-          )}
-          <span className="flex items-center gap-1">
-            <Users className="w-3 h-3 shrink-0" />
-            {evento.setores} setor{evento.setores !== 1 ? 'es' : ''} · {evento.equipe} na equipe
-          </span>
-        </div>
-      </Link>
-
-      {podeGerir && (
-        <div className="shrink-0 -mr-1" data-tutorial={destacar ? 'eventos-acoes' : undefined}>
-          <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
-        </div>
-      )}
+      {/* Mobile */}
+      <div className="md:hidden flex items-center gap-3 px-4 py-3">
+        <Link href={href} className="flex-1 min-w-0">
+          <p className="text-white text-[13px] font-extrabold truncate">{evento.nome}</p>
+          <p className="text-slate-500 text-xs truncate">{data}{evento.local ? ` · ${evento.local}` : ''}</p>
+        </Link>
+        {podeGerir
+          ? <EventoActions eventoId={evento.id} ativo={evento.ativo} podeExcluir={podeExcluir} />
+          : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
+      </div>
     </div>
   )
 }

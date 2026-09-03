@@ -1,25 +1,26 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Archivo } from "next/font/google";
 import "./globals.css";
 
-// Inter com feature de números tabulares e o "a" de cauda reta (cv11) — os
-// mesmos ajustes que Linear e Vercel usam. Sem isso a Inter renderiza com o
-// desenho padrão, que é o que se vê em qualquer landing page de template.
-const inter = Inter({
+// Archivo em 400/600/800: o design "Arena" é todo nela — corpo em 400, os
+// títulos e os números grandes em 800. É o peso 800 que dá a cara de
+// painel de arena; sem ele o Archivo vira só mais uma grotesca.
+const archivo = Archivo({
   subsets: ["latin"],
-  variable: "--font-inter",
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-archivo",
   display: "swap",
-  axes: ["opsz"],
 });
 
 export const metadata: Metadata = {
   title: "Credenciei",
-  description: "Sistema de credenciamento para eventos",
+  description: "Credenciamento de equipes para eventos",
+  icons: { icon: "/marca/iso-laranja.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`h-full ${inter.variable}`}>
+    <html lang="pt-BR" className={`h-full ${archivo.variable}`}>
       <body className="min-h-full">{children}</body>
     </html>
   );

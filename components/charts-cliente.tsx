@@ -21,14 +21,14 @@ import {
  */
 
 const COR = {
-  entrada: '#22c55e',
-  meio: '#3b82f6',
-  fim: '#f59e0b',
-  eixo: '#6b7a90',
-  grade: '#1e2634',
-  superficie: '#171e2b',
-  borda: '#212a3a',
-  texto: '#e5e7eb',
+  entrada: '#FF4A0F',
+  meio: '#f3f2f2',
+  fim: '#9b9797',
+  eixo: 'rgba(243,242,242,0.4)',
+  grade: 'rgba(255,255,255,0.07)',
+  superficie: '#161515',
+  borda: 'rgba(255,255,255,0.12)',
+  texto: '#f3f2f2',
 }
 
 const EIXO = { fontSize: 11, fill: COR.eixo }
@@ -84,8 +84,8 @@ export function FluxoDoDia({ dados, vazioTexto }: { dados: PontoFluxo[]; vazioTe
         <defs>
           {(['entrada', 'meio', 'fim'] as const).map(k => (
             <linearGradient key={k} id={`g-${k}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COR[k]} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={COR[k]} stopOpacity={0.02} />
+              <stop offset="0%" stopColor={COR[k]} stopOpacity={k === 'entrada' ? 0.45 : 0.08} />
+              <stop offset="100%" stopColor={COR[k]} stopOpacity={0} />
             </linearGradient>
           ))}
         </defs>
@@ -109,9 +109,9 @@ export function FluxoDoDia({ dados, vazioTexto }: { dados: PontoFluxo[]; vazioTe
             ) : null
           }
         />
-        <Area type="monotone" dataKey="entrada" stroke={COR.entrada} strokeWidth={2} fill="url(#g-entrada)" />
+        <Area type="monotone" dataKey="entrada" stroke={COR.entrada} strokeWidth={2.5} fill="url(#g-entrada)" className="neon-line" />
         <Area type="monotone" dataKey="meio" stroke={COR.meio} strokeWidth={2} fill="url(#g-meio)" />
-        <Area type="monotone" dataKey="fim" stroke={COR.fim} strokeWidth={2} fill="url(#g-fim)" />
+        <Area type="monotone" dataKey="fim" stroke={COR.fim} strokeWidth={2} strokeDasharray="4 3" fill="url(#g-fim)" />
       </AreaChart>
     </ResponsiveContainer>
   )
@@ -145,7 +145,7 @@ export function PresencaPorSetor({ dados }: { dados: BarraSetor[] }) {
           width={110}
         />
         <Tooltip
-          cursor={{ fill: 'rgba(148,163,184,0.06)' }}
+          cursor={{ fill: 'rgba(255,255,255,0.04)' }}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <Caixa
@@ -162,7 +162,7 @@ export function PresencaPorSetor({ dados }: { dados: BarraSetor[] }) {
         <Bar dataKey="faltam" stackId="a" radius={[0, 3, 3, 0]}>
           {dados.map((d, i) => (
             // Setor completo não tem faixa cinza — a barra fica verde inteira.
-            <Cell key={i} fill={d.faltam === 0 ? COR.entrada : 'rgba(148,163,184,0.18)'} />
+            <Cell key={i} fill={d.faltam === 0 ? COR.entrada : 'rgba(255,255,255,0.12)'} />
           ))}
         </Bar>
       </BarChart>

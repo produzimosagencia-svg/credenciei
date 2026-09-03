@@ -15,9 +15,9 @@
  * CVD-safe sobre fundo claro.
  */
 export const COR_ETAPA = {
-  entrada: '#16a34a',
-  meio: '#2563eb',
-  fim: '#d97706',
+  entrada: '#FF4A0F',
+  meio: '#f3f2f2',
+  fim: '#9b9797',
 } as const
 
 const pct = (valor: number, total: number) => (total > 0 ? Math.round((valor / total) * 100) : 0)
@@ -42,7 +42,7 @@ export function BarrasMagnitude({ itens }: { itens: { label: string; valor: numb
               className="barra-entrada h-full rounded-full"
               style={{
                 width: `${pct(item.valor, item.total)}%`,
-                background: 'var(--color-acento-600)',
+                background: 'var(--laranja)',
                 animationDelay: `${Math.min(i, 8) * 45}ms`,
               }}
             />

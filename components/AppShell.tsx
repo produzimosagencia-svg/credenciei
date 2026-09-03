@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
-  QrCode, LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
+  LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList,
 } from 'lucide-react'
@@ -185,16 +185,20 @@ function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
 }) {
   const estilo = { width: tamanho, height: tamanho }
   if (fotoUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={fotoUrl} alt="" style={estilo} className={`rounded-full object-cover shrink-0 ${className}`} />
+    return (
+      <span style={estilo} className={`avatar-anel shrink-0 ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={fotoUrl} alt="" className="w-full h-full object-cover" />
+      </span>
+    )
   }
+  // Iniciais dentro do anel em gradiente — o desenho do topo do Arena.
   return (
-    <div
-      style={estilo}
-      className={`rounded-full bg-slate-100 border border-slate-200 text-slate-600 flex items-center justify-center font-semibold shrink-0 ${className}`}
-    >
-      <span style={{ fontSize: Math.max(10, tamanho * 0.36) }}>{iniciais(nome)}</span>
-    </div>
+    <span style={estilo} className={`avatar-anel shrink-0 ${className}`}>
+      <span className="flex items-center justify-center font-extrabold text-white">
+        <span style={{ fontSize: Math.max(10, tamanho * 0.32) }}>{iniciais(nome)}</span>
+      </span>
+    </span>
   )
 }
 
@@ -208,11 +212,11 @@ function NavLinks({ grupos, pathname, onNavigate, setores, setorAtualId }: {
 }) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
   return (
-    <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+    <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-[22px]">
       {grupos.map((grupo, i) => (
         <div key={grupo.titulo ?? i}>
-          {grupo.titulo && <p className="menu-grupo-titulo px-2.5 mb-1.5">{grupo.titulo}</p>}
-          <div className="space-y-px">
+          {grupo.titulo && <p className="menu-grupo-titulo px-3 mb-1.5">{grupo.titulo}</p>}
+          <div className="space-y-0.5">
             {grupo.itens.map(item => {
               const isAtivo = ativo(item.href)
               return (
@@ -291,15 +295,15 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
         aria-haspopup="menu"
         aria-expanded={aberto}
         aria-label="Menu do usuário"
-        className="flex items-center gap-2 rounded-full p-0.5 hover:bg-slate-100 transition-colors"
+        className="flex items-center gap-2 rounded-full hover:brightness-110 transition-all"
       >
-        <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={36} />
+        <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={38} />
       </button>
 
       {aberto && (
         <div
           role="menu"
-          className="modal-pop-in absolute right-0 top-full mt-1.5 w-60 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50"
+          className="modal-pop-in absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-50"
         >
           <div className="flex items-center gap-2.5 px-3 py-3 border-b border-slate-100">
             <Avatar fotoUrl={fotoOrgUrl} nome={perfil.nome} tamanho={40} />
@@ -362,26 +366,31 @@ export default function AppShell({
     <AssistenteIAProvider usuarioId={perfil.id}>
     <div className="min-h-screen flex flex-col">
       {/* Barra superior: marca › contexto, e o usuário à direita */}
-      <header className="topo-app sticky top-0 z-30 h-14 shrink-0">
-        <div className="h-full px-3 md:px-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 min-w-0">
+      <header className="topo-app sticky top-0 z-30 h-16 shrink-0">
+        <div className="h-full px-4 md:px-6 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMenuAberto(true)}
-              className="btn-press md:hidden w-9 h-9 -ml-1 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 shrink-0"
+              className="btn-press md:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-slate-800 shrink-0"
               aria-label="Abrir menu"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            <Link href="/admin" className="chip-contexto shrink-0">
-              <span className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
-                <QrCode className="w-[18px] h-[18px] text-white" />
-              </span>
-              <span className="font-semibold text-[0.9375rem]">Credenciei</span>
+            <Link href="/admin" className="shrink-0 flex items-center" aria-label="Painel">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/marca/logo-branco.png" alt="Credenciei" className="h-[18px] md:h-[22px] w-auto" />
             </Link>
           </div>
 
-          <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />
+          <div className="flex items-center gap-3">
+            {contexto && (
+              <span className="pilula-contexto hidden sm:inline-flex">
+                {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
+              </span>
+            )}
+            <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />
+          </div>
         </div>
       </header>
 
@@ -390,7 +399,7 @@ export default function AppShell({
             até o fim da tela: como é escuro, precisa ser uma COLUNA inteira —
             recortado entre duas faixas claras viraria um bloco solto no meio
             da página. Por isso a trilha mora do lado do conteúdo, não aqui. */}
-        <aside className="menu-lateral hidden md:flex flex-col w-60 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)]">
+        <aside className="menu-lateral hidden md:flex flex-col w-[248px] shrink-0 sticky top-16 h-[calc(100vh-4rem)]">
           <NavLinks grupos={grupos} pathname={pathname} setores={setores} setorAtualId={setorAtualId} />
           <BotaoAssistente />
         </aside>
@@ -400,7 +409,7 @@ export default function AppShell({
               direita em monitor grande, e o conteúdo ficava jogado num canto.
               O conteúdo ocupa a área que tem — quem precisa de coluna estreita
               (formulário) limita a própria largura. */}
-          <main className="flex-1 min-w-0 p-4 md:p-6">
+          <main className="flex-1 min-w-0 p-4 md:px-8 md:pt-7 md:pb-10">
             {/* Publica quem está logado pro tutorial saber de quem é o histórico */}
             <TutorialUsuarioProvider id={perfil.id}>
               {children}
@@ -416,16 +425,12 @@ export default function AppShell({
           {/* Mesma coluna escura do desktop — a gaveta é o mesmo menu, não
               uma segunda navegação com outra aparência. */}
           <div className="menu-lateral absolute inset-y-0 left-0 w-72 max-w-[82vw] shadow-2xl flex flex-col drawer-slide-in">
-            <div className="flex items-center justify-between px-4 h-14 border-b border-white/10 shrink-0">
-              <span className="flex items-center gap-2">
-                <span className="logo-marca w-8 h-8 rounded-lg flex items-center justify-center">
-                  <QrCode className="w-[18px] h-[18px] text-white" />
-                </span>
-                <span className="font-semibold text-white text-[0.9375rem]">Credenciei</span>
-              </span>
+            <div className="flex items-center justify-between px-4 h-16 border-b border-white/10 shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/marca/logo-branco.png" alt="Credenciei" className="h-[18px] w-auto" />
               <button
                 onClick={() => setMenuAberto(false)}
-                className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-white/50 hover:text-white hover:bg-white/10"
+                className="btn-press w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white"
                 aria-label="Fechar menu"
               >
                 <X className="w-4 h-4" />

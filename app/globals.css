@@ -1,14 +1,46 @@
 @import "tailwindcss";
 
+/*
+ * ============================================================
+ * TEMA "ARENA" — o redesign aprovado no Claude Design (variante 2a).
+ *
+ * Fundo escuro quase preto com duas luzes quentes nos cantos, painéis de
+ * vidro (branco a 5% sobre o escuro, borda a 10%), o laranja da marca
+ * (#FF4A0F) em gradiente nos botões e com brilho atrás do que está ao
+ * vivo. Cantos arredondados (10–20px). Fonte Archivo, títulos em 800.
+ *
+ * O sistema inteiro já está escrito em `text-slate-800`, `bg-white`,
+ * `border-slate-200`, `bg-brand-50`… (uns 90 arquivos). Em vez de reescrever
+ * classe por classe, redefino o que esses nomes VALEM: a escala `slate`
+ * vira a escala de branco-sobre-escuro, `brand` vira o laranja, e
+ * `bg-white` vira a superfície de vidro. Assim o tema novo chega em toda
+ * tela sem que nenhum componente precise saber disso.
+ * ============================================================
+ */
+
 :root {
-  /*
-   * Fundo da aplicação. Cinza de verdade, não quase-branco: com #fafafa o
-   * cartão branco não tinha de onde se destacar e a tela virava um campo
-   * branco só, dependendo da borda de 1px para tudo. Aqui o branco do
-   * conteúdo passa a ser a superfície que sobe, e não o fundo.
-   */
-  --background: #d9dce3;
-  --foreground: #1f2124;
+  --background: #0d0c0c;
+  --foreground: #f3f2f2;
+
+  /* Luzes quentes do fundo — a mesma receita da tela desenhada. */
+  --fundo-luz:
+    radial-gradient(900px 500px at 0% 0%, rgba(255, 74, 15, 0.14), transparent 60%),
+    radial-gradient(700px 400px at 100% 100%, rgba(163, 27, 5, 0.18), transparent 60%);
+
+  /* Vidro: o painel padrão. */
+  --vidro: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  --vidro-suave: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  --vidro-solido: #161515;          /* superfície opaca: menus, modais, campos */
+  --vidro-borda: rgba(255, 255, 255, 0.10);
+  --vidro-borda-suave: rgba(255, 255, 255, 0.06);
+
+  /* O laranja em gradiente — botão primário, ícones de destaque. */
+  --laranja: #FF4A0F;
+  --laranja-claro: #FF8A4C;
+  --laranja-escuro: #A31B05;
+  --laranja-rotulo: #E8541A;
+  --gradiente-marca: linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%);
+  --brilho-marca: 0 8px 28px rgba(255, 74, 15, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 @theme inline {
@@ -18,188 +50,210 @@
 
 @theme {
   /* ============================================================
-     NEUTROS — a interface é feita destes. Cor cromática é exceção.
-     Escala cinza pura (sem puxar pro azul), do mesmo tipo que o painel
-     de referência usa: superfície quase branca, borda muito clara, e
-     três degraus de texto bem separados entre si.
+     NEUTROS — branco sobre escuro. O degrau baixo (0–300) é fundo e
+     borda em transparência; o alto (400–900) é texto, do apagado ao
+     branco puro.
      ============================================================ */
-  --color-neutro-0:   #ffffff;
-  --color-neutro-25:  #fcfcfd;
-  --color-neutro-50:  #f7f7f8;   /* faixa de cabeçalho, thead, hover leve */
-  --color-neutro-100: #eeeef0;   /* hover de item de menu, pastilha */
-  --color-neutro-200: #e4e4e8;   /* borda padrão */
-  --color-neutro-300: #d0d0d8;
-  --color-neutro-400: #9394a1;   /* ícone neutro, placeholder */
-  --color-neutro-500: #60646c;   /* texto secundário */
-  --color-neutro-600: #4a4e56;
-  --color-neutro-700: #33373d;
-  --color-neutro-800: #1f2124;   /* texto principal */
-  --color-neutro-900: #111113;
-  --color-neutro-950: #08080a;
+  --color-neutro-0:   #0d0c0c;
+  --color-neutro-25:  #111010;
+  --color-neutro-50:  rgba(255, 255, 255, 0.04);   /* hover leve, thead */
+  --color-neutro-100: rgba(255, 255, 255, 0.07);   /* hover de item, pastilha */
+  --color-neutro-200: rgba(255, 255, 255, 0.10);   /* borda padrão */
+  --color-neutro-300: rgba(255, 255, 255, 0.18);
+  --color-neutro-400: rgba(243, 242, 242, 0.45);   /* ícone neutro, placeholder */
+  --color-neutro-500: rgba(243, 242, 242, 0.60);   /* texto secundário */
+  --color-neutro-600: rgba(243, 242, 242, 0.72);
+  --color-neutro-700: rgba(243, 242, 242, 0.85);
+  --color-neutro-800: #f3f2f2;                     /* texto principal */
+  --color-neutro-900: #ffffff;
+  --color-neutro-950: #ffffff;
 
   /* ============================================================
-     ACENTO — o roxo. Na referência é ele que marca a ação primária
-     ("Create user", "Upgrade the plan") e o item selecionado. Aqui ele
-     coincide com a marca do Credenciei, então acento e identidade
-     passam a ser a mesma cor em vez de duas cores brigando.
+     ACENTO — o laranja Credenciei.
      ============================================================ */
-  --color-acento-50:  #f4f2ff;
-  --color-acento-100: #ebe7fe;
-  --color-acento-200: #ded5fd;
-  --color-acento-500: #6d46ff;   /* base — o roxo do sistema */
-  --color-acento-600: #5c33ee;
-  --color-acento-700: #4b27d0;
+  --color-acento-50:  rgba(255, 74, 15, 0.10);
+  --color-acento-100: rgba(255, 74, 15, 0.16);
+  --color-acento-200: rgba(255, 74, 15, 0.35);
+  --color-acento-500: #FF4A0F;
+  --color-acento-600: #E33C06;
+  --color-acento-700: #A31B05;
 
   /* ============================================================
-     STATUS — só semântica. Três cores, nada além disso.
+     STATUS — tinta transparente pro fundo, tom claro pro texto.
      ============================================================ */
-  --color-sucesso-50:  #f0fdf4;
-  --color-sucesso-200: #bbf7d0;
-  --color-sucesso-600: #16a34a;
-  --color-sucesso-700: #15803d;
+  --color-sucesso-50:  rgba(34, 197, 94, 0.12);
+  --color-sucesso-200: rgba(34, 197, 94, 0.35);
+  --color-sucesso-600: #22c55e;
+  --color-sucesso-700: #7ee2a8;
 
-  --color-aviso-50:  #fffbeb;
-  --color-aviso-200: #fde68a;
-  --color-aviso-600: #d97706;
-  --color-aviso-700: #b45309;
+  --color-aviso-50:  rgba(245, 158, 11, 0.12);
+  --color-aviso-200: rgba(245, 158, 11, 0.35);
+  --color-aviso-600: #f59e0b;
+  --color-aviso-700: #fcd27a;
 
-  --color-erro-50:  #fef2f2;
-  --color-erro-200: #fecaca;
-  --color-erro-600: #dc2626;
-  --color-erro-700: #b91c1c;
+  --color-erro-50:  rgba(239, 68, 68, 0.12);
+  --color-erro-200: rgba(239, 68, 68, 0.35);
+  --color-erro-600: #f05252;
+  --color-erro-700: #fca5a5;
 
-  /* Azul. Não é status: é o tom "neutro com cor", pra indicador que só conta
-     coisa (quantas pessoas, quantos setores) e não quer dizer bom nem ruim. */
-  --color-info-50:  #eff6ff;
-  --color-info-200: #bfdbfe;
-  --color-info-600: #2563eb;
-  --color-info-700: #1d4ed8;
+  --color-info-50:  rgba(59, 130, 246, 0.12);
+  --color-info-200: rgba(59, 130, 246, 0.35);
+  --color-info-600: #60a5fa;
+  --color-info-700: #93c5fd;
 
-  /* A marca — mesma família do acento (ver bloco "MARCA" no fim). */
-  --color-marca: #4940df;
+  --color-marca: #FF4A0F;
 
   /* ============================================================
-     REDEFINIÇÃO DE slate-* E brand-*
-     ============================================================
-     O sistema inteiro já está escrito em `text-slate-800`,
-     `border-slate-200`, `bg-brand-50` — cerca de 40 arquivos. Em vez de
-     reescrever classe por classe no JSX, redefino o que esses nomes
-     VALEM. `slate` aponta pro neutro cinza puro; `brand` aponta pro
-     roxo de acento. Assim a paleta nova chega em toda tela sem que
-     nenhum componente precise saber disso.
+     REDEFINIÇÃO DE slate-* E brand-* (ver o comentário do topo).
      ============================================================ */
-  --color-slate-50:  #f7f7f8;
-  --color-slate-100: #eeeef0;
-  --color-slate-200: #e4e4e8;
-  --color-slate-300: #d0d0d8;
-  --color-slate-400: #9394a1;
-  --color-slate-500: #60646c;
-  --color-slate-600: #4a4e56;
-  --color-slate-700: #33373d;
-  --color-slate-800: #1f2124;
-  --color-slate-900: #111113;
+  --color-slate-50:  rgba(255, 255, 255, 0.04);
+  --color-slate-100: rgba(255, 255, 255, 0.07);
+  --color-slate-200: rgba(255, 255, 255, 0.10);
+  --color-slate-300: rgba(255, 255, 255, 0.18);
+  --color-slate-400: rgba(243, 242, 242, 0.45);
+  --color-slate-500: rgba(243, 242, 242, 0.60);
+  --color-slate-600: rgba(243, 242, 242, 0.72);
+  --color-slate-700: rgba(243, 242, 242, 0.85);
+  --color-slate-800: #f3f2f2;
+  --color-slate-900: #ffffff;
 
-  --color-brand-50:  #f4f2ff;
-  --color-brand-100: #ebe7fe;
-  --color-brand-200: #ded5fd;
-  --color-brand-300: #c4b5fd;
-  --color-brand-400: #a78bfa;
-  --color-brand-500: #6c47ff;
-  --color-brand-600: #5b35ee;
-  --color-brand-700: #4a28d0;
+  --color-brand-50:  rgba(255, 74, 15, 0.10);
+  --color-brand-100: rgba(255, 74, 15, 0.16);
+  --color-brand-200: rgba(255, 74, 15, 0.35);
+  --color-brand-300: #FFB08F;
+  --color-brand-400: #FF8A4C;
+  --color-brand-500: #FF4A0F;
+  --color-brand-600: #E33C06;
+  --color-brand-700: #A31B05;
+
+  /*
+   * As cores cruas do Tailwind (red/amber/green/blue) que sobraram em ~40
+   * arquivos: os degraus baixos viram tinta transparente, os altos viram
+   * texto claro — o mesmo contrato dos status acima.
+   */
+  --color-red-50:  rgba(239, 68, 68, 0.12);
+  --color-red-100: rgba(239, 68, 68, 0.18);
+  --color-red-200: rgba(239, 68, 68, 0.35);
+  --color-red-300: #fca5a5;
+  --color-red-400: #f87171;
+  --color-red-500: #ef4444;
+  --color-red-600: #f05252;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+  --color-red-900: #fee2e2;
+  --color-red-950: rgba(239, 68, 68, 0.18);
+
+  --color-amber-50:  rgba(245, 158, 11, 0.12);
+  --color-amber-100: rgba(245, 158, 11, 0.20);
+  --color-amber-200: rgba(245, 158, 11, 0.35);
+  --color-amber-300: rgba(245, 158, 11, 0.50);
+  --color-amber-500: #f59e0b;
+  --color-amber-600: #fbbf24;
+  --color-amber-700: #fcd27a;
+  --color-amber-800: #fde5a8;
+  --color-amber-900: #fef3c7;
+
+  --color-green-50:  rgba(34, 197, 94, 0.12);
+  --color-green-100: rgba(34, 197, 94, 0.20);
+  --color-green-200: rgba(34, 197, 94, 0.35);
+  --color-green-500: #22c55e;
+  --color-green-600: #22c55e;
+  --color-green-700: #7ee2a8;
+  --color-green-800: #a7f3d0;
+
+  --color-blue-50:  rgba(59, 130, 246, 0.12);
+  --color-blue-100: rgba(59, 130, 246, 0.20);
+  --color-blue-200: rgba(59, 130, 246, 0.35);
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #60a5fa;
+  --color-blue-700: #93c5fd;
 
   /* ============================================================
-     RAIO — 6/8/12px. Botão e campo em 8, card em 12, como na
-     referência: card claramente mais arredondado que o controle que
-     mora dentro dele.
+     RAIO — o Arena é arredondado: botão 10–12, cartão 16–18, cartaz 20.
      ============================================================ */
-  --radius-sm: 0.25rem;    /* 4px  — selo, pastilha */
-  --radius-md: 0.375rem;   /* 6px  — campo, botão pequeno */
-  --radius-lg: 0.5rem;     /* 8px  — botão, input */
-  --radius-xl: 0.625rem;   /* 10px */
-  --radius-2xl: 0.75rem;   /* 12px — card, superfície */
-  --radius-3xl: 0.875rem;  /* 14px — modal */
+  --radius-sm: 0.375rem;   /* 6px  — selo */
+  --radius-md: 0.5rem;     /* 8px  — botão pequeno */
+  --radius-lg: 0.625rem;   /* 10px — botão, campo */
+  --radius-xl: 0.75rem;    /* 12px */
+  --radius-2xl: 1rem;      /* 16px — cartão, painel */
+  --radius-3xl: 1.25rem;   /* 20px — modal, cartaz */
 
   /* ============================================================
-     TIPOGRAFIA — escala fechada. Números de métrica ganham degrau
-     próprio, porque em painel o número é o conteúdo, não o rótulo.
+     TIPOGRAFIA
      ============================================================ */
-  --text-2xs: 0.6875rem;   /* 11px — legenda, metadado */
+  --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
-  --text-xs: 0.75rem;      /* 12px */
+  --text-xs: 0.75rem;
   --text-xs--line-height: 1.125rem;
-  --text-sm: 0.8125rem;    /* 13px — corpo padrão de painel denso */
+  --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-base: 0.875rem;   /* 14px */
+  --text-base: 0.875rem;
   --text-base--line-height: 1.375rem;
-  --text-lg: 1rem;         /* 16px — título de card */
+  --text-lg: 1rem;
   --text-lg--line-height: 1.5rem;
-  --text-xl: 1.125rem;     /* 18px */
+  --text-xl: 1.125rem;
   --text-xl--line-height: 1.625rem;
-  --text-2xl: 1.375rem;    /* 22px — título de tela */
+  --text-2xl: 1.375rem;
   --text-2xl--line-height: 1.75rem;
-  --text-metrica: 1.75rem; /* 28px — número de KPI */
-  --text-metrica--line-height: 2rem;
+  --text-metrica: 2.25rem; /* 36px — número de KPI */
+  --text-metrica--line-height: 2.25rem;
 
   /* ============================================================
-     SOMBRA — uma camada, quase imperceptível. A separação entre
-     superfícies vem da BORDA, não da sombra.
+     SOMBRA — sobre o escuro, sombra é profundidade de verdade.
      ============================================================ */
-  --shadow-2xs: 0 1px 1px rgba(17, 17, 19, 0.03);
-  --shadow-xs:  0 1px 2px rgba(17, 17, 19, 0.04);
-  --shadow-sm:  0 1px 2px rgba(17, 17, 19, 0.05);
-  --shadow-md:  0 2px 4px rgba(17, 17, 19, 0.06);
-  --shadow-lg:  0 4px 12px rgba(17, 17, 19, 0.08);
-  --shadow-xl:  0 8px 24px rgba(17, 17, 19, 0.10);
-  --shadow-2xl: 0 16px 48px rgba(17, 17, 19, 0.14);
+  --shadow-2xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-xs:  0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-sm:  0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md:  0 6px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg:  0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-xl:  0 20px 50px rgba(0, 0, 0, 0.5);
+  --shadow-2xl: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+/* Animações do scanner (components/ui/animated-scan-loader.tsx). Classes
+   simples, fora do @theme, pra não depender da geração de utilitário. O
+   percurso é em porcentagem: funciona com qualquer altura de conteúdo. */
+@keyframes scan {
+  0%   { top: 0; }
+  25%  { top: calc(100% - 4px); }
+  50%  { top: 0; }
+  75%  { top: calc(100% - 4px); }
+  100% { top: 0; }
+}
+@keyframes cut {
+  0%   { clip-path: inset(0 0 0 0); }
+  25%  { clip-path: inset(100% 0 0 0); }
+  50%  { clip-path: inset(0 0 100% 0); }
+  75%  { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+.animate-scan { animation: scan 4s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.animate-cut { animation: cut 4s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan, .animate-cut { animation: none; }
 }
 
 body {
-  background: var(--background);
+  background: var(--fundo-luz), var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
-  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-archivo), "Archivo", system-ui, -apple-system, sans-serif;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* cv11: "a" de cauda reta; ss03: cedilha e til melhores em português.
-     São os ajustes que separam a Inter "de fábrica" da Inter afinada. */
-  font-feature-settings: 'cv11', 'ss03';
-  letter-spacing: -0.011em;
 }
 
-/* Título com tracking negativo — em Inter, texto grande sem isso fica
-   frouxo. É o detalhe mais visível em Linear e Vercel. */
-h1, h2, h3, h4 { letter-spacing: -0.021em; }
+/* Títulos em 800 com tracking negativo: é a assinatura do Arena. */
+h1, h2, h3, h4 { font-weight: 800; letter-spacing: -0.02em; }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-/*
- * Em @layer base: sem camada, esta regra vencia SEMPRE de .truncate do
- * Tailwind (que vive em @layer utilities) — não por especificidade, mas
- * porque regra fora de camada nomeada bate qualquer coisa dentro de uma,
- * na cascata do CSS. Resultado real: <p className="truncate"> quebrava em
- * várias linhas em vez de reticências, sempre que o texto era mais comprido
- * que a coluna (nome de funcionário numa tabela estreita, por exemplo).
- */
 @layer base {
-  h1, h2, h3 {
-    text-wrap: balance;
-  }
-  p {
-    text-wrap: pretty;
-  }
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
 }
 
-/*
- * Foco por teclado visível no sistema inteiro.
- *
- * Como é :focus-visible e não :focus, o anel não aparece em clique de mouse —
- * só na navegação por teclado, que é justamente quem precisa dele. Campos
- * ficam de fora porque o .input já tem o próprio anel logo abaixo; somar os
- * dois deixaria a borda dobrada.
- */
+/* Foco por teclado — anel laranja no sistema inteiro. */
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible,
@@ -208,162 +262,131 @@ summary:focus-visible,
   outline: 2px solid var(--color-acento-500);
   outline-offset: 2px;
 }
+::selection { background: rgba(255, 74, 15, 0.35); }
 
-/* Feedback de toque consistente pra botões primários (aplicado via classe,
-   não em todo `button` — nem todo botão do app deve "afundar" ao clicar). */
-.btn-press {
-  transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
-}
-.btn-press:active {
-  transform: scale(0.98);
-}
+.btn-press { transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease, filter 150ms ease; }
+.btn-press:active { transform: scale(0.98); }
 
-/* Acabamento de app: tira o flash cinza do toque no mobile e o atraso de
-   300ms do clique. */
 button, [role='button'], a.btn-press {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
 
-/*
- * Botões do sistema.
- *
- * A aparência mora aqui, não espalhada no JSX: antes estava escrita à mão em
- * 22 arquivos, com doze grafias que só diferiam em coisa acidental. Fica em
- * @layer components pra que utilitário do Tailwind no call site continue
- * vencendo — quem escrever `className="btn btn-primario bg-red-500"` ainda
- * tem o vermelho aplicado.
- */
+/* ============================================================
+   SUPERFÍCIE BRANCA → VIDRO.
+
+   `bg-white` está em 75 arquivos: cartões, modais, menus, campos. Aqui
+   ela vira a superfície opaca do tema. Fica fora de camada de propósito:
+   precisa vencer o utilitário. `text-white` NÃO muda — continua branco.
+   ============================================================ */
+.bg-white { background: var(--vidro-solido); }
+.hover\:bg-white:hover { background: var(--vidro-solido); }
+.bg-slate-50, .bg-slate-100 { background-color: rgba(255, 255, 255, 0.05); }
+.hover\:bg-slate-50:hover, .hover\:bg-slate-100:hover { background-color: rgba(255, 255, 255, 0.07); }
+
+/* Os poucos blocos que já eram ESCUROS (scanner, overlays, o celular do
+   preview de disparo) continuam escuros — a escala invertida não pode
+   clareá-los. */
+.bg-slate-900 { background-color: #0d0c0c; }
+.bg-slate-800, .hover\:bg-slate-800:hover { background-color: #1f1e1e; }
+.bg-slate-900\/70 { background-color: rgba(0, 0, 0, 0.7); }
+.bg-slate-900\/80 { background-color: rgba(0, 0, 0, 0.8); }
+.border-slate-900 { border-color: #0d0c0c; }
+
+/* ============================================================
+   BOTÕES
+   ============================================================ */
 @layer components {
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    border-radius: var(--radius-lg);   /* 8px */
-    font-size: 0.8125rem;              /* 13px */
-    font-weight: 500;
+    gap: 0.5rem;
+    border-radius: var(--radius-lg);     /* 10px */
+    font-family: var(--font-archivo), "Archivo", system-ui, sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 800;
     line-height: 1.25rem;
-    padding: 0.4375rem 0.75rem;        /* 34px de altura */
+    padding: 0.5rem 0.875rem;            /* 36px de altura */
     white-space: nowrap;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease, box-shadow 120ms ease;
   }
   .btn:disabled { opacity: 0.45; pointer-events: none; }
 
-  /* Tamanhos — grid de 8px */
   .btn-sm { padding: 0.3125rem 0.625rem; font-size: 0.75rem; }
-  .btn-lg { padding: 0.5625rem 1rem; font-size: 0.875rem; }
-  .btn-icone { width: 2rem; height: 2rem; padding: 0; }
-  .btn-icone-lg { width: 2.25rem; height: 2.25rem; padding: 0; }
-  /* 38px: a mesma altura do .input. É o tamanho pra botão que fica LADO A
-     LADO de um campo — com 32 ou 36px a linha fica com três alturas
-     diferentes e o conjunto parece torto. */
-  .btn-icone-campo { width: 2.375rem; height: 2.375rem; padding: 0; }
+  .btn-lg { padding: 0.6875rem 1.125rem; font-size: 0.875rem; border-radius: var(--radius-xl); }
+  .btn-icone { width: 2.25rem; height: 2.25rem; padding: 0; }
+  .btn-icone-lg { width: 2.5rem; height: 2.5rem; padding: 0; }
+  .btn-icone-campo { width: 2.5rem; height: 2.5rem; padding: 0; }
 
-  /* ============================================================
-     Variantes.
-
-     Primário roxo, como na referência: lá o botão de ação ("Create
-     user", "Upgrade the plan") é a única coisa colorida da tela, e é
-     por isso que ele é achado de imediato. Sem gradiente e sem sombra
-     colorida — a profundidade vem da borda 1px um tom mais escura que
-     o preenchimento.
-     ============================================================ */
+  /* Primário: gradiente da marca com brilho quente. */
   .btn-primario {
-    background-color: var(--color-acento-500);
-    border: 1px solid var(--color-acento-600);
+    background: var(--gradiente-marca);
+    border-color: transparent;
     color: #ffffff;
+    box-shadow: var(--brilho-marca);
   }
-  .btn-primario:hover:not(:disabled) {
-    background-color: var(--color-acento-600);
-    border-color: var(--color-acento-700);
-  }
-  .btn-primario:active:not(:disabled) { background-color: var(--color-acento-700); }
+  .btn-primario:hover:not(:disabled) { filter: brightness(1.1); }
+  .btn-primario:active:not(:disabled) { filter: brightness(0.95); }
 
+  /* Secundário: vidro com borda. */
   .btn-secundario {
-    background-color: #ffffff;
-    border: 1px solid var(--color-neutro-200);
-    color: var(--color-neutro-700);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #f3f2f2;
   }
-  .btn-secundario:hover:not(:disabled) {
-    background-color: var(--color-neutro-50);
-    border-color: var(--color-neutro-300);
-    color: var(--color-neutro-900);
-  }
-  .btn-secundario:active:not(:disabled) { background-color: var(--color-neutro-100); }
+  .btn-secundario:hover:not(:disabled) { background: rgba(255, 255, 255, 0.10); border-color: rgba(255, 255, 255, 0.18); color: #ffffff; }
+  .btn-secundario:active:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
 
-  /* Ação destrutiva confirmada. Vermelho preenchido é forte demais pra
-     botão que aparece em linha de tabela — ali usa-se o fantasma. */
   .btn-perigo {
-    background-color: var(--color-erro-600);
-    border: 1px solid var(--color-erro-600);
+    background: #dc2626;
+    border-color: #dc2626;
     color: #ffffff;
+    box-shadow: 0 6px 20px rgba(220, 38, 38, 0.35);
   }
-  .btn-perigo:hover:not(:disabled) { background-color: var(--color-erro-700); border-color: var(--color-erro-700); }
+  .btn-perigo:hover:not(:disabled) { background: #ef4444; border-color: #ef4444; }
 
-  .btn-fantasma { border: 1px solid transparent; color: var(--color-neutro-600); }
-  .btn-fantasma:hover:not(:disabled) { color: var(--color-neutro-900); background-color: var(--color-neutro-100); }
+  .btn-fantasma { border-color: transparent; color: rgba(243, 242, 242, 0.65); }
+  .btn-fantasma:hover:not(:disabled) { color: #ffffff; background: rgba(255, 255, 255, 0.07); }
 
-  /* Roxo vazado: para ação de apoio que ainda assim é do sistema (ajuda,
-     tutorial). Preenchido ela brigaria com o botão primário da mesma
-     fileira — vazado ela é roxa sem virar a ação principal da tela. */
+  /* Laranja vazado: ação de apoio (ajuda, tutorial). */
   .btn-acento {
-    background-color: #ffffff;
-    border: 1px solid var(--color-acento-200);
-    color: var(--color-acento-500);
+    background: rgba(255, 74, 15, 0.08);
+    border-color: rgba(255, 74, 15, 0.45);
+    color: var(--laranja-claro);
   }
-  .btn-acento:hover:not(:disabled) {
-    background-color: var(--color-acento-50);
-    border-color: var(--color-acento-500);
-  }
-  .btn-acento:active:not(:disabled) { background-color: var(--color-acento-100); }
+  .btn-acento:hover:not(:disabled) { background: rgba(255, 74, 15, 0.16); border-color: var(--laranja); color: #ffffff; }
+  .btn-acento:active:not(:disabled) { background: rgba(255, 74, 15, 0.22); }
 }
 
-/*
- * A MESMA ARMADILHA DE CAMADA que já mordeu o `.truncate` e o `.secao-corpo`
- * — aqui ela quebrava toda barra de busca do sistema.
- *
- * `.input` fixa `padding: … 0.75rem`. Fora de camada nomeada, essa regra
- * vence QUALQUER utilitário do Tailwind (que vive em @layer utilities), não
- * por especificidade, mas pela ordem da cascata: o que está fora de camada
- * vem depois de tudo que está dentro.
- *
- * Resultado real: `className="input pl-9"` — usado em toda busca com lupa e
- * em todo campo de valor com o "R$" na frente — tinha o `pl-9` IGNORADO. O
- * texto começava nos mesmos 12px onde o ícone está desenhado, e o ícone
- * comia a primeira letra do que a pessoa digitava.
- *
- * Dentro de @layer components, quem escreve utilitário no call site vence —
- * o mesmo contrato do `.btn` e do `.secao-corpo`.
- */
+/* ============================================================
+   CAMPOS
+   ============================================================ */
 @layer components {
   .input {
     width: 100%;
-    background: #ffffff;
-    border: 1px solid var(--color-neutro-200);
-    border-radius: var(--radius-lg);   /* 8px */
-    padding: 0.5625rem 0.75rem;        /* 38px de altura */
-    color: var(--color-neutro-900);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: var(--radius-xl);      /* 12px */
+    padding: 0.5625rem 0.875rem;          /* 40px de altura */
+    color: #f3f2f2;
     font-size: 0.8125rem;
     line-height: 1.25rem;
     outline: none;
-    transition: border-color 120ms ease, box-shadow 120ms ease;
+    caret-color: var(--laranja);
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
   }
+  .input:hover { border-color: rgba(255, 255, 255, 0.16); }
   .input:focus {
-    border-color: var(--color-acento-500);
-    box-shadow: 0 0 0 3px rgba(108, 71, 255, 0.15);
+    border-color: rgba(255, 74, 15, 0.7);
+    box-shadow: 0 0 0 3px rgba(255, 74, 15, 0.18), 0 0 18px rgba(255, 74, 15, 0.15);
+    background: rgba(255, 255, 255, 0.07);
   }
-  .input::placeholder { color: var(--color-neutro-400); }
+  .input::placeholder { color: rgba(243, 242, 242, 0.4); }
+  select.input option { background: var(--vidro-solido); color: #f3f2f2; }
+  .input[type='date'], .input[type='time'], .input[type='datetime-local'] { color-scheme: dark; }
 
-  /*
-   * Linha de ação — item clicável de um menu em modal, com ícone à esquerda,
-   * título e uma linha de explicação. Usada onde um botão sozinho não diria
-   * o suficiente (ex.: as três ações de planilha do card do setor).
-   *
-   * Dentro de @layer components pelo mesmo motivo do `.input`: fora dele, um
-   * utilitário do Tailwind no call site perderia a disputa de cascata em
-   * silêncio.
-   */
   .linha-acao {
     width: 100%;
     display: flex;
@@ -371,272 +394,192 @@ button, [role='button'], a.btn-press {
     gap: 0.75rem;
     text-align: left;
     padding: 0.75rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--color-neutro-200);
-    background: #ffffff;
-    transition: border-color 120ms ease, background-color 120ms ease;
+    border-radius: var(--radius-xl);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.04);
+    transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
   }
   .linha-acao:hover {
-    border-color: var(--color-acento-200);
-    background: var(--color-acento-50);
+    border-color: rgba(255, 74, 15, 0.45);
+    background: rgba(255, 74, 15, 0.06);
+    box-shadow: 0 0 24px rgba(255, 74, 15, 0.12);
   }
   .linha-acao:disabled { opacity: 0.6; }
 }
 
 /* ============================================================
-   MOLDURA DO PAINEL — barra superior e menu lateral.
-
-   Uma barra branca no topo, valendo pra tela inteira, e abaixo dela o
-   menu lateral e o conteúdo lado a lado. O menu começa ABAIXO do topo,
-   não ao lado dele — é isso que faz o cabeçalho ser do sistema em vez
-   de ser só o cabeçalho do conteúdo.
+   MOLDURA DO PAINEL — barra superior de vidro e menu lateral.
    ============================================================ */
-
-/* Borda mais escura que a de card: ela separa o branco do topo do cinza do
-   conteúdo, e com o cinza de card (#e4e4e8) o corte não aparecia. */
 .topo-app {
-  background: #ffffff;
-  border-bottom: 1px solid #cfd3db;
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* ============================================================
-   MENU LATERAL — escuro, com a pílula roxa no item ativo.
-
-   O contraste com o conteúdo claro é o que dá o recorte: a navegação
-   é uma coluna à parte, não mais uma faixa branca colada numa tela
-   branca. Fundo levemente puxado pro roxo (e não cinza neutro) pra
-   ficar da mesma família do acento.
-   ============================================================ */
-.menu-lateral {
-  --menu-fundo: #17161f;
-  --menu-texto: #b7b6c6;
-  --menu-texto-forte: #ffffff;
-  --menu-pilula: #272148;
-  background: var(--menu-fundo);
-  border-right: 1px solid #23222e;
-}
-
-/* Rótulo de grupo ("Operação", "Plataforma"). Caixa alta pequena com
-   tracking largo: lê como etiqueta de seção, não como item clicável. */
-.menu-grupo-titulo {
+/* Pílula de contexto ("Plataforma · Master") no topo. */
+.pilula-contexto {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #6f6d82;
+  color: rgba(243, 242, 242, 0.55);
+  padding: 0.375rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
-/*
- * Item do menu: pílula de canto totalmente redondo. O ativo ganha fundo
- * roxo escuro, texto roxo claro e uma barra na BORDA da coluna — a barra
- * fica presa na lateral, não na pílula, porque ela marca a posição no
- * menu inteiro, não dentro do botão.
- */
+/* Avatar com anel em gradiente e brilho. */
+.avatar-anel {
+  border-radius: 999px;
+  padding: 2px;
+  background: linear-gradient(135deg, #A31B05, #FF4A0F, #E9C58A);
+  box-shadow: 0 0 16px rgba(255, 74, 15, 0.45);
+  display: flex;
+}
+.avatar-anel > * { flex: 1; border-radius: 999px; background: #151414; }
+
+.menu-lateral {
+  --menu-texto: rgba(243, 242, 242, 0.6);
+  --menu-texto-forte: #ffffff;
+  background: rgba(18, 17, 17, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.menu-grupo-titulo {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--laranja-rotulo);
+}
+
 .menu-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: 999px;
+  padding: 0.5625rem 0.75rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--menu-texto);
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
 }
 .menu-item:hover { background-color: rgba(255, 255, 255, 0.05); color: var(--menu-texto-forte); }
+.menu-item svg { color: inherit; }
 
 .menu-item-ativo,
 .menu-item-ativo:hover {
-  background-color: var(--menu-pilula);
-  color: var(--color-acento-500);
-  font-weight: 600;
+  background: linear-gradient(90deg, rgba(255, 74, 15, 0.26), rgba(255, 74, 15, 0.05));
+  border-color: rgba(255, 74, 15, 0.45);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 18px rgba(255, 74, 15, 0.28);
 }
-/*
- * Credenciei IA — preenchido de roxo, sempre.
- *
- * É o único item do menu que não é um LUGAR do sistema: é uma ação que abre
- * um painel por cima da tela. Ficar sempre destacado o separa da navegação —
- * e, como ele nunca é "a página atual", não conflita com a pílula do item
- * ativo.
- */
+.menu-item-ativo svg { color: var(--laranja); }
+
+/* Suporte (assistente): preenchido com o gradiente, sempre. */
 .menu-item-ia,
 .menu-item-ia:hover {
-  background: linear-gradient(135deg, #8b6dff 0%, #6d46ff 55%, #5227e6 100%);
+  background: var(--gradiente-marca);
+  border-color: transparent;
   color: #ffffff;
-  font-weight: 600;
-  box-shadow: 0 4px 14px rgba(109, 70, 255, 0.35);
+  font-weight: 800;
+  padding: 0.8125rem 1rem;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--brilho-marca);
 }
-.menu-item-ia:hover {
-  background: linear-gradient(135deg, #9c82ff 0%, #7d5bff 55%, #6134f0 100%);
-}
-/* Nunca ganha a barrinha lateral: ela marca posição na navegação, e o
-   assistente não é uma posição. */
-.menu-item-ia::before { content: none; }
-
-/* -0.75rem = o px-3 da <nav>: leva a barra até a borda da coluna. */
-.menu-item-ativo::before {
-  content: '';
-  position: absolute;
-  left: -0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 1.5rem;
-  border-radius: 0 3px 3px 0;
-  background: var(--color-acento-500);
-}
+.menu-item-ia:hover { filter: brightness(1.1); }
+.menu-item-ia svg { color: #ffffff; }
 
 /* ============================================================
-   SEÇÃO — o cartão de conteúdo da referência.
-
-   Não é um card só: é uma moldura cinza com título e descrição na
-   borda, e dentro dela a superfície branca com o conteúdo. Esse
-   aninhamento é o que dá o "respiro" das telas de detalhe da
-   referência, e substitui o card único com cabeçalho separado por
-   uma linha.
+   SEÇÃO — painel de vidro com título em caixa alta espaçada.
    ============================================================ */
 .secao {
-  /* Mesmo degradê das seções coloridas, em cinza: assim a versão sem tom
-     pertence ao mesmo conjunto, em vez de parecer a única "apagada". */
-  background: linear-gradient(135deg, var(--color-neutro-300) 0%, var(--color-neutro-100) 40%, var(--color-neutro-50) 72%, #ffffff 100%);
-  border: 1px solid var(--color-neutro-200);
+  background: var(--vidro-suave);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-2xl);
   padding: 0.25rem;
 }
-.secao-cabecalho {
-  padding: 0.75rem 0.875rem 0.875rem;
-}
+.secao-cabecalho { padding: 0.875rem 1rem 0.75rem; }
 .secao-titulo {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--color-neutro-800);
-}
-.secao-descricao {
-  margin-top: 0.125rem;
-  font-size: 0.75rem;
-  color: var(--color-neutro-500);
-  /* Quebra em vez de correr por baixo do botão de ação do cabeçalho. */
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(243, 242, 242, 0.6);
   overflow-wrap: anywhere;
 }
-.secao-titulo { overflow-wrap: anywhere; }
-/*
- * O `overflow: hidden` existe pra tabela e lista não vazarem pelos cantos
- * arredondados — mas ele estava FORA de camada nomeada, e regra fora de
- * camada vence qualquer utilitário do Tailwind (que vive em @layer
- * utilities), não por especificidade, mas pela ordem da cascata.
- *
- * Resultado real: `corpoClassName="overflow-y-auto max-h-[26rem]"` na lista de
- * fornecedores era ignorado, e a lista aparecia CORTADA, sem barra de rolagem
- * — o segundo setor sumia sem jeito de alcançar.
- *
- * É a mesma armadilha já documentada no topo deste arquivo pro `.truncate`.
- * Dentro de @layer components, quem escreve utilitário no call site vence,
- * que é justamente o contrato do resto do sistema (ver `.btn`).
- */
+.secao-descricao {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: rgba(243, 242, 242, 0.45);
+  overflow-wrap: anywhere;
+}
 @layer components {
   .secao-corpo {
-    background: #ffffff;
-    border: 1px solid var(--color-neutro-200);
-    border-radius: 0.625rem;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 0.75rem;
     overflow: hidden;
   }
 }
 
-/*
- * Seção em destaque — a que a tela existe pra mostrar.
- *
- * Moldura ESCURA, da mesma família do menu lateral. Numa página que é toda
- * branca e cinza-claro, o que destaca não é mais uma variação de claro: é a
- * inversão. O corpo continua branco por dentro, então as linhas do conteúdo
- * seguem legíveis — o escuro fica só na moldura e no cabeçalho.
- *
- * Vale para UMA seção por tela: destaque só destaca enquanto for exceção.
- * Se duas caixas são escuras, nenhuma é a principal.
- */
-.secao-destaque {
-  background: linear-gradient(135deg, #2c2456 0%, #1b1830 55%, #131120 100%);
-  border-color: #322b57;
-  box-shadow: 0 6px 20px rgba(28, 20, 64, 0.22);
-}
-.secao-destaque .secao-titulo { color: #ffffff; }
-.secao-destaque .secao-descricao { color: #b4b0cd; }
-.secao-destaque .secao-corpo { border-color: #322b57; }
-.secao-destaque .secao-icone {
-  background: linear-gradient(135deg, #8b6dff 0%, #6d46ff 100%);
-  color: #ffffff;
-}
+/* Tons: a luz muda de cor no canto superior esquerdo; o resto é igual. */
+.secao-destaque { background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.22), rgba(20, 20, 20, 0.85) 60%); border-color: rgba(255, 74, 15, 0.35); }
+.secao-acento   { background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.16), rgba(255, 255, 255, 0.02) 60%); border-color: rgba(255, 74, 15, 0.28); }
+.secao-info     { background: radial-gradient(120% 120% at 0% 0%, rgba(59, 130, 246, 0.16), rgba(255, 255, 255, 0.02) 60%); border-color: rgba(59, 130, 246, 0.28); }
+.secao-sucesso  { background: radial-gradient(120% 120% at 0% 0%, rgba(34, 197, 94, 0.16), rgba(255, 255, 255, 0.02) 60%); border-color: rgba(34, 197, 94, 0.28); }
+.secao-aviso    { background: radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.16), rgba(255, 255, 255, 0.02) 60%); border-color: rgba(245, 158, 11, 0.28); }
 
-/*
- * Seções coloridas.
- *
- * O degradê vai da cor forte, no canto superior esquerdo, até o branco — a
- * moldura "acende" atrás do título e apaga em direção ao conteúdo. Isso põe a
- * cor onde ela informa (o cabeçalho, que diz o que é a seção) e a tira de
- * onde ela atrapalharia: o corpo, que segue branco, porque gráfico e tabela
- * lidos sobre fundo colorido é onde cor de enfeite vira ruído no dado.
- */
-.secao-acento {
-  background: linear-gradient(135deg, #b49bff 0%, #ddd2ff 40%, #f6f4ff 72%, #ffffff 100%);
-  border-color: #a98fff;
-  box-shadow: 0 6px 18px rgba(109, 70, 255, 0.16);
-}
-.secao-info {
-  background: linear-gradient(135deg, #93c2f8 0%, #cfe3fd 40%, #eff6ff 72%, #ffffff 100%);
-  border-color: #86b8f6;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.16);
-}
-.secao-sucesso {
-  background: linear-gradient(135deg, #86d8ab 0%, #c4eed8 40%, #edfbf3 72%, #ffffff 100%);
-  border-color: #77cf9e;
-  box-shadow: 0 6px 18px rgba(21, 128, 61, 0.16);
-}
-.secao-aviso {
-  background: linear-gradient(135deg, #f6ce6a 0%, #fbe6ae 40%, #fef8e6 72%, #ffffff 100%);
-  border-color: #f0c254;
-  box-shadow: 0 6px 18px rgba(154, 75, 10, 0.16);
-}
+.secao-destaque .secao-titulo, .secao-acento .secao-titulo { color: var(--laranja-claro); }
+.secao-info .secao-titulo { color: #93c5fd; }
+.secao-sucesso .secao-titulo { color: #7ee2a8; }
+.secao-aviso .secao-titulo { color: #fcd27a; }
 
-/* Título e descrição vão no tom mais fechado da própria cor: sobre a ponta
-   escura do degradê, o cinza padrão da descrição cai para perto de 3:1 e some
-   nos 12px. */
-.secao-acento  .secao-titulo { color: #3b1ba6; }
-.secao-info    .secao-titulo { color: #16327a; }
-.secao-sucesso .secao-titulo { color: #0f4429; }
-.secao-aviso   .secao-titulo { color: #6b2710; }
-
-.secao-acento  .secao-descricao { color: #4b27d0; }
-.secao-info    .secao-descricao { color: #1d4ed8; }
-.secao-sucesso .secao-descricao { color: #15803d; }
-.secao-aviso   .secao-descricao { color: #92400e; }
-
-.secao-acento  .secao-icone { background: linear-gradient(135deg, #8b6dff 0%, #4b27d0 100%); }
-.secao-info    .secao-icone { background: linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%); }
-.secao-sucesso .secao-icone { background: linear-gradient(135deg, #22a35a 0%, #14532d 100%); }
-.secao-aviso   .secao-icone { background: linear-gradient(135deg, #d97706 0%, #7c2d12 100%); }
+.secao-icone {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(243, 242, 242, 0.8);
+}
+.secao-destaque .secao-icone, .secao-acento .secao-icone { background: rgba(255, 74, 15, 0.14); color: var(--laranja); }
+.secao-info .secao-icone { background: rgba(59, 130, 246, 0.14); color: #60a5fa; }
+.secao-sucesso .secao-icone { background: rgba(34, 197, 94, 0.14); color: #22c55e; }
+.secao-aviso .secao-icone { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 
 /* ============================================================
-   EVENTO AO VIVO — o cartão do que está acontecendo agora.
+   EVENTO AO VIVO — cartaz com aura laranja pulsando.
    ============================================================ */
 .evento-vivo {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #2c2456 0%, #1b1830 55%, #131120 100%);
-  border: 1px solid #3a3168;
-  border-radius: var(--radius-2xl);
-  padding: 1.125rem 1.25rem 1.25rem;
-  box-shadow: 0 8px 24px rgba(28, 20, 64, 0.24);
+  background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.22), rgba(20, 20, 20, 0.85) 60%);
+  border-radius: 1.125rem;
+  padding: 1.5rem;
+  animation: aura 3.5s ease-in-out infinite;
 }
-/* Brilho no canto, igual ao dos indicadores — mantém os dois no mesmo idioma. */
 .evento-vivo::after {
   content: '';
   position: absolute;
-  top: -60%;
-  right: -20%;
-  width: 60%;
-  height: 170%;
-  border-radius: 50%;
-  background: rgba(139, 109, 255, 0.16);
+  right: -40px;
+  top: -40px;
+  width: 200px;
+  height: 200px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 74, 15, 0.28), transparent 70%);
   pointer-events: none;
 }
 .evento-vivo > * { position: relative; z-index: 1; }
@@ -644,257 +587,216 @@ button, [role='button'], a.btn-press {
 .evento-vivo-selo {
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  gap: 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #7ee2a8;
+  color: var(--laranja-claro);
 }
 
-/* Ponto pulsante: é o que diz "isto é agora" sem precisar de texto. */
 .ponto-vivo {
-  width: 0.4375rem;
-  height: 0.4375rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 999px;
-  background: #22c55e;
-  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-  animation: pulso-vivo 2s ease-out infinite;
+  background: var(--laranja);
+  animation: neon 1.6s ease-in-out infinite;
 }
-@keyframes pulso-vivo {
-  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+@keyframes neon {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 74, 15, 0.7), 0 0 14px rgba(255, 74, 15, 0.9); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 74, 15, 0), 0 0 22px rgba(255, 74, 15, 0.6); }
+}
+@keyframes aura {
+  0%, 100% { box-shadow: 0 0 42px rgba(255, 74, 15, 0.18), inset 0 0 0 1px rgba(255, 74, 15, 0.45); }
+  50% { box-shadow: 0 0 64px rgba(255, 74, 15, 0.32), inset 0 0 0 1px rgba(255, 74, 15, 0.75); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ponto-vivo { animation: none; }
+  .evento-vivo { animation: none; box-shadow: 0 0 42px rgba(255, 74, 15, 0.18), inset 0 0 0 1px rgba(255, 74, 15, 0.45); }
 }
 
-/* O menu "..." é escrito para fundo claro; no cartão escuro ele herda o
-   branco em vez de sumir num cinza sobre roxo. */
 .acoes-no-escuro button { color: rgba(255, 255, 255, 0.6); }
 .acoes-no-escuro button:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.12); }
 
-/* Bloco do ícone ao lado do título da seção. */
-.secao-icone {
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-neutro-400) 0%, var(--color-neutro-600) 100%);
-  color: #ffffff;
-}
-
 /* ============================================================
-   CHIP DO TOPO — a marca, à esquerda da barra superior.
-
-   Não parece botão até o mouse chegar: em repouso é só texto, porque
-   no topo ele diz ONDE se está, não oferece uma ação. O fundo aparece
-   no hover, dizendo que dá pra clicar.
+   CHIP DO TOPO E CABEÇALHO DE TELA
    ============================================================ */
 .chip-contexto {
   display: inline-flex;
   align-items: center;
-  gap: 0.4375rem;
+  gap: 0.5rem;
   max-width: 100%;
   padding: 0.25rem 0.5rem;
   border-radius: var(--radius-md);
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--color-neutro-800);
+  color: #f3f2f2;
   transition: background-color 120ms ease;
 }
-.chip-contexto:hover { background-color: var(--color-neutro-100); }
+.chip-contexto:hover { background-color: rgba(255, 255, 255, 0.06); }
 
-/* ============================================================
-   CABEÇALHO DE TELA — título grande e uma linha explicando.
-
-   Na referência todo topo de tela é isto e nada mais: "Users" +
-   "View and manage users". Sem bloco de ícone colorido ao lado do
-   título, que era o que dava ar de template.
-   ============================================================ */
 .pagina-titulo {
-  font-size: 1.375rem;
-  font-weight: 600;
-  color: var(--color-neutro-800);
-  line-height: 1.75rem;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.1;
 }
 .pagina-descricao {
-  margin-top: 0.1875rem;
+  margin-top: 0.375rem;
   font-size: 0.8125rem;
-  color: var(--color-neutro-500);
+  color: rgba(243, 242, 242, 0.55);
+}
+@media (max-width: 640px) {
+  .pagina-titulo { font-size: 1.75rem; }
 }
 
 /* ============================================================
-   INDICADOR (KPI) — rótulo pequeno, número grande, variação ao lado.
-
-   Cartão branco de borda fina: a cor entra só na pastilha de variação
-   e na minicurva, nunca no fundo. O fundo colorido em degradê que
-   havia aqui pintava quatro retângulos coloridos lado a lado e
-   afogava justamente o que importa, que é o número.
+   INDICADOR (KPI) — vidro com o fio de luz no topo, rótulo laranja em
+   caixa alta, número grande com brilho.
    ============================================================ */
-/*
- * Cartão preenchido, com degradê na diagonal e texto branco.
- *
- * O tom troca só as duas pontas do degradê — o resto do desenho é igual em
- * todos, que é o que faz a fileira parecer um conjunto e não seis adesivos
- * diferentes.
- *
- * As pontas são propositalmente escuras (faixa 600–800 de cada cor, não 400).
- * Não é gosto: branco sobre âmbar-500 ou verde-500 dá contraste abaixo de
- * 4.5:1 e o rótulo de 12px fica ilegível justamente na luz do sol, que é onde
- * esta tela é usada — no meio do evento, no celular.
- */
 .indicador {
-  --ind-de: var(--color-neutro-700);
-  --ind-ate: var(--color-neutro-900);
+  --ind-cor: #FF4A0F;
+  --ind-rotulo: #E8541A;
 
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--ind-de) 0%, var(--ind-ate) 100%);
+  background: var(--vidro);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: var(--radius-2xl);
-  padding: 0.875rem 1rem 1rem;
+  padding: 1.125rem 1.25rem 1.25rem;
   color: #ffffff;
-  /* Sombra no lugar da borda: sobre fundo claro, cartão preenchido já tem
-     recorte próprio — borda por cima da cor só sujaria o canto. */
-  box-shadow: var(--shadow-sm);
 }
-
-/* Brilho no canto superior: tira o ar de retângulo chapado e dá volume ao
-   degradê, sem virar aquele reflexo de botão de 2010. */
+/* O fio de luz: a linha de 2px que apaga pra direita. */
 .indicador::after {
   content: '';
   position: absolute;
-  top: -55%;
-  right: -25%;
-  width: 75%;
-  height: 160%;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.13);
+  top: 0;
+  left: 1.25rem;
+  right: 1.25rem;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ind-cor), transparent);
+  box-shadow: 0 0 12px var(--ind-cor);
   pointer-events: none;
 }
 
-.indicador-acento  { --ind-de: #6d46ff; --ind-ate: #4b27d0; }
-.indicador-info    { --ind-de: #2563eb; --ind-ate: #1e3a8a; }
-.indicador-sucesso { --ind-de: #15803d; --ind-ate: #14532d; }
-/* Laranja de verdade, não o âmbar apagado de antes. #c2410c é o tom mais
-   aberto que ainda dá 4.6:1 com o rótulo branco de 12px — daí pra cima
-   (laranja-600, #ea580c) o texto cai pra ~3.5:1 e some no sol. */
-.indicador-aviso   { --ind-de: #c2410c; --ind-ate: #7c2d12; }
-.indicador-erro    { --ind-de: #c81e1e; --ind-ate: #7f1d1d; }
+.indicador-acento  { --ind-cor: #FF4A0F; --ind-rotulo: #E8541A; }
+.indicador-info    { --ind-cor: #3b82f6; --ind-rotulo: #60a5fa; }
+.indicador-sucesso { --ind-cor: #22c55e; --ind-rotulo: #4ade80; }
+.indicador-aviso   { --ind-cor: #f59e0b; --ind-rotulo: #fbbf24; }
+.indicador-erro    { --ind-cor: #ef4444; --ind-rotulo: #f87171; }
 
-/* Bloco do ícone: vidro sobre a cor, não um segundo bloco colorido. */
 .indicador-icone {
   position: relative;
   z-index: 1;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--radius-lg);
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--ind-cor) 12%, transparent);
+  color: var(--ind-cor);
 }
-
 .indicador-rotulo {
   position: relative;
   z-index: 1;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ind-rotulo);
 }
 .indicador-valor {
   position: relative;
   z-index: 1;
-  margin-top: 0.375rem;
+  margin-top: 0.75rem;
   font-size: var(--text-metrica);
-  line-height: 2rem;
-  font-weight: 700;
+  line-height: 1;
+  font-weight: 800;
   color: #ffffff;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  /* O cartão tem overflow:hidden pro brilho do canto não vazar. Sem isto,
-     valor grande (R$ 1.234.567,89) era cortado no meio, sem reticências. */
+  text-shadow: 0 0 28px color-mix(in srgb, var(--ind-cor) 35%, transparent);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .indicador-sub {
   position: relative;
   z-index: 1;
-  margin-top: 0.25rem;
+  margin-top: 0.5rem;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(243, 242, 242, 0.5);
+}
+@media (max-width: 640px) {
+  .indicador { padding: 0.875rem; }
+  .indicador-valor { font-size: 1.75rem; }
 }
 
-/* Pastilha de variação/estado ao lado do número. */
+/* Pastilha de status: pílula com borda. */
 .indicador-selo {
   display: inline-flex;
   align-items: center;
-  gap: 0.1875rem;
-  padding: 0.0625rem 0.375rem;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5625rem;
   border-radius: 999px;
+  border: 1px solid transparent;
   font-size: 0.6875rem;
-  font-weight: 600;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.selo-sucesso { background: var(--color-sucesso-50); color: var(--color-sucesso-700); }
-.selo-aviso   { background: var(--color-aviso-50);   color: var(--color-aviso-700); }
-.selo-erro    { background: var(--color-erro-50);    color: var(--color-erro-700); }
-.selo-neutro  { background: var(--color-neutro-100); color: var(--color-neutro-600); }
-.selo-acento  { background: var(--color-acento-50);  color: var(--color-acento-700); }
+.selo-sucesso { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.4); color: #7ee2a8; }
+.selo-aviso   { background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.4); color: #fcd27a; }
+.selo-erro    { background: rgba(239, 68, 68, 0.14); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+.selo-neutro  { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.14); color: rgba(243, 242, 242, 0.7); }
+.selo-acento  { background: rgba(255, 74, 15, 0.18); border-color: rgba(255, 74, 15, 0.4); color: var(--laranja-claro); }
 
 /* ============================================================
-   TABELA — a da referência: cabeçalho numa faixa cinza clara, linhas
-   separadas por 1px, hover na linha inteira. Sem zebra: com borda
-   fina o olho já acompanha a linha, e zebra em tabela curta só
-   polui.
+   TABELA — cabeçalho em caixa alta espaçada, linhas separadas por fio
+   translúcido, hover com tinta laranja.
    ============================================================ */
 .tabela { width: 100%; border-collapse: collapse; }
 .tabela thead th {
   position: sticky;
   top: 0;
-  background: var(--color-neutro-50);
-  border-bottom: 1px solid var(--color-neutro-200);
-  padding: 0.5rem 0.875rem;
+  background: rgba(13, 12, 12, 0.85);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.5rem 1rem;
   text-align: left;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-neutro-500);
+  color: rgba(243, 242, 242, 0.4);
   white-space: nowrap;
 }
 .tabela tbody td {
-  padding: 0.6875rem 0.875rem;
-  border-bottom: 1px solid var(--color-neutro-100);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 0.8125rem;
-  color: var(--color-neutro-600);
+  color: rgba(243, 242, 242, 0.75);
   vertical-align: middle;
 }
 .tabela tbody tr:last-child td { border-bottom: 0; }
 .tabela tbody tr { transition: background-color 120ms ease; }
-.tabela tbody tr:hover { background-color: var(--color-neutro-50); }
+.tabela tbody tr:hover { background-color: rgba(255, 74, 15, 0.05); }
 
 /* ============================================================
-   ABAS — sublinhado no item ativo, contador ao lado.
+   ABAS — sublinhado laranja com brilho no item ativo.
    ============================================================ */
 .abas {
   display: flex;
   align-items: center;
   gap: 0.125rem;
-  border-bottom: 1px solid var(--color-neutro-200);
-  /* Rola em vez de cortar: no celular, quatro abas com contador estouram a
-     largura e as últimas ficavam inalcançáveis. */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow-x: auto;
   scrollbar-width: none;
 }
 .abas::-webkit-scrollbar { display: none; }
-.aba { flex-shrink: 0; }
 .aba {
+  flex-shrink: 0;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -902,40 +804,34 @@ button, [role='button'], a.btn-press {
   padding: 0.4375rem 0.625rem 0.625rem;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--color-neutro-500);
+  color: rgba(243, 242, 242, 0.55);
   transition: color 120ms ease;
 }
-.aba:hover { color: var(--color-neutro-800); }
-.aba-ativa { color: var(--color-neutro-800); }
+.aba:hover { color: #ffffff; }
+.aba-ativa { color: #ffffff; font-weight: 800; }
 .aba-ativa::after {
   content: '';
   position: absolute;
   left: 0; right: 0; bottom: -1px;
   height: 2px;
   border-radius: 2px;
-  background: var(--color-neutro-800);
+  background: var(--laranja);
+  box-shadow: 0 0 10px rgba(255, 74, 15, 0.8);
 }
 .aba-contador {
-  padding: 0.0625rem 0.3125rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-neutro-100);
-  color: var(--color-neutro-500);
+  padding: 0.0625rem 0.375rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(243, 242, 242, 0.6);
   font-size: 0.6875rem;
-  font-weight: 600;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-.aba-ativa .aba-contador { background: var(--color-neutro-800); color: #ffffff; }
+.aba-ativa .aba-contador { background: rgba(255, 74, 15, 0.18); color: var(--laranja-claro); }
 
-@keyframes drawer-slide-in {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
+@keyframes drawer-slide-in { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 .drawer-slide-in { animation: drawer-slide-in 0.22s ease-out; }
-
-@keyframes overlay-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+@keyframes overlay-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-pop-in {
   from { opacity: 0; transform: scale(0.96) translateY(4px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
@@ -943,22 +839,20 @@ button, [role='button'], a.btn-press {
 .overlay-fade-in { animation: overlay-fade-in 150ms ease-out; }
 .modal-pop-in { animation: modal-pop-in 180ms ease-out; }
 
-/* Tutorial guiado — o box-shadow gigante escurece tudo menos o recorte do
-   elemento em destaque, que ganha um anel na cor da marca. O escurecimento fica
-   na regra base (não só na animação) pra continuar valendo com reduced-motion. */
+/* Tutorial guiado — recorte com anel laranja. */
 .tutorial-spotlight {
   box-shadow:
-    0 0 0 9999px rgba(0, 0, 0, 0.7),
-    0 0 0 3px #6c47ff,
-    0 0 0 8px rgba(108, 71, 255, 0.25);
+    0 0 0 9999px rgba(0, 0, 0, 0.75),
+    0 0 0 3px #FF4A0F,
+    0 0 0 8px rgba(255, 74, 15, 0.25);
   animation: overlay-fade-in 150ms ease-out, tutorial-pulso 2.2s ease-in-out infinite;
 }
 @keyframes tutorial-pulso {
   50% {
     box-shadow:
-      0 0 0 9999px rgba(0, 0, 0, 0.7),
-      0 0 0 3px #6c47ff,
-      0 0 0 14px rgba(108, 71, 255, 0.08);
+      0 0 0 9999px rgba(0, 0, 0, 0.75),
+      0 0 0 3px #FF4A0F,
+      0 0 0 14px rgba(255, 74, 15, 0.08);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -966,32 +860,22 @@ button, [role='button'], a.btn-press {
 }
 
 /* ============================================================
-   AÇÃO PRIMÁRIA — roxo.
-
-   Quem escreve `bg-brand-500 text-white` num botão herda o primário do
-   sistema, sem precisar saber qual é a cor.
+   AÇÃO PRIMÁRIA em utilitário: `bg-brand-500 text-white` vira o
+   gradiente da marca.
    ============================================================ */
-.bg-brand-500 { background-color: var(--color-acento-500); }
-.hover\:bg-brand-600:hover { background-color: var(--color-acento-600); }
-.active\:bg-brand-700:active { background-color: var(--color-acento-700); }
+.bg-brand-500 { background: var(--gradiente-marca); }
+.hover\:bg-brand-600:hover, .hover\:bg-brand-400:hover { filter: brightness(1.1); }
+.active\:bg-brand-700:active, .active\:bg-brand-600:active { filter: brightness(0.95); }
 
-/* ============================================================
-   MARCA — a logo. Mesma família do acento, um tom mais fechado, pra
-   que o quadradinho da marca não vire mais um botão primário na tela.
-   ============================================================ */
-.logo-marca { background-color: var(--color-marca); color: #ffffff; }
+/* A marca: bloco com o gradiente e brilho. */
+.logo-marca { background: var(--gradiente-marca); color: #ffffff; box-shadow: var(--brilho-marca); }
 .logo-marca .text-white { color: #ffffff; }
 
-/* Indicador do item ativo do menu e preenchimento de progresso: acento,
-   porque ali a cor aponta — não enfeita. */
+/* Preenchimento de progresso: laranja sólido (o gradiente ficaria estranho numa barra). */
 .bg-brand-500.rounded-r-full,
-.bg-brand-500.h-full { background-color: var(--color-acento-500); }
+.bg-brand-500.h-full { background: var(--laranja); box-shadow: 0 0 10px rgba(255, 74, 15, 0.6); }
 
-/*
- * As classes de sombra colorida que sobraram no JSX viram sombra neutra de
- * uma camada. Sombra colorida repetida em vinte botões na mesma tela é o
- * que denuncia template.
- */
+/* Sombras coloridas antigas → sombra neutra. */
 .shadow-brand-200,
 .shadow-brand-500\/25,
 .shadow-brand-500\/30,
@@ -1003,27 +887,23 @@ button, [role='button'], a.btn-press {
   box-shadow: var(--shadow-sm);
 }
 
+/* Barra de rolagem discreta no tema escuro. */
+* { scrollbar-color: rgba(255, 255, 255, 0.18) transparent; scrollbar-width: thin; }
+
 /* ============================================================
-   Gráficos — entrada em cascata (stagger) pra dar vida sem virar
-   decoração vazia. Barras "crescem" da esquerda, fatias do donut
-   entram com leve zoom. Sempre com `both` (mantém o estado final)
-   e curva ease-out (chegada rápida, assentamento suave).
+   Gráficos — entrada em cascata.
    ============================================================ */
-@keyframes barra-cresce {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
+@keyframes barra-cresce { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .barra-entrada {
   transform-origin: left;
   animation: barra-cresce 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-
-@keyframes donut-entra {
-  from { opacity: 0; transform: scale(0.82); }
-  to { opacity: 1; transform: scale(1); }
-}
+@keyframes donut-entra { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: scale(1); } }
 .donut-fatia {
   transform-box: fill-box;
   transform-origin: center;
   animation: donut-entra 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Linha de neon nos gráficos de área. */
+.neon-line { filter: drop-shadow(0 0 6px rgba(255, 74, 15, 0.9)); }

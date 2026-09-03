@@ -20,7 +20,12 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/credential/') ||
     pathname.startsWith('/portaria/') ||
     pathname.startsWith('/supervisor/criar-senha/') ||
-    pathname === '/login'
+    pathname === '/login' ||
+    // A landing é pública: é a porta de entrada de quem ainda não tem conta.
+    pathname === '/' ||
+    // Os arquivos da marca (public/marca) servem a landing e o login, que
+    // não têm sessão — sem isto o logo vira um redirect pra /login.
+    pathname.startsWith('/marca/')
   ) {
     return NextResponse.next({ request })
   }
