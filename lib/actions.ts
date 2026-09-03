@@ -2470,35 +2470,66 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
  *
  * Regra pedida pelo Juan (03/09/2026): os dois botões (Entrada/Saída)
  * confundiam quem estava escaneando, com fila andando. Primeira leitura do
- * turno = entrada. Segunda = saída. Terceira = recusada — a pessoa já
- * fechou o dia, e deixar passar criaria uma segunda entrada por cima da
- * saída que já valeu.
+ * turno = entrada. Segunda = saída. Terceira NO MESMO DIA = recusada — a
+ * pessoa já fechou o dia, e deixar passar criaria uma segunda entrada por
+ * cima da saída que já valeu.
  *
- * "Turno em aberto" é o mesmo conceito de `entradaDoTurno` (a âncora do
- * turno, usada em todo o resto do fluxo): uma entrada dos últimos
- * TETO_TURNO_H sem uma saída ainda. Achou entrada sem saída → é a saída.
- * Achou entrada COM saída → o turno já fechou.
+ * ── O BUG QUE ESTA ORDEM CORRIGE (03/09/2026, manhã) ──────────────────
+ *
+ * A primeira versão perguntava só "o turno de `entradaDoTurno` já tem
+ * saída?" — e `entradaDoTurno` olha os últimos TETO_TURNO_H (18h), janela
+ * que existe pro turno que vira a madrugada. Só que 18h atrás também
+ * alcança a TARDE DE ONTEM: quem entrou 17h e saiu 20h ontem chegava hoje
+ * de manhã, o sistema achava aquele turno de ontem (fechado) e recusava
+ * com "já registrou entrada e saída hoje" — sendo que hoje ela não tinha
+ * registrado nada. Parou a portaria numa manhã de montagem.
+ *
+ * A ordem certa é decidir pelo que está ABERTO primeiro, e só depois
+ * perguntar sobre o dia de hoje:
+ *
+ *   1. Turno em aberto (entrada sem saída, dentro de TETO_TURNO_H)?
+ *      → é a SAÍDA. É isto que fecha certo quem virou a madrugada.
+ *   2. Já tem entrada E saída com a data de HOJE? → recusa (3ª leitura).
+ *   3. Caso contrário → ENTRADA. Dia novo, turno novo.
  */
 async function inferirMomentoQR(
   funcionarioId: string, eventoId: string, agora: Date,
 ): Promise<{ momento: 'entrada' | 'fim' } | { erro: string }> {
   const entrada = await entradaDoTurno(funcionarioId, eventoId, agora)
-  if (!entrada) return { momento: 'entrada' }
 
-  const { data: fim } = await supabaseAdmin
+  if (entrada) {
+    const { data: fimDoTurno } = await supabaseAdmin
+      .from('registros')
+      .select('created_at')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+      .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+      .limit(1)
+    // Turno aberto: a leitura de agora é a saída dele.
+    if (!fimDoTurno?.length) return { momento: 'fim' }
+  }
+
+  /*
+   * Nenhum turno aberto. Só recusa se o par entrada+saída for DE HOJE —
+   * turno fechado de ontem não bloqueia o dia de hoje (era exatamente o
+   * bug acima).
+   */
+  const hoje = diaBRT(agora)
+  const { data: deHoje } = await supabaseAdmin
     .from('registros')
-    .select('created_at')
+    .select('tipo, created_at')
     .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
-    .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
-    .limit(1)
+    .eq('data_ref', hoje)
+    .in('tipo', ['entrada', 'fim'])
 
-  if (fim?.length) {
+  const entradaHoje = (deHoje ?? []).find(r => r.tipo === 'entrada')
+  const saidaHoje = (deHoje ?? []).find(r => r.tipo === 'fim')
+  if (entradaHoje && saidaHoje) {
     return {
-      erro: `Esta pessoa já registrou entrada e saída hoje (saída às ${formatarBR(fim[0].created_at as string, 'hora')}). `
+      erro: `Esta pessoa já registrou entrada e saída hoje (saída às ${formatarBR(saidaHoje.created_at as string, 'hora')}). `
         + 'Se isso estiver errado, corrija pelo histórico dela em vez de escanear de novo.',
     }
   }
-  return { momento: 'fim' }
+  return { momento: 'entrada' }
 }
 
 type DiaDeTrabalho = DiaDaJornada & { id: string; data: string }
