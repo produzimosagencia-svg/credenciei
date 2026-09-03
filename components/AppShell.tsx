@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -75,6 +75,14 @@ function gruposPara(role: string): Grupo[] {
    */
   if (podeGerenciarUsuarios(role)) {
     doEvento.push({ href: '/admin/criar-porteiro', label: 'Gestor de credenciamento', icon: ShieldCheck })
+  }
+  /*
+   * Veículos: mesma régua de quem gerencia o evento (a autorização é do
+   * evento, e o condutor precisa estar credenciado nele). Fica no grupo
+   * Evento, junto do resto que se usa durante a operação.
+   */
+  if (podeGerenciarEventos(role)) {
+    doEvento.push({ href: '/admin/veiculos', label: 'Cadastrar veículo', icon: Truck })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.

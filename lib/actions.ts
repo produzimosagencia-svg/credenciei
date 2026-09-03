@@ -4900,3 +4900,152 @@ export async function obterVisualizacoesDoAviso(avisoId: string, eventoId: strin
     }
   })
 }
+
+// ─── Veículos ────────────────────────────────────────────────────────────────
+/*
+ * Quem entra de caminhão/van no evento, e com qual placa. Ver
+ * supabase/upgrade-veiculos.sql pro desenho das tabelas e pro escopo:
+ * SÓ CADASTRO E CONSULTA — o veículo não bate ponto, não tem QR e não passa
+ * pelo scanner. A portaria consulta pela placa e confere.
+ *
+ * A regra central é o CONDUTOR: todo veículo é vinculado ao CPF de alguém já
+ * credenciado NAQUELE evento. Alguém dirige o caminhão, e essa pessoa
+ * responde pelo veículo — sem isso a lista viraria placas soltas, sem
+ * ninguém a quem perguntar.
+ */
+
+export type CondutorEncontrado = {
+  id: string
+  nome: string
+  cpf: string
+  cargo: string | null
+  setorNome: string
+  empresa: string | null
+}
+
+/**
+ * Acha o condutor pelo CPF, DENTRO do evento — é o que preenche o nome
+ * sozinho no formulário.
+ *
+ * Restrito ao evento de propósito: o veículo é autorizado a entrar NESTE
+ * evento, então o condutor precisa estar credenciado NELE. Um CPF que existe
+ * na base mas não neste evento devolve um erro que diz exatamente isso, em
+ * vez de "não encontrado" — a diferença entre "cadastra a pessoa primeiro" e
+ * "confere o número digitado".
+ */
+export async function buscarCondutorPorCpf(
+  eventoId: string,
+  cpfDigitado: string,
+): Promise<{ condutor: CondutorEncontrado; error?: undefined } | { condutor?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeGerenciarEventos(perfil.role)) return { error: 'Sem permissão.' }
+
+  const cpf = normalizarCpf(cpfDigitado ?? '')
+  if (cpf.length !== 11) return { error: 'O CPF precisa ter 11 dígitos.' }
+  if (!validarCpf(cpf)) return { error: 'Este CPF não é válido. Confira os números.' }
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+  if (!evento) return { error: 'Evento não encontrado.' }
+  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    return { error: 'Sem permissão sobre este evento.' }
+  }
+
+  const { data } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, cargo, empresa, fornecedores!inner(nome, evento_id)')
+    .eq('cpf', cpf)
+    .eq('fornecedores.evento_id', eventoId)
+    .limit(1)
+
+  const f = data?.[0]
+  if (!f) {
+    return {
+      error: 'Este CPF não está credenciado neste evento. Cadastre a pessoa na equipe antes de vincular o veículo a ela.',
+    }
+  }
+
+  const forn = f.fornecedores as unknown as { nome: string } | { nome: string }[]
+  return {
+    condutor: {
+      id: f.id as string,
+      nome: f.nome as string,
+      cpf: f.cpf as string,
+      cargo: (f.cargo as string | null) ?? null,
+      setorNome: (Array.isArray(forn) ? forn[0]?.nome : forn?.nome) ?? '',
+      empresa: (f.empresa as string | null) ?? null,
+    },
+  }
+}
+
+/** Placa sem máscara e em maiúscula — "abc-1d23" e "ABC1D23" viram a mesma coisa. */
+function normalizarPlaca(v: string): string {
+  return (v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
+  const perfil = await exigirEventoDaOrg(eventoId)
+
+  const placa = normalizarPlaca(String(formData.get('placa') ?? ''))
+  const modelo = String(formData.get('modelo') ?? '').trim()
+  const cpf = normalizarCpf(String(formData.get('cpf') ?? ''))
+  const empresa = String(formData.get('empresa') ?? '').trim() || null
+  const cor = String(formData.get('cor') ?? '').trim() || null
+  const tipo = String(formData.get('tipo') ?? '').trim() || null
+  const observacoes = String(formData.get('observacoes') ?? '').trim() || null
+  const dias = formData.getAll('dias').map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+
+  /*
+   * Placa brasileira: 7 caracteres nos dois formatos que convivem — o antigo
+   * (ABC1234) e o Mercosul (ABC1D23). Valida o tamanho e o formato, não a
+   * existência: conferir se a placa existe de verdade exigiria consulta ao
+   * Detran, que o sistema não tem (e não vale a pena pra portaria de evento).
+   */
+  if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) {
+    return { error: 'Placa inválida. Use o formato ABC1D23 (Mercosul) ou ABC1234.' }
+  }
+  if (modelo.length < 2) return { error: 'Informe o modelo do veículo.' }
+
+  const achado = await buscarCondutorPorCpf(eventoId, cpf)
+  if (!achado.condutor) return { error: achado.error }
+  const condutor = achado.condutor
+
+  const { data: novo, error } = await supabaseAdmin.from('veiculos').insert([{
+    evento_id: eventoId,
+    funcionario_id: condutor.id,
+    empresa,
+    placa,
+    modelo,
+    cor,
+    tipo,
+    observacoes,
+    criado_por_perfil_id: perfil.id,
+  }]).select('id').single()
+
+  if (error) {
+    // O índice único (evento_id, placa) é o que barra a duplicidade; aqui só
+    // se troca o erro cru do Postgres por algo que diga o que fazer.
+    if (/duplicate key|unique/i.test(error.message)) {
+      return { error: `A placa ${placa} já está cadastrada neste evento.` }
+    }
+    return { error: mensagemAmigavel(error) }
+  }
+
+  if (dias.length) {
+    const { error: erroDias } = await supabaseAdmin
+      .from('veiculo_dias')
+      .insert(dias.map(data => ({ veiculo_id: novo.id, data })))
+    if (erroDias) return { error: mensagemAmigavel(erroDias) }
+  }
+
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const, placa, condutor: condutor.nome }
+}
+
+export async function excluirVeiculo(veiculoId: string, eventoId: string) {
+  await exigirEventoDaOrg(eventoId)
+  const { error } = await supabaseAdmin.from('veiculos').delete().eq('id', veiculoId).eq('evento_id', eventoId)
+  if (error) return { error: mensagemAmigavel(error) }
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const }
+}
