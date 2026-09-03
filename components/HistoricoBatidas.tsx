@@ -1,9 +1,9 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle, LogIn, Camera, Pencil } from 'lucide-react'
+import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle, LogIn, Camera, Pencil, Trash2 } from 'lucide-react'
 import { formatarBR, isoParaInput } from '@/lib/tz'
-import { lancarPontoManual, type MomentoPresenca } from '@/lib/actions'
+import { lancarPontoManual, apagarBatida, type MomentoPresenca } from '@/lib/actions'
 import { Badge } from '@/components/ui/Superficie'
 import StatCard from '@/components/StatCard'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -30,7 +30,11 @@ export default function HistoricoBatidas({
   h: HistoricoNoEvento
   /** Mesma régua de `lancarPontoManual` no servidor. */
   podeEditar?: boolean
-  /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
+  /**
+   * Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é
+   * obrigatório e se aparece o botão de APAGAR (só master e suporte, a
+   * mesma régua que `apagarBatida` aplica no servidor).
+   */
   role?: string
   /**
    * Chamado depois de salvar uma correção. Quando existe (aberto num modal
@@ -53,13 +57,35 @@ export default function HistoricoBatidas({
   const [isPending, startTransition] = useTransition()
 
   const motivoObrigatorio = role === 'suporte'
+  /*
+   * Apagar é mais restrito que corrigir: corrigir troca um horário por
+   * outro e o dado continua lá; apagar é o único caminho que faz a batida
+   * sumir. Mesma régua de `apagarBatida` no servidor — master e suporte.
+   */
+  const podeApagar = role === 'master' || role === 'suporte'
+  const [confirmandoApagar, setConfirmandoApagar] = useState(false)
   const ROTULO_MOMENTO: Record<MomentoPresenca, string> = { entrada: 'entrada', meio: 'meio', fim: 'saída' }
 
   const abrirEdicao = (data: string, momento: MomentoPresenca, atual: string | null) => {
     setErro(null)
     setMotivo('')
+    setConfirmandoApagar(false)
     setQuando(atual ? isoParaInput(atual) : `${data}T08:00`)
     setEditando({ data, momento, atual })
+  }
+
+  const apagar = () => {
+    if (!editando) return
+    setErro(null)
+    if (!motivo.trim()) { setErro('Escreva o motivo — apagar não tem desfazer.'); return }
+    startTransition(async () => {
+      const r = await apagarBatida(h.funcionarioId, editando.momento, editando.data, motivo)
+      if (r.error) { setErro(r.error); return }
+      setEditando(null)
+      setConfirmandoApagar(false)
+      if (onSalvo) onSalvo()
+      else router.refresh()
+    })
   }
 
   const salvar = () => {
@@ -173,6 +199,54 @@ export default function HistoricoBatidas({
               Cancelar
             </button>
           </div>
+
+          {/*
+            * Apagar mora no fim, atrás de uma confirmação, e só aparece se
+            * a batida EXISTE — "apagar" numa etapa em branco não quer dizer
+            * nada. Separado por uma linha do resto: corrigir e apagar são
+            * ações de peso diferente, e um clique errado aqui não tem
+            * desfazer.
+            */}
+          {podeApagar && editando.atual && (
+            <div className="pt-3 border-t border-amber-200">
+              {!confirmandoApagar ? (
+                <button
+                  onClick={() => { setErro(null); setConfirmandoApagar(true) }}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 text-red-600 hover:text-red-700 text-xs font-semibold"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Apagar esta batida
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-red-700 text-xs font-semibold">
+                    Apagar a {ROTULO_MOMENTO[editando.momento]} de {formatarBR(editando.atual, 'hora')}? Não tem desfazer.
+                  </p>
+                  <p className="text-amber-700 text-2xs">
+                    O motivo acima é obrigatório aqui — ele fica na auditoria com o horário apagado,
+                    e é o que explica a falta depois.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={apagar}
+                      disabled={isPending}
+                      className="btn btn-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                    >
+                      {isPending ? 'Apagando…' : 'Apagar mesmo assim'}
+                    </button>
+                    <button
+                      onClick={() => setConfirmandoApagar(false)}
+                      disabled={isPending}
+                      className="btn btn-secundario btn-sm"
+                    >
+                      Não apagar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

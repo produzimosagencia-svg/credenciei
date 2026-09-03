@@ -18,12 +18,27 @@ import { Copy, Check } from 'lucide-react'
  * que fica ao lado nesta mesma barra — ter os dois deixava o botão duplicado
  * lado a lado na tela do supervisor.
  */
-export default function AcoesDaEquipe({ tokenFormulario }: { tokenFormulario: string | null }) {
+export default function AcoesDaEquipe({
+  tokenFormulario, setorNome,
+}: {
+  tokenFormulario: string | null
+  /** Vai junto no texto copiado — ver o comentário em `copiar`. */
+  setorNome?: string
+}) {
   const [copiado, setCopiado] = useState(false)
 
+  /*
+   * Copia o NOME DO SETOR junto com o link, não só a URL.
+   *
+   * O link vai colado num grupo de WhatsApp, e sozinho ele é cru: quem
+   * recebe não sabe de qual setor é aquele cadastro — e o organizador
+   * manda vários links diferentes, um por setor, no mesmo dia. Com o
+   * nome na frente, a mensagem já chega dizendo o que é.
+   */
   const copiar = () => {
     if (!tokenFormulario) return
-    navigator.clipboard.writeText(`${window.location.origin}/form/${tokenFormulario}`)
+    const url = `${window.location.origin}/form/${tokenFormulario}`
+    navigator.clipboard.writeText(setorNome ? `${setorNome} — cadastro da equipe:\n${url}` : url)
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }

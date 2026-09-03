@@ -1,5 +1,6 @@
 import { redirect, notFound } from 'next/navigation'
 import { getPerfil } from '@/lib/supabase-server'
+import { podeGerenciarEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { formatCpf } from '@/lib/format'
 import { historicoDoFuncionario, podeVerHistoricoDe } from '@/lib/historico'
@@ -42,7 +43,19 @@ export default async function HistoricoPage({ params }: { params: Promise<{ id: 
             : <Badge tom="positivo">Credenciado</Badge>
         }
       />
-      <HistoricoBatidas h={h} />
+      {/*
+        * `podeEditar`/`role` são a MESMA régua que as actions aplicam no
+        * servidor (`lancarPontoManual` e `apagarBatida`) — aqui só decidem
+        * se o controle aparece. Sem eles, esta página mostrava o histórico
+        * sem nenhuma forma de corrigir, enquanto o modal do setor mostrava
+        * as duas — a mesma pessoa via coisas diferentes dependendo do
+        * caminho que usou pra chegar.
+        */}
+      <HistoricoBatidas
+        h={h}
+        podeEditar={podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
+        role={perfil.role}
+      />
     </div>
   )
 }

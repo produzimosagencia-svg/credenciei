@@ -4362,6 +4362,98 @@ export async function lancarPontoManual(
 }
 
 /**
+ * APAGA uma batida — a saída que não existiu, a leitura dupla, o registro
+ * que caiu no dia errado.
+ *
+ * Existe porque `lancarPontoManual` só sabe SOBRESCREVER: dá pra corrigir
+ * a hora de uma batida, nunca dizer "esta batida não deveria existir". O
+ * caso que motivou (Juan, 03/09/2026) foi alguém com entrada e saída no
+ * MESMO minuto — a saída precisa sumir, e mudar a hora dela não resolve.
+ *
+ * SÓ MASTER E SUPORTE, mais restrito que o lançamento manual (que aceita
+ * supervisor): lançar é acrescentar, e o excesso aparece no relatório pra
+ * ser conferido; apagar é o único caminho que faz dado sumir de vez. É a
+ * mesma régua de `podeEditarIdentidade` — quem conserta identidade
+ * conserta batida.
+ *
+ * A trilha fica: a linha some de `registros`, mas o que foi apagado (etapa,
+ * horário, dia) e o motivo ficam gravados em `alteracoes_cadastro`, que é
+ * o que sustenta a conferência depois.
+ */
+export async function apagarBatida(
+  funcionarioId: string,
+  momento: MomentoPresenca,
+  /** Dia de trabalho da batida, 'AAAA-MM-DD' — a chave junto com a etapa. */
+  dataRef: string,
+  motivo: string,
+): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !(ehMaster(perfil.role) || perfil.role === 'suporte')) {
+    return { error: 'Só o master e o suporte podem apagar uma batida.' }
+  }
+
+  const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
+  if (!etapaEscolhida) return { error: 'Etapa inválida.' }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataRef ?? '')) return { error: 'Informe o dia da batida.' }
+
+  const justificativa = (motivo ?? '').trim()
+  if (justificativa.length < 5) {
+    return { error: 'Escreva o motivo — apagar não tem desfazer, e o motivo é o que explica a falta depois.' }
+  }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, fornecedor_id, fornecedores!inner(evento_id, eventos!inner(id, organizacao_id))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func) return { error: 'Funcionário não encontrado.' }
+
+  const evento = comEvento(func.fornecedores)?.eventos
+  if (!evento) return { error: 'Evento não encontrado.' }
+
+  // Suporte só age dentro do escopo contratado dele; master vê tudo.
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      return { error: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  }
+
+  /*
+   * Lê ANTES de apagar: sem isto a auditoria não teria o que registrar —
+   * "apagou a saída" sem dizer qual horário some não sustenta conferência
+   * nenhuma. Também é o que diferencia "apagou" de "não existia".
+   */
+  const { data: alvo } = await supabaseAdmin
+    .from('registros')
+    .select('id, created_at')
+    .eq('funcionario_id', func.id).eq('evento_id', evento.id)
+    .eq('tipo', momento).eq('data_ref', dataRef)
+    .limit(1)
+
+  if (!alvo?.length) return { error: 'Não há batida desta etapa neste dia — talvez já tenha sido apagada.' }
+
+  const horarioApagado = alvo[0].created_at as string
+  const { error } = await supabaseAdmin.from('registros').delete().eq('id', alvo[0].id as string)
+  if (error) return { error: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil,
+    acao: 'EXCLUSAO_PONTO',
+    campoAlterado: `${etapaEscolhida.rotulo} · ${dataRef}`,
+    valorAnterior: horarioApagado,
+    valorNovo: null,
+    motivo: justificativa,
+    funcionarioId: func.id,
+    eventoId: evento.id,
+    organizacaoId: evento.organizacao_id ?? undefined,
+  }))
+
+  revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+  revalidatePath(`/admin/eventos/${evento.id}/presenca`)
+  return { ok: true, nome: func.nome as string, etapa: etapaEscolhida.rotulo }
+}
+
+/**
  * URL temporária de uma foto de presença, para o admin conferir a batida.
  *
  * ⚠️ Esta função é uma Server Action: qualquer pessoa na internet pode

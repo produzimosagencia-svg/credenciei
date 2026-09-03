@@ -295,7 +295,10 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         */}
       <div className="flex flex-wrap items-center gap-2">
         <TrocarSetor setores={setoresDoSupervisor} atualId={fid} />
-        <AcoesDaEquipe tokenFormulario={(fornecedor.token_formulario as string | null) ?? null} />
+        <AcoesDaEquipe
+          tokenFormulario={(fornecedor.token_formulario as string | null) ?? null}
+          setorNome={fornecedor.nome as string}
+        />
         <ImportarFuncionarios fornecedorId={fid} />
         <ExportarEquipe fornecedorId={fid} eventoId={id} dias={diasDoEvento ?? []} />
         {/* Relatório pós-evento (planilha completa, com histórico e métodos

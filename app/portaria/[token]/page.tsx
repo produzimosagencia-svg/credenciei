@@ -67,7 +67,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
   const disponiveis = (setores ?? []).filter(s => s.token_formulario)
 
   return (
-    <div className="min-h-screen bg-[#f4f5f8] flex flex-col">
+    <div className="min-h-screen bg-[#0e0e0e] flex flex-col">
       <header className="bg-gradient-to-r from-brand-500 to-brand-600 px-5 py-7 text-center">
         <p className="text-brand-100 text-2xs uppercase tracking-widest font-semibold">
           Cadastro no evento
@@ -115,7 +115,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
  */
 function Fechado({ motivo }: { motivo: string | null }) {
   return (
-    <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-6">
+    <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-6">
       <div className="bg-white rounded-3xl p-7 max-w-sm text-center shadow-xl">
         <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
           <Users className="w-6 h-6 text-slate-400" />

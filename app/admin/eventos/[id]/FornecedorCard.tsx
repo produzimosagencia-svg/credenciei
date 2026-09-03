@@ -63,8 +63,17 @@ export default function FornecedorCard({
   const pct = estimado > 0 ? Math.min(100, Math.round((count / estimado) * 100)) : null
   const valor = f.valor_combinado ?? null
 
+  /*
+   * Copia o NOME DO SETOR junto com o link, não só a URL.
+   *
+   * O link vai colado num grupo de WhatsApp, e sozinho ele é cru: quem
+   * recebe não sabe de qual setor é aquele cadastro — e o organizador
+   * manda vários links diferentes, um por setor, no mesmo dia. Com o
+   * nome na frente, a mensagem já chega dizendo o que é.
+   */
   const copyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/form/${f.token_formulario}`)
+    const url = `${window.location.origin}/form/${f.token_formulario}`
+    navigator.clipboard.writeText(`${f.nome} — cadastro da equipe:\n${url}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

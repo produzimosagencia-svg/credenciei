@@ -74,7 +74,7 @@ function gruposPara(role: string): Grupo[] {
    * papel faz e o que NÃO faz. Mesma régua da action `criarOperadorPortaria`.
    */
   if (podeGerenciarUsuarios(role)) {
-    doEvento.push({ href: '/admin/criar-porteiro', label: 'Criar porteiro', icon: ShieldCheck })
+    doEvento.push({ href: '/admin/criar-porteiro', label: 'Gestor de credenciamento', icon: ShieldCheck })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.

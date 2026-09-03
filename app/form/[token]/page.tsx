@@ -53,7 +53,7 @@ export default async function FormPage({
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
-      <div className="min-h-screen bg-[#f4f5f8] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-8" data-tutorial="form-titulo">
             <div className="logo-marca inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 shadow-lg">

@@ -34,7 +34,7 @@ export default async function CriarPorteiroPage({
   if (!eventoParam) {
     return (
       <div className="space-y-5">
-        <PageHeader titulo="Criar porteiro" descricao="O acesso de quem fica no portão lendo o QR da equipe" />
+        <PageHeader titulo="Gestor de credenciamento" descricao="O acesso de quem fica no portão lendo o QR da equipe" />
         <ComoFunciona />
         <EscolherEvento
           eventos={await eventosQuePossoAbrir()}
@@ -76,7 +76,7 @@ export default async function CriarPorteiroPage({
   return (
     <div className="space-y-5">
       <PageHeader
-        titulo="Criar porteiro"
+        titulo="Gestor de credenciamento"
         descricao={`${evento.nome} — o acesso de quem fica no portão lendo o QR`}
         acoes={
           <Link href="/admin/criar-porteiro" className="btn btn-secundario">
