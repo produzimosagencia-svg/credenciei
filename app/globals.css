@@ -907,3 +907,38 @@ button, [role='button'], a.btn-press {
 
 /* Linha de neon nos gráficos de área. */
 .neon-line { filter: drop-shadow(0 0 6px rgba(255, 74, 15, 0.9)); }
+
+/* ============================================================
+   IMPRESSÃO DO CRACHÁ
+
+   O crachá em papel (aba "Crachá" na ficha do funcionário) existe pra
+   quem não pode depender do celular — bateria, tela quebrada, sem sinal
+   no galpão. Ele é impresso de dentro de um modal, então a folha sairia
+   com abas, botões e a página inteira em volta se nada isolasse.
+
+   `visibility` em vez de `display: none`: esconder por display quebraria
+   o layout dos ancestrais do cartão (o modal é flex e tem posição), e o
+   cartão sairia deslocado. Escondendo por visibilidade a caixa continua
+   ocupando o lugar dela, e só o cartão volta a aparecer.
+
+   O tema do sistema é escuro; papel é branco. As cores são forçadas aqui
+   pra não sair uma folha preta — e o QR precisa de preto sobre branco
+   pra ser lido depois de impresso.
+   ============================================================ */
+@media print {
+  body * { visibility: hidden; }
+  .cracha-impressao, .cracha-impressao * { visibility: visible; }
+  .cracha-impressao {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #ffffff;
+    border: none;
+    color: #141414;
+  }
+  /* Cinzas do tema escuro somem no papel; no branco eles precisam ser
+     escuros de verdade pra continuar legíveis depois de impressos. */
+  .cracha-impressao p { color: #141414 !important; }
+  .cracha-impressao img { filter: none; }
+}

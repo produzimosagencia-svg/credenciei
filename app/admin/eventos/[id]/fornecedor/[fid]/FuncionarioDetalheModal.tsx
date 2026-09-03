@@ -2,8 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, alternarAtivacao } from '@/lib/actions'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, alternarAtivacao, obterQRDoFuncionario, type QRDoFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -30,7 +30,7 @@ type Funcionario = {
   fim: Presenca
 }
 
-type Aba = 'dados' | 'historico'
+type Aba = 'dados' | 'historico' | 'cracha'
 
 export default function FuncionarioDetalheModal({
   funcionario: f,
@@ -278,10 +278,31 @@ export default function FuncionarioDetalheModal({
     })
   }
 
+  /*
+   * O crachá, buscado sob demanda igual ao histórico e pelo mesmo motivo:
+   * gerar o PNG do QR de todo mundo da lista ao carregar a tela seria
+   * desenhar dezenas de imagens que quase ninguém abre.
+   */
+  const [cracha, setCracha] = useState<QRDoFuncionario | null | undefined>(undefined)
+  const [erroCracha, setErroCracha] = useState<string | null>(null)
+  const [carregandoCracha, startCarregarCracha] = useTransition()
+
   const abrirAba = (a: Aba) => {
     setAba(a)
     if (a === 'historico' && historico === undefined && !carregandoHistorico) {
       recarregarHistorico()
+    }
+    if (a === 'cracha' && cracha === undefined && !carregandoCracha) {
+      startCarregarCracha(async () => {
+        const r = await obterQRDoFuncionario(f.id)
+        if (r.qr) {
+          setErroCracha(null)
+          setCracha(r.qr)
+        } else {
+          setErroCracha(r.error ?? 'Não foi possível carregar o crachá.')
+          setCracha(null)
+        }
+      })
     }
   }
 
@@ -363,7 +384,7 @@ export default function FuncionarioDetalheModal({
                 vezes — valor, PIX, se já foi pago; o histórico é uma consulta
                 mais rara, de fechamento. */}
             <div className="flex gap-1 px-6 pt-3 border-b border-slate-100 sticky top-[73px] bg-white z-10">
-              {(['dados', 'historico'] as const).map(a => (
+              {(['dados', 'historico', 'cracha'] as const).map(a => (
                 <button
                   key={a}
                   onClick={() => abrirAba(a)}
@@ -373,7 +394,7 @@ export default function FuncionarioDetalheModal({
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  {a === 'dados' ? 'Dados' : 'Histórico de batidas'}
+                  {a === 'dados' ? 'Dados' : a === 'historico' ? 'Histórico de batidas' : 'Crachá'}
                 </button>
               ))}
             </div>
@@ -722,7 +743,7 @@ export default function FuncionarioDetalheModal({
                   {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
                 </div>
               </div>
-            ) : (
+            ) : aba === 'historico' ? (
               <div className="p-6">
                 {carregandoHistorico ? (
                   <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-16">
@@ -734,6 +755,27 @@ export default function FuncionarioDetalheModal({
                   </div>
                 ) : historico ? (
                   <HistoricoBatidas h={historico} podeEditar={podeEditarPonto} role={role} onSalvo={recarregarHistorico} />
+                ) : null}
+              </div>
+            ) : (
+              <div className="p-6">
+                {carregandoCracha ? (
+                  <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-16">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Gerando crachá…
+                  </div>
+                ) : erroCracha ? (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {erroCracha}
+                  </div>
+                ) : cracha ? (
+                  <CrachaParaImprimir
+                    qr={cracha}
+                    nome={f.nome}
+                    cargo={f.cargo}
+                    setor={setorNome}
+                    evento={eventoNome}
+                    cpf={f.cpf}
+                  />
                 ) : null}
               </div>
             )}
@@ -787,6 +829,91 @@ function LinhaPresenca({ label, p }: { label: string; p: Presenca }) {
           <ScanLine className="w-2.5 h-2.5 shrink-0" /> Registrado por {p.registradoPor}
         </p>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * O crachá em papel — o MESMO QR que está no celular da pessoa, desenhado
+ * num tamanho que dá pra imprimir e escanear.
+ *
+ * Pedido do Juan (03/09/2026): "pra não ficar refém do celular" — bateria
+ * acabando, tela quebrada, sem sinal no galpão. O código vem de
+ * `obterQRDoFuncionario`, que chama a mesma `gerarCodigoQR` da tela da
+ * credencial: é o mesmo crachá, não uma segunda via.
+ *
+ * O aviso da etapa não é decoração. O QR é assinado POR ETAPA (montagem,
+ * dia do evento, desmontagem — ver lib/credencial-qr.ts), então o papel
+ * impresso hoje na montagem é RECUSADO no dia do evento, de propósito.
+ * Quem imprime precisa saber disso antes, não descobrir na portaria com
+ * fila atrás.
+ */
+function CrachaParaImprimir({
+  qr, nome, cargo, setor, evento, cpf,
+}: {
+  qr: QRDoFuncionario
+  nome: string
+  cargo: string
+  setor: string
+  evento: string
+  cpf: string
+}) {
+  const cpfFormatado = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+
+  return (
+    <div className="space-y-4">
+      {/*
+        * `print:` em tudo que NÃO é o crachá: na impressão sobra só o cartão.
+        * Sem isso o papel sairia com o modal inteiro em volta — abas, botões,
+        * o aviso — e o QR no meio de um monte de tinta que ninguém precisa.
+        */}
+      <div className="print:hidden bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <p className="text-amber-800 text-xs font-semibold">
+          Este crachá vale para a {qr.faseNome.toLowerCase()}
+        </p>
+        <p className="text-amber-700/90 text-2xs mt-1 leading-relaxed">
+          O QR é assinado por etapa: o papel impresso agora <strong>não passa</strong> quando
+          o evento virar de etapa (montagem → dia do evento → desmontagem). Na virada,
+          imprima de novo por aqui.
+        </p>
+      </div>
+
+      {/* O cartão. `cracha-impressao` isola ele na hora de imprimir. */}
+      <div className="cracha-impressao border border-slate-200 rounded-2xl p-5 text-center">
+        <p className="text-slate-400 text-2xs uppercase tracking-[0.15em] truncate">{evento}</p>
+
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={qr.imagem}
+          alt={`QR Code da credencial de ${nome}`}
+          className="w-52 h-52 mx-auto my-4"
+        />
+
+        <p className="text-slate-800 font-bold text-lg leading-tight">{nome}</p>
+        {cargo && <p className="text-brand-600 text-sm font-semibold mt-0.5">{cargo}</p>}
+        <p className="text-slate-400 text-xs mt-0.5">{setor}</p>
+        <p className="text-slate-400 text-xs font-mono tabular-nums mt-1.5">{cpfFormatado}</p>
+
+        <p className="text-slate-400 text-2xs mt-3 pt-3 border-t border-slate-100">
+          Apresente na entrada e na saída · {qr.faseNome}
+        </p>
+      </div>
+
+      <div className="print:hidden space-y-2">
+        <button onClick={() => window.print()} className="btn btn-primario w-full">
+          <Printer className="w-3.5 h-3.5" /> Imprimir crachá
+        </button>
+        {/* O link do celular continua aqui: imprimir é a alternativa, não o
+            substituto — quem tem o celular na mão prefere ele. */}
+        <a
+          href={qr.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secundario w-full"
+        >
+          <ScanLine className="w-3.5 h-3.5" /> Abrir a credencial no celular
+        </a>
+      </div>
     </div>
   )
 }

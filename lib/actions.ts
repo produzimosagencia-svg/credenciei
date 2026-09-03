@@ -29,7 +29,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import {
   diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia, conferirHorariosDoEvento,
-  TETO_TURNO_H, type EventoJanelas, type DiaDaJornada,
+  TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { validarCpf } from './format'
 import { normalizarCidade } from './cidades'
@@ -41,7 +41,8 @@ import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria } from './auditoria'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor } from './mensagens'
 import { enderecoAproximado } from './geocoding'
-import { lerCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
+import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
+import { urlBase } from './ia/ferramentas/base'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 
 /** "12345678900" → "123.456.789-00". Só para leitura humana na mensagem. */
@@ -3807,6 +3808,64 @@ export async function obterHistoricoDoFuncionario(
   const h = await historicoDoFuncionario(funcionarioId)
   if (!h) return { error: 'Funcionário não encontrado.' }
   return { historico: h }
+}
+
+export type QRDoFuncionario = {
+  /** PNG em data URL, pronto pra <img> e pra impressão. */
+  imagem: string
+  /** 'montagem' | 'evento' | 'desmontagem' — a etapa que este código cobre. */
+  fase: FaseDoDia
+  faseNome: string
+  /** Link da credencial no celular, pra quem preferir continuar por ali. */
+  link: string
+}
+
+/**
+ * O MESMO QR que está na credencial da pessoa agora — pra imprimir e não
+ * depender do celular dela (pedido do Juan, 03/09/2026: bateria, tela
+ * quebrada, sem sinal no galpão).
+ *
+ * Gerado por `gerarCodigoQR`, a mesma função da tela da credencial, com a
+ * mesma etapa: é literalmente o mesmo código, não uma segunda via nem um
+ * código paralelo. Nada aqui altera o QR de ninguém — só desenha de novo o
+ * que já existe.
+ *
+ * ATENÇÃO À ETAPA: o código é assinado POR ETAPA (ver lib/credencial-qr.ts),
+ * então o papel impresso na montagem NÃO passa no dia do evento — o scanner
+ * recusa de propósito. Quem imprime precisa saber disso, e é por isso que a
+ * `fase` volta junto: a tela avisa até quando aquele papel vale.
+ */
+export async function obterQRDoFuncionario(
+  funcionarioId: string,
+): Promise<{ qr: QRDoFuncionario; error?: undefined } | { qr?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  // Mesma régua do histórico: quem pode ver a ficha pode ver o crachá dela.
+  if (!(await podeVerHistoricoDe(perfil, funcionarioId))) {
+    return { error: 'Sem permissão para ver a credencial deste funcionário.' }
+  }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('qr_token, fornecedores!inner(eventos!inner(data_inicio))')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func?.qr_token) return { error: 'Funcionário não encontrado.' }
+
+  const evento = (func.fornecedores as unknown as { eventos: { data_inicio: string | null } })?.eventos
+  const fase = faseDoDia(diaBRT(), evento?.data_inicio ? diaBRT(evento.data_inicio) : '')
+  const { codigo } = gerarCodigoQR(func.qr_token as string, fase)
+
+  const QRCode = (await import('qrcode')).default
+  const imagem = await QRCode.toDataURL(codigo, { width: 520, margin: 1, errorCorrectionLevel: 'H' })
+
+  return {
+    qr: {
+      imagem,
+      fase,
+      faseNome: NOME_DA_FASE[fase],
+      link: `${urlBase()}/credential/${func.qr_token}`,
+    },
+  }
 }
 
 export async function localizarFuncionario(
