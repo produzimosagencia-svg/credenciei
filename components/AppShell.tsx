@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -117,6 +117,14 @@ function gruposPara(role: string): Grupo[] {
    * que ele exporte o próprio setor, e ele já tinha esse botão dentro da tela
    * da equipe dele.
    */
+  /*
+   * Bloquear CPF entra pro supervisor também: é ele quem vê, no portão, a
+   * pessoa tentando entrar sem estar escalada. O bloqueio vale só no evento
+   * escolhido — a tela explica isso antes de deixar usar.
+   */
+  if (podeGerenciarEventos(role) || role === 'supervisor' || role === 'suporte') {
+    administrativo.push({ href: '/admin/bloquear-cpf', label: 'Bloquear CPF', icon: ShieldBan })
+  }
   if (podeGerenciarEventos(role) || role === 'supervisor') {
     administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
   }

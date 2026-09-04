@@ -2955,7 +2955,7 @@ export async function descredenciarFuncionario(
 
 // ─── Bloqueio de CPF ─────────────────────────────────────────────────────────
 /*
- * O supervisor barra um CPF do setor dele. Ver
+ * Barrar quem tenta entrar no evento sem trabalhar. Ver
  * supabase/upgrade-cpf-bloqueado.sql pro desenho e pro porquê do escopo.
  *
  * Tirar da equipe resolve o vínculo de hoje; o bloqueio é o que impede a
@@ -2971,12 +2971,12 @@ export type CpfBloqueado = {
 }
 
 /**
- * Este CPF está barrado neste setor?
+ * Este CPF está barrado neste evento?
  *
- * Uma consulta só, cobrindo os dois níveis: o bloqueio DO SETOR
- * (`fornecedor_id` = o setor) e o do EVENTO inteiro (`fornecedor_id` nulo,
- * que hoje nada cria mas a tabela já aceita). Chamada nos dois pontos que
- * barram gente — o cadastro pelo link e a leitura de QR no portão.
+ * O bloqueio é do evento inteiro (`fornecedor_id` nulo), e a consulta ainda
+ * aceita um bloqueio preso a um setor caso algum dia volte a existir.
+ * Chamada nos dois pontos que barram gente — o cadastro pelo link e a
+ * leitura de QR no portão.
  *
  * Tolerante à migração pendente: sem a tabela, a consulta falha e a resposta
  * é "não bloqueado". Sem isso, o dia em que a migração não tivesse rodado o
@@ -3000,11 +3000,60 @@ export async function cpfEstaBloqueado(
   return (data ?? []).some(b => b.fornecedor_id === null || b.fornecedor_id === fornecedorId)
 }
 
-/** Bloqueia um CPF no setor. Mesma régua de quem gerencia a equipe dele. */
+/**
+ * Quem pode bloquear CPF NESTE evento: supervisor, admin e master.
+ *
+ * O supervisor entra porque é ele quem vê a pessoa tentando entrar sem
+ * trabalhar — mas só nos eventos onde ele tem setor. Admin fica preso à
+ * própria organização; master vê tudo.
+ */
+async function exigirAcessoABloqueio(eventoId: string) {
+  const perfil = await getPerfil()
+  if (!perfil) throw new Error('Sem permissão')
+
+  if (perfil.role === 'supervisor') {
+    const meus = await meusSetores(perfil)
+    if (!meus.some(s => s.evento_id === eventoId)) {
+      throw new Error('Você não tem setor neste evento.')
+    }
+    return perfil
+  }
+
+  if (!podeGerenciarEventos(perfil.role) && perfil.role !== 'suporte') throw new Error('Sem permissão')
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+
+  if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+      throw new Error('Este evento não está no seu escopo de atendimento.')
+    }
+    return perfil
+  }
+  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    throw new Error('Sem permissão sobre este evento')
+  }
+  return perfil
+}
+
+/**
+ * Bloqueia um CPF NESTE evento — e só nele.
+ *
+ * O bloqueio é do EVENTO, não do setor: sem isso a pessoa barrada num setor
+ * se cadastraria no setor ao lado, e o furo continuaria aberto (decisão do
+ * Juan, 04/09/2026, ao explicar o caso — gente tentando entrar no evento sem
+ * trabalhar).
+ *
+ * E é SÓ deste evento: `evento_id` faz parte da chave, então a pessoa
+ * continua livre pra se cadastrar em qualquer outro evento da plataforma.
+ * Bloquear alguém de trabalhar em qualquer lugar é outra decisão, de outra
+ * pessoa, e não é esta tela que a toma.
+ */
 export async function bloquearCpf(
-  eventoId: string, fornecedorId: string, cpfDigitado: string, motivo?: string,
+  eventoId: string, cpfDigitado: string, motivo?: string,
 ) {
-  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const perfil = await exigirAcessoABloqueio(eventoId)
 
   const cpf = normalizarCpf(cpfDigitado ?? '')
   if (cpf.length !== 11) return { error: 'O CPF precisa ter 11 dígitos.' }
@@ -3012,7 +3061,8 @@ export async function bloquearCpf(
 
   const { error } = await supabaseAdmin.from('cpfs_bloqueados').insert([{
     evento_id: eventoId,
-    fornecedor_id: fornecedorId,
+    // NULL = vale no evento inteiro. Ver o comentário da função.
+    fornecedor_id: null,
     cpf,
     motivo: (motivo ?? '').trim() || null,
     bloqueado_por: perfil?.id ?? null,
@@ -3020,7 +3070,7 @@ export async function bloquearCpf(
 
   if (error) {
     if (/duplicate key|unique/i.test(error.message)) {
-      return { error: 'Este CPF já está bloqueado neste setor.' }
+      return { error: 'Este CPF já está bloqueado neste evento.' }
     }
     if (/cpfs_bloqueados/.test(error.message)) {
       return { error: 'O banco ainda não tem a tabela de bloqueio. Rode supabase/upgrade-cpf-bloqueado.sql no SQL Editor.' }
@@ -3034,29 +3084,27 @@ export async function bloquearCpf(
   after(() => registrarAuditoria({
     perfil: perfil!,
     acao: 'BLOQUEIO_CPF',
-    campoAlterado: 'CPF bloqueado no setor',
+    campoAlterado: 'CPF bloqueado no evento',
     valorNovo: cpf,
     motivo: (motivo ?? '').trim() || null,
     eventoId,
     organizacaoId: evento?.organizacao_id ?? undefined,
   }))
 
-  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  revalidatePath('/admin/bloquear-cpf')
   return { ok: true as const, cpf }
 }
 
 /** Desfaz o bloqueio. Mesma régua — quem pode bloquear pode liberar. */
-export async function desbloquearCpf(bloqueioId: string, eventoId: string, fornecedorId: string) {
-  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+export async function desbloquearCpf(bloqueioId: string, eventoId: string) {
+  const perfil = await exigirAcessoABloqueio(eventoId)
 
-  // O bloqueio tem que ser DESTE setor: sem isto, um id colado na chamada
-  // liberaria um bloqueio de outro setor.
+  // O bloqueio tem que ser DESTE evento: sem isto, um id colado na chamada
+  // liberaria o bloqueio de outro evento.
   const { data: alvo } = await supabaseAdmin
-    .from('cpfs_bloqueados').select('id, cpf, fornecedor_id, evento_id').eq('id', bloqueioId).single()
+    .from('cpfs_bloqueados').select('id, cpf, evento_id').eq('id', bloqueioId).single()
   if (!alvo) return { error: 'Bloqueio não encontrado.' }
-  if (alvo.evento_id !== eventoId || alvo.fornecedor_id !== fornecedorId) {
-    return { error: 'Este bloqueio não é deste setor.' }
-  }
+  if (alvo.evento_id !== eventoId) return { error: 'Este bloqueio não é deste evento.' }
 
   const { error } = await supabaseAdmin.from('cpfs_bloqueados').delete().eq('id', bloqueioId)
   if (error) return { error: mensagemAmigavel(error) }
@@ -3067,13 +3115,13 @@ export async function desbloquearCpf(bloqueioId: string, eventoId: string, forne
   after(() => registrarAuditoria({
     perfil: perfil!,
     acao: 'DESBLOQUEIO_CPF',
-    campoAlterado: 'CPF liberado no setor',
+    campoAlterado: 'CPF liberado no evento',
     valorAnterior: alvo.cpf as string,
     eventoId,
     organizacaoId: evento?.organizacao_id ?? undefined,
   }))
 
-  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  revalidatePath('/admin/bloquear-cpf')
   return { ok: true as const }
 }
 
