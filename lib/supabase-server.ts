@@ -99,8 +99,61 @@ export const getPerfil = cache(async () => {
    * sempre, porque ninguém lembra de desligar na segunda-feira.
    */
   if (data?.acesso_expira_em && new Date(data.acesso_expira_em as string) < new Date()) return null
+  if (!data) return data
+
+  /*
+   * As exceções de permissão da organização, junto do perfil.
+   *
+   * Vem daqui, e não de cada tela, porque `getPerfil` é `cache()`: uma
+   * consulta por requisição, não uma por checagem de permissão. As funções
+   * de `lib/permissions.ts` leem `perfil.permissoes` quando recebem o perfil
+   * inteiro — ver `AlvoPermissao` lá.
+   *
+   * TOLERANTE A TUDO: sem a tabela (migração pendente) ou com erro na
+   * consulta, o mapa fica vazio e todo papel se comporta como sempre se
+   * comportou. Uma falha aqui não pode virar "ninguém pode nada" no meio de
+   * um evento.
+   */
+  data.permissoes = await excecoesDePermissao(data.organizacao_id as string | null)
   return data
 })
+
+/*
+ * Uma consulta por requisição já é barata; uma consulta que SEMPRE falha,
+ * não. Enquanto a migração não rodar, a primeira tentativa marca isto e as
+ * seguintes nem saem — senão toda página do sistema pagaria uma ida ao banco
+ * pra receber o mesmo erro, e num dia de evento isso é latência de graça.
+ * Reinicia junto com o processo, então rodar a migração passa a valer no
+ * próximo deploy (ou na próxima instância fria).
+ */
+let tabelaDePermissoesAusente = false
+
+async function excecoesDePermissao(organizacaoId: string | null): Promise<Record<string, boolean>> {
+  if (tabelaDePermissoesAusente) return {}
+  try {
+    // Linha da organização E linha da plataforma (organizacao_id nulo).
+    const { data, error } = await admin
+      .from('permissoes_organizacao')
+      .select('organizacao_id, role, chave, permitido')
+      .or(organizacaoId ? `organizacao_id.is.null,organizacao_id.eq.${organizacaoId}` : 'organizacao_id.is.null')
+    if (error) {
+      if (/does not exist|schema cache|PGRST205/i.test(`${error.code ?? ''} ${error.message}`)) {
+        tabelaDePermissoesAusente = true
+      }
+      return {}
+    }
+    if (!data.length) return {}
+
+    // A da organização ganha da plataforma — por isso as genéricas entram
+    // primeiro e as específicas sobrescrevem.
+    const mapa: Record<string, boolean> = {}
+    for (const linha of data) if (!linha.organizacao_id) mapa[`${linha.role}:${linha.chave}`] = linha.permitido as boolean
+    for (const linha of data) if (linha.organizacao_id) mapa[`${linha.role}:${linha.chave}`] = linha.permitido as boolean
+    return mapa
+  } catch {
+    return {}
+  }
+}
 
 /**
  * Quantas licenças de evento AINDA restam para a organização do usuário.
@@ -111,7 +164,7 @@ export const getPerfil = cache(async () => {
 export async function licencasDeEventoRestantes(perfil: any): Promise<number> {
   if (!perfil) return 0
   if (ehMaster(perfil.role)) return Infinity
-  if (!podeGerenciarEventos(perfil.role) || !perfil.organizacao_id) return 0
+  if (!podeGerenciarEventos(perfil) || !perfil.organizacao_id) return 0
 
   const [{ count }, { data: org }] = await Promise.all([
     admin.from('eventos').select('id', { count: 'exact', head: true }).eq('organizacao_id', perfil.organizacao_id),
@@ -169,7 +222,7 @@ export async function meusSetores(perfil: any): Promise<{ id: string; nome: stri
 
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nome: string }[]> {
-  if (!perfil || !podeAcompanhar(perfil.role)) return []
+  if (!perfil || !podeAcompanhar(perfil)) return []
 
   if (ehMaster(perfil.role)) {
     const { data } = await admin
@@ -200,7 +253,7 @@ export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nom
 
 /** Este usuário pode escanear ESTE evento? (checa o setor do supervisor / org do admin) */
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {
-  if (!perfil || !podeEscanear(perfil.role)) return false
+  if (!perfil || !podeEscanear(perfil)) return false
   if (ehMaster(perfil.role)) return true
 
   if (perfil.role === 'supervisor') {

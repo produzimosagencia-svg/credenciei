@@ -73,7 +73,7 @@ export default async function AuditoriaPage({
   searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string }>
 }) {
   const perfil = await getPerfil()
-  if (!perfil || !(podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte')) redirect('/admin')
+  if (!perfil || !(podeGerenciarUsuarios(perfil) || perfil.role === 'suporte')) redirect('/admin')
 
   /*
    * Padrão 7 dias, e não "tudo".

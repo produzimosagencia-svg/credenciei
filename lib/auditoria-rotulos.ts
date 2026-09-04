@@ -26,6 +26,7 @@ export const ACAO_LABELS: Record<string, string> = {
   EXCLUSAO_PONTO: 'Batida apagada',
   RESET_SENHA: 'Redefinição de senha',
   ALTERACAO_SUPERVISOR: 'Alteração de supervisor',
+  ALTERACAO_PERMISSAO: 'Permissão alterada',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */

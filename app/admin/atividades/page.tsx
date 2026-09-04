@@ -70,7 +70,7 @@ export default async function AtividadesPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeAcompanhar(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil)) redirect('/admin')
 
   const { evento: eventoParam, ver, dia: diaParam } = await searchParams
   const visao: Visao = ehVisao(ver) ? ver : 'entrada'
@@ -90,7 +90,7 @@ export default async function AtividadesPage({
     if (!setor) redirect('/admin')
     setorDoSupervisor = setor.id
     listaQuery.eq('id', setor.evento_id)
-  } else if (!veTodosEventos(perfil.role)) {
+  } else if (!veTodosEventos(perfil)) {
     listaQuery.eq('organizacao_id', perfil.organizacao_id)
   }
 

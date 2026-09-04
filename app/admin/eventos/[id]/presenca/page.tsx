@@ -42,7 +42,7 @@ export default async function PresencaPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeAcompanhar(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil)) redirect('/admin')
 
   const { id: eventoId } = await params
   const { dia: diaParam, ver } = await searchParams
@@ -50,7 +50,7 @@ export default async function PresencaPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   const visao: Visao = ehVisao(ver) ? ver : 'entrada'
   const Icone = ICONE[visao]

@@ -103,7 +103,7 @@ export default async function EventoPage({
   if (!evento) notFound()
 
   // Isolamento por organização: admin só acessa eventos da própria org
-  if (!veTodosEventos(perfil?.role) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
+  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
 
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
   const vazio = { data: [] as never[] }
@@ -262,7 +262,7 @@ export default async function EventoPage({
       (supervisoresPorFornecedor[s.fornecedor_id as string] ??= []).push(s as SupervisorDoCard)
     }
   }
-  const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil?.role)
+  const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
 
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
@@ -427,7 +427,7 @@ export default async function EventoPage({
           icone={<Users className="w-3.5 h-3.5" />}
           titulo="Fornecedores e setores"
           descricao="Cada setor gera um link próprio de cadastro para a equipe"
-          acoes={<FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte'} />}
+          acoes={<FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'} />}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
           {/*
@@ -447,7 +447,11 @@ export default async function EventoPage({
             */}
           {/* O interruptor do cadastro por link vem ANTES da portaria e dos
               setores: é a decisão que vale pra todos eles de uma vez. */}
-          {podeGerenciarEventos(perfil?.role) && (
+          {/* As props novas são do outro dev (reabrir cadastro individual); o
+              `perfil` no lugar de `perfil.role` é o que faz a permissão
+              enxergar as exceções da organização. `ehMaster` continua por
+              papel de propósito: identidade não é configurável. */}
+          {podeGerenciarEventos(perfil) && (
             <CadastroPorLinkCard
               eventoId={id}
               suspenso={evento.cadastro_suspenso === true}
@@ -455,9 +459,9 @@ export default async function EventoPage({
               setores={(fornecedores ?? []).map(f => ({ id: f.id, nome: f.nome }))}
             />
           )}
-          {(podeGerenciarEventos(perfil?.role) || podeGerenciarUsuarios(perfil?.role)) && (
+          {(podeGerenciarEventos(perfil) || podeGerenciarUsuarios(perfil)) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch">
-              {podeGerenciarEventos(perfil?.role) && (
+              {podeGerenciarEventos(perfil) && (
                 <PortariaCard
                   eventoId={id}
                   ativa={evento.portaria_ativa === true}
@@ -465,12 +469,12 @@ export default async function EventoPage({
                   cadastrados={viaPortaria ?? 0}
                 />
               )}
-              {podeGerenciarUsuarios(perfil?.role) && (
+              {podeGerenciarUsuarios(perfil) && (
                 <OperadorPortariaCard
                   eventoId={id}
                   operadores={operadoresRows ?? []}
                   funcionariosDoEvento={funcionariosDoEventoRows ?? []}
-                  podeExcluir={podeExcluir(perfil?.role)}
+                  podeExcluir={podeExcluir(perfil)}
                 />
               )}
             </div>
@@ -488,14 +492,14 @@ export default async function EventoPage({
               setoresComMeio={setoresComMeio}
               setoresComLinkDesligado={setoresComLinkDesligado}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
-              podeExcluir={podeExcluir(perfil?.role)}
+              podeExcluir={podeExcluir(perfil)}
               eventoNome={evento.nome}
-              podeMoverDeSetor={podeGerenciarEventos(perfil?.role)}
-              podeEditarCpf={podeEditarIdentidade(perfil?.role)}
+              podeMoverDeSetor={podeGerenciarEventos(perfil)}
+              podeEditarCpf={podeEditarIdentidade(perfil)}
               /* Mesma régua de `lancarPontoManual` no servidor — supervisor não
                  chega nesta tela (é redirecionado pro próprio setor), então
                  basta cobrir gerente/admin/master/suporte. */
-              podeEditarPonto={podeGerenciarEventos(perfil?.role) || perfil?.role === 'suporte'}
+              podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
               role={perfil?.role}
             />
           )}

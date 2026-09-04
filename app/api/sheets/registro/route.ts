@@ -12,7 +12,7 @@ import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
  */
 export async function POST(req: NextRequest) {
   const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarEventos(perfil.role)) {
+  if (!perfil || !podeGerenciarEventos(perfil)) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 

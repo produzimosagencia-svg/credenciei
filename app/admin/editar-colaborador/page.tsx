@@ -35,7 +35,7 @@ export default async function EditarColaboradorPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role) && perfil.role !== 'suporte') redirect('/admin')
+  if (!podeGerenciarEventos(perfil) && perfil.role !== 'suporte') redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -50,7 +50,7 @@ export default async function EditarColaboradorPage({
           titulo="Em qual evento?"
           descricao="Mover de setor, corrigir CPF, ajustar valor e tornar supervisor"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder editar a equipe dele.' }}
-          mostrarOrganizacao={veTodosEventos(perfil.role)}
+          mostrarOrganizacao={veTodosEventos(perfil)}
         />
       </div>
     )
@@ -61,7 +61,7 @@ export default async function EditarColaboradorPage({
   if (!evento) notFound()
   if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
-  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
     notFound()
   }
 
@@ -187,10 +187,10 @@ export default async function EditarColaboradorPage({
         outrosSetores={(setores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string }))}
         /* Já provamos o escopo de suporte acima (senão a página nem chegava
            aqui) — dentro dele, ele pode as mesmas três coisas de admin/master. */
-        podeMoverDeSetor={podeGerenciarEventos(perfil.role) || perfil.role === 'suporte'}
-        podeCriarSupervisor={podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte'}
-        podeEditarCpf={podeEditarIdentidade(perfil.role)}
-        podeAtivarDesativar={podeGerenciarEventos(perfil.role) || perfil.role === 'suporte'}
+        podeMoverDeSetor={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
+        podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'}
+        podeEditarCpf={podeEditarIdentidade(perfil)}
+        podeAtivarDesativar={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
         role={perfil.role}
       />
     </div>

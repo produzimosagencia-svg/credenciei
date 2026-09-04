@@ -21,6 +21,8 @@ import {
   podeExcluirEventos,
   podeExcluir,
   podeExcluirDaEquipe,
+  CAPACIDADES,
+  PAPEIS_CONFIGURAVEIS,
   podeEditarIdentidade,
   podeEscanear,
   podeAcompanhar,
@@ -117,7 +119,7 @@ function exigirHorariosCoerentes(dados: Parameters<typeof conferirHorariosDoEven
 
 async function exigirGestorDeEventos() {
   const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão')
+  if (!perfil || !podeGerenciarEventos(perfil)) throw new Error('Sem permissão')
   return perfil
 }
 
@@ -162,7 +164,7 @@ async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) 
     if (!meus.some(s => s.id === fornecedorId)) throw new Error('Sem permissão sobre este setor')
     return perfil
   }
-  if (!podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarEventos(perfil)) throw new Error('Sem permissão')
   const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
   if (!evento) throw new Error('Evento não encontrado')
   if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
@@ -266,7 +268,7 @@ function mensagemAuth(msg: string): string {
  */
 export async function criarOrganizacao(formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) throw new Error('Apenas o master pode criar organizações')
+  if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Apenas o master pode criar organizações')
 
   const orgNome = (formData.get('org_nome') as string).trim()
   const documento = ((formData.get('documento') as string) || '').trim() || null
@@ -373,7 +375,7 @@ export async function criarOrganizacao(formData: FormData) {
 
 export async function toggleAtivoOrganizacao(id: string, ativo: boolean) {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
   await admin.from('organizacoes').update({ ativo: !ativo }).eq('id', id)
   revalidatePath('/admin/organizacoes')
@@ -381,7 +383,7 @@ export async function toggleAtivoOrganizacao(id: string, ativo: boolean) {
 
 export async function editarOrganizacao(id: string, formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
   const limite = parseInt((formData.get('limite_eventos') as string) || '1') || 1
   const valorCobrado = parseValor(formData.get('valor_cobrado'))
@@ -417,7 +419,7 @@ export async function editarOrganizacao(id: string, formData: FormData) {
 
 export async function deletarOrganizacao(id: string) {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
   // remove os logins de auth dos membros antes do cascade das tabelas
   const { data: membros } = await admin.from('perfis').select('id').eq('organizacao_id', id)
@@ -520,7 +522,7 @@ async function jaSupervisionaNesteEvento(perfilId: string, eventoId: string): Pr
  */
 export async function situacaoDoAcesso(cpf: string): Promise<{ role: string | null; nomePapel: string | null }> {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para consultar acessos')
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para consultar acessos')
 
   const digitos = normalizarCpf(cpf)
   if (digitos.length !== 11) return { role: null, nomePapel: null }
@@ -550,7 +552,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   const eventoDoFornecedor = fornecedor.eventos as any
   const organizacaoId = eventoDoFornecedor?.organizacao_id
 
-  if (podeGerenciarUsuarios(perfil.role)) {
+  if (podeGerenciarUsuarios(perfil)) {
     if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) {
       throw new Error('Sem permissão sobre este setor')
     }
@@ -840,7 +842,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
  */
 export async function criarOperadorPortaria(eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão para criar operadores de portão')
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar operadores de portão')
 
   const { data: evento } = await supabaseAdmin
     .from('eventos')
@@ -1170,7 +1172,7 @@ export async function obterAuditoria(
   if (perfil.role === 'suporte') {
     query = query.eq('usuario_responsavel_id', perfil.id)
   } else if (!ehMaster(perfil.role)) {
-    if (!podeGerenciarUsuarios(perfil.role)) return []
+    if (!podeGerenciarUsuarios(perfil)) return []
     query = query.eq('organizacao_id', perfil.organizacao_id)
   }
 
@@ -1242,7 +1244,7 @@ export async function opcoesDaAuditoria(): Promise<{
   setores: string[]
 }> {
   const perfil = await getPerfil()
-  if (!perfil || !(podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte')) {
+  if (!perfil || !(podeGerenciarUsuarios(perfil) || perfil.role === 'suporte')) {
     return { autores: [], setores: [] }
   }
 
@@ -1316,7 +1318,7 @@ export async function revogarSuporte(perfilId: string) {
  */
 export async function gerarLinkDeAcesso(perfilId: string) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
 
   const admin = getAdminSupabase()
   const { data: alvo } = await admin
@@ -1352,7 +1354,7 @@ export async function gerarLinkDeAcesso(perfilId: string) {
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
 export async function editarSupervisor(id: string, formData: FormData) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) throw new Error('Sem permissão')
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
 
   const admin = getAdminSupabase()
   const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email').eq('id', id).single()
@@ -1409,7 +1411,7 @@ export async function editarSupervisor(id: string, formData: FormData) {
 
 export async function deletarUsuario(id: string) {
   const perfil = await getPerfil()
-  if (!podeExcluir(perfil?.role)) {
+  if (!podeExcluir(perfil)) {
     throw new Error('Apenas o master pode excluir acessos. Você pode desativar o usuário, que bloqueia o login sem perder o histórico.')
   }
   if (perfil!.id === id) throw new Error('Você não pode excluir a si mesmo')
@@ -1431,7 +1433,7 @@ export async function deletarUsuario(id: string) {
 
 export async function criarEvento(formData: FormData) {
   const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão para criar eventos')
+  if (!perfil || !podeGerenciarEventos(perfil)) throw new Error('Sem permissão para criar eventos')
 
   const admin = getAdminSupabase()
 
@@ -1535,7 +1537,7 @@ export async function toggleAtivoEvento(id: string, ativo: boolean) {
 
 export async function deletarEvento(id: string) {
   const perfil = await getPerfil()
-  if (!podeExcluirEventos(perfil?.role)) throw new Error('Apenas o master pode excluir eventos')
+  if (!podeExcluirEventos(perfil)) throw new Error('Apenas o master pode excluir eventos')
   const db = supabaseAdmin
 
   /*
@@ -1638,7 +1640,7 @@ export async function redefinirSenha(usuarioId: string, novaSenha: string, motiv
   const { data: alvo } = await admin.from('perfis').select('id, nome, email, cpf, role, organizacao_id, fornecedor_id').eq('id', usuarioId).single()
   if (!alvo) throw new Error('Usuário não encontrado')
 
-  if (podeGerenciarUsuarios(perfil.role)) {
+  if (podeGerenciarUsuarios(perfil)) {
     // Admin não mexe em quem é de outra organização, nem em master.
     if (!ehMaster(perfil.role)) {
       if (alvo.organizacao_id !== perfil.organizacao_id) throw new Error('Sem permissão sobre este usuário')
@@ -1711,7 +1713,7 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
    * supervisor, porque exigir o que ele não pode fazer o deixaria sem poder
    * criar setor.
    */
-  const exigeSupervisor = podeGerenciarUsuarios(perfilCriador?.role) || perfilCriador?.role === 'suporte'
+  const exigeSupervisor = podeGerenciarUsuarios(perfilCriador) || perfilCriador?.role === 'suporte'
   const supNome = ((formData.get('supervisor_nome') as string) ?? '').trim()
   const supCpf = normalizarCpf((formData.get('supervisor_cpf') as string) ?? '')
   const supTelefone = ((formData.get('supervisor_telefone') as string) ?? '').replace(/\D/g, '')
@@ -1805,7 +1807,7 @@ export async function deletarFornecedor(id: string, eventoId: string) {
   // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
   // checagem é a que vale: esconder o botão não impede a chamada direta.
   const perfilExclusao = await getPerfil()
-  if (!podeExcluir(perfilExclusao?.role)) {
+  if (!podeExcluir(perfilExclusao)) {
     throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
   }
   const db = supabaseAdmin
@@ -1852,7 +1854,7 @@ export async function moverFuncionarioDeSetor(
   const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
   if (!evento) throw new Error('Evento não encontrado')
 
-  const podeSempre = podeGerenciarEventos(perfil.role) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+  const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
   if (!podeSempre) {
     if (perfil.role !== 'suporte') throw new Error('Sem permissão sobre este evento')
     if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da mudança de setor.')
@@ -2021,7 +2023,7 @@ export async function deletarSetor(id: string, eventoId: string) {
   // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
   // checagem é a que vale: esconder o botão não impede a chamada direta.
   const perfilExclusao = await getPerfil()
-  if (!podeExcluir(perfilExclusao?.role)) {
+  if (!podeExcluir(perfilExclusao)) {
     throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
   }
   const db = supabaseAdmin
@@ -2209,7 +2211,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
 export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string) {
   const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   // Esta checagem é a que vale: esconder o botão não impede a chamada direta.
-  if (!podeExcluirDaEquipe(perfil.role)) {
+  if (!podeExcluirDaEquipe(perfil)) {
     throw new Error('Você não pode excluir. Use "Tirar da equipe", que preserva o histórico.')
   }
   const db = supabaseAdmin
@@ -2288,7 +2290,7 @@ export async function editarCpfFuncionario(
   funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string, motivo?: string,
 ): Promise<{ ok: true } | { erro: string }> {
   const perfil = await getPerfil()
-  if (!podeEditarIdentidade(perfil?.role)) return { erro: 'Sem permissão para corrigir CPF.' }
+  if (!podeEditarIdentidade(perfil)) return { erro: 'Sem permissão para corrigir CPF.' }
 
   const novoCpf = normalizarCpf(novoCpfBruto)
   if (!validarCpf(novoCpf)) return { erro: 'O CPF precisa ter 11 dígitos.' }
@@ -2435,7 +2437,7 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
   } else {
     const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
     if (!evento) throw new Error('Evento não encontrado')
-    const podeSempre = podeGerenciarEventos(perfil.role) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+    const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
     if (!podeSempre) {
       if (perfil.role !== 'suporte') throw new Error('Sem permissão')
       if (!(motivo ?? '').trim()) throw new Error(`Informe o motivo da ${ativo ? 'ativação' : 'desativação'}.`)
@@ -3261,7 +3263,7 @@ async function exigirAcessoABloqueio(eventoId: string) {
     return perfil
   }
 
-  if (!podeGerenciarEventos(perfil.role) && perfil.role !== 'suporte') throw new Error('Sem permissão')
+  if (!podeGerenciarEventos(perfil) && perfil.role !== 'suporte') throw new Error('Sem permissão')
 
   const { data: evento } = await supabaseAdmin
     .from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
@@ -3427,7 +3429,7 @@ export type ConferenciaCpf = {
  */
 export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: string): Promise<ConferenciaCpf> {
   const perfil = await getPerfil()
-  if (!perfil || !podeEscanear(perfil.role)) return { credenciado: false, erro: 'Sem permissão' }
+  if (!perfil || !podeEscanear(perfil)) return { credenciado: false, erro: 'Sem permissão' }
   if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { credenciado: false, erro: 'Sem acesso a este evento' }
   }
@@ -3485,7 +3487,7 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
 export async function registrarPresencaQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
-  if (!perfil || !podeEscanear(perfil.role)) return { success: false, message: 'Sem permissão' }
+  if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
 
   // O QR carrega um código ASSINADO e com prazo, não o token cru — ver
   // lib/credencial-qr.ts. O split de "|" sobrevive só por causa de um formato
@@ -4145,7 +4147,7 @@ export async function cadastrarFuncionarioEmergencial(
   if (!fornecedor || fornecedor.evento_id !== eventoId) return { error: 'Setor não encontrado neste evento.' }
   const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
 
-  if (podeGerenciarEventos(perfil.role)) {
+  if (podeGerenciarEventos(perfil)) {
     if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) return { error: 'Sem permissão sobre este evento.' }
   } else if (perfil.role === 'suporte') {
     if (!(motivo ?? '').trim()) return { error: 'Informe o motivo do cadastro emergencial.' }
@@ -4464,7 +4466,7 @@ export async function localizarFuncionario(
   termo: string
 ): Promise<{ funcionario?: FuncionarioLocalizado; candidatos?: CandidatoLocalizado[]; error?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+  if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para localizar funcionários.' }
 
   const busca = termo.trim()
   const digitos = busca.replace(/\D/g, '')
@@ -4555,7 +4557,7 @@ export async function abrirFuncionarioLocalizado(
   funcionarioId: string
 ): Promise<{ funcionario?: FuncionarioLocalizado; error?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para localizar funcionários.' }
+  if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para localizar funcionários.' }
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
@@ -4697,7 +4699,7 @@ export async function registrarPresencaAssistida(
   motivo?: string,
 ): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeAcompanhar(perfil.role)) return { error: 'Sem permissão para registrar presença.' }
+  if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
   const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
   if (!etapaEscolhida) return { error: 'Etapa inválida.' }
 
@@ -4827,7 +4829,7 @@ export async function lancarPontoManual(
    * passado, com hora arbitrária, e isso é ato de gestão. Supervisor entra
    * porque é quem sabe quem de fato trabalhou no setor dele.
    */
-  if (!perfil || !(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte')) {
+  if (!perfil || !(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')) {
     return { error: 'Sem permissão para lançar ponto manualmente.' }
   }
 
@@ -5597,7 +5599,7 @@ async function exigirAcessoAVeiculos(
   eventoId: string,
 ): Promise<{ perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>; error?: undefined } | { perfil?: undefined; error: string }> {
   const perfil = await getPerfil()
-  if (!perfil || !podeGerenciarVeiculos(perfil.role)) {
+  if (!perfil || !podeGerenciarVeiculos(perfil)) {
     return { error: 'Só master, admin e suporte podem cadastrar veículos.' }
   }
 
@@ -5839,5 +5841,103 @@ export async function excluirVeiculo(veiculoId: string, eventoId: string) {
   const { error } = await supabaseAdmin.from('veiculos').delete().eq('id', veiculoId).eq('evento_id', eventoId)
   if (error) return { error: mensagemAmigavel(error) }
   revalidatePath('/admin/veiculos')
+  return { ok: true as const }
+}
+
+// ─── Permissões por organização (tela de Configurações) ──────────────────────
+
+export type PermissaoSalva = { organizacaoId: string | null; role: string; chave: string; permitido: boolean }
+
+/**
+ * As exceções gravadas — só o que foge do padrão do código.
+ *
+ * `organizacaoId` nulo pede o padrão da PLATAFORMA. Só o master consulta e
+ * grava: é a tela que decide quem pode o quê, e deixá-la editável por quem é
+ * afetado por ela seria dar a chave junto com a fechadura.
+ */
+export async function obterPermissoes(organizacaoId: string | null): Promise<PermissaoSalva[]> {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) return []
+
+  let consulta = supabaseAdmin.from('permissoes_organizacao').select('organizacao_id, role, chave, permitido')
+  consulta = organizacaoId ? consulta.eq('organizacao_id', organizacaoId) : consulta.is('organizacao_id', null)
+
+  const { data, error } = await consulta
+  if (error) {
+    console.error('[obterPermissoes] consulta falhou (migração pendente?):', error.message)
+    return []
+  }
+  return (data ?? []).map(p => ({
+    organizacaoId: (p.organizacao_id as string | null) ?? null,
+    role: p.role as string,
+    chave: p.chave as string,
+    permitido: p.permitido as boolean,
+  }))
+}
+
+/**
+ * Liga, desliga ou devolve ao padrão uma permissão.
+ *
+ * `permitido: null` APAGA a linha — e apagar é como se volta ao padrão do
+ * código. Sem esse caminho, "voltar ao normal" viraria adivinhar qual era o
+ * padrão e gravá-lo à mão, que é a receita pra tabela e código divergirem em
+ * silêncio no dia em que a regra do código mudar.
+ */
+export async function salvarPermissao(
+  organizacaoId: string | null, role: string, chave: string, permitido: boolean | null,
+) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) return { error: 'Apenas o master altera permissões.' }
+
+  // Duas travas de sanidade: papel e chave têm que existir no catálogo. Sem
+  // isso, um valor colado na chamada criaria uma linha que nenhuma tela
+  // mostra e ninguém consegue mais desfazer pela interface.
+  if (!PAPEIS_CONFIGURAVEIS.includes(role as Role)) {
+    return { error: 'Este tipo de acesso não é configurável.' }
+  }
+  if (!CAPACIDADES.some(c => c.chave === chave)) return { error: 'Permissão desconhecida.' }
+
+  if (permitido === null) {
+    let del = supabaseAdmin.from('permissoes_organizacao').delete().eq('role', role).eq('chave', chave)
+    del = organizacaoId ? del.eq('organizacao_id', organizacaoId) : del.is('organizacao_id', null)
+    const { error } = await del
+    if (error) return { error: mensagemAmigavel(error) }
+  } else {
+    /*
+     * Sem `upsert`: o índice único usa `coalesce(organizacao_id, ...)`, e o
+     * PostgREST não sabe casar `on conflict` com índice de expressão. Apagar
+     * e inserir dá no mesmo aqui — a linha não guarda histórico, e quem
+     * precisa dele é a auditoria abaixo.
+     */
+    let del = supabaseAdmin.from('permissoes_organizacao').delete().eq('role', role).eq('chave', chave)
+    del = organizacaoId ? del.eq('organizacao_id', organizacaoId) : del.is('organizacao_id', null)
+    await del
+
+    const { error } = await supabaseAdmin.from('permissoes_organizacao').insert([{
+      organizacao_id: organizacaoId,
+      role, chave, permitido,
+      atualizado_por: perfil!.id,
+    }])
+    if (error) {
+      if (/permissoes_organizacao/.test(error.message)) {
+        return { error: 'A tabela de permissões ainda não existe no banco. Rode supabase/upgrade-permissoes.sql.' }
+      }
+      return { error: mensagemAmigavel(error) }
+    }
+  }
+  const capacidade = CAPACIDADES.find(c => c.chave === chave)
+  after(() => registrarAuditoria({
+    perfil: perfil!,
+    acao: 'ALTERACAO_PERMISSAO',
+    campoAlterado: `${ROLE_LABELS[role as Role] ?? role} · ${capacidade?.nome ?? chave}`,
+    valorNovo: permitido === null ? 'Voltou ao padrão do sistema' : permitido ? 'Liberado' : 'Bloqueado',
+    organizacaoId: organizacaoId ?? undefined,
+  }))
+
+  /*
+   * Toda tela: a permissão muda o menu lateral e os botões de qualquer
+   * página, não só desta. `layout` limpa a árvore inteira do admin.
+   */
+  revalidatePath('/admin', 'layout')
   return { ok: true as const }
 }

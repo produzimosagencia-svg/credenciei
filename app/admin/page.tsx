@@ -166,7 +166,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * ele caía em "sem setor vinculado", uma tela feita para outro problema.
    * Manda ele direto pro scanner, que já lista os eventos dele.
    */
-  if (podeAcompanhar(perfil.role) && !podeGerenciarEventos(perfil.role)) {
+  if (podeAcompanhar(perfil) && !podeGerenciarEventos(perfil)) {
     // Suporte não é de UM setor (nem de uma organização, como o operador de
     // portão) — o escopo dele são organizações/eventos inteiros via
     // `suporte_escopo`. "Sem setor vinculado" seria a tela errada pra ele;
@@ -181,7 +181,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   }
 
   const db = supabaseAdmin
-  const podeExcluir = podeExcluirEventos(perfil.role)
+  const podeExcluir = podeExcluirEventos(perfil)
 
   /*
    * KPIs do MASTER — disparados aqui, cedo, pra correr em paralelo com todo
@@ -203,7 +203,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * não vai funcionar. Um menu que só devolve "sem permissão" quando clicado
    * é pior do que menu nenhum.
    */
-  const podeGerir = podeGerenciarEventos(perfil.role)
+  const podeGerir = podeGerenciarEventos(perfil)
   const licencasRestantes = await licencasDeEventoRestantes(perfil)
   const podeCriarEvento = licencasRestantes > 0
 
@@ -215,7 +215,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   const ativosQuery = db.from('eventos').select('*, fornecedores(count)').eq('ativo', true).order('data_inicio', { ascending: false })
   const encerradosQuery = db.from('eventos').select('*, fornecedores(count)', { count: 'exact' }).eq('ativo', false).order('data_inicio', { ascending: false }).range(from, to)
-  if (!veTodosEventos(perfil.role)) {
+  if (!veTodosEventos(perfil)) {
     ativosQuery.eq('organizacao_id', perfil.organizacao_id)
     encerradosQuery.eq('organizacao_id', perfil.organizacao_id)
   }
@@ -482,7 +482,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * vivo penduraria o Painel por até dez segundos justamente quando a VPS
    * estivesse fora do ar — a hora em que se quer ver o aviso.
    */
-  const saude = veTodosEventos(perfil.role) || podeGerenciarEventos(perfil.role)
+  const saude = veTodosEventos(perfil) || podeGerenciarEventos(perfil)
     ? await estadoWhatsAppSalvo()
     : null
   const alertaWhatsApp = !saude

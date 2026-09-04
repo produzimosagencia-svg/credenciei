@@ -11,7 +11,7 @@ export const maxDuration = 60
 export async function POST(request: NextRequest) {
   try {
     const perfil = await getPerfil()
-    if (!perfil || (!podeGerenciarEventos(perfil.role) && perfil.role !== 'supervisor')) {
+    if (!perfil || (!podeGerenciarEventos(perfil) && perfil.role !== 'supervisor')) {
       return NextResponse.json({ error: 'Você não tem permissão para importar funcionários.' }, { status: 403 })
     }
 

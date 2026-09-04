@@ -51,8 +51,8 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
    * Google. `notFound` em vez de "sem permissão" pra não confirmar que o
    * evento existe.
    */
-  if (!perfil || !podeGerenciarEventos(perfil.role)) redirect('/admin')
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (!perfil || !podeGerenciarEventos(perfil)) redirect('/admin')
+  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   const action = editarEvento.bind(null, id)
   const fmt = (d: string | null | undefined) => isoParaInput(d)

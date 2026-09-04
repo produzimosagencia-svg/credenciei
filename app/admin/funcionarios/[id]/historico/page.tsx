@@ -53,7 +53,7 @@ export default async function HistoricoPage({ params }: { params: Promise<{ id: 
         */}
       <HistoricoBatidas
         h={h}
-        podeEditar={podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
+        podeEditar={podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
         role={perfil.role}
       />
     </div>

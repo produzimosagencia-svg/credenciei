@@ -27,7 +27,7 @@ export default async function CriarPorteiroPage({
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   // Mesma régua de `criarOperadorPortaria`: quem gerencia acessos.
-  if (!podeGerenciarUsuarios(perfil.role)) redirect('/admin')
+  if (!podeGerenciarUsuarios(perfil)) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -43,7 +43,7 @@ export default async function CriarPorteiroPage({
           titulo="Para qual evento?"
           descricao="O porteiro é da organização, mas o cadastro parte da equipe já credenciada no evento"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder cadastrar um porteiro.' }}
-          mostrarOrganizacao={veTodosEventos(perfil.role)}
+          mostrarOrganizacao={veTodosEventos(perfil)}
         />
       </div>
     )
@@ -52,7 +52,7 @@ export default async function CriarPorteiroPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   const { data: setores } = await supabase
     .from('fornecedores').select('id').eq('evento_id', eventoParam)

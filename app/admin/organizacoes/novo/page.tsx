@@ -11,7 +11,7 @@ import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 
 export default async function NovaOrganizacaoPage() {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) redirect('/admin')
+  if (!podeGerenciarOrganizacoes(perfil)) redirect('/admin')
 
   return (
     <div className="max-w-xl space-y-6">

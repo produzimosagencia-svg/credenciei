@@ -23,7 +23,7 @@ export const revalidate = 0
 export default async function EditarEventoPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarEventos(perfil)) redirect('/admin')
 
   return (
     <div className="space-y-5">
@@ -35,7 +35,7 @@ export default async function EditarEventoPage() {
         titulo="Qual evento?"
         descricao="Datas, local, horários do dia principal, dias de trabalho e a batida do meio"
         vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder editá-lo aqui.' }}
-        mostrarOrganizacao={veTodosEventos(perfil.role)}
+        mostrarOrganizacao={veTodosEventos(perfil)}
       />
     </div>
   )

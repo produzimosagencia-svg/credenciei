@@ -14,7 +14,7 @@ export const revalidate = 0
 
 export default async function OrganizacoesPage() {
   const perfil = await getPerfil()
-  if (!podeGerenciarOrganizacoes(perfil?.role)) redirect('/admin')
+  if (!podeGerenciarOrganizacoes(perfil)) redirect('/admin')
 
   const db = supabaseAdmin
   const [{ data: orgs }, { data: todosEventos }] = await Promise.all([

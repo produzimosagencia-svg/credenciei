@@ -28,7 +28,7 @@ const TUTORIAL: TutorialConfig = {
 export default async function LocalizarPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeAcompanhar(perfil.role)) redirect('/admin')
+  if (!podeAcompanhar(perfil)) redirect('/admin')
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>

@@ -28,12 +28,12 @@ export default async function AvisosPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarEventos(perfil)) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
   if (eventoParam) {
-    const evento = await eventoVisivel(eventoParam, perfil, veTodosEventos(perfil.role))
+    const evento = await eventoVisivel(eventoParam, perfil, veTodosEventos(perfil))
     return (
       <div className="space-y-5">
         <PageHeader
@@ -60,7 +60,7 @@ export default async function AvisosPage({
         titulo="Para qual evento?"
         descricao="O aviso aparece na credencial da equipe e no painel do supervisor daquele evento"
         vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder mandar avisos à equipe dele.' }}
-        mostrarOrganizacao={veTodosEventos(perfil.role)}
+        mostrarOrganizacao={veTodosEventos(perfil)}
       />
     </div>
   )

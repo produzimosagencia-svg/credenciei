@@ -18,7 +18,7 @@ export const revalidate = 0
 export default async function CartazPage({ params }: { params: Promise<{ id: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarEventos(perfil)) redirect('/admin')
 
   const { id } = await params
   const { data: evento } = await supabase
@@ -28,7 +28,7 @@ export default async function CartazPage({ params }: { params: Promise<{ id: str
     .single()
 
   if (!evento) notFound()
-  if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
   if (!evento.token_portaria) notFound()
 
   const site = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'

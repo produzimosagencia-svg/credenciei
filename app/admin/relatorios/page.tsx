@@ -60,7 +60,7 @@ export default async function RelatoriosPage({
   }
 
   const eventos = await eventosQuePossoAbrir()
-  if (!eventos.length && !veTodosEventos(perfil.role) && perfil.role !== 'supervisor') redirect('/admin')
+  if (!eventos.length && !veTodosEventos(perfil) && perfil.role !== 'supervisor') redirect('/admin')
 
   return (
     <div className="space-y-5">
@@ -72,7 +72,7 @@ export default async function RelatoriosPage({
         titulo="De qual evento?"
         descricao="Entrada e saída da equipe no período que você escolher, por setor e função"
         vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder exportar o relatório dele.' }}
-        mostrarOrganizacao={veTodosEventos(perfil.role)}
+        mostrarOrganizacao={veTodosEventos(perfil)}
       />
     </div>
   )

@@ -23,10 +23,10 @@ export const revalidate = 0
 export default async function AvisosDoEventoPage({ params }: { params: Promise<{ id: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarEventos(perfil)) redirect('/admin')
 
   const { id: eventoId } = await params
-  const evento = await eventoVisivel(eventoId, perfil, veTodosEventos(perfil.role))
+  const evento = await eventoVisivel(eventoId, perfil, veTodosEventos(perfil))
 
   return (
     <div className="space-y-5">

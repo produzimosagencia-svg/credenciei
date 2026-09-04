@@ -50,7 +50,7 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
     // "id in (eventos avulsos) OU organizacao_id in (organizações inteiras)"
     const filtros = [eventoIds.length ? `id.in.(${eventoIds.join(',')})` : null, orgIds.length ? `organizacao_id.in.(${orgIds.join(',')})` : null].filter(Boolean)
     consulta = consulta.or(filtros.join(','))
-  } else if (!veTodosEventos(perfil.role)) {
+  } else if (!veTodosEventos(perfil)) {
     consulta = consulta.eq('organizacao_id', perfil.organizacao_id)
   }
 

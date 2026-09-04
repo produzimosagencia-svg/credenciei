@@ -122,7 +122,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const organizacaoDoEvento = (fornecedor.eventos as any)?.organizacao_id
   if (perfil.role === 'supervisor') {
     if (!setoresDoSupervisor.some(s => s.id === fid)) notFound()
-  } else if (!veTodosEventos(perfil.role) && organizacaoDoEvento !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && organizacaoDoEvento !== perfil.organizacao_id) {
     notFound()
   }
 
@@ -280,7 +280,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             {/* O supervisor não credencia: quem lê o QR é o posto de
                 credenciamento. Mostrar o botão para ele levaria a uma tela que
                 o expulsa — pior que não ter botão. */}
-            {podeEscanear(perfil.role) && (
+            {podeEscanear(perfil) && (
               <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
                 <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
               </Link>
@@ -346,24 +346,24 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}
           setorNome={fornecedor.nome}
           valorCombinado={fornecedor.valor_combinado ?? null}
-          podeExcluir={podeExcluirDaEquipe(perfil.role)}
+          podeExcluir={podeExcluirDaEquipe(perfil)}
           outrosSetores={outrosSetores ?? []}
           /*
            * Mover é decisão de quem enxerga o evento inteiro, não de um
            * supervisor — mover gente de setor mexe na equipe de OUTRO
            * supervisor sem ele estar envolvido na decisão.
            */
-          podeMoverDeSetor={podeGerenciarEventos(perfil.role)}
+          podeMoverDeSetor={podeGerenciarEventos(perfil)}
           /*
            * A mesma permissão que `criarSupervisor` já exige no servidor —
            * mostrar o botão para quem a action ia recusar de qualquer jeito é
            * pior do que não mostrar: a pessoa clica, preenche, e só descobre
            * que não podia depois de já ter tentado.
            */
-          podeCriarSupervisor={podeGerenciarUsuarios(perfil.role)}
-          podeEditarCpf={podeEditarIdentidade(perfil.role)}
+          podeCriarSupervisor={podeGerenciarUsuarios(perfil)}
+          podeEditarCpf={podeEditarIdentidade(perfil)}
           /* Mesma régua de `lancarPontoManual` no servidor. */
-          podeEditarPonto={podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
+          podeEditarPonto={podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
           role={perfil.role}
         />
       </div>

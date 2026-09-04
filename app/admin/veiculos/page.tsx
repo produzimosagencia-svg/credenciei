@@ -30,7 +30,7 @@ export default async function VeiculosPage({
   if (!perfil) redirect('/login')
   // Mesma régua de `exigirAcessoAVeiculos` no servidor — aqui só evita a
   // tela abrir pra quem não pode; quem barra de verdade é a action.
-  if (!podeGerenciarVeiculos(perfil.role)) redirect('/admin')
+  if (!podeGerenciarVeiculos(perfil)) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -48,7 +48,7 @@ export default async function VeiculosPage({
           titulo="Para qual evento?"
           descricao="O condutor precisa estar credenciado no evento escolhido"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para cadastrar veículos.' }}
-          mostrarOrganizacao={veTodosEventos(perfil.role)}
+          mostrarOrganizacao={veTodosEventos(perfil)}
         />
       </div>
     )
@@ -67,7 +67,7 @@ export default async function VeiculosPage({
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       notFound()
     }
-  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
     notFound()
   }
 

@@ -64,7 +64,7 @@ export default async function UsuariosPage({
   searchParams: Promise<{ page?: string; q?: string; aba?: string }>
 }) {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) redirect('/admin')
+  if (!podeGerenciarUsuarios(perfil)) redirect('/admin')
 
   const { page: pageParam, q, aba: abaParam } = await searchParams
   const page = Math.max(1, Number(pageParam) || 1)

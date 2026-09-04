@@ -34,7 +34,7 @@ export default async function ScanPage({
 }) {
   const [{ evento }, perfil] = await Promise.all([searchParams, getPerfil()])
   if (!perfil) redirect('/login')
-  if (!podeEscanear(perfil.role)) redirect('/admin')
+  if (!podeEscanear(perfil)) redirect('/admin')
 
   // Eventos que ESTE usuário pode escanear:
   // master → todos ativos | admin → da própria org | supervisor → só o do próprio setor
@@ -61,11 +61,11 @@ export default async function ScanPage({
               <Users className="w-3.5 h-3.5" />
               Minha equipe: {setor.nome}
             </Link>
-          ) : podeGerenciarEventos(perfil.role) ? (
+          ) : podeGerenciarEventos(perfil) ? (
             <Link href="/admin" className="text-slate-400 text-sm hover:text-white font-medium transition-colors">
               Voltar ao painel
             </Link>
-          ) : podeAcompanhar(perfil.role) ? (
+          ) : podeAcompanhar(perfil) ? (
             // Sem setor e sem gerenciar evento: é o operador de portão — o
             // link dele é o registro manual, não "voltar ao painel" (que ele
             // não tem) nem "minha equipe" (que ele também não tem).

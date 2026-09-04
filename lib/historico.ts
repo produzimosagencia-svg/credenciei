@@ -237,5 +237,5 @@ export async function podeVerHistoricoDe(
   const org = (vinculo.fornecedores as unknown as { eventos: { organizacao_id: string | null } })?.eventos?.organizacao_id
 
   if (perfil.role === 'supervisor') return perfil.fornecedor_id === vinculo.fornecedor_id
-  return veTodosEventos(perfil.role) || org === perfil.organizacao_id
+  return veTodosEventos(perfil) || org === perfil.organizacao_id
 }

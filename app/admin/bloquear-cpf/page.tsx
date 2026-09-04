@@ -43,7 +43,7 @@ export default async function BloquearCpfPage({
   if (!perfil) redirect('/login')
   // Supervisor entra: é ele quem vê a pessoa no portão. Quem barra de
   // verdade é `exigirAcessoABloqueio` na action — aqui só evita abrir a tela.
-  if (!podeGerenciarEventos(perfil.role) && perfil.role !== 'supervisor' && perfil.role !== 'suporte') {
+  if (!podeGerenciarEventos(perfil) && perfil.role !== 'supervisor' && perfil.role !== 'suporte') {
     redirect('/admin')
   }
 
@@ -64,7 +64,7 @@ export default async function BloquearCpfPage({
           titulo="Em qual evento?"
           descricao="Cada evento tem a sua própria lista de bloqueios"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Você precisa de um evento para bloquear alguém nele.' }}
-          mostrarOrganizacao={veTodosEventos(perfil.role)}
+          mostrarOrganizacao={veTodosEventos(perfil)}
         />
       </div>
     )
@@ -82,7 +82,7 @@ export default async function BloquearCpfPage({
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       notFound()
     }
-  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
     notFound()
   }
 

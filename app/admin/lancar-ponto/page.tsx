@@ -34,7 +34,7 @@ export default async function LancarPontoPage({
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   // Mesma régua da action: quem gerencia o evento, o supervisor da equipe, ou suporte.
-  if (!(podeGerenciarEventos(perfil.role) || perfil.role === 'supervisor' || perfil.role === 'suporte')) redirect('/admin')
+  if (!(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
@@ -49,7 +49,7 @@ export default async function LancarPontoPage({
           titulo="Em qual evento?"
           descricao="Entrada, meio ou saída, no dia e na hora que de fato aconteceram"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder lançar ponto nele.' }}
-          mostrarOrganizacao={veTodosEventos(perfil.role)}
+          mostrarOrganizacao={veTodosEventos(perfil)}
         />
       </div>
     )
@@ -60,7 +60,7 @@ export default async function LancarPontoPage({
   if (!evento) notFound()
   if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
-  } else if (!veTodosEventos(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
     notFound()
   }
 

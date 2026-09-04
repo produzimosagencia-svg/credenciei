@@ -24,7 +24,7 @@ const TUTORIAL: TutorialConfig = {
 
 export default async function NovoUsuarioPage() {
   const perfil = await getPerfil()
-  if (!podeGerenciarUsuarios(perfil?.role)) redirect('/admin')
+  if (!podeGerenciarUsuarios(perfil)) redirect('/admin')
   // Master não cria equipe aqui — cria admins/organizações
   if (ehMaster(perfil?.role)) redirect('/admin/organizacoes/novo')
 

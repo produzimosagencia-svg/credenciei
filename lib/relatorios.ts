@@ -111,7 +111,7 @@ async function exigirAcessoAoEvento(eventoId: string): Promise<AcessoRelatorio> 
     return { perfil, evento, setoresPermitidos: new Set(meus.map(s => s.id)) }
   }
 
-  if (!podeGerenciarEventos(perfil.role)) return { erro: 'Sem permissão para gerar relatórios.' }
+  if (!podeGerenciarEventos(perfil)) return { erro: 'Sem permissão para gerar relatórios.' }
   if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
     return { erro: 'Sem permissão sobre este evento.' }
   }
