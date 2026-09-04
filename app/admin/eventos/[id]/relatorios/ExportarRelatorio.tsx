@@ -1,9 +1,9 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { FileSpreadsheet, Download, Loader2, AlertTriangle, Building2, Users, CalendarRange } from 'lucide-react'
+import { FileSpreadsheet, Download, Loader2, AlertTriangle, Building2, Users, CalendarRange, FolderArchive } from 'lucide-react'
 import { obterDadosRelatorioEvento, obterDadosRelatorioSetor } from '@/lib/relatorios'
 import type { Periodo } from '@/lib/relatorios'
-import { gerarRelatorioCompleto, gerarRelatorioSetor } from '@/lib/relatorio-excel'
+import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
 import { Secao } from '@/components/ui/Superficie'
 import SeletorDePeriodo from '@/components/SeletorDePeriodo'
@@ -37,6 +37,8 @@ export default function ExportarRelatorio({
   const [erroSetor, setErroSetor] = useState<string | null>(null)
   const [gerandoCompleto, startCompleto] = useTransition()
   const [gerandoSetor, startSetor] = useTransition()
+  const [erroTodos, setErroTodos] = useState<string | null>(null)
+  const [gerandoTodos, startTodos] = useTransition()
 
   const periodoValido = periodo.de <= periodo.ate
 
@@ -63,6 +65,25 @@ export default function ExportarRelatorio({
         await gerarRelatorioSetor(r.dados)
       } catch (e: unknown) {
         setErroSetor(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  /*
+   * Todos os setores, um arquivo por setor, num .zip. Usa os dados do
+   * relatório completo (uma busca só) e quebra no navegador — sem 43 idas
+   * ao servidor. A permissão é a do relatório completo: quem só vê o
+   * próprio setor recebe o erro da action, não um zip com um arquivo.
+   */
+  const exportarTodosSeparados = () => {
+    setErroTodos(null)
+    startTodos(async () => {
+      try {
+        const r = await obterDadosRelatorioEvento(eventoId, periodo)
+        if ('erro' in r) { setErroTodos(r.erro); return }
+        await gerarRelatoriosPorSetorZip(r.dados)
+      } catch (e: unknown) {
+        setErroTodos(mensagemAmigavel(e))
       }
     })
   }
@@ -149,6 +170,29 @@ export default function ExportarRelatorio({
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> Exportar setor</>}
             </button>
+
+            {setores.length > 1 && (
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-slate-500 text-xs mb-2">
+                  Ou baixe <strong className="text-slate-700">todos os {setores.length} setores</strong> de uma vez, um arquivo por setor, num .zip — pronto pra mandar cada planilha pro seu fornecedor.
+                </p>
+                {erroTodos && (
+                  <p className="flex items-start gap-1.5 text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    {erroTodos}
+                  </p>
+                )}
+                <button
+                  onClick={exportarTodosSeparados}
+                  disabled={gerandoTodos || !periodoValido}
+                  className="btn btn-secundario w-full disabled:opacity-60"
+                >
+                  {gerandoTodos
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando {setores.length} planilhas...</>
+                    : <><FolderArchive className="w-4 h-4" /> Exportar todos os setores em arquivos separados</>}
+                </button>
+              </div>
+            )}
           </Secao>
         )}
 

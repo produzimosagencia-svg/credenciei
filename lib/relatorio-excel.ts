@@ -346,6 +346,41 @@ export async function gerarRelatorioSetor(dados: DadosRelatorioEvento): Promise<
   await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, setor.nome))
 }
 
+/**
+ * Um arquivo .xlsx POR SETOR, todos dentro de um .zip.
+ *
+ * Existe porque o relatório completo (uma aba por setor) serve pra quem
+ * organiza, mas o que se manda pro fornecedor é só o setor dele — e mandar
+ * 43 setores um a um pelo botão "Exportar setor" é meia hora de cliques.
+ * Cada arquivo do zip é idêntico ao que "Exportar setor" geraria.
+ */
+export async function gerarRelatoriosPorSetorZip(dados: DadosRelatorioEvento): Promise<void> {
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+  const usados = new Set<string>()
+  const ordenados = [...dados.setores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  for (const setor of ordenados) {
+    const wb = await novaPlanilha()
+    const ws = wb.addWorksheet(nomeDaAba(setor.nome, new Set()))
+    escreverAbaSetor(ws, dados, setor)
+    const buffer = await wb.xlsx.writeBuffer()
+    // Dois setores com o mesmo nome não podem virar o mesmo arquivo.
+    let nome = nomeDoArquivo(dados.eventoNome, setor.nome)
+    for (let n = 2; usados.has(nome); n++) nome = nomeDoArquivo(dados.eventoNome, `${setor.nome} (${n})`)
+    usados.add(nome)
+    zip.file(nome, buffer)
+  }
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nomeDoArquivo(dados.eventoNome, 'Por_setor').replace(/\.xlsx$/, '.zip')
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 /** Relatório completo do evento: Resumo Geral + uma aba por setor. */
 export async function gerarRelatorioCompleto(dados: DadosRelatorioEvento): Promise<void> {
   const wb = await novaPlanilha()
