@@ -109,6 +109,38 @@ export default async function EventoPage({
   const vazio = { data: [] as never[] }
 
   /*
+   * O PostgREST devolve no máximo 1.000 linhas por requisição. Um evento com
+   * mais gente que isso fazia "Criar supervisor" (e também "Criar operador")
+   * mostrar só o primeiro lote, embora todos os cadastros existissem no banco.
+   *
+   * Paginar aqui mantém uma única fonte para os três consumidores desta lista
+   * e a segunda ordenação por id impede uma pessoa de mudar de página quando
+   * há nomes iguais.
+   */
+  const buscarTodosOsFuncionarios = async () => {
+    if (!fornecedorIds.length) return vazio
+
+    const consultar = (inicio: number) => supabase.from('funcionarios')
+      .select('id, nome, cpf, telefone, cargo, empresa, fornecedor_id, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo')
+      .in('fornecedor_id', fornecedorIds)
+      .order('nome')
+      .order('id')
+      .range(inicio, inicio + 999)
+
+    let resposta = await consultar(0)
+    if (resposta.error || !resposta.data) return resposta
+
+    const todos = [...resposta.data]
+    while (resposta.data.length === 1000) {
+      resposta = await consultar(todos.length)
+      if (resposta.error || !resposta.data) return resposta
+      todos.push(...resposta.data)
+    }
+
+    return { ...resposta, data: todos }
+  }
+
+  /*
    * O DIA que os números descrevem — precisa vir antes da segunda onda,
    * porque é ele que filtra os registros no banco.
    *
@@ -173,11 +205,7 @@ export default async function EventoPage({
      * setor recém-criado nasce vazio e a lista por setor viria em branco
      * justo quando mais se precisa dela.
      */
-    fornecedorIds.length
-      ? supabase.from('funcionarios')
-          .select('id, nome, cpf, telefone, cargo, empresa, fornecedor_id, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo')
-          .in('fornecedor_id', fornecedorIds).order('nome')
-      : Promise.resolve(vazio),
+    buscarTodosOsFuncionarios(),
     /*
      * TODOS os vínculos de supervisor destes setores — de `supervisor_setores`,
      * não de `perfis.fornecedor_id`.
