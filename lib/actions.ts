@@ -1100,6 +1100,9 @@ export type LinhaAuditoria = {
   eventoNome: string | null; funcionarioNome: string | null; criadoEm: string
   /** Papel de quem fez — "supervisor" e "admin" respondem por coisas diferentes. */
   autorRole: string | null
+  autorId: string | null
+  /** De onde o autor é: os setores dele, em texto. Vazio pra quem não tem setor. */
+  autorSetor: string | null
   funcionarioCpf: string | null
   funcionarioSetor: string | null
   ip: string | null
@@ -1111,7 +1114,21 @@ export type LinhaAuditoria = {
  * ele mesmo fez, dentro do que tem acesso).
  */
 export async function obterAuditoria(
-  opcoes: { eventoId?: string; limite?: number; dias?: number } = {},
+  opcoes: {
+    eventoId?: string; limite?: number; dias?: number
+    /** Tudo que ESTA pessoa fez. */
+    autorId?: string
+    /** Só um tipo de ação — "todos os excluídos", "todos os cadastrados". */
+    acao?: string
+    /**
+     * Tudo que aconteceu NESTE setor. Casa dos dois lados: o setor da pessoa
+     * afetada e o setor de quem fez. Sem o segundo, exclusão ficaria de fora
+     * justamente aqui — quem foi apagado perde o vínculo com o setor
+     * (`funcionario_id` vira nulo), e "o que houve no Bar" é exatamente a
+     * pergunta que se faz sobre exclusão.
+     */
+    setor?: string
+  } = {},
 ): Promise<LinhaAuditoria[]> {
   const perfil = await getPerfil()
   if (!perfil) return []
@@ -1124,11 +1141,13 @@ export async function obterAuditoria(
      * "de qual setor era a pessoa?". São dois joins por chave estrangeira que
      * já existem — nenhuma coluna nova, nada que dependa de migração.
      */
-    .select('id, acao, usuario_responsavel, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, eventos(nome), perfis(role), funcionarios(nome, cpf, fornecedores(nome))')
+    .select('id, acao, usuario_responsavel, usuario_responsavel_id, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, eventos(nome), perfis(role), funcionarios(nome, cpf, fornecedores(nome))')
     .order('created_at', { ascending: false })
     .limit(opcoes.limite ?? 100)
 
   if (opcoes.eventoId) query = query.eq('evento_id', opcoes.eventoId)
+  if (opcoes.autorId) query = query.eq('usuario_responsavel_id', opcoes.autorId)
+  if (opcoes.acao) query = query.eq('acao', opcoes.acao)
 
   /*
    * O corte é por DIA, e o dia é o de Brasília.
@@ -1152,22 +1171,100 @@ export async function obterAuditoria(
   }
 
   const { data } = await query
-  return (data ?? []).map(a => ({
-    id: a.id as string,
-    acao: a.acao as string,
-    usuarioResponsavel: a.usuario_responsavel as string,
-    campoAlterado: (a.campo_alterado as string | null) ?? null,
-    valorAnterior: (a.valor_anterior as string | null) ?? null,
-    valorNovo: (a.valor_novo as string | null) ?? null,
-    motivo: (a.motivo as string | null) ?? null,
-    eventoNome: (a.eventos as unknown as { nome: string } | null)?.nome ?? null,
-    funcionarioNome: (a.funcionarios as unknown as { nome: string } | null)?.nome ?? null,
-    funcionarioCpf: (a.funcionarios as unknown as { cpf: string } | null)?.cpf ?? null,
-    funcionarioSetor: (a.funcionarios as unknown as { fornecedores: { nome: string } | null } | null)?.fornecedores?.nome ?? null,
-    autorRole: (a.perfis as unknown as { role: string } | null)?.role ?? null,
-    ip: (a.ip as string | null) ?? null,
-    criadoEm: a.created_at as string,
-  }))
+
+  /*
+   * De onde o autor é — numa consulta só, pro lote inteiro.
+   *
+   * "Igor exclui gente" e "o supervisor do Bar exclui gente" são leituras
+   * diferentes da mesma linha, e só a segunda diz alguma coisa a quem está
+   * conferindo. Vem de `supervisor_setores` porque um supervisor pode cobrir
+   * vários setores; buscar por linha seria uma consulta por registro na tela.
+   */
+  const autorIds = [...new Set((data ?? []).map(a => a.usuario_responsavel_id as string | null).filter((v): v is string => !!v))]
+  const setoresPorAutor = new Map<string, string[]>()
+  if (autorIds.length) {
+    const { data: vinculos } = await supabaseAdmin
+      .from('supervisor_setores').select('perfil_id, fornecedores(nome)').in('perfil_id', autorIds)
+    for (const v of vinculos ?? []) {
+      const nome = (v.fornecedores as unknown as { nome: string } | null)?.nome
+      if (!nome) continue
+      const id = v.perfil_id as string
+      setoresPorAutor.set(id, [...(setoresPorAutor.get(id) ?? []), nome])
+    }
+  }
+
+  return (data ?? []).map(a => {
+    const autorId = (a.usuario_responsavel_id as string | null) ?? null
+    const setoresDoAutor = autorId ? setoresPorAutor.get(autorId) ?? [] : []
+    return {
+      id: a.id as string,
+      acao: a.acao as string,
+      usuarioResponsavel: a.usuario_responsavel as string,
+      campoAlterado: (a.campo_alterado as string | null) ?? null,
+      valorAnterior: (a.valor_anterior as string | null) ?? null,
+      valorNovo: (a.valor_novo as string | null) ?? null,
+      motivo: (a.motivo as string | null) ?? null,
+      eventoNome: (a.eventos as unknown as { nome: string } | null)?.nome ?? null,
+      funcionarioNome: (a.funcionarios as unknown as { nome: string } | null)?.nome ?? null,
+      funcionarioCpf: (a.funcionarios as unknown as { cpf: string } | null)?.cpf ?? null,
+      funcionarioSetor: (a.funcionarios as unknown as { fornecedores: { nome: string } | null } | null)?.fornecedores?.nome ?? null,
+      autorRole: (a.perfis as unknown as { role: string } | null)?.role ?? null,
+      autorId,
+      autorSetor: setoresDoAutor.length ? [...new Set(setoresDoAutor)].join(', ') : null,
+      ip: (a.ip as string | null) ?? null,
+      criadoEm: a.created_at as string,
+    }
+  }).filter(l => {
+    if (!opcoes.setor) return true
+    const alvo = opcoes.setor.toLowerCase()
+    // Filtrado aqui, e não no banco: o setor vem de dois joins diferentes
+    // (o da pessoa afetada e o de quem fez), e um `or` sobre tabela embutida
+    // não existe no PostgREST.
+    return (l.funcionarioSetor ?? '').toLowerCase() === alvo
+      || (l.autorSetor ?? '').toLowerCase().split(', ').includes(alvo)
+  })
+}
+
+/**
+ * As opções dos filtros da auditoria — quem aparece como autor e quais
+ * setores existem, dentro do escopo de quem consulta.
+ *
+ * Vem de `perfis` e `fornecedores`, e não dos registros de auditoria já
+ * carregados: as opções não podem depender do período escolhido, senão
+ * filtrar por "hoje" esconderia a pessoa que se quer procurar em "tudo".
+ */
+export async function opcoesDaAuditoria(): Promise<{
+  autores: { id: string; nome: string; role: string; setor: string | null }[]
+  setores: string[]
+}> {
+  const perfil = await getPerfil()
+  if (!perfil || !(podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte')) {
+    return { autores: [], setores: [] }
+  }
+
+  let consultaPerfis = supabaseAdmin
+    .from('perfis').select('id, nome, role, fornecedor_id, fornecedores(nome)').order('nome')
+  if (!ehMaster(perfil.role)) consultaPerfis = consultaPerfis.eq('organizacao_id', perfil.organizacao_id)
+
+  let consultaEventos = supabaseAdmin.from('eventos').select('id')
+  if (!ehMaster(perfil.role)) consultaEventos = consultaEventos.eq('organizacao_id', perfil.organizacao_id)
+
+  const [{ data: perfis }, { data: eventos }] = await Promise.all([consultaPerfis, consultaEventos])
+
+  const { data: setores } = await supabaseAdmin
+    .from('fornecedores').select('nome')
+    .in('evento_id', (eventos ?? []).map(e => e.id as string))
+    .order('nome')
+
+  return {
+    autores: (perfis ?? []).map(p => ({
+      id: p.id as string,
+      nome: p.nome as string,
+      role: (p.role as string) ?? '',
+      setor: (p.fornecedores as unknown as { nome: string } | null)?.nome ?? null,
+    })),
+    setores: [...new Set((setores ?? []).map(f => f.nome as string))],
+  }
 }
 
 export type EscopoSuporte = { organizacaoNome: string | null; eventoNome: string | null }

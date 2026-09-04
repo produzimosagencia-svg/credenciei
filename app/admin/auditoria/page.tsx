@@ -3,11 +3,12 @@ import Link from 'next/link'
 import { ClipboardList, ArrowRight, User, MapPin } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarUsuarios, ROLE_LABELS, type Role } from '@/lib/permissions'
-import { obterAuditoria } from '@/lib/actions'
+import { obterAuditoria, opcoesDaAuditoria } from '@/lib/actions'
 import { ACAO_LABELS } from '@/lib/suporte'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState, Badge } from '@/components/ui/Superficie'
+import FiltrosAuditoria from './FiltrosAuditoria'
 
 export const revalidate = 0
 
@@ -69,7 +70,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
 export default async function AuditoriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dias?: string }>
+  searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil || !(podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte')) redirect('/admin')
@@ -81,10 +82,16 @@ export default async function AuditoriaPage({
    * quase sempre é sobre esta semana. Abrindo com o histórico inteiro, o
    * que aconteceu hoje some no meio de meses de registro.
    */
-  const { dias: diasParam } = await searchParams
+  const { dias: diasParam, autor, setor, acao } = await searchParams
   const escolhido = PERIODOS.find(p => String(p.dias) === diasParam) ?? PERIODOS[1]
 
-  const linhas = await obterAuditoria({ limite: LIMITE, dias: escolhido.dias })
+  const [linhas, opcoes] = await Promise.all([
+    obterAuditoria({
+      limite: LIMITE, dias: escolhido.dias,
+      autorId: autor || undefined, acao: acao || undefined, setor: setor || undefined,
+    }),
+    opcoesDaAuditoria(),
+  ])
 
   return (
     <div className="space-y-5">
@@ -96,16 +103,27 @@ export default async function AuditoriaPage({
       {/* Links, e não botões: o período fica na URL, então dá pra voltar,
           recarregar e mandar o link de um período específico pra outra pessoa. */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {PERIODOS.map(p => (
-          <Link
-            key={p.dias}
-            href={p.dias === 7 ? '/admin/auditoria' : `/admin/auditoria?dias=${p.dias}`}
-            className={p.dias === escolhido.dias ? 'btn btn-primario btn-sm' : 'btn btn-secundario btn-sm'}
-          >
-            {p.label}
-          </Link>
-        ))}
+        {PERIODOS.map(p => {
+          // O período troca sem derrubar o recorte: quem filtrou por pessoa
+          // e muda de "7 dias" pra "tudo" quer a MESMA pessoa em mais tempo.
+          const q = new URLSearchParams()
+          if (p.dias !== 7) q.set('dias', String(p.dias))
+          if (autor) q.set('autor', autor)
+          if (setor) q.set('setor', setor)
+          if (acao) q.set('acao', acao)
+          return (
+            <Link
+              key={p.dias}
+              href={q.toString() ? `/admin/auditoria?${q}` : '/admin/auditoria'}
+              className={p.dias === escolhido.dias ? 'btn btn-primario btn-sm' : 'btn btn-secundario btn-sm'}
+            >
+              {p.label}
+            </Link>
+          )
+        })}
       </div>
+
+      <FiltrosAuditoria opcoes={opcoes} periodoDias={escolhido.dias} totalNaTela={linhas.length} />
 
       <Secao
         tom="acento"
@@ -119,8 +137,12 @@ export default async function AuditoriaPage({
         {!linhas.length ? (
           <EmptyState
             icone={<ClipboardList className="w-7 h-7" />}
-            titulo={escolhido.dias === 0 ? 'Nenhuma alteração registrada ainda' : 'Nenhuma alteração neste período'}
-            descricao={escolhido.dias === 0 ? undefined : 'Escolha um período maior aí em cima.'}
+            titulo={autor || setor || acao
+              ? 'Nada encontrado com esses filtros'
+              : escolhido.dias === 0 ? 'Nenhuma alteração registrada ainda' : 'Nenhuma alteração neste período'}
+            descricao={autor || setor || acao
+              ? 'Tente limpar um filtro ou aumentar o período.'
+              : escolhido.dias === 0 ? undefined : 'Escolha um período maior aí em cima.'}
           />
         ) : (
           <>
@@ -177,7 +199,10 @@ export default async function AuditoriaPage({
                   <p className="flex flex-wrap items-center gap-x-2 text-slate-400 text-2xs">
                     <span>
                       por <span className="text-slate-500 font-medium">{l.usuarioResponsavel}</span>
-                      {l.autorRole && ` (${ROLE_LABELS[l.autorRole as Role] ?? l.autorRole})`}
+                      {l.autorRole && ` (${ROLE_LABELS[l.autorRole as Role] ?? l.autorRole}`}
+                      {/* De onde ele é: "o supervisor do Bar" diz mais do que o nome. */}
+                      {l.autorRole && l.autorSetor && ` · ${l.autorSetor}`}
+                      {l.autorRole && ')'}
                     </span>
                     {l.eventoNome && <span>· {l.eventoNome}</span>}
                     {l.ip && <span className="tabular-nums">· IP {l.ip}</span>}
