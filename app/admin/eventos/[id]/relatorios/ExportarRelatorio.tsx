@@ -1,9 +1,9 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { FileSpreadsheet, Download, Loader2, AlertTriangle, Building2, Users, CalendarRange, FolderArchive } from 'lucide-react'
+import { FileSpreadsheet, Download, Loader2, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX } from 'lucide-react'
 import { obterDadosRelatorioEvento, obterDadosRelatorioSetor } from '@/lib/relatorios'
 import type { Periodo } from '@/lib/relatorios'
-import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip } from '@/lib/relatorio-excel'
+import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip, gerarRelatorioAusentes } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
 import { Secao } from '@/components/ui/Superficie'
 import SeletorDePeriodo from '@/components/SeletorDePeriodo'
@@ -32,6 +32,14 @@ export default function ExportarRelatorio({
   totalFuncionarios: number
 }) {
   const [periodo, setPeriodo] = useState<Periodo>(periodoCompleto)
+  /*
+   * Quem a planilha lista. O relatório sempre mostrou só quem tem batida —
+   * "quem faltou" só se descobria subtraindo a planilha da lista da equipe
+   * na mão (pedido do Juan, 03/09/2026). Vale pros três botões: um recorte
+   * de gente, não um tipo de arquivo.
+   */
+  const [quem, setQuem] = useState<'credenciados' | 'ausentes'>('credenciados')
+  const ausentes = quem === 'ausentes'
   const [setorId, setSetorId] = useState(setores[0]?.id ?? '')
   const [erroCompleto, setErroCompleto] = useState<string | null>(null)
   const [erroSetor, setErroSetor] = useState<string | null>(null)
@@ -48,7 +56,8 @@ export default function ExportarRelatorio({
       try {
         const r = await obterDadosRelatorioEvento(eventoId, periodo)
         if ('erro' in r) { setErroCompleto(r.erro); return }
-        await gerarRelatorioCompleto(r.dados)
+        if (ausentes) await gerarRelatorioAusentes(r.dados)
+        else await gerarRelatorioCompleto(r.dados)
       } catch (e: unknown) {
         setErroCompleto(mensagemAmigavel(e))
       }
@@ -62,7 +71,8 @@ export default function ExportarRelatorio({
       try {
         const r = await obterDadosRelatorioSetor(eventoId, setorId, periodo)
         if ('erro' in r) { setErroSetor(r.erro); return }
-        await gerarRelatorioSetor(r.dados)
+        if (ausentes) await gerarRelatorioAusentes(r.dados)
+        else await gerarRelatorioSetor(r.dados)
       } catch (e: unknown) {
         setErroSetor(mensagemAmigavel(e))
       }
@@ -81,7 +91,7 @@ export default function ExportarRelatorio({
       try {
         const r = await obterDadosRelatorioEvento(eventoId, periodo)
         if ('erro' in r) { setErroTodos(r.erro); return }
-        await gerarRelatoriosPorSetorZip(r.dados)
+        await gerarRelatoriosPorSetorZip(r.dados, quem)
       } catch (e: unknown) {
         setErroTodos(mensagemAmigavel(e))
       }
@@ -95,11 +105,36 @@ export default function ExportarRelatorio({
         * campos de data dentro de cada um. "Quantos dias tem o evento" é
         * uma pergunta, não duas.
         */}
-      <Secao icone={<CalendarRange className="w-3.5 h-3.5" />} titulo="Período" corpoClassName="p-5">
+      <Secao icone={<CalendarRange className="w-3.5 h-3.5" />} titulo="Período e quem entra" corpoClassName="p-5 space-y-4">
         <SeletorDePeriodo value={periodo} onChange={setPeriodo} periodoCompleto={periodoCompleto} className="w-64" />
         {!periodoValido && (
-          <p className="text-red-500 text-xs mt-2">A data inicial precisa vir antes (ou no mesmo dia) da data final.</p>
+          <p className="text-red-500 text-xs">A data inicial precisa vir antes (ou no mesmo dia) da data final.</p>
         )}
+
+        <div>
+          <label className="text-slate-500 text-xs font-medium block mb-1.5">Quem entra na planilha</label>
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl gap-1">
+            <button
+              type="button" onClick={() => setQuem('credenciados')}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                !ausentes ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <UserCheck className="w-3.5 h-3.5" /> Quem credenciou
+            </button>
+            <button
+              type="button" onClick={() => setQuem('ausentes')}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                ausentes ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <UserX className="w-3.5 h-3.5" /> Quem NÃO credenciou
+            </button>
+          </div>
+          <p className="text-slate-400 text-xs mt-2">
+            {ausentes
+              ? 'A planilha lista quem está na equipe e não bateu nenhuma batida no período — sem data, entrada ou saída, porque não existem.'
+              : 'A planilha lista quem bateu ponto no período, dia a dia, com entrada e saída.'}
+          </p>
+        </div>
       </Secao>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -136,7 +171,7 @@ export default function ExportarRelatorio({
             >
               {gerandoCompleto
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando planilha...</>
-                : <><Download className="w-4 h-4" /> Exportar relatório completo</>}
+                : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar relatório completo'}</>}
             </button>
           </Secao>
         )}
@@ -168,7 +203,7 @@ export default function ExportarRelatorio({
             >
               {gerandoSetor
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando planilha...</>
-                : <><Download className="w-4 h-4" /> Exportar setor</>}
+                : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar setor'}</>}
             </button>
 
             {setores.length > 1 && (

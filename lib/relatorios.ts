@@ -42,10 +42,28 @@ export type LinhaRelatorio = {
   saidaISO: string | null
 }
 
+/** Alguém da equipe que NÃO registrou nada no período — o avesso do relatório. */
+export type AusenteRelatorio = {
+  funcionarioId: string
+  nome: string
+  setor: string
+  funcao: string
+}
+
 export type SetorRelatorio = {
   id: string
   nome: string
   linhas: LinhaRelatorio[]
+  /*
+   * Quem estava escalado no setor e não bateu NADA no período.
+   *
+   * Vem junto de `linhas`, da mesma consulta, porque é literalmente o
+   * complemento dela: `linhas` guarda quem tem registro, `ausentes` quem
+   * não tem. Calcular depois exigiria buscar a equipe de novo e refazer a
+   * subtração — e as duas listas poderiam divergir se alguém batesse ponto
+   * no meio do caminho.
+   */
+  ausentes: AusenteRelatorio[]
 }
 
 export type DadosRelatorioEvento = {
@@ -207,10 +225,20 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
     porFuncionario.set(r.funcionario_id, arr)
   }
 
+  const equipe = funcionarios ?? []
   return {
     id: fornecedor.id,
     nome: fornecedor.nome,
-    linhas: linhasDoSetor(funcionarios ?? [], porFuncionario, fornecedor.nome),
+    linhas: linhasDoSetor(equipe, porFuncionario, fornecedor.nome),
+    // O avesso, da mesma fonte: quem não tem nenhum registro no período.
+    ausentes: equipe
+      .filter(f => !(porFuncionario.get(f.id) ?? []).length)
+      .map(f => ({
+        funcionarioId: f.id,
+        nome: f.nome,
+        setor: fornecedor.nome,
+        funcao: f.cargo ?? '',
+      })),
   }
 }
 

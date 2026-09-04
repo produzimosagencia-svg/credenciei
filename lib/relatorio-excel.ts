@@ -336,6 +336,78 @@ async function novaPlanilha(): Promise<import('exceljs').Workbook> {
   return wb
 }
 
+const COLUNAS_AUSENTES = [
+  { titulo: 'Setor', largura: 26 },
+  { titulo: 'Função', largura: 22 },
+  { titulo: 'Nome', largura: 30 },
+] as const
+
+/**
+ * A aba do avesso: quem estava na equipe e NÃO bateu nada no período.
+ *
+ * Sem coluna de data, entrada ou saída — de propósito. A pergunta aqui é
+ * "quem não apareceu", e uma coluna vazia em toda linha só faria quem lê
+ * procurar um dado que, por definição, não existe.
+ */
+function escreverAbaAusentes(
+  ws: import('exceljs').Worksheet, evento: DadosRelatorioEvento, setores: SetorRelatorio[], titulo: string,
+) {
+  const nCol = COLUNAS_AUSENTES.length
+  ws.columns = COLUNAS_AUSENTES.map(c => ({ width: c.largura }))
+
+  let linha = 1
+  escreverTitulo(ws, linha++, titulo, nCol)
+  linha++
+  escreverInfo(ws, linha++, 'Evento:', evento.eventoNome, nCol)
+  if (evento.organizacaoNome) escreverInfo(ws, linha++, 'Organização:', evento.organizacaoNome, nCol)
+  escreverInfo(ws, linha++, 'Período analisado:', textoPeriodo(evento.periodo), nCol)
+
+  const todos = setores.flatMap(s => s.ausentes)
+  escreverInfo(ws, linha++, 'Sem nenhum registro:', `${todos.length} pessoa(s)`, nCol)
+  linha++
+
+  escreverCabecalho(ws, linha++, COLUNAS_AUSENTES)
+
+  const ordenados = [...todos].sort((a, b) =>
+    a.setor.localeCompare(b.setor, 'pt-BR') ||
+    a.funcao.localeCompare(b.funcao, 'pt-BR') ||
+    a.nome.localeCompare(b.nome, 'pt-BR'))
+
+  for (const p of ordenados) {
+    ws.getCell(linha, 1).value = p.setor
+    ws.getCell(linha, 2).value = p.funcao
+    ws.getCell(linha, 3).value = p.nome
+    for (let c = 1; c <= nCol; c++) {
+      const cel = ws.getCell(linha, c)
+      cel.border = BORDA_CELULA
+      cel.alignment = { vertical: 'middle', horizontal: 'left' }
+    }
+    linha++
+  }
+  if (!ordenados.length) {
+    ws.getCell(linha, 1).value = 'Todo mundo da equipe registrou pelo menos uma batida no período.'
+  }
+}
+
+/**
+ * Planilha de QUEM NÃO CREDENCIOU — o avesso do relatório normal.
+ *
+ * O relatório comum lista quem tem batida e omite quem não tem (é o que o
+ * mantém enxuto). Só que "quem faltou" é a pergunta que sobra depois, e
+ * hoje ela só tinha resposta subtraindo a planilha da lista da equipe na
+ * mão. Pedido do Juan em 03/09/2026.
+ */
+export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento): Promise<void> {
+  const wb = await novaPlanilha()
+  const umSetorSo = dados.setores.length === 1 ? dados.setores[0] : null
+  const ws = wb.addWorksheet(nomeDaAba(umSetorSo ? umSetorSo.nome : 'Nao credenciaram', new Set()))
+  escreverAbaAusentes(
+    ws, dados, dados.setores,
+    `NÃO CREDENCIARAM${umSetorSo ? ` — ${umSetorSo.nome.toUpperCase()}` : ''}`,
+  )
+  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, umSetorSo ? `${umSetorSo.nome}_nao_credenciaram` : 'Nao_credenciaram'))
+}
+
 /** Relatório de UM setor — baixa direto no navegador. */
 export async function gerarRelatorioSetor(dados: DadosRelatorioEvento): Promise<void> {
   const setor = dados.setores[0]
@@ -354,19 +426,28 @@ export async function gerarRelatorioSetor(dados: DadosRelatorioEvento): Promise<
  * 43 setores um a um pelo botão "Exportar setor" é meia hora de cliques.
  * Cada arquivo do zip é idêntico ao que "Exportar setor" geraria.
  */
-export async function gerarRelatoriosPorSetorZip(dados: DadosRelatorioEvento): Promise<void> {
+export async function gerarRelatoriosPorSetorZip(
+  dados: DadosRelatorioEvento,
+  /* 'ausentes' gera o mesmo zip, mas com a planilha de quem NÃO bateu. */
+  modo: 'credenciados' | 'ausentes' = 'credenciados',
+): Promise<void> {
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
   const usados = new Set<string>()
   const ordenados = [...dados.setores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  const sufixo = modo === 'ausentes' ? '_nao_credenciaram' : ''
   for (const setor of ordenados) {
     const wb = await novaPlanilha()
     const ws = wb.addWorksheet(nomeDaAba(setor.nome, new Set()))
-    escreverAbaSetor(ws, dados, setor)
+    if (modo === 'ausentes') {
+      escreverAbaAusentes(ws, dados, [setor], `NÃO CREDENCIARAM — ${setor.nome.toUpperCase()}`)
+    } else {
+      escreverAbaSetor(ws, dados, setor)
+    }
     const buffer = await wb.xlsx.writeBuffer()
     // Dois setores com o mesmo nome não podem virar o mesmo arquivo.
-    let nome = nomeDoArquivo(dados.eventoNome, setor.nome)
-    for (let n = 2; usados.has(nome); n++) nome = nomeDoArquivo(dados.eventoNome, `${setor.nome} (${n})`)
+    let nome = nomeDoArquivo(dados.eventoNome, `${setor.nome}${sufixo}`)
+    for (let n = 2; usados.has(nome); n++) nome = nomeDoArquivo(dados.eventoNome, `${setor.nome}${sufixo} (${n})`)
     usados.add(nome)
     zip.file(nome, buffer)
   }
@@ -374,7 +455,7 @@ export async function gerarRelatoriosPorSetorZip(dados: DadosRelatorioEvento): P
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = nomeDoArquivo(dados.eventoNome, 'Por_setor').replace(/\.xlsx$/, '.zip')
+  a.download = nomeDoArquivo(dados.eventoNome, modo === 'ausentes' ? 'Por_setor_nao_credenciaram' : 'Por_setor').replace(/\.xlsx$/, '.zip')
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
