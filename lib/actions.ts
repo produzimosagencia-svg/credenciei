@@ -2889,6 +2889,70 @@ async function descredenciar(funcionarioId: string, perfilId: string | null) {
  * escaneou a pessoa errada, ou ela precisou voltar ao posto, sem isto o único
  * jeito de desfazer seria mexer no banco à mão.
  */
+/**
+ * Tira uma pessoa da equipe do setor — a "exclusão" do supervisor.
+ *
+ * Descredencia, NÃO apaga: a linha em `funcionarios` continua, e com ela o
+ * histórico de batidas (que sustenta o pagamento), os veículos e a base
+ * geral por CPF. Apagar de verdade cascateia e leva tudo isso junto, sem
+ * desfazer — decisão do Juan em 04/09/2026, ao ver o alcance do cascade.
+ *
+ * O que muda pra pessoa: ela sai das listas de credenciados do evento e o
+ * QR dela para de ser aceito ali. Se foi engano, `recredenciarFuncionario`
+ * desfaz.
+ *
+ * PERMISSÃO — supervisor só na PRÓPRIA equipe:
+ * `exigirAcessoFuncionarios` já é a régua que confere isso (gestor da
+ * organização, ou o supervisor vinculado a ESTE setor). Não existe segunda
+ * régua aqui de propósito: duplicar a checagem é como as duas divergem.
+ */
+export async function descredenciarFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, motivo?: string,
+) {
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+
+  /*
+   * Lê antes de mexer: a auditoria precisa do NOME (o pedido do Juan é
+   * "identificando o supervisor responsável e o funcionário removido"), e
+   * depois de descredenciar a lista já não mostra a pessoa pra conferir.
+   */
+  const { data: alvo } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, fornecedor_id, descredenciado_em')
+    .eq('id', funcionarioId)
+    .single()
+  if (!alvo) throw new Error('Funcionário não encontrado.')
+  // O id vem da tela, mas quem manda é o vínculo no banco: sem isto, um id
+  // de outro setor colado na chamada passaria pela régua do setor de cima.
+  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste setor.')
+  if (alvo.descredenciado_em) return { ok: true as const, nome: alvo.nome as string }
+
+  const { error } = await supabaseAdmin
+    .from('funcionarios')
+    .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfil?.id ?? null })
+    .eq('id', funcionarioId)
+    .is('descredenciado_em', null)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('organizacao_id').eq('id', eventoId).single()
+
+  after(() => registrarAuditoria({
+    perfil: perfil!,
+    acao: 'DESCREDENCIAMENTO',
+    campoAlterado: 'Vínculo com o evento',
+    valorAnterior: 'Credenciado',
+    valorNovo: 'Descredenciado',
+    motivo: (motivo ?? '').trim() || null,
+    funcionarioId,
+    eventoId,
+    organizacaoId: evento?.organizacao_id ?? undefined,
+  }))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const, nome: alvo.nome as string }
+}
+
 export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const { error } = await supabaseAdmin

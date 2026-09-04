@@ -69,6 +69,7 @@ export const ACAO_LABELS: Record<string, string> = {
   REGISTRO_ENTRADA_ASSISTIDA: 'Entrada assistida',
   REGISTRO_SAIDA_ASSISTIDA: 'Saída assistida',
   CORRECAO_PONTO: 'Correção de ponto',
+  DESCREDENCIAMENTO: 'Descredenciamento',
   EXCLUSAO_PONTO: 'Batida apagada',
   RESET_SENHA: 'Redefinição de senha',
   ALTERACAO_SUPERVISOR: 'Alteração de supervisor',

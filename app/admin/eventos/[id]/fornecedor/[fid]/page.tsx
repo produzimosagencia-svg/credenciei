@@ -64,7 +64,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }, { data: outrosSetores }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id)').eq('id', fid).single(),
-    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo').eq('fornecedor_id', fid).order('nome'),
+    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, descredenciado_em').eq('fornecedor_id', fid).order('nome'),
     /*
      * So HOJE e ONTEM.
      *
@@ -197,6 +197,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       pago: f.pago ?? false,
       pagoEm: f.pago_em ?? null,
       ativo: f.ativo ?? true,
+      descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
       entrada,
       meio,

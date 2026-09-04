@@ -3,9 +3,9 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Search, SlidersHorizontal, Trash2, X,
-  Camera, MapPin, Minus, User, UserCheck, UserX, ClipboardCheck,
+  Camera, MapPin, Minus, User, UserCheck, UserX, UserMinus, ClipboardCheck,
 } from 'lucide-react'
-import { deletarFuncionario, alternarAtivacao } from '@/lib/actions'
+import { deletarFuncionario, alternarAtivacao, descredenciarFuncionario, recredenciarFuncionario } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -42,6 +42,8 @@ type Funcionario = {
   pago: boolean
   pagoEm: string | null
   ativo: boolean
+  /** Carimbo de quando saiu do evento. `null` = está na equipe. */
+  descredenciadoEm?: string | null
   fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
@@ -145,6 +147,15 @@ export default function FuncionarioTable({
   const updateSearch = (value: string) => { setSearch(value); setPage(1) }
 
   const [paraExcluir, setParaExcluir] = useState<Funcionario | null>(null)
+  /*
+   * Tirar da equipe = DESCREDENCIAR, não apagar.
+   *
+   * Apagar cascateia no banco e leva junto as batidas de ponto (que
+   * sustentam o pagamento) — decisão do Juan em 04/09/2026. Descredenciar
+   * tira a pessoa das listas do evento e invalida o QR dela ali, sem
+   * destruir nada, e tem volta pelo mesmo botão.
+   */
+  const [paraTirar, setParaTirar] = useState<Funcionario | null>(null)
   const [erroAtivacao, setErroAtivacao] = useState<string | null>(null)
 
   const handleDelete = (f: Funcionario) => setParaExcluir(f)
@@ -153,6 +164,32 @@ export default function FuncionarioTable({
     startTransition(async () => {
       try {
         await alternarAtivacao(f.id, fornecedorId, eventoId, !f.ativo)
+        router.refresh()
+      } catch (e) {
+        setErroAtivacao(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  const confirmarTirarDaEquipe = () => {
+    if (!paraTirar) return
+    const f = paraTirar
+    startTransition(async () => {
+      try {
+        await descredenciarFuncionario(f.id, fornecedorId, eventoId)
+        router.refresh()
+        setParaTirar(null)
+      } catch (e) {
+        setErroAtivacao(mensagemAmigavel(e))
+        setParaTirar(null)
+      }
+    })
+  }
+
+  const voltarParaEquipe = (f: Funcionario) => {
+    startTransition(async () => {
+      try {
+        await recredenciarFuncionario(f.id, fornecedorId, eventoId)
         router.refresh()
       } catch (e) {
         setErroAtivacao(mensagemAmigavel(e))
@@ -303,6 +340,32 @@ export default function FuncionarioTable({
                     >
                       {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
                     </button>
+                    {/*
+                      * Tirar da equipe (descredenciar) — a ação que o
+                      * supervisor tem. Reversível: descredenciado, o mesmo
+                      * lugar oferece trazer de volta.
+                      */}
+                    {f.descredenciadoEm ? (
+                      <button
+                        onClick={() => voltarParaEquipe(f)}
+                        disabled={isPending}
+                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 disabled:opacity-50 disabled:active:scale-100"
+                        aria-label={`Trazer ${f.nome} de volta para a equipe`}
+                        title="Trazer de volta para a equipe"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setParaTirar(f)}
+                        disabled={isPending}
+                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50 disabled:active:scale-100"
+                        aria-label={`Tirar ${f.nome} da equipe`}
+                        title="Tirar da equipe"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </button>
+                    )}
                     {podeExcluir && (
                       <button
                         onClick={() => handleDelete(f)}
@@ -317,6 +380,9 @@ export default function FuncionarioTable({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {f.descredenciadoEm && (
+                    <span className="text-2xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">FORA DA EQUIPE</span>
+                  )}
                   {!f.ativo && (
                     <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
                   )}
@@ -459,6 +525,17 @@ export default function FuncionarioTable({
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!paraTirar}
+        onClose={() => setParaTirar(null)}
+        onConfirm={confirmarTirarDaEquipe}
+        isPending={isPending}
+        titulo="Tirar da equipe"
+        mensagem={paraTirar
+          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste setor? A pessoa sai das listas do evento e o QR dela deixa de ser aceito. O histórico de batidas dela não é apagado, e dá pra trazer de volta depois.`
+          : ''}
+      />
+
       <ConfirmModal
         open={!!paraExcluir}
         onClose={() => setParaExcluir(null)}
