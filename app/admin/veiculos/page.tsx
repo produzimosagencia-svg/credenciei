@@ -4,12 +4,9 @@ import { Truck, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarVeiculos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
-import { formatCpf } from '@/lib/format'
-import { formatarBR } from '@/lib/tz'
-import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
+import { PageHeader } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
-import FormVeiculo from './FormVeiculo'
-import AcoesVeiculo from './AcoesVeiculo'
+import PainelVeiculos, { type VeiculoLinha } from './PainelVeiculos'
 
 export const revalidate = 0
 
@@ -78,14 +75,38 @@ export default async function VeiculosPage({
     supabase.from('jornada_dias').select('data, tipo')
       .eq('evento_id', eventoParam).eq('cancelado', false).order('data'),
     supabase.from('veiculos')
-      .select('id, placa, modelo, cor, tipo, empresa, observacoes, created_at, funcionarios(nome, cpf), veiculo_dias(data)')
+      .select('id, placa, modelo, cor, tipo, empresa, observacoes, foto_path, created_at, funcionarios(nome, cpf), veiculo_dias(data)')
       .eq('evento_id', eventoParam).order('created_at', { ascending: false }),
   ])
+
+  /*
+   * O caminho da foto NAO desce pra tela — só "tem ou não tem".
+   *
+   * Quem abre a foto pede uma URL assinada na hora (`urlFotoVeiculo`), que
+   * vale 30 minutos. Mandar o caminho do arquivo pro navegador seria dar de
+   * graça a localização de todas as fotos do bucket a quem abrisse a página.
+   */
+  const linhas: VeiculoLinha[] = (veiculos ?? []).map(v => {
+    const cond = v.funcionarios as unknown as { nome: string; cpf: string } | null
+    return {
+      id: v.id as string,
+      placa: v.placa as string,
+      modelo: v.modelo as string,
+      cor: (v.cor as string | null) ?? null,
+      tipo: (v.tipo as string | null) ?? null,
+      empresa: (v.empresa as string | null) ?? null,
+      observacoes: (v.observacoes as string | null) ?? null,
+      condutorNome: cond?.nome ?? null,
+      condutorCpf: cond?.cpf ?? null,
+      dias: ((v.veiculo_dias as unknown as { data: string }[] | null) ?? []).map(d => d.data),
+      temFoto: !!v.foto_path,
+    }
+  })
 
   return (
     <div className="space-y-5">
       <PageHeader
-        titulo="Cadastrar veículo"
+        titulo="Veículos do evento"
         descricao={`${evento.nome} — veículos autorizados a entrar`}
         acoes={
           <Link href="/admin/veiculos" className="btn btn-secundario">
@@ -94,82 +115,11 @@ export default async function VeiculosPage({
         }
       />
 
-      <FormVeiculo eventoId={eventoParam} dias={(dias ?? []) as { data: string; tipo: string }[]} />
-
-      <Secao
-        tom="acento"
-        icone={<Truck className="w-3.5 h-3.5" />}
-        titulo={`${veiculos?.length ?? 0} veículo${veiculos?.length === 1 ? '' : 's'} cadastrado${veiculos?.length === 1 ? '' : 's'}`}
-        descricao="A portaria confere a placa nesta lista"
-        corpoClassName={veiculos?.length ? '' : 'p-4'}
-      >
-        {!veiculos?.length ? (
-          <EmptyState
-            icone={<Truck className="w-7 h-7" />}
-            titulo="Nenhum veículo ainda"
-            descricao="Cadastre acima, começando pelo CPF de quem vai dirigir."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Placa</th>
-                  <th>Veículo</th>
-                  <th>Condutor</th>
-                  <th>Empresa</th>
-                  <th>Dias</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {veiculos.map(v => {
-                  const cond = v.funcionarios as unknown as { nome: string; cpf: string } | null
-                  const diasDoVeiculo = (v.veiculo_dias as unknown as { data: string }[] | null) ?? []
-                  return (
-                    <tr key={v.id as string}>
-                      <td className="font-mono font-bold tabular-nums whitespace-nowrap">{v.placa as string}</td>
-                      <td>
-                        <p className="text-slate-700">{v.modelo as string}</p>
-                        <p className="text-slate-400 text-2xs">
-                          {[v.tipo, v.cor].filter(Boolean).join(' · ') || '—'}
-                        </p>
-                        {v.observacoes ? (
-                          <p className="text-amber-700 text-2xs mt-0.5">{v.observacoes as string}</p>
-                        ) : null}
-                      </td>
-                      <td>
-                        <p className="text-slate-700">{cond?.nome ?? '—'}</p>
-                        {cond?.cpf && (
-                          <p className="text-slate-400 text-2xs tabular-nums">{formatCpf(cond.cpf)}</p>
-                        )}
-                      </td>
-                      <td className="text-slate-500">{(v.empresa as string | null) || '—'}</td>
-                      <td className="text-slate-500 text-2xs">
-                        {/* Sem dia marcado = autorizado em todos — é o padrão
-                            do cadastro, e dizer "Todos" evita a leitura de
-                            que ficou faltando preencher. */}
-                        {diasDoVeiculo.length
-                          ? diasDoVeiculo
-                              .map(d => formatarBR(`${d.data}T12:00:00-03:00`, 'data').slice(0, 5))
-                              .join(', ')
-                          : 'Todos'}
-                      </td>
-                      <td className="text-right">
-                        <AcoesVeiculo
-                          veiculoId={v.id as string}
-                          eventoId={eventoParam}
-                          placa={v.placa as string}
-                        />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Secao>
+      <PainelVeiculos
+        eventoId={eventoParam}
+        dias={(dias ?? []) as { data: string; tipo: string }[]}
+        veiculos={linhas}
+      />
     </div>
   )
 }
