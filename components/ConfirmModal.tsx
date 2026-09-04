@@ -52,7 +52,7 @@ export default function ConfirmModal({
           </div>
           <div className="min-w-0">
             <h2 className="text-slate-800 font-bold">{titulo}</h2>
-            <p className="text-slate-500 text-sm mt-1">{mensagem}</p>
+            <p className="text-slate-500 text-sm mt-1 whitespace-pre-line">{mensagem}</p>
           </div>
         </div>
         <div className="flex items-center justify-end gap-2">

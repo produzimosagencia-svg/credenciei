@@ -371,7 +371,7 @@ export default function FuncionarioTable({
                         onClick={() => handleDelete(f)}
                         disabled={isPending}
                         className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                        aria-label="Remover"
+                        aria-label="Excluir de vez (apaga o histórico)"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -487,7 +487,7 @@ export default function FuncionarioTable({
                           onClick={() => handleDelete(f)}
                           disabled={isPending}
                           className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                          title="Remover"
+                          title="Excluir de vez (apaga o histórico)"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -536,12 +536,23 @@ export default function FuncionarioTable({
           : ''}
       />
 
+      {/*
+        * Excluir apaga o histórico junto — e quem clica precisa saber disso
+        * ANTES, não depois. "Remover fulano?" não dizia nada do que some, e
+        * agora que o supervisor também exclui, a diferença entre este botão
+        * e o "Tirar da equipe" ao lado é justamente o que ele precisa ler.
+        */}
       <ConfirmModal
         open={!!paraExcluir}
         onClose={() => setParaExcluir(null)}
         onConfirm={confirmarExclusao}
         isPending={isPending}
-        mensagem={paraExcluir ? `Remover "${paraExcluir.nome}"?` : ''}
+        titulo="Excluir de vez"
+        mensagem={paraExcluir
+          ? `Apagar "${paraExcluir.nome}" do sistema? Some o cadastro e TODAS as batidas de ponto dela neste evento — isso não dá pra desfazer, nem aparece mais em relatório nenhum.
+
+Se ela só não vai mais trabalhar aqui, use "Tirar da equipe": o QR dela para de valer e o histórico fica.`
+          : ''}
       />
     </div>
   )

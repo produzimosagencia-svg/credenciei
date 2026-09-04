@@ -399,7 +399,7 @@ export default async function EventoPage({
           icone={<Users className="w-3.5 h-3.5" />}
           titulo="Fornecedores e setores"
           descricao="Cada setor gera um link próprio de cadastro para a equipe"
-          acoes={<FornecedorModal eventoId={id} mode="criar" />}
+          acoes={<FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil.role) || perfil.role === 'suporte'} />}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
           {/*

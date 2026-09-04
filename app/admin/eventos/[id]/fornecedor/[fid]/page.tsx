@@ -1,5 +1,5 @@
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeExcluir, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
@@ -9,6 +9,7 @@ import { Secao, PageHeader } from '@/components/ui/Superficie'
 import AcoesDaEquipe from './AcoesDaEquipe'
 import TrocarSetor from './TrocarSetor'
 import ImportarFuncionarios from '../../ImportarFuncionarios'
+import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
 import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import AutoRefresh from './AutoRefresh'
@@ -334,6 +335,9 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         />
       </Secao>
 
+      {/* Só aparece quando há CPF repetido — numa equipe limpa some inteiro. */}
+      <CpfsDuplicados grupos={acharDuplicados(funcionariosEnriquecidos)} />
+
       <div data-tutorial="setor-tabela">
         <FuncionarioTable
           funcionarios={funcionariosEnriquecidos}
@@ -342,7 +346,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}
           setorNome={fornecedor.nome}
           valorCombinado={fornecedor.valor_combinado ?? null}
-          podeExcluir={podeExcluir(perfil.role)}
+          podeExcluir={podeExcluirDaEquipe(perfil.role)}
           outrosSetores={outrosSetores ?? []}
           /*
            * Mover é decisão de quem enxerga o evento inteiro, não de um

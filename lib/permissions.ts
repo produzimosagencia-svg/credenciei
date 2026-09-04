@@ -74,6 +74,20 @@ export const podeExcluir = (role?: string) => role === 'master'
 /** @deprecated Use `podeExcluir`. Mantido porque já é chamado em algumas telas. */
 export const podeExcluirEventos = podeExcluir
 
+/**
+ * Pode APAGAR alguém da equipe de um setor.
+ *
+ * Mais largo que `podeExcluir` (só master) de propósito, decisão do Juan em
+ * 04/09/2026: o supervisor precisava disso pra limpar a própria equipe sem
+ * depender de ninguém — desativar não estava resolvendo o caso dele.
+ *
+ * O escopo não mora aqui: quem prende o supervisor aos setores DELE é
+ * `exigirAcessoFuncionarios`, na action. Esta função só diz quais papéis
+ * têm a ação — nunca sobre qual equipe.
+ */
+export const podeExcluirDaEquipe = (role?: string) =>
+  role === 'master' || role === 'admin' || role === 'supervisor' || role === 'suporte'
+
 /** Dono de um acesso de apoio contratado pro evento — nunca administra. */
 export const ehSuporte = (role?: string) => role === 'suporte'
 

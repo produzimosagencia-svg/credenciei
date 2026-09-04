@@ -4,10 +4,12 @@ import { useRouter } from 'next/navigation'
 import { Upload, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { lerPlanilhaDeEquipe } from '@/lib/planilha'
+import { formatCpf } from '@/lib/format'
+import type { LinhaIgnorada } from '@/lib/importacao'
 // xlsx é pesado e só é usado no download do modelo aqui (a leitura mora em
 // lib/planilha) — carregado sob demanda pra não engordar o bundle da página.
 
-type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; reaproveitados?: number; error?: string } | null
+type Status = { ok: boolean; total?: number; invalidos?: number; duplicados?: number; reaproveitados?: number; error?: string; ignorados?: LinhaIgnorada[] } | null
 
 /**
  * Duas aparências, o mesmo comportamento:
@@ -50,10 +52,10 @@ export default function ImportarFuncionarios({
 
       const json = await res.json()
       if (res.ok) {
-        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados, reaproveitados: json.reaproveitados })
+        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados, reaproveitados: json.reaproveitados, ignorados: json.ignorados })
         router.refresh()
       } else {
-        setStatus({ ok: false, error: json.error ?? 'Erro ao importar.' })
+        setStatus({ ok: false, error: json.error ?? 'Erro ao importar.', ignorados: json.ignorados })
       }
     } catch {
       setStatus({ ok: false, error: 'Erro ao ler o arquivo.' })
@@ -138,10 +140,24 @@ export default function ImportarFuncionarios({
               {status.reaproveitados} já {status.reaproveitados !== 1 ? 'estavam' : 'estava'} na nossa base — completamos telefone, cargo e PIX que faltavam na planilha.
             </div>
           )}
-          {status.ok && !!status.duplicados && (
-            <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg text-amber-600">
-              <AlertCircle className="w-3 h-3 shrink-0" />
-              {status.duplicados} CPF{status.duplicados !== 1 ? 's' : ''} já cadastrado{status.duplicados !== 1 ? 's' : ''} neste evento {status.duplicados !== 1 ? 'foram ignorados' : 'foi ignorado'} (sem duplicar ninguém).
+          {!!status.ignorados?.length && (
+            <div className="text-xs px-2 py-1.5 rounded-lg text-amber-700 bg-amber-50 space-y-1.5">
+              <p className="flex items-start gap-1.5 font-medium">
+                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                {status.ignorados.length} CPF{status.ignorados.length !== 1 ? 's' : ''} já cadastrado{status.ignorados.length !== 1 ? 's' : ''} neste evento {status.ignorados.length !== 1 ? 'foram ignorados' : 'foi ignorado'} (sem duplicar ninguém):
+              </p>
+              {/* Rola: com planilha grande a lista passa de 30 linhas, e sem
+                  altura o aviso empurrava o resto do modal pra fora da tela. */}
+              <ul className="max-h-40 overflow-y-auto space-y-0.5 pl-4">
+                {status.ignorados.map((f, i) => (
+                  <li key={`${f.cpf}-${i}`} className="text-amber-800">
+                    {f.nome || 'Sem nome na planilha'} — CPF: {formatCpf(f.cpf)}
+                    {f.setor
+                      ? <span className="text-amber-600"> (já está em {f.setor})</span>
+                      : <span className="text-amber-600"> (repetido na própria planilha)</span>}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

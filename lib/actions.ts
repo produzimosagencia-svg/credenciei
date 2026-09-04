@@ -20,6 +20,7 @@ import {
   podeGerenciarOrganizacoes,
   podeExcluirEventos,
   podeExcluir,
+  podeExcluirDaEquipe,
   podeEditarIdentidade,
   podeEscanear,
   podeAcompanhar,
@@ -144,7 +145,17 @@ async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) 
   const perfil = await getPerfil()
   if (!perfil) throw new Error('Sem permissão')
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+    /*
+     * Os setores DELE, no plural.
+     *
+     * Um supervisor pode cobrir vários setores (`supervisor_setores`, e o
+     * botão "Trocar de setor" no painel existe pra isso). Comparar só com
+     * `perfil.fornecedor_id` dava a ele um painel que abre e botões que
+     * recusam em todos os setores menos um — e a rota de importação já
+     * usava a régua certa, então as duas discordavam sobre o mesmo setor.
+     */
+    const meus = await meusSetores(perfil)
+    if (!meus.some(s => s.id === fornecedorId)) throw new Error('Sem permissão sobre este setor')
     return perfil
   }
   if (!podeGerenciarEventos(perfil.role)) throw new Error('Sem permissão')
@@ -1530,10 +1541,48 @@ function parseValor(v: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * Cria um setor — com supervisor, sempre.
+ *
+ * O supervisor deixou de ser um segundo passo em 04/09/2026, a pedido do
+ * Juan. Setor sem supervisor abria o link de cadastro e recebia gente sem
+ * ninguém responsvel por conferir a equipe — e como criar o acesso era
+ * outra tela, em outro menu, sempre ficava pra depois.
+ *
+ * Quem já é supervisor no sistema entra pelo próprio CPF: `criarSupervisor`
+ * reconhece o CPF, soma o setor novo aos que a pessoa já cobre e não cria
+ * acesso duplicado (ver `supervisor_setores` lá).
+ *
+ * Se o supervisor falhar, o setor recém-criado é desfeito. Sem isso, o
+ * primeiro CPF digitado errado deixaria na tela exatamente o que esta
+ * mudança existe pra impedir: um setor sem ninguém respondendo por ele.
+ */
 export async function criarFornecedor(eventoId: string, formData: FormData) {
-  await exigirEventoDaOrg(eventoId)
+  const perfilCriador = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
   const nomeFornecedor = formData.get('nome') as string
+
+  /*
+   * Validado ANTES de criar o setor — as mesmas regras de `criarSupervisor`,
+   * repetidas aqui de propósito: falhar depois do insert obrigaria a desfazer
+   * o setor por um campo em branco, e desfazer é sempre a opção pior.
+   *
+   * `cliente` é papél legado que gerencia evento mas não cria acesso nenhum
+   * (ver `podeGerenciarUsuarios`): pra ele o setor continua nascendo sem
+   * supervisor, porque exigir o que ele não pode fazer o deixaria sem poder
+   * criar setor.
+   */
+  const exigeSupervisor = podeGerenciarUsuarios(perfilCriador?.role) || perfilCriador?.role === 'suporte'
+  const supNome = ((formData.get('supervisor_nome') as string) ?? '').trim()
+  const supCpf = normalizarCpf((formData.get('supervisor_cpf') as string) ?? '')
+  const supTelefone = ((formData.get('supervisor_telefone') as string) ?? '').replace(/\D/g, '')
+  if (exigeSupervisor) {
+    if (!supNome) throw new Error('Informe o nome do supervisor deste setor.')
+    if (supCpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
+    if (supTelefone.length < 10 || supTelefone.length > 13) {
+      throw new Error('Informe o WhatsApp do supervisor — é por ele que o acesso chega.')
+    }
+  }
   const data = {
     evento_id: eventoId,
     nome: nomeFornecedor,
@@ -1556,6 +1605,20 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
     .update({ exige_meio: formData.get('exige_meio') === 'on' })
     .eq('id', novo.id)
   if (erroMeio) console.error('[criarFornecedor] exige_meio não gravado (migração pendente?)', erroMeio.message)
+
+  if (exigeSupervisor) {
+    const dadosSupervisor = new FormData()
+    dadosSupervisor.set('nome', supNome)
+    dadosSupervisor.set('cpf', supCpf)
+    dadosSupervisor.set('telefone', supTelefone)
+    try {
+      await criarSupervisor(novo.id, eventoId, dadosSupervisor)
+    } catch (e) {
+      // Desfaz o setor: melhor não existir do que existir sem responsável.
+      await db.from('fornecedores').delete().eq('id', novo.id)
+      throw e
+    }
+  }
 
   // Cria a aba na planilha depois da resposta (after: sobrevive ao serverless da Vercel)
   after(() => garantirAbaFornecedorAsync(eventoId, nomeFornecedor))
@@ -1985,17 +2048,51 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   }
 }
 
-export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
-  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
-  // checagem é a que vale: esconder o botão não impede a chamada direta.
-  const perfilExclusao = await getPerfil()
-  if (!podeExcluir(perfilExclusao?.role)) {
-    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
+/**
+ * Apaga um funcionário — o cadastro e tudo que está pendurado nele.
+ *
+ * O supervisor entrou aqui em 04/09/2026, a pedido do Juan. O gargalo era
+ * concreto: desativar não resolvia (a pessoa reaparecia ativa no dia
+ * seguinte) e ele dependia de outra pessoa pra limpar a própria equipe. Ele
+ * só apaga de setor DELE — quem garante isso é `exigirAcessoFuncionarios`.
+ *
+ * É destrutivo de verdade: `registros`, `veiculos` e os lembretes têm
+ * `on delete cascade` pro funcionário, então as batidas de ponto vão junto e
+ * não voltam. Pra "esta pessoa não trabalha mais aqui" existe
+ * `descredenciarFuncionario`, que preserva o histórico — a tela oferece os
+ * dois lado a lado e diz qual faz o quê.
+ *
+ * A auditoria é gravada DEPOIS do delete e com nome e CPF escritos no texto:
+ * `alteracoes_cadastro.funcionario_id` é `on delete set null`, então o link
+ * some junto com a pessoa. Sem o nome no registro, sobraria "alguém apagou
+ * alguém" — que é o mesmo que não ter auditoria.
+ */
+export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string) {
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  // Esta checagem é a que vale: esconder o botão não impede a chamada direta.
+  if (!podeExcluirDaEquipe(perfil.role)) {
+    throw new Error('Você não pode excluir. Use "Tirar da equipe", que preserva o histórico.')
   }
   const db = supabaseAdmin
+
+  // Lido ANTES: depois do delete não existe mais de onde tirar nome e CPF.
+  const { data: alvo } = await db
+    .from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', id).single()
+  if (!alvo) throw new Error('Esta pessoa já não está mais aqui. Recarregue a página.')
+  // Segunda tranca: o id vem do cliente, e sem isto um id colado apagaria
+  // gente de outro setor com a permissão deste.
+  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste setor.')
+
   const { error } = await db.from('funcionarios').delete().eq('id', id)
   if (error) throw new Error(mensagemAmigavel(error))
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'EXCLUSAO_FUNCIONARIO', eventoId,
+    campoAlterado: 'Funcionário excluído',
+    valorAnterior: `${alvo.nome} — CPF ${alvo.cpf}`,
+    motivo: motivo ?? null,
+  }))
+
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 

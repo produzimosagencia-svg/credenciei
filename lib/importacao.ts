@@ -16,9 +16,17 @@ import type { LinhaPlanilha } from '@/lib/planilha'
  * mesmas nos dois — se ficassem duplicadas, uma ia envelhecer sozinha.
  */
 
+/** Uma linha que a importação deixou de fora por CPF repetido. */
+export type LinhaIgnorada = {
+  nome: string
+  cpf: string
+  /** Em qual setor deste evento o CPF já estava. Vazio = repetido na própria planilha. */
+  setor: string | null
+}
+
 export type ResultadoImportacao =
-  | { ok: true; total: number; invalidos: number; duplicados: number; reaproveitados: number }
-  | { ok: false; error: string; status: number }
+  | { ok: true; total: number; invalidos: number; duplicados: number; reaproveitados: number; ignorados: LinhaIgnorada[] }
+  | { ok: false; error: string; status: number; ignorados?: LinhaIgnorada[] }
 
 type PerfilImportador = { role: Role; organizacao_id: string | null }
 
@@ -100,23 +108,48 @@ export async function importarFuncionarios(
   // UMA vez por evento. Remove repetidos dentro da própria planilha e
   // quem já está cadastrado em qualquer setor deste evento — assim dá pra
   // reenviar a mesma planilha corrigida sem duplicar ninguém.
+  /*
+   * QUAIS foram ignorados, não só quantos.
+   *
+   * A contagem sozinha ("10 CPFs já cadastrados foram ignorados") deixava
+   * quem importou sem saída: pra descobrir quem eram os 10, só conferindo a
+   * planilha de 200 linhas contra a tela, uma a uma. Com nome, CPF e o setor
+   * onde a pessoa já está, a conferência é imediata — e é nessa lista que
+   * aparece o caso real: a mesma pessoa mandada em dois setores.
+   */
+  const ignorados: LinhaIgnorada[] = []
+
   const vistos = new Set<string>()
   const semRepetidos = validos.filter(f => {
-    if (vistos.has(f.cpf)) return false
+    if (vistos.has(f.cpf)) {
+      ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null })
+      return false
+    }
     vistos.add(f.cpf)
     return true
   })
 
-  let jaCadastrados = new Set<string>()
+  const jaCadastrados = new Map<string, { nome: string; setor: string | null }>()
   if (semRepetidos.length) {
     const { data: existentes } = await supabaseAdmin
       .from('funcionarios')
-      .select('cpf, fornecedores!inner(evento_id)')
+      .select('cpf, nome, fornecedores!inner(evento_id, nome)')
       .eq('fornecedores.evento_id', eventoId)
       .in('cpf', semRepetidos.map(f => f.cpf))
-    jaCadastrados = new Set((existentes ?? []).map(e => e.cpf as string))
+    for (const e of existentes ?? []) {
+      jaCadastrados.set(e.cpf as string, {
+        nome: e.nome as string,
+        setor: (e.fornecedores as unknown as { nome: string } | null)?.nome ?? null,
+      })
+    }
   }
-  const duplicados = (validos.length - semRepetidos.length) + semRepetidos.filter(f => jaCadastrados.has(f.cpf)).length
+  for (const f of semRepetidos) {
+    const existente = jaCadastrados.get(f.cpf)
+    // O nome mostrado é o de QUEM JÁ ESTÁ no evento, não o da planilha: é
+    // ele que quem confere vai encontrar na tela ao ir atrás do caso.
+    if (existente) ignorados.push({ nome: existente.nome, cpf: f.cpf, setor: existente.setor })
+  }
+  const duplicados = ignorados.length
 
   const payload = semRepetidos
     .filter(f => !jaCadastrados.has(f.cpf))
@@ -128,7 +161,7 @@ export async function importarFuncionarios(
       : invalidos
         ? `Nenhum CPF no formato certo (${invalidos} linha${invalidos !== 1 ? 's' : ''} com CPF que não tem 11 dígitos).`
         : 'Nenhum funcionário válido encontrado'
-    return { ok: false, status: 400, error: motivo }
+    return { ok: false, status: 400, error: motivo, ignorados }
   }
 
   // Base central do Credenciei: quem já foi credenciado antes — por este ou
@@ -224,5 +257,5 @@ export async function importarFuncionarios(
     after(() => sincronizarAgendamentos(eventoId).catch(console.error))
   }
 
-  return { ok: true, total: inseridos?.length ?? 0, invalidos, duplicados, reaproveitados }
+  return { ok: true, total: inseridos?.length ?? 0, invalidos, duplicados, reaproveitados, ignorados }
 }

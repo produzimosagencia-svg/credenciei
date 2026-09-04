@@ -45,7 +45,9 @@ export async function POST(request: NextRequest) {
       funcionarios
     )
 
-    if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status })
+    // `ignorados` vai junto também no erro: o caso mais comum de falha é
+    // "todos já estavam cadastrados", e é aí que saber QUEM mais importa.
+    if (!res.ok) return NextResponse.json({ error: res.error, ignorados: res.ignorados ?? [] }, { status: res.status })
     return NextResponse.json(res)
   } catch (err) {
     console.error('[import/funcionarios]', err)

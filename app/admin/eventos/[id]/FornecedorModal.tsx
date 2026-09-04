@@ -3,14 +3,17 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Pencil } from 'lucide-react'
 import { criarFornecedor, editarFornecedor } from '@/lib/actions'
-import { NomeInput } from '@/components/inputs'
+import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
+import { mensagemAmigavel } from '@/lib/erros'
 
 type Props =
-  | { mode: 'criar'; eventoId: string }
+  /** `podeCriarSupervisor` — ver o bloco do supervisor no formulário. */
+  | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean }
   | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -24,15 +27,27 @@ export default function FornecedorModal(props: Props) {
   // (um por setor), e `htmlFor` repetido faria o clique cair no cartão errado.
   const idExigeMeio = `exige_meio_${isEditar ? (props as any).fornecedorId : 'novo'}`
 
+  /*
+   * O erro do servidor precisa aparecer no formulário.
+   *
+   * Agora o cadastro pode ser recusado por causa do supervisor (CPF que já
+   * é de outro tipo de acesso, telefone curto). Sem isto o modal fechava e o
+   * setor simplesmente não aparecia na lista, sem dizer por quê.
+   */
   const handleAction = (formData: FormData) => {
+    setErro(null)
     startTransition(async () => {
-      if (isEditar) {
-        await editarFornecedor((props as any).fornecedorId, props.eventoId, formData)
-      } else {
-        await criarFornecedor(props.eventoId, formData)
+      try {
+        if (isEditar) {
+          await editarFornecedor((props as any).fornecedorId, props.eventoId, formData)
+        } else {
+          await criarFornecedor(props.eventoId, formData)
+        }
+        setOpen(false)
+        router.refresh()
+      } catch (e) {
+        setErro(mensagemAmigavel(e))
       }
-      setOpen(false)
-      router.refresh()
     })
   }
 
@@ -100,6 +115,46 @@ export default function FornecedorModal(props: Props) {
                   </span>
                 </span>
               </label>
+
+              {/*
+                * O SUPERVISOR VEM JUNTO, NÃO DEPOIS.
+                *
+                * Era outra tela, em outro menu — e por isso ficava pra depois:
+                * o setor nascia com link de cadastro aberto e ninguém
+                * responsável por conferir quem entrava. Agora o setor só
+                * existe com alguém respondendo por ele.
+                *
+                * Só no cadastro: em "editar" o setor já tem supervisor, e
+                * trocar quem responde por uma equipe é outra decisão, que
+                * mora em Acessos.
+                */}
+              {props.mode === 'criar' && props.podeCriarSupervisor !== false && (
+                <div className="border-t border-slate-200 pt-4 space-y-3">
+                  <div>
+                    <p className="text-slate-800 text-sm font-semibold">Supervisor responsável *</p>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      Ele recebe o acesso por WhatsApp e passa a cuidar desta equipe. Se a
+                      pessoa já for supervisora aqui, digite o mesmo CPF — este setor entra
+                      nos dela, sem criar login novo.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome *</label>
+                    <NomeInput name="supervisor_nome" required placeholder="Nome da pessoa" className="input" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1.5">CPF *</label>
+                    <CpfInput name="supervisor_cpf" required placeholder="000.000.000-00" className="input" />
+                    <p className="text-slate-500 text-xs mt-1">É com ele que o supervisor entra no sistema.</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700 block mb-1.5">WhatsApp *</label>
+                    <TelefoneInput name="supervisor_telefone" required placeholder="(11) 99999-9999" className="input" />
+                  </div>
+                </div>
+              )}
+
+              {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
               <button type="submit" disabled={isPending} className="btn btn-primario w-full">
                 {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
