@@ -13,10 +13,20 @@ const archivo = Archivo({
   display: "swap",
 });
 
+/*
+ * Sem `icons` aqui de propósito: os ícones vêm dos arquivos
+ * `app/favicon.ico`, `app/icon.png` e `app/apple-icon.png` (convenção do
+ * App Router), gerados a partir de public/marca/iso-laranja.png já
+ * QUADRADOS e centralizados.
+ *
+ * Apontar o metadata direto pro asset da marca parecia equivalente, mas
+ * ele é 512x496 — o navegador espremia o símbolo pra caber num quadrado.
+ * E, com as duas fontes declaradas ao mesmo tempo, qual das duas o
+ * navegador escolhia era loteria.
+ */
 export const metadata: Metadata = {
   title: "Credenciei",
   description: "Credenciamento de equipes para eventos",
-  icons: { icon: "/marca/iso-laranja.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
