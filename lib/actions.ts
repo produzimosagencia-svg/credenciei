@@ -33,7 +33,7 @@ import {
   diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia, conferirHorariosDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
-import { validarCpf } from './format'
+import { validarCpf, formatCpf } from './format'
 import { normalizarCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
@@ -623,7 +623,9 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
     after(() => registrarAuditoria({
-      perfil, acao: 'ALTERACAO_SUPERVISOR', campoAlterado: 'setor', valorNovo: fornecedor.nome,
+      perfil, acao: 'ALTERACAO_SUPERVISOR',
+      campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
+      valorNovo: `${nome} — CPF ${formatCpf(cpf)} (já era supervisor, ganhou mais este setor)`,
       eventoId, organizacaoId: organizacaoId ?? undefined,
     }))
 
@@ -759,7 +761,9 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
 
   await vincularSupervisorAoSetor(user.user!.id, fornecedorId)
   after(() => registrarAuditoria({
-    perfil, acao: 'ALTERACAO_SUPERVISOR', campoAlterado: 'setor', valorNovo: fornecedor.nome,
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
+    valorNovo: `${nome} — CPF ${formatCpf(cpf)} (acesso novo)`,
     eventoId, organizacaoId: organizacaoId ?? undefined,
   }))
 
@@ -1094,6 +1098,11 @@ export type LinhaAuditoria = {
   id: string; acao: string; usuarioResponsavel: string; campoAlterado: string | null
   valorAnterior: string | null; valorNovo: string | null; motivo: string | null
   eventoNome: string | null; funcionarioNome: string | null; criadoEm: string
+  /** Papel de quem fez — "supervisor" e "admin" respondem por coisas diferentes. */
+  autorRole: string | null
+  funcionarioCpf: string | null
+  funcionarioSetor: string | null
+  ip: string | null
 }
 
 /**
@@ -1101,17 +1110,39 @@ export type LinhaAuditoria = {
  * tudo, admin só a própria organização, suporte só o próprio escopo (o que
  * ele mesmo fez, dentro do que tem acesso).
  */
-export async function obterAuditoria(opcoes: { eventoId?: string; limite?: number } = {}): Promise<LinhaAuditoria[]> {
+export async function obterAuditoria(
+  opcoes: { eventoId?: string; limite?: number; dias?: number } = {},
+): Promise<LinhaAuditoria[]> {
   const perfil = await getPerfil()
   if (!perfil) return []
 
   let query = supabaseAdmin
     .from('alteracoes_cadastro')
-    .select('id, acao, usuario_responsavel, campo_alterado, valor_anterior, valor_novo, motivo, created_at, eventos(nome), funcionarios(nome)')
+    /*
+     * `perfis` e `fornecedores` entram no mesmo select porque a linha sozinha
+     * não respondia o que se pergunta na frente dela: "quem é esse nome?" e
+     * "de qual setor era a pessoa?". São dois joins por chave estrangeira que
+     * já existem — nenhuma coluna nova, nada que dependa de migração.
+     */
+    .select('id, acao, usuario_responsavel, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, eventos(nome), perfis(role), funcionarios(nome, cpf, fornecedores(nome))')
     .order('created_at', { ascending: false })
     .limit(opcoes.limite ?? 100)
 
   if (opcoes.eventoId) query = query.eq('evento_id', opcoes.eventoId)
+
+  /*
+   * O corte é por DIA, e o dia é o de Brasília.
+   *
+   * "Hoje" (dias = 1) começa à meia-noite daqui, não 24 horas atrás: quem
+   * abre a tela às 9h da manhã quer o que aconteceu hoje, e não metade de
+   * ontem junto. Em UTC a virada cairia às 21h, e a auditoria da noite de
+   * ontem apareceria como sendo de hoje.
+   */
+  if (opcoes.dias && opcoes.dias > 0) {
+    const inicio = new Date(`${diaBRT()}T00:00:00-03:00`)
+    inicio.setUTCDate(inicio.getUTCDate() - (opcoes.dias - 1))
+    query = query.gte('created_at', inicio.toISOString())
+  }
 
   if (perfil.role === 'suporte') {
     query = query.eq('usuario_responsavel_id', perfil.id)
@@ -1131,6 +1162,10 @@ export async function obterAuditoria(opcoes: { eventoId?: string; limite?: numbe
     motivo: (a.motivo as string | null) ?? null,
     eventoNome: (a.eventos as unknown as { nome: string } | null)?.nome ?? null,
     funcionarioNome: (a.funcionarios as unknown as { nome: string } | null)?.nome ?? null,
+    funcionarioCpf: (a.funcionarios as unknown as { cpf: string } | null)?.cpf ?? null,
+    funcionarioSetor: (a.funcionarios as unknown as { fornecedores: { nome: string } | null } | null)?.fornecedores?.nome ?? null,
+    autorRole: (a.perfis as unknown as { role: string } | null)?.role ?? null,
+    ip: (a.ip as string | null) ?? null,
     criadoEm: a.created_at as string,
   }))
 }
@@ -1499,7 +1534,7 @@ export async function redefinirSenha(usuarioId: string, novaSenha: string, motiv
   if (!novaSenha || novaSenha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('id, nome, email, role, organizacao_id, fornecedor_id').eq('id', usuarioId).single()
+  const { data: alvo } = await admin.from('perfis').select('id, nome, email, cpf, role, organizacao_id, fornecedor_id').eq('id', usuarioId).single()
   if (!alvo) throw new Error('Usuário não encontrado')
 
   if (podeGerenciarUsuarios(perfil.role)) {
@@ -1527,6 +1562,9 @@ export async function redefinirSenha(usuarioId: string, novaSenha: string, motiv
   console.warn(`[redefinirSenha] ${perfil.email} redefiniu a senha de ${alvo.email}`)
   after(() => registrarAuditoria({
     perfil, acao: 'RESET_SENHA', motivo: motivo ?? null, organizacaoId: alvo.organizacao_id ?? undefined,
+    // Sem isto a linha dizia só "Redefinição de senha", sem dizer de quem.
+    campoAlterado: 'Senha de acesso',
+    valorNovo: `${alvo.nome}${alvo.cpf ? ` — CPF ${formatCpf(alvo.cpf as string)}` : ''}`,
   }))
   revalidatePath('/admin/usuarios')
   return { ok: true as const, nome: alvo.nome as string, email: alvo.email as string }
@@ -2089,7 +2127,7 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
   after(() => registrarAuditoria({
     perfil, acao: 'EXCLUSAO_FUNCIONARIO', eventoId,
     campoAlterado: 'Funcionário excluído',
-    valorAnterior: `${alvo.nome} — CPF ${alvo.cpf}`,
+    valorAnterior: `${alvo.nome} — CPF ${formatCpf(alvo.cpf as string)}`,
     motivo: motivo ?? null,
   }))
 
@@ -2312,6 +2350,12 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
 
   after(() => registrarAuditoria({
     perfil, acao: ativo ? 'ATIVACAO_FUNCIONARIO' : 'DESATIVACAO_FUNCIONARIO',
+    // O de→para importa aqui mais do que em qualquer outra ação: a dúvida
+    // que traz alguém à auditoria é "quem reativou fulano?", e sem os dois
+    // estados escritos a linha não responde.
+    campoAlterado: 'Situação no evento',
+    valorAnterior: ativo ? 'Inativo' : 'Ativo',
+    valorNovo: ativo ? 'Ativo' : 'Inativo',
     motivo: motivo ?? null, funcionarioId, eventoId,
   }))
 
