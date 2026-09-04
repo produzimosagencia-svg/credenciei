@@ -5,6 +5,7 @@ import { QrCode, Link2Off } from 'lucide-react'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
+import { consultarAutorizacaoCadastroIndividual } from '@/lib/cadastro-individual'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-cadastro',
@@ -35,10 +36,10 @@ export default async function FormPage({
    * importa no fechamento: saber que alguém entrou pelo cartaz, e não pela
    * lista, muda a conversa sobre quem autorizou aquela contratação.
    */
-  searchParams: Promise<{ de?: string; cpf?: string }>
+  searchParams: Promise<{ de?: string; cpf?: string; individual?: string }>
 }) {
   const { token } = await params
-  const { de, cpf } = await searchParams
+  const { de, cpf, individual } = await searchParams
   const origem = de === 'portaria' ? 'portaria' : 'formulario'
 
   const { data: fornecedor } = await supabase
@@ -50,6 +51,14 @@ export default async function FormPage({
   if (!fornecedor) notFound()
 
   const evento = (fornecedor.eventos as any)
+  const autorizacao = individual
+    ? await consultarAutorizacaoCadastroIndividual(individual)
+    : null
+  const excecaoIndividualValida = Boolean(
+    autorizacao?.valido
+    && autorizacao.eventoId === evento?.id
+    && autorizacao.fornecedorId === fornecedor.id,
+  )
 
   /*
    * Cadastro suspenso pela organização (botão "Suspender cadastro" na tela
@@ -61,7 +70,7 @@ export default async function FormPage({
    * (`cadastro_suspenso`) ou só ESTE setor desligado (`link_ativo`, o
    * botão no card do setor). Ver upgrade-link-do-setor.sql.
    */
-  if (evento?.cadastro_suspenso || fornecedor.link_ativo === false) {
+  if ((evento?.cadastro_suspenso || fornecedor.link_ativo === false) && !excecaoIndividualValida) {
     return (
       <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">
@@ -96,7 +105,19 @@ export default async function FormPage({
               <TutorialButton />
             </div>
           </div>
-          <FormularioFuncionario fornecedorId={fornecedor.id} origem={origem} cpfInicial={cpf} />
+          {excecaoIndividualValida && (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-center">
+              <p className="text-green-800 text-sm font-bold">Cadastro individual liberado</p>
+              <p className="text-green-700 text-xs mt-0.5">Este acesso vale somente para o CPF autorizado pelo master.</p>
+            </div>
+          )}
+          <FormularioFuncionario
+            fornecedorId={fornecedor.id}
+            origem={origem}
+            cpfInicial={excecaoIndividualValida ? autorizacao?.cpf : cpf}
+            cpfBloqueado={excecaoIndividualValida}
+            autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
+          />
         </div>
       </div>
     </TutorialProvider>

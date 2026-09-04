@@ -448,7 +448,12 @@ export default async function EventoPage({
           {/* O interruptor do cadastro por link vem ANTES da portaria e dos
               setores: é a decisão que vale pra todos eles de uma vez. */}
           {podeGerenciarEventos(perfil?.role) && (
-            <CadastroPorLinkCard eventoId={id} suspenso={evento.cadastro_suspenso === true} />
+            <CadastroPorLinkCard
+              eventoId={id}
+              suspenso={evento.cadastro_suspenso === true}
+              podeReabrirIndividual={ehMaster(perfil?.role)}
+              setores={(fornecedores ?? []).map(f => ({ id: f.id, nome: f.nome }))}
+            />
           )}
           {(podeGerenciarEventos(perfil?.role) || podeGerenciarUsuarios(perfil?.role)) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-stretch">

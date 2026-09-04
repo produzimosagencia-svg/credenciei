@@ -46,6 +46,11 @@ import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
 import { urlBase } from './ia/ferramentas/base'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
+import {
+  consultarAutorizacaoCadastroIndividual,
+  consumirAutorizacaoCadastroIndividual,
+  criarAutorizacaoCadastroIndividual,
+} from './cadastro-individual'
 
 /** "12345678900" → "123.456.789-00". Só para leitura humana na mensagem. */
 function formatarCpfExibicao(cpf: string): string {
@@ -3951,14 +3956,17 @@ export async function registrarPresencaLivre(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string; origem?: string }
+  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string; origem?: string },
+  autorizacaoIndividual?: string,
 ): Promise<{ qrToken?: string; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, eventos(cadastro_suspenso)')
+    .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
+
+  const cpf = dados.cpf.replace(/\D/g, '')
 
   /*
    * As duas trancas do cadastro por link. A tela já avisa, mas é aqui que
@@ -3967,12 +3975,27 @@ export async function cadastrarFuncionarioPublico(
    *   evento suspenso  → `alternarCadastroPorLink` (fecha o evento inteiro)
    *   setor desligado  → `alternarLinkDoSetor` (fecha só este)
    *
-   * Qualquer uma das duas basta pra recusar; nenhuma vence a outra.
+   * Qualquer uma das duas basta pra recusar; nenhuma vence a outra. A única
+   * exceção é o link individual emitido pelo master, preso no servidor a
+   * ESTE evento, ESTE setor e ESTE CPF.
    */
-  if ((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso) {
+  const eventoSuspenso = Boolean((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso)
+  const setorSuspenso = (fornecedor as { link_ativo?: boolean }).link_ativo === false
+  let excecaoIndividualValida = false
+  if ((eventoSuspenso || setorSuspenso) && autorizacaoIndividual) {
+    const autorizacao = await consultarAutorizacaoCadastroIndividual(autorizacaoIndividual)
+    excecaoIndividualValida = Boolean(
+      autorizacao.valido
+      && autorizacao.eventoId === fornecedor.evento_id
+      && autorizacao.fornecedorId === fornecedorId
+      && autorizacao.cpf === cpf,
+    )
+  }
+
+  if (eventoSuspenso && !excecaoIndividualValida) {
     return { error: 'O cadastro para este evento foi encerrado pela organização.' }
   }
-  if ((fornecedor as { link_ativo?: boolean }).link_ativo === false) {
+  if (setorSuspenso && !excecaoIndividualValida) {
     return { error: 'O cadastro para este setor foi encerrado. Fale com quem te contratou.' }
   }
 
@@ -3982,7 +4005,6 @@ export async function cadastrarFuncionarioPublico(
     return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
   }
 
-  const cpf = dados.cpf.replace(/\D/g, '')
   if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
 
   /*
@@ -4043,7 +4065,12 @@ export async function cadastrarFuncionarioPublico(
     .limit(1)
   if (existentes && existentes.length) {
     const existente = existentes[0] as any
-    if (existente.fornecedor_id === fornecedorId) return { qrToken: existente.qr_token }
+    if (existente.fornecedor_id === fornecedorId) {
+      if (excecaoIndividualValida && autorizacaoIndividual) {
+        await consumirAutorizacaoCadastroIndividual(autorizacaoIndividual)
+      }
+      return { qrToken: existente.qr_token }
+    }
     const setorExistente = existente.fornecedores?.nome ?? 'outro setor'
     return { error: `Este CPF já está credenciado neste evento pelo setor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
   }
@@ -4094,6 +4121,9 @@ export async function cadastrarFuncionarioPublico(
     funcionarioId: data.id,
     telefone: dados.telefone,
   }).catch(console.error))
+  if (excecaoIndividualValida && autorizacaoIndividual) {
+    await consumirAutorizacaoCadastroIndividual(autorizacaoIndividual)
+  }
   return { qrToken: data.qr_token }
 }
 
@@ -5098,6 +5128,47 @@ export async function alternarCadastroPorLink(eventoId: string, suspender: boole
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
+}
+
+/**
+ * Reabre o formulário para uma única pessoa sem mexer no interruptor geral.
+ * Exclusivo do master: é uma exceção deliberada à decisão da organização de
+ * fechar a lista, então um admin da própria organização não pode concedê-la.
+ */
+export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId: string, cpfBruto: string) {
+  const perfil = await getPerfil()
+  if (!perfil || !ehMaster(perfil.role)) {
+    throw new Error('Só o acesso master pode reabrir um cadastro individual.')
+  }
+
+  const cpf = normalizarCpf(cpfBruto)
+  if (!validarCpf(cpf)) throw new Error('Informe um CPF válido, com 11 dígitos.')
+
+  const { data: setor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('id, nome, evento_id, token_formulario, eventos(nome, organizacao_id)')
+    .eq('id', fornecedorId)
+    .single()
+
+  if (!setor || setor.evento_id !== eventoId || !setor.token_formulario) {
+    throw new Error('Setor não encontrado neste evento.')
+  }
+
+  const { token, expiraEm } = await criarAutorizacaoCadastroIndividual({ eventoId, fornecedorId, cpf })
+  const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
+  const link = `${site}/form/${setor.token_formulario}?individual=${encodeURIComponent(token)}`
+  const eventoRel = setor.eventos as unknown as { nome?: string; organizacao_id?: string | null } | null
+
+  after(() => registrarAuditoria({
+    perfil,
+    acao: 'REABERTURA_CADASTRO_INDIVIDUAL',
+    campoAlterado: `Cadastro por link · ${setor.nome}`,
+    valorNovo: `Liberado para o CPF ${formatarCpfExibicao(cpf)}`,
+    eventoId,
+    organizacaoId: eventoRel?.organizacao_id ?? undefined,
+  }))
+
+  return { ok: true as const, link, expiraEm, setor: setor.nome, evento: eventoRel?.nome ?? 'Evento' }
 }
 
 /**

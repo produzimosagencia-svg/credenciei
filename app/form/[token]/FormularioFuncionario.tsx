@@ -54,13 +54,17 @@ function comprimir(file: File): Promise<string> {
 }
 
 export default function FormularioFuncionario({
-  fornecedorId, origem = 'formulario', cpfInicial,
+  fornecedorId, origem = 'formulario', cpfInicial, cpfBloqueado = false, autorizacaoIndividual,
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
   origem?: string
   /** Veio da portaria já com o CPF digitado — evita pedir de novo. */
   cpfInicial?: string
+  /** Link pessoal do master: o CPF faz parte da autorização e não pode mudar. */
+  cpfBloqueado?: boolean
+  /** Segredo pessoal validado outra vez no servidor ao concluir. */
+  autorizacaoIndividual?: string
 }) {
   const router = useRouter()
   const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
@@ -173,7 +177,7 @@ export default function FormularioFuncionario({
       consentimento,
       chavePix: form.chavePix,
       fotoBase64: foto ?? undefined,
-    })
+    }, autorizacaoIndividual)
 
     if (res.qrToken) {
       /*
@@ -294,7 +298,15 @@ export default function FormularioFuncionario({
         {erroFoto && <p className="text-red-500 text-xs mt-1">{erroFoto}</p>}
       </Field>
       <Field label="CPF *" tutorial="form-cpf">
-        <input required value={form.cpf} onChange={e => onCpf(formatCpf(e.target.value))} placeholder="000.000.000-00" className="input" inputMode="numeric" />
+        <input
+          required
+          value={form.cpf}
+          onChange={e => onCpf(formatCpf(e.target.value))}
+          placeholder="000.000.000-00"
+          className="input disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+          inputMode="numeric"
+          disabled={cpfBloqueado}
+        />
         {erroCpf && <p className="text-red-500 text-xs mt-1">{erroCpf}</p>}
         {!erroCpf && autofill && (
           <p className="flex items-center gap-1 text-brand-600 text-xs mt-1">
