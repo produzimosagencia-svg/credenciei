@@ -56,7 +56,12 @@ export default async function FormPage({
    * do evento). O link continua o mesmo — só a resposta muda. Quem já se
    * cadastrou não passa por aqui: a credencial dele é outra página.
    */
-  if (evento?.cadastro_suspenso) {
+  /*
+   * Duas trancas, e qualquer uma basta: o evento inteiro suspenso
+   * (`cadastro_suspenso`) ou só ESTE setor desligado (`link_ativo`, o
+   * botão no card do setor). Ver upgrade-link-do-setor.sql.
+   */
+  if (evento?.cadastro_suspenso || fornecedor.link_ativo === false) {
     return (
       <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">
@@ -66,7 +71,10 @@ export default async function FormPage({
           <h1 className="text-2xl font-bold text-slate-800">Cadastro encerrado</h1>
           <p className="text-slate-600 text-sm font-medium mt-1">{evento?.nome}</p>
           <p className="text-slate-500 text-sm mt-4">
-            A organização fechou a lista de <strong className="text-slate-700">{fornecedor.nome}</strong>. Se você já se cadastrou, sua credencial continua valendo — use o link que recebeu no WhatsApp. Se ainda precisa entrar na equipe, fale com quem te contratou.
+            {evento?.cadastro_suspenso
+              ? <>A organização fechou a lista deste evento.</>
+              : <>A lista de <strong className="text-slate-700">{fornecedor.nome}</strong> foi fechada.</>}
+            {' '}Se você já se cadastrou, sua credencial continua valendo — use o link que recebeu no WhatsApp. Se ainda precisa entrar na equipe, fale com quem te contratou.
           </p>
         </div>
       </div>

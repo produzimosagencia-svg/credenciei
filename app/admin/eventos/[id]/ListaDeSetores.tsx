@@ -60,6 +60,7 @@ export default function ListaDeSetores({
   funcionariosDoEvento,
   diasDoEvento,
   setoresComMeio,
+  setoresComLinkDesligado,
   podeGerenciarSupervisores,
   podeExcluir,
   eventoNome,
@@ -76,6 +77,8 @@ export default function ListaDeSetores({
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
+  /** Só os DESLIGADOS — ausente/vazio significa todos ligados. */
+  setoresComLinkDesligado?: Set<string>
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
   /** Só pro cabeçalho do modal de "pessoa encontrada" — não muda nenhuma consulta. */
@@ -300,6 +303,7 @@ export default function ListaDeSetores({
               funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               exigeMeio={setoresComMeio.has(f.id)}
+              linkAtivo={!setoresComLinkDesligado?.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
             />

@@ -62,11 +62,19 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
 
   const { data: setores } = await supabase
     .from('fornecedores')
-    .select('id, nome, token_formulario')
+    .select('id, nome, token_formulario, link_ativo')
     .eq('evento_id', evento.id)
     .order('nome')
 
-  const disponiveis = (setores ?? []).filter(s => s.token_formulario)
+  /*
+   * Setor com o link desligado não aparece pra escolher.
+   *
+   * Deixá-lo na lista levaria a pessoa até o formulário só pra ela bater
+   * na recusa lá dentro — com fila atrás, no portão. `link_ativo` pode vir
+   * `undefined` se a migração ainda não rodou; aí vale como ligado, e o
+   * cartaz segue funcionando como antes.
+   */
+  const disponiveis = (setores ?? []).filter(s => s.token_formulario && s.link_ativo !== false)
 
   return (
     <div className="min-h-screen bg-[#0e0e0e] flex flex-col">

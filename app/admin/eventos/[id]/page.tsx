@@ -144,6 +144,7 @@ export default async function EventoPage({
     { data: registrosDoDia },
     { data: operadoresRows },
     { data: setoresComMeioRows },
+    { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
   ] = await Promise.all([
@@ -155,6 +156,15 @@ export default async function EventoPage({
       : Promise.resolve(vazio),
     fornecedorIds.length
       ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
+      : Promise.resolve(vazio),
+    /*
+     * `link_ativo` em consulta SEPARADA, pelo mesmo motivo do `exige_meio`
+     * logo acima: é coluna nova, e pedir uma coluna inexistente derruba a
+     * consulta INTEIRA — a lista de setores sumiria da tela até a migração
+     * rodar. Isolada, a falha custa só o botão novo.
+     */
+    fornecedorIds.length
+      ? supabase.from('fornecedores').select('id, link_ativo').in('id', fornecedorIds)
       : Promise.resolve(vazio),
     /*
      * Serve a TRÊS coisas: Criar operador, Criar Supervisor, e a ficha
@@ -187,6 +197,15 @@ export default async function EventoPage({
 
   const setoresComMeio = new Set(
     (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
+  )
+  /*
+   * Só os DESLIGADOS entram no conjunto. Assim, se a consulta acima falhar
+   * (migração pendente), o conjunto fica vazio e todo setor aparece como
+   * ligado — que é o estado de antes desta funcionalidade, não "tudo
+   * fechado".
+   */
+  const setoresComLinkDesligado = new Set(
+    (linkDosSetoresRows ?? []).filter(f => f.link_ativo === false).map(f => f.id as string)
   )
 
   type SupervisorDoCard = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
@@ -434,6 +453,7 @@ export default async function EventoPage({
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}
+              setoresComLinkDesligado={setoresComLinkDesligado}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil?.role)}
               eventoNome={evento.nome}

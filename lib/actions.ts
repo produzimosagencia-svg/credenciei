@@ -3470,10 +3470,20 @@ export async function cadastrarFuncionarioPublico(
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
 
-  // A tranca do "Suspender cadastro" (ver `alternarCadastroPorLink`): a tela
-  // já avisa, mas é aqui que uma chamada direta é recusada.
+  /*
+   * As duas trancas do cadastro por link. A tela já avisa, mas é aqui que
+   * uma chamada direta é recusada — e é por isso que as duas moram juntas:
+   *
+   *   evento suspenso  → `alternarCadastroPorLink` (fecha o evento inteiro)
+   *   setor desligado  → `alternarLinkDoSetor` (fecha só este)
+   *
+   * Qualquer uma das duas basta pra recusar; nenhuma vence a outra.
+   */
   if ((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso) {
     return { error: 'O cadastro para este evento foi encerrado pela organização.' }
+  }
+  if ((fornecedor as { link_ativo?: boolean }).link_ativo === false) {
+    return { error: 'O cadastro para este setor foi encerrado. Fale com quem te contratou.' }
   }
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
@@ -4582,6 +4592,39 @@ export async function alternarCadastroPorLink(eventoId: string, suspender: boole
       throw new Error('O banco ainda não tem o campo de suspensão. Rode supabase/upgrade-cadastro-suspenso.sql no SQL Editor.')
     }
     throw new Error('Não foi possível mudar o cadastro por link. Tente de novo.')
+  }
+
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  return { ok: true as const }
+}
+
+/**
+ * Liga/desliga o link de cadastro de UM setor.
+ *
+ * O interruptor do evento (`alternarCadastroPorLink`) fecha tudo de uma
+ * vez; este fecha só o setor dele, no card dele — o caso de um setor que já
+ * fechou a equipe enquanto os outros seguem montando (Juan, 04/09/2026).
+ *
+ * Nenhum dos dois vence o outro: qualquer um fechado já basta pra recusar
+ * (ver `cadastrarFuncionarioPublico`, app/form e app/portaria).
+ */
+export async function alternarLinkDoSetor(eventoId: string, fornecedorId: string, ativo: boolean) {
+  await exigirEventoDaOrg(eventoId)
+
+  // O setor precisa ser DESTE evento — sem isto, um id de outro cliente
+  // colado na chamada mudaria o link dele.
+  const { data: setor } = await supabaseAdmin
+    .from('fornecedores').select('id, evento_id').eq('id', fornecedorId).single()
+  if (!setor || setor.evento_id !== eventoId) throw new Error('Setor não encontrado neste evento.')
+
+  const { error } = await supabaseAdmin
+    .from('fornecedores').update({ link_ativo: ativo }).eq('id', fornecedorId)
+
+  if (error) {
+    if (/link_ativo/.test(error.message)) {
+      throw new Error('O banco ainda não tem o campo do link por setor. Rode supabase/upgrade-link-do-setor.sql no SQL Editor.')
+    }
+    throw new Error('Não foi possível mudar o link deste setor. Tente de novo.')
   }
 
   revalidatePath(`/admin/eventos/${eventoId}`)

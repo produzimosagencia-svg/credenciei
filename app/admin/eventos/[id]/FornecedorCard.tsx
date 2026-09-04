@@ -2,8 +2,8 @@
 import Link from 'next/link'
 import { useTransition, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Trash2, Users, ArrowRight, Shield, Wallet, Link2 } from 'lucide-react'
-import { deletarFornecedor } from '@/lib/actions'
+import { Check, Trash2, Users, ArrowRight, Shield, Wallet, Link2, Link2Off } from 'lucide-react'
+import { deletarFornecedor, alternarLinkDoSetor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import PlanilhaModal from './PlanilhaModal'
 import SupervisorModal from './SupervisorModal'
@@ -32,6 +32,7 @@ export default function FornecedorCard({
   funcionariosDoEvento = [],
   diasDoEvento = [],
   exigeMeio = false,
+  linkAtivo = true,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
 }: {
@@ -50,11 +51,41 @@ export default function FornecedorCard({
   diasDoEvento?: DiaDoEvento[]
   /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
   exigeMeio?: boolean
+  /**
+   * O link de cadastro deste setor está ligado?
+   *
+   * Chega por prop, e não dentro de `fornecedor`, porque a coluna é nova:
+   * a página busca `link_ativo` numa consulta separada justamente pra que a
+   * migração pendente não derrube a lista de setores inteira. O padrão é
+   * `true` — sem informação, o setor vale como ligado, que é o estado de
+   * antes desta funcionalidade.
+   */
+  linkAtivo?: boolean
   podeGerenciarSupervisores?: boolean
   /** Só o master exclui. O admin encerra o evento, que resolve sem destruir. */
   podeExcluir?: boolean
 }) {
   const [copied, setCopied] = useState(false)
+  /*
+   * `undefined` (migração ainda não rodou) vale como LIGADO — sem isto, o
+   * dia em que a coluna não existisse o sistema mostraria todo setor como
+   * desligado e pareceria ter fechado o cadastro do evento inteiro sozinho.
+   */
+  const linkDesligado = !linkAtivo
+  const [mudandoLink, iniciarMudarLink] = useTransition()
+  const [erroLink, setErroLink] = useState<string | null>(null)
+
+  const alternarLink = () => {
+    iniciarMudarLink(async () => {
+      setErroLink(null)
+      try {
+        await alternarLinkDoSetor(eventoId, f.id, linkDesligado)
+        router.refresh()
+      } catch (e) {
+        setErroLink(e instanceof Error ? e.message : 'Não foi possível mudar o link deste setor.')
+      }
+    })
+  }
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
@@ -187,6 +218,29 @@ export default function FornecedorCard({
         * tempo todo. O link do formulário é apoio, e vira só ícone no celular,
         * onde o nome do setor já disputa a largura.
         */}
+      {/*
+        * O link deste setor, ligado ou desligado.
+        *
+        * O interruptor do evento fecha tudo de uma vez; este fecha só o
+        * setor — pro caso do setor que já fechou a equipe enquanto os
+        * outros seguem montando. Desligado, o formulário recusa e o setor
+        * some do cartaz da portaria.
+        */}
+      {erroLink && (
+        <div className="px-4 py-2 bg-red-50 border-t border-red-200">
+          <p className="text-red-600 text-2xs">{erroLink}</p>
+        </div>
+      )}
+
+      {linkDesligado && (
+        <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
+          <Link2Off className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <p className="text-amber-800 text-2xs font-semibold">
+            Link desligado — este setor não aceita cadastro novo
+          </p>
+        </div>
+      )}
+
       <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60 flex items-center gap-2">
         <Link
           href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
@@ -207,6 +261,18 @@ export default function FornecedorCard({
             : <Link2 className="w-3.5 h-3.5 shrink-0" />}
           <span className={copied ? '' : 'hidden sm:inline'}>
             {copied ? 'Link copiado' : 'Link do formulário'}
+          </span>
+        </button>
+        <button
+          onClick={alternarLink}
+          disabled={mudandoLink}
+          title={linkDesligado ? 'Ligar o link de cadastro deste setor' : 'Desligar o link de cadastro deste setor'}
+          aria-label={linkDesligado ? `Ligar link de ${f.nome}` : `Desligar link de ${f.nome}`}
+          className={`btn btn-sm shrink-0 ${linkDesligado ? 'btn-primario' : 'btn-secundario'}`}
+        >
+          {linkDesligado ? <Link2 className="w-3.5 h-3.5 shrink-0" /> : <Link2Off className="w-3.5 h-3.5 shrink-0" />}
+          <span className="hidden sm:inline">
+            {mudandoLink ? 'Aguarde…' : linkDesligado ? 'Ligar link' : 'Desligar link'}
           </span>
         </button>
       </div>
