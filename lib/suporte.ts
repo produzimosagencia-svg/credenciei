@@ -70,6 +70,8 @@ export const ACAO_LABELS: Record<string, string> = {
   REGISTRO_SAIDA_ASSISTIDA: 'Saída assistida',
   CORRECAO_PONTO: 'Correção de ponto',
   DESCREDENCIAMENTO: 'Descredenciamento',
+  BLOQUEIO_CPF: 'CPF bloqueado',
+  DESBLOQUEIO_CPF: 'CPF liberado',
   EXCLUSAO_PONTO: 'Batida apagada',
   RESET_SENHA: 'Redefinição de senha',
   ALTERACAO_SUPERVISOR: 'Alteração de supervisor',

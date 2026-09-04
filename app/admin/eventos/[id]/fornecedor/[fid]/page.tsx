@@ -18,6 +18,8 @@ import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { avisosPendentesSupervisor } from '@/lib/avisos'
 import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
+import CpfsBloqueados from './CpfsBloqueados'
+import type { CpfBloqueado } from '@/lib/actions'
 
 export const revalidate = 0
 
@@ -104,6 +106,33 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
    * navegam pelos setores pela tela do evento, e um seletor aqui seria um
    * segundo caminho para a mesma coisa.
    */
+  /*
+   * Os CPFs bloqueados deste setor, em consulta À PARTE e tolerante a erro.
+   *
+   * Tabela nova: se a migração não tiver rodado, a consulta falha — e ela
+   * não pode levar a tela da equipe junto. Mesmo cuidado que `exige_meio` e
+   * `link_ativo` já exigiram (e que uma vez fez a tela do evento mostrar
+   * "nenhum fornecedor" com 33 setores intactos no banco).
+   */
+  const bloqueadosDoSetor: CpfBloqueado[] = await (async () => {
+    const { data, error } = await supabase
+      .from('cpfs_bloqueados')
+      .select('id, cpf, motivo, created_at, perfis:bloqueado_por(nome)')
+      .eq('evento_id', id).eq('fornecedor_id', fid)
+      .order('created_at', { ascending: false })
+    if (error) return []
+    return (data ?? []).map(b => {
+      const quem = b.perfis as unknown as { nome: string } | { nome: string }[] | null
+      return {
+        id: b.id as string,
+        cpf: b.cpf as string,
+        motivo: (b.motivo as string | null) ?? null,
+        criadoEm: b.created_at as string,
+        bloqueadoPor: (Array.isArray(quem) ? quem[0]?.nome : quem?.nome) ?? null,
+      }
+    })
+  })()
+
   const [setoresDoSupervisor, { data: diasDoEvento }] = await Promise.all([
     meusSetores(perfil),
     supabase.from('jornada_dias').select('data, tipo')
@@ -309,6 +338,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Relatório
         </Link>
       </div>
+
+      <CpfsBloqueados eventoId={id} fornecedorId={fid} bloqueados={bloqueadosDoSetor} />
 
       {/* Três colunas porque são três indicadores. Numa grade de quatro, a
           quarta coluna ficava vazia e sobrava um vão à direita do último

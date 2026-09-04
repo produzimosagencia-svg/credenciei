@@ -2953,6 +2953,130 @@ export async function descredenciarFuncionario(
   return { ok: true as const, nome: alvo.nome as string }
 }
 
+// ─── Bloqueio de CPF ─────────────────────────────────────────────────────────
+/*
+ * O supervisor barra um CPF do setor dele. Ver
+ * supabase/upgrade-cpf-bloqueado.sql pro desenho e pro porquê do escopo.
+ *
+ * Tirar da equipe resolve o vínculo de hoje; o bloqueio é o que impede a
+ * pessoa de se cadastrar de novo pelo mesmo link cinco minutos depois.
+ */
+
+export type CpfBloqueado = {
+  id: string
+  cpf: string
+  motivo: string | null
+  criadoEm: string
+  bloqueadoPor: string | null
+}
+
+/**
+ * Este CPF está barrado neste setor?
+ *
+ * Uma consulta só, cobrindo os dois níveis: o bloqueio DO SETOR
+ * (`fornecedor_id` = o setor) e o do EVENTO inteiro (`fornecedor_id` nulo,
+ * que hoje nada cria mas a tabela já aceita). Chamada nos dois pontos que
+ * barram gente — o cadastro pelo link e a leitura de QR no portão.
+ *
+ * Tolerante à migração pendente: sem a tabela, a consulta falha e a resposta
+ * é "não bloqueado". Sem isso, o dia em que a migração não tivesse rodado o
+ * sistema recusaria TODO MUNDO no portão — o oposto do que se quer de uma
+ * lista de exceção.
+ */
+export async function cpfEstaBloqueado(
+  eventoId: string, cpf: string, fornecedorId: string | null,
+): Promise<boolean> {
+  const limpo = normalizarCpf(cpf ?? '')
+  if (!limpo) return false
+  const { data, error } = await supabaseAdmin
+    .from('cpfs_bloqueados')
+    .select('id, fornecedor_id')
+    .eq('evento_id', eventoId)
+    .eq('cpf', limpo)
+  if (error) {
+    console.error('[cpfEstaBloqueado] consulta falhou (migração pendente?):', error.message)
+    return false
+  }
+  return (data ?? []).some(b => b.fornecedor_id === null || b.fornecedor_id === fornecedorId)
+}
+
+/** Bloqueia um CPF no setor. Mesma régua de quem gerencia a equipe dele. */
+export async function bloquearCpf(
+  eventoId: string, fornecedorId: string, cpfDigitado: string, motivo?: string,
+) {
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+
+  const cpf = normalizarCpf(cpfDigitado ?? '')
+  if (cpf.length !== 11) return { error: 'O CPF precisa ter 11 dígitos.' }
+  if (!validarCpf(cpf)) return { error: 'Este CPF não é válido. Confira os números.' }
+
+  const { error } = await supabaseAdmin.from('cpfs_bloqueados').insert([{
+    evento_id: eventoId,
+    fornecedor_id: fornecedorId,
+    cpf,
+    motivo: (motivo ?? '').trim() || null,
+    bloqueado_por: perfil?.id ?? null,
+  }])
+
+  if (error) {
+    if (/duplicate key|unique/i.test(error.message)) {
+      return { error: 'Este CPF já está bloqueado neste setor.' }
+    }
+    if (/cpfs_bloqueados/.test(error.message)) {
+      return { error: 'O banco ainda não tem a tabela de bloqueio. Rode supabase/upgrade-cpf-bloqueado.sql no SQL Editor.' }
+    }
+    return { error: mensagemAmigavel(error) }
+  }
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('organizacao_id').eq('id', eventoId).single()
+
+  after(() => registrarAuditoria({
+    perfil: perfil!,
+    acao: 'BLOQUEIO_CPF',
+    campoAlterado: 'CPF bloqueado no setor',
+    valorNovo: cpf,
+    motivo: (motivo ?? '').trim() || null,
+    eventoId,
+    organizacaoId: evento?.organizacao_id ?? undefined,
+  }))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const, cpf }
+}
+
+/** Desfaz o bloqueio. Mesma régua — quem pode bloquear pode liberar. */
+export async function desbloquearCpf(bloqueioId: string, eventoId: string, fornecedorId: string) {
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+
+  // O bloqueio tem que ser DESTE setor: sem isto, um id colado na chamada
+  // liberaria um bloqueio de outro setor.
+  const { data: alvo } = await supabaseAdmin
+    .from('cpfs_bloqueados').select('id, cpf, fornecedor_id, evento_id').eq('id', bloqueioId).single()
+  if (!alvo) return { error: 'Bloqueio não encontrado.' }
+  if (alvo.evento_id !== eventoId || alvo.fornecedor_id !== fornecedorId) {
+    return { error: 'Este bloqueio não é deste setor.' }
+  }
+
+  const { error } = await supabaseAdmin.from('cpfs_bloqueados').delete().eq('id', bloqueioId)
+  if (error) return { error: mensagemAmigavel(error) }
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('organizacao_id').eq('id', eventoId).single()
+
+  after(() => registrarAuditoria({
+    perfil: perfil!,
+    acao: 'DESBLOQUEIO_CPF',
+    campoAlterado: 'CPF liberado no setor',
+    valorAnterior: alvo.cpf as string,
+    eventoId,
+    organizacaoId: evento?.organizacao_id ?? undefined,
+  }))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const }
+}
+
 export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const { error } = await supabaseAdmin
@@ -3127,7 +3251,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
+    .select('id, nome, cpf, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
@@ -3145,6 +3269,22 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
     return {
       success: false,
       message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do setor.`,
+      funcionario: funcInfo,
+    }
+  }
+
+  /*
+   * CPF barrado pelo supervisor do setor (ver `bloquearCpf`).
+   *
+   * A pessoa pode ter sido bloqueada DEPOIS de já estar cadastrada e com o
+   * QR no celular — descredenciar tira da lista, mas o bloqueio é o que
+   * fecha a porta de vez. Aqui a mensagem é pro OPERADOR, não pra ela: ele
+   * está com a pessoa na frente e precisa saber o que fazer.
+   */
+  if (func.cpf && await cpfEstaBloqueado(eventoId, func.cpf as string, func.fornecedor_id as string)) {
+    return {
+      success: false,
+      message: 'Esta pessoa está bloqueada neste setor. Não libere a entrada — procure o supervisor do setor.',
       funcionario: funcInfo,
     }
   }
@@ -3558,6 +3698,18 @@ export async function cadastrarFuncionarioPublico(
 
   const cpf = dados.cpf.replace(/\D/g, '')
   if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
+
+  /*
+   * CPF barrado pelo supervisor do setor (ver `bloquearCpf`).
+   *
+   * Aqui, e não só na tela: o formulário é público, e é por chamada direta
+   * que alguém tirado da equipe voltaria a se cadastrar. A mensagem não diz
+   * "você foi bloqueado" de propósito — quem cadastra é a própria pessoa, e
+   * a conversa sobre o motivo é com quem a contratou, não com uma tela.
+   */
+  if (await cpfEstaBloqueado(fornecedor.evento_id as string, cpf, fornecedorId)) {
+    return { error: 'Não é possível concluir o cadastro neste setor. Fale com quem te contratou.' }
+  }
 
   /*
    * Cidade é obrigatória no cadastro público.
