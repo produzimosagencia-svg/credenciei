@@ -9,7 +9,6 @@ const VALIDADE_MS = 7 * 24 * 60 * 60 * 1000
 type EstadoAutorizacao = {
   evento_id: string
   fornecedor_id: string
-  cpf: string
   expira_em: string
   usado_em: string | null
 }
@@ -18,7 +17,6 @@ export type AutorizacaoCadastroIndividual = {
   valido: boolean
   eventoId?: string
   fornecedorId?: string
-  cpf?: string
   motivo?: 'invalido' | 'expirado' | 'usado'
 }
 
@@ -45,14 +43,12 @@ async function buscarEstado(token: string): Promise<{ chave: string; estado: Est
 /**
  * Cria uma exceção pessoal sem reabrir o link público do evento.
  *
- * Só o hash do segredo fica no banco. O CPF, o evento e o setor ficam presos
- * ao segredo no servidor; editar qualquer parâmetro visível da URL não muda a
- * pessoa autorizada.
+ * Só o hash do segredo fica no banco. Evento e setor ficam presos ao segredo
+ * no servidor; o link libera exatamente UM cadastro novo naquele setor.
  */
 export async function criarAutorizacaoCadastroIndividual(params: {
   eventoId: string
   fornecedorId: string
-  cpf: string
 }): Promise<{ token: string; expiraEm: string }> {
   const token = randomBytes(32).toString('base64url')
   const chave = chaveDoToken(token)!
@@ -60,7 +56,6 @@ export async function criarAutorizacaoCadastroIndividual(params: {
   const estado: EstadoAutorizacao = {
     evento_id: params.eventoId,
     fornecedor_id: params.fornecedorId,
-    cpf: params.cpf,
     expira_em: expiraEm,
     usado_em: null,
   }
@@ -83,7 +78,6 @@ export async function consultarAutorizacaoCadastroIndividual(token: string): Pro
     valido: true,
     eventoId: autorizacao.estado.evento_id,
     fornecedorId: autorizacao.estado.fornecedor_id,
-    cpf: autorizacao.estado.cpf,
   }
 }
 

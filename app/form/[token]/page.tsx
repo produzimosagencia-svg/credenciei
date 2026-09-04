@@ -108,14 +108,13 @@ export default async function FormPage({
           {excecaoIndividualValida && (
             <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-center">
               <p className="text-green-800 text-sm font-bold">Cadastro individual liberado</p>
-              <p className="text-green-700 text-xs mt-0.5">Este acesso vale somente para o CPF autorizado pelo master.</p>
+              <p className="text-green-700 text-xs mt-0.5">Este link permite concluir um único cadastro neste setor.</p>
             </div>
           )}
           <FormularioFuncionario
             fornecedorId={fornecedor.id}
             origem={origem}
-            cpfInicial={excecaoIndividualValida ? autorizacao?.cpf : cpf}
-            cpfBloqueado={excecaoIndividualValida}
+            cpfInicial={cpf}
             autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
           />
         </div>

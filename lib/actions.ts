@@ -3977,7 +3977,7 @@ export async function cadastrarFuncionarioPublico(
    *
    * Qualquer uma das duas basta pra recusar; nenhuma vence a outra. A única
    * exceção é o link individual emitido pelo master, preso no servidor a
-   * ESTE evento, ESTE setor e ESTE CPF.
+   * ESTE evento e ESTE setor e consumido depois de um cadastro concluído.
    */
   const eventoSuspenso = Boolean((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso)
   const setorSuspenso = (fornecedor as { link_ativo?: boolean }).link_ativo === false
@@ -3987,8 +3987,7 @@ export async function cadastrarFuncionarioPublico(
     excecaoIndividualValida = Boolean(
       autorizacao.valido
       && autorizacao.eventoId === fornecedor.evento_id
-      && autorizacao.fornecedorId === fornecedorId
-      && autorizacao.cpf === cpf,
+      && autorizacao.fornecedorId === fornecedorId,
     )
   }
 
@@ -5135,14 +5134,11 @@ export async function alternarCadastroPorLink(eventoId: string, suspender: boole
  * Exclusivo do master: é uma exceção deliberada à decisão da organização de
  * fechar a lista, então um admin da própria organização não pode concedê-la.
  */
-export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId: string, cpfBruto: string) {
+export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId: string) {
   const perfil = await getPerfil()
   if (!perfil || !ehMaster(perfil.role)) {
     throw new Error('Só o acesso master pode reabrir um cadastro individual.')
   }
-
-  const cpf = normalizarCpf(cpfBruto)
-  if (!validarCpf(cpf)) throw new Error('Informe um CPF válido, com 11 dígitos.')
 
   const { data: setor } = await supabaseAdmin
     .from('fornecedores')
@@ -5154,7 +5150,7 @@ export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId
     throw new Error('Setor não encontrado neste evento.')
   }
 
-  const { token, expiraEm } = await criarAutorizacaoCadastroIndividual({ eventoId, fornecedorId, cpf })
+  const { token, expiraEm } = await criarAutorizacaoCadastroIndividual({ eventoId, fornecedorId })
   const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
   const link = `${site}/form/${setor.token_formulario}?individual=${encodeURIComponent(token)}`
   const eventoRel = setor.eventos as unknown as { nome?: string; organizacao_id?: string | null } | null
@@ -5163,7 +5159,7 @@ export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId
     perfil,
     acao: 'REABERTURA_CADASTRO_INDIVIDUAL',
     campoAlterado: `Cadastro por link · ${setor.nome}`,
-    valorNovo: `Liberado para o CPF ${formatarCpfExibicao(cpf)}`,
+    valorNovo: 'Um cadastro individual liberado por link de uso único',
     eventoId,
     organizacaoId: eventoRel?.organizacao_id ?? undefined,
   }))

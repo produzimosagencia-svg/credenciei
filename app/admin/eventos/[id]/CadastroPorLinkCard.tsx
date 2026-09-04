@@ -1,9 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Link2, Link2Off, AlertTriangle, UserRoundCheck, Copy, Check, X } from 'lucide-react'
+import { Link2, Link2Off, AlertTriangle, UserRoundCheck, Copy, Check, X, Building2, Circle } from 'lucide-react'
 import { alternarCadastroPorLink, criarLinkCadastroIndividual } from '@/lib/actions'
-import { formatCpf, validarCpf } from '@/lib/format'
 import { copiarTexto } from '@/lib/navegador'
 
 /**
@@ -27,8 +26,7 @@ export default function CadastroPorLinkCard({
   const [erro, setErro] = useState<string | null>(null)
   const [pendente, iniciar] = useTransition()
   const [abrindoIndividual, setAbrindoIndividual] = useState(false)
-  const [cpf, setCpf] = useState('')
-  const [setorId, setSetorId] = useState(setores[0]?.id ?? '')
+  const [setorId, setSetorId] = useState('')
   const [linkIndividual, setLinkIndividual] = useState<string | null>(null)
   const [erroIndividual, setErroIndividual] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
@@ -52,18 +50,14 @@ export default function CadastroPorLinkCard({
     setErroIndividual(null)
     setLinkIndividual(null)
     setCopiado(false)
-    if (!validarCpf(cpf)) {
-      setErroIndividual('Informe um CPF válido, com 11 dígitos.')
-      return
-    }
     if (!setorId) {
-      setErroIndividual('Escolha o setor em que a pessoa vai se cadastrar.')
+      setErroIndividual('Escolha um setor para gerar o link individual.')
       return
     }
 
     iniciarIndividual(async () => {
       try {
-        const resultado = await criarLinkCadastroIndividual(eventoId, setorId, cpf)
+        const resultado = await criarLinkCadastroIndividual(eventoId, setorId)
         setLinkIndividual(resultado.link)
       } catch (e) {
         setErroIndividual(e instanceof Error ? e.message : 'Não foi possível criar o link individual.')
@@ -128,7 +122,7 @@ export default function CadastroPorLinkCard({
             <div>
               <p className="text-slate-800 text-sm font-extrabold">Reabrir um cadastro individual</p>
               <p className="text-slate-500 text-xs mt-0.5">
-                Funciona para funcionário ou supervisor. O link geral continua fechado e este acesso vale apenas para o CPF informado.
+                Escolha o setor. O link geral continua fechado e o novo endereço permite apenas um cadastro.
               </p>
             </div>
             <button type="button" onClick={() => setAbrindoIndividual(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
@@ -136,27 +130,34 @@ export default function CadastroPorLinkCard({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2 items-end">
-            <label className="block">
-              <span className="block text-slate-500 text-xs font-semibold mb-1">CPF da pessoa</span>
-              <input
-                value={cpf}
-                onChange={e => setCpf(formatCpf(e.target.value))}
-                className="input"
-                inputMode="numeric"
-                placeholder="000.000.000-00"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-slate-500 text-xs font-semibold mb-1">Setor do cadastro</span>
-              <select value={setorId} onChange={e => setSetorId(e.target.value)} className="input">
-                {!setores.length && <option value="">Nenhum setor disponível</option>}
-                {setores.map(setor => <option key={setor.id} value={setor.id}>{setor.nome}</option>)}
-              </select>
-            </label>
-            <button type="button" onClick={criarIndividual} disabled={criandoIndividual || !setores.length} className="btn btn-primario disabled:opacity-50">
+          <p className="text-slate-500 text-xs font-semibold mb-1.5">Setores criados</p>
+          <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+            {!setores.length && <p className="px-3 py-4 text-center text-slate-400 text-xs">Nenhum setor disponível.</p>}
+            {setores.map(setor => {
+              const selecionado = setor.id === setorId
+              return (
+                <button
+                  type="button"
+                  key={setor.id}
+                  onClick={() => { setSetorId(setor.id); setLinkIndividual(null); setErroIndividual(null) }}
+                  className={`w-full px-3 py-2.5 flex items-center gap-2.5 text-left transition-colors ${selecionado ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                >
+                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${selecionado ? 'bg-brand-100 text-brand-600' : 'bg-slate-100 text-slate-500'}`}>
+                    <Building2 className="w-3.5 h-3.5" />
+                  </span>
+                  <span className="text-sm font-semibold flex-1 truncate">{setor.nome}</span>
+                  {selecionado
+                    ? <Check className="w-4 h-4 text-brand-600 shrink-0" />
+                    : <Circle className="w-4 h-4 text-slate-300 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex justify-end mt-3">
+            <button type="button" onClick={criarIndividual} disabled={criandoIndividual || !setorId} className="btn btn-primario disabled:opacity-50">
               <Link2 className="w-3.5 h-3.5" />
-              {criandoIndividual ? 'Criando…' : 'Criar link pessoal'}
+              {criandoIndividual ? 'Criando…' : 'Gerar link individual'}
             </button>
           </div>
 
