@@ -182,15 +182,18 @@ export default function HistoricoBatidas({
             <DateTimePicker modo="datahora" value={quando} onChange={setQuando} />
           </div>
           <div>
+            {/* Apagar SEMPRE exige motivo, mesmo pro master. Enquanto o rótulo
+                dizia "(opcional)" e o botão lá embaixo recusava sem ele, o
+                clique parecia não fazer nada — relato do Juan, 05/09/2026. */}
             <label className="text-amber-700 text-xs font-medium block mb-1">
-              Motivo {motivoObrigatorio ? '(obrigatório)' : '(opcional)'}
+              Motivo {motivoObrigatorio || confirmandoApagar ? '(obrigatório)' : '(opcional)'}
             </label>
             <input
               type="text" value={motivo} onChange={e => setMotivo(e.target.value)}
               className="input text-sm" placeholder="Ex.: bateu o QR duas vezes, o horário certo é este"
             />
           </div>
-          {erro && <p className="text-red-600 text-xs">{erro}</p>}
+          {erro && !confirmandoApagar && <p className="text-red-600 text-xs">{erro}</p>}
           <div className="flex gap-2">
             <button onClick={salvar} disabled={isPending} className="btn btn-primario btn-sm disabled:opacity-50">
               {isPending ? 'Salvando…' : 'Salvar correção'}
@@ -227,11 +230,15 @@ export default function HistoricoBatidas({
                     O motivo acima é obrigatório aqui — ele fica na auditoria com o horário apagado,
                     e é o que explica a falta depois.
                   </p>
-                  <div className="flex gap-2">
+                  {/* O erro mora AQUI quando a confirmação está aberta: no topo
+                      do painel ele ficava longe do botão clicado, e quem
+                      clicava concluia que o botão estava quebrado. */}
+                  {erro && <p className="text-red-600 text-xs font-medium">{erro}</p>}
+                  <div className="flex gap-2 items-center">
                     <button
                       onClick={apagar}
-                      disabled={isPending}
-                      className="btn btn-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                      disabled={isPending || !motivo.trim()}
+                      className="btn btn-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isPending ? 'Apagando…' : 'Apagar mesmo assim'}
                     </button>
@@ -242,6 +249,11 @@ export default function HistoricoBatidas({
                     >
                       Não apagar
                     </button>
+                    {!motivo.trim() && (
+                      <span className="text-amber-700 text-2xs">
+                        Escreva o motivo lá em cima para liberar.
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
