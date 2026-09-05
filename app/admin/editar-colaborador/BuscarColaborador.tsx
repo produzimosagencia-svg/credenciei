@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Search, Users, X, ChevronRight } from 'lucide-react'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import FuncionarioDetalheModal from '../eventos/[id]/fornecedor/[fid]/FuncionarioDetalheModal'
 import type { Presenca } from '../eventos/[id]/fornecedor/[fid]/FuncionarioTable'
@@ -67,13 +67,13 @@ export default function BuscarColaborador({
    */
   const digitos = busca.replace(/\D/g, '')
   const encontrados = useMemo(() => {
-    const t = busca.trim().toLowerCase()
+    const t = chaveBusca(busca)
     if (t.length < MINIMO) return []
     return colaboradores
       .filter(c =>
-        c.nome.toLowerCase().includes(t) ||
+        chaveBusca(c.nome).includes(t) ||
         (digitos.length >= 3 && c.cpf.includes(digitos)) ||
-        c.setorNome.toLowerCase().includes(t),
+        chaveBusca(c.setorNome).includes(t),
       )
       .slice(0, 50)
   }, [colaboradores, busca, digitos])

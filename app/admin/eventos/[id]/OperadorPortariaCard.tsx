@@ -7,6 +7,7 @@ import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
 import ConfirmModal from '@/components/ConfirmModal'
+import { chaveBusca } from '@/lib/format'
 
 type Operador = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
 type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
@@ -135,9 +136,10 @@ function ModalOperador({
    * de verdade. Só compara CPF quando a busca realmente tem dígito.
    */
   const digitosBusca = busca.replace(/\D/g, '')
+  const termoBusca = chaveBusca(busca)
   const filtrados = busca.trim()
     ? funcionariosDoEvento.filter(f =>
-        f.nome.toLowerCase().includes(busca.trim().toLowerCase()) || (digitosBusca && f.cpf.includes(digitosBusca)))
+        chaveBusca(f.nome).includes(termoBusca) || (digitosBusca && f.cpf.includes(digitosBusca)))
     : funcionariosDoEvento
 
   const handleSubmit = (formData: FormData) => {

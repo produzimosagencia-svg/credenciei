@@ -60,6 +60,22 @@ export function formatTelefone(value: string): string {
     .replace(/(\d{5})(\d)/, '$1-$2')
 }
 
+/**
+ * Forma comparável de texto digitado em buscas humanas.
+ *
+ * O valor original continua armazenado e exibido com acentos. Só a chave de
+ * comparação perde diacríticos e diferença de caixa, fazendo "Julia" e
+ * "Júlia" (ou "JOAO" e "João") retornarem os mesmos resultados.
+ */
+export function chaveBusca(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 // Conectores que ficam minúsculos no meio do nome (mas maiúsculo se for a 1ª palavra).
 const CONECTORES = new Set(['de', 'da', 'do', 'das', 'dos', 'e'])
 

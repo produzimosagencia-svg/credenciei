@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Search, Users, X } from 'lucide-react'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 
 import type { LinhaPresenca } from '@/lib/presenca-visoes'
@@ -30,10 +30,10 @@ export default function TabelaPresenca({
 
   const digitosBusca = busca.replace(/\D/g, '')
   const visiveis = useMemo(() => {
-    const t = busca.trim().toLowerCase()
+    const t = chaveBusca(busca)
     if (!t) return linhas
     return linhas.filter(l =>
-      l.nome.toLowerCase().includes(t) || (digitosBusca.length >= 3 && l.cpf.includes(digitosBusca)),
+      chaveBusca(l.nome).includes(t) || (digitosBusca.length >= 3 && l.cpf.includes(digitosBusca)),
     )
   }, [linhas, busca, digitosBusca])
 

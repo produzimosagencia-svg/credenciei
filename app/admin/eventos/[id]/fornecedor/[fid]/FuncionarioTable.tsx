@@ -9,6 +9,7 @@ import { deletarFuncionario, alternarAtivacao, descredenciarFuncionario, recrede
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
+import { chaveBusca } from '@/lib/format'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -120,12 +121,12 @@ export default function FuncionarioTable({
   const filtrosAvancadosAtivos = [statusEntrada, statusMeio, statusFim].filter(v => v !== 'todos').length
 
   const filtered = useMemo(() => funcionarios.filter(f => {
-    const s = search.toLowerCase()
+    const s = chaveBusca(search)
     const bateBusca = s === '' ||
-      f.nome.toLowerCase().includes(s) ||
+      chaveBusca(f.nome).includes(s) ||
       f.cpf.includes(search) ||
-      f.empresa.toLowerCase().includes(s) ||
-      f.cargo.toLowerCase().includes(s)
+      chaveBusca(f.empresa).includes(s) ||
+      chaveBusca(f.cargo).includes(s)
     if (!bateBusca) return false
 
     if (statusEntrada !== 'todos' && f.statusEntrada !== statusEntrada) return false

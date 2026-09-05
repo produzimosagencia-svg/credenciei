@@ -6,6 +6,7 @@ import { AlertCircle, Check, CheckCheck, Search } from 'lucide-react'
 import { marcarConversaComoLida } from '@/lib/actions-whatsapp'
 import type { Conversa } from '@/lib/whatsapp-painel'
 import { formatarBR } from '@/lib/tz'
+import { chaveBusca } from '@/lib/format'
 
 function formatarTelefone(bruto: string): string {
   const d = bruto.replace(/\D/g, '')
@@ -41,9 +42,9 @@ export default function ListaConversas({ lista, selecionado }: { lista: Conversa
   const [, iniciarTransicao] = useTransition()
   const router = useRouter()
   const filtrada = useMemo(() => {
-    const termo = busca.trim().toLocaleLowerCase('pt-BR')
+    const termo = chaveBusca(busca)
     if (!termo) return lista
-    return lista.filter(c => `${c.nome ?? ''} ${c.telefone} ${c.ultimoTexto ?? ''}`.toLocaleLowerCase('pt-BR').includes(termo))
+    return lista.filter(c => chaveBusca(`${c.nome ?? ''} ${c.telefone} ${c.ultimoTexto ?? ''}`).includes(termo))
   }, [busca, lista])
 
   function abrir(telefone: string) {

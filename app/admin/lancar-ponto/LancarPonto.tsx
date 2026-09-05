@@ -3,7 +3,7 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, X, Check, ArrowLeft, ClipboardPen, AlertCircle, LogIn, Camera, LogOut } from 'lucide-react'
 import { lancarPontoManual } from '@/lib/actions'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -63,10 +63,10 @@ export default function LancarPonto({
 
   const digitos = busca.replace(/\D/g, '')
   const encontrados = useMemo(() => {
-    const t = busca.trim().toLowerCase()
+    const t = chaveBusca(busca)
     if (t.length < MINIMO) return []
     return pessoas
-      .filter(p => p.nome.toLowerCase().includes(t) || (digitos.length >= 3 && p.cpf.includes(digitos)) || p.setorNome.toLowerCase().includes(t))
+      .filter(p => chaveBusca(p.nome).includes(t) || (digitos.length >= 3 && p.cpf.includes(digitos)) || chaveBusca(p.setorNome).includes(t))
       .slice(0, 30)
   }, [pessoas, busca, digitos])
 

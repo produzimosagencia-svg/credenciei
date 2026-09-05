@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Aviso, Badge } from '@/components/ui/Superficie'
@@ -138,10 +138,9 @@ export default async function EncontrarPage({
    *
    * A cidade NÃO entra na consulta do banco.
    *
-   * `ilike` compara acento com acento: procurar "Vitória" perderia os
-   * cadastros gravados como "Vitoria". O filtro acontece em memória, sobre a
-   * chave normalizada — o volume aqui é de centenas, e um índice sem acento
-   * exigiria uma coluna gerada só para isso.
+   * `ilike` compara acento com acento: procurar "Julia" perderia os cadastros
+   * gravados como "Júlia". Por isso nome não é filtrado no PostgREST: trazemos
+   * o conjunto permitido e comparamos em memória pela chave sem acentos.
    *
    * Os dois `if` de filtro se repetem na contagem e na consulta paginada
    * abaixo — o construtor do Supabase muda de tipo a cada `.eq`/`.like`
@@ -149,12 +148,13 @@ export default async function EncontrarPage({
    * contra o tipo em vez de ajudar. Duas consultas pequenas e diretas.
    */
   const digitos = busca.replace(/\D/g, '')
+  const buscaPorNome = !!busca && digitos.length < 3
+  const termoNome = chaveBusca(busca)
 
   let consultaContagem = supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true })
   if (escopo === 'recrutar') consultaContagem = consultaContagem.eq('consentimento_base', true)
   if (digitos.length >= 3) consultaContagem = consultaContagem.like('cpf', `%${digitos}%`)
-  else if (busca) consultaContagem = consultaContagem.ilike('nome', `%${busca}%`)
-  const { count: totalCadastros } = await consultaContagem
+  const { count: totalSemFiltroDeNome } = await consultaContagem
 
   type Cadastro = {
     id: string; nome: string; cpf: string; telefone: string | null; cargo: string | null
@@ -170,7 +170,7 @@ export default async function EncontrarPage({
    * teto ter subido. `teto` continua valendo, só que agora como TETO DE
    * VERDADE (`tetoTotal`), paginando de 1000 em 1000 até chegar nele.
    */
-  const cadastros = await buscarTudo<Cadastro>((de, ate) => {
+  const cadastrosBrutos = await buscarTudo<Cadastro>((de, ate) => {
     let consulta = supabaseAdmin
       .from('funcionarios')
       .select('id, nome, cpf, telefone, cargo, cidade, created_at, consentimento_base, fornecedores!inner(evento_id, eventos!inner(organizacao_id))')
@@ -178,9 +178,13 @@ export default async function EncontrarPage({
       .range(de, ate)
     if (escopo === 'recrutar') consulta = consulta.eq('consentimento_base', true)
     if (digitos.length >= 3) consulta = consulta.like('cpf', `%${digitos}%`)
-    else if (busca) consulta = consulta.ilike('nome', `%${busca}%`)
     return consulta
   }, { tetoTotal: teto })
+
+  const cadastros = buscaPorNome
+    ? cadastrosBrutos.filter(c => chaveBusca(c.nome).includes(termoNome))
+    : cadastrosBrutos
+  const totalCadastros = buscaPorNome ? cadastros.length : (totalSemFiltroDeNome ?? 0)
 
   // Quem de fato apareceu nos eventos: é o dado que separa "já foi chamado"
   // de "já trabalhou". Sem isso a tela recomendaria quem nunca compareceu.

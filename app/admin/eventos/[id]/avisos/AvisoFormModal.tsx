@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { X, Megaphone, Search, Check, Plus } from 'lucide-react'
 import { criarAviso, editarAviso } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import DateTimePicker from '@/components/DateTimePicker'
 import type { LinhaAviso } from './TabelaAvisos'
 
@@ -58,10 +58,10 @@ export default function AvisoFormModal(props: Props) {
 
   const digitosBusca = buscaPessoa.replace(/\D/g, '')
   const pessoasFiltradas = useMemo(() => {
-    const t = buscaPessoa.trim().toLowerCase()
+    const t = chaveBusca(buscaPessoa)
     if (!t) return props.funcionarios.slice(0, 20)
     return props.funcionarios
-      .filter(f => f.nome.toLowerCase().includes(t) || (digitosBusca.length >= 3 && f.cpf.includes(digitosBusca)))
+      .filter(f => chaveBusca(f.nome).includes(t) || (digitosBusca.length >= 3 && f.cpf.includes(digitosBusca)))
       .slice(0, 20)
   }, [props.funcionarios, buscaPessoa, digitosBusca])
 

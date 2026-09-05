@@ -1,12 +1,29 @@
-import { supabaseAdmin } from '@/lib/supabase-server'
+import { buscarTudo, supabaseAdmin } from '@/lib/supabase-server'
 import { formatarBR } from '@/lib/tz'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 import { diaBRT } from '@/lib/janelas'
 import {
   ferramenta, eventosVisiveis, exigirEvento, resolverSetor, urlBase, brl,
   ORDEM_ETAPAS, ROTULO_ETAPA,
   type ContextoIA,
 } from './base'
+
+type FuncionarioBuscaIA = {
+  id: string
+  nome: string
+  cpf: string
+  telefone: string | null
+  empresa: string | null
+  cargo: string | null
+  ativo: boolean | null
+  pago: boolean | null
+  valor_receber: number | null
+  chave_pix: string | null
+  qr_token: string
+  qr_expira_em: string | null
+  fornecedor_id: string
+  fornecedores: unknown
+}
 
 /**
  * Ferramentas de leitura. Nenhuma escreve nada — são o que a IA usa para
@@ -177,17 +194,21 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
         if (!ids.length) return 'Nenhum evento visível para este usuário.'
         const digitos = busca.replace(/\D/g, '')
 
-        const q = supabaseAdmin
-          .from('funcionarios')
-          .select('id, nome, cpf, telefone, empresa, cargo, ativo, pago, valor_receber, chave_pix, qr_token, qr_expira_em, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome))')
-          .in('fornecedores.evento_id', ids)
-          .limit(10)
-        if (digitos.length >= 11) q.eq('cpf', digitos)
-        else q.ilike('nome', `%${busca}%`)
-        if (perfil.role === 'supervisor' && perfil.fornecedor_id) q.eq('fornecedor_id', perfil.fornecedor_id)
-
-        const { data: achados } = await q
-        if (!achados?.length) return 'Nenhuma pessoa encontrada com esse CPF ou nome, dentro do seu acesso.'
+        const porCpf = digitos.length >= 11
+        const brutos = await buscarTudo<FuncionarioBuscaIA>((de, ate) => {
+          let q = supabaseAdmin
+            .from('funcionarios')
+            .select('id, nome, cpf, telefone, empresa, cargo, ativo, pago, valor_receber, chave_pix, qr_token, qr_expira_em, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome))')
+            .in('fornecedores.evento_id', ids)
+            .order('nome')
+            .range(de, ate)
+          if (porCpf) q = q.eq('cpf', digitos)
+          if (perfil.role === 'supervisor' && perfil.fornecedor_id) q = q.eq('fornecedor_id', perfil.fornecedor_id)
+          return q
+        }, { tetoTotal: 10_000 })
+        const termoNome = chaveBusca(busca)
+        const achados = (porCpf ? brutos : brutos.filter(f => chaveBusca(f.nome).includes(termoNome))).slice(0, 10)
+        if (!achados.length) return 'Nenhuma pessoa encontrada com esse CPF ou nome, dentro do seu acesso.'
 
         const fichas = await Promise.all(
           achados.map(async f => {

@@ -7,6 +7,7 @@ import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
+import { chaveBusca } from '@/lib/format'
 
 type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
 
@@ -64,8 +65,9 @@ export default function SupervisorModal(props: Props) {
    * filtrava de verdade. Só compara CPF quando a busca realmente tem dígito.
    */
   const digitosBusca = busca.replace(/\D/g, '')
+  const termoBusca = chaveBusca(busca)
   const filtrados = busca.trim()
-    ? opcoes.filter(o => o.nome.toLowerCase().includes(busca.trim().toLowerCase()) || (digitosBusca && o.cpf.includes(digitosBusca)))
+    ? opcoes.filter(o => chaveBusca(o.nome).includes(termoBusca) || (digitosBusca && o.cpf.includes(digitosBusca)))
     : opcoes
 
   const handleSubmit = (formData: FormData) => {

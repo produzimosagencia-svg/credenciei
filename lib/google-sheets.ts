@@ -1,4 +1,5 @@
 import { google } from 'googleapis'
+import { chaveBusca } from './format'
 
 function getAuth() {
   // Usa OAuth2 com refresh token do usuário se disponível
@@ -246,7 +247,8 @@ export async function atualizarValorNaPlanilha(
   })
 
   const rows = res.data.values ?? []
-  const rowIndex = rows.findIndex((row, i) => i > 0 && row[0] === funcionarioNome)
+  const nomeBuscado = chaveBusca(funcionarioNome)
+  const rowIndex = rows.findIndex((row, i) => i > 0 && chaveBusca(String(row[0] ?? '')) === nomeBuscado)
   if (rowIndex === -1) return
 
   const rowNum = rowIndex + 1 // 1-based
@@ -277,7 +279,8 @@ export async function registrarPresencaNaPlanilha(
   })
 
   const rows = res.data.values ?? []
-  const rowIndex = rows.findIndex((row, i) => i > 0 && row[0] === funcionarioNome)
+  const nomeBuscado = chaveBusca(funcionarioNome)
+  const rowIndex = rows.findIndex((row, i) => i > 0 && chaveBusca(String(row[0] ?? '')) === nomeBuscado)
   if (rowIndex === -1) return
 
   // Coluna I = Entrada, J = Saída — agora com cabeçalho próprio, em vez de

@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
@@ -33,7 +33,7 @@ import {
   diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia, conferirHorariosDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
-import { validarCpf, formatCpf } from './format'
+import { chaveBusca, validarCpf, formatCpf } from './format'
 import { normalizarCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
@@ -4478,20 +4478,30 @@ export async function localizarFuncionario(
     return { error: 'O CPF precisa ter 11 dígitos.' }
   }
 
-  const consulta = supabaseAdmin
-    .from('funcionarios')
-    .select(SELECT_LOCALIZAR)
-    .eq('fornecedores.eventos.ativo', true)
-    .limit(200)
-
-  if (pareceCpf) {
-    if (digitos.length === 11) consulta.eq('cpf', digitos)
-    else consulta.like('cpf', `%${digitos}%`)
-  } else {
-    consulta.ilike('nome', `%${busca}%`)
-  }
-
-  const { data: achados } = await consulta
+  /*
+   * Nome não passa por `ilike`: ele ignora caixa, mas diferencia "Julia" de
+   * "Júlia". Carregamos os eventos ativos paginados e comparamos a chave sem
+   * acentos em memória. CPF continua filtrado no banco porque é identificação
+   * exata e não sofre essa ambiguidade.
+   */
+  const achadosBrutos = await buscarTudo<LinhaLocalizada>((de, ate) => {
+    let consulta = supabaseAdmin
+      .from('funcionarios')
+      .select(SELECT_LOCALIZAR)
+      .eq('fornecedores.eventos.ativo', true)
+      .order('nome')
+      .range(de, ate)
+    if (pareceCpf) {
+      consulta = digitos.length === 11
+        ? consulta.eq('cpf', digitos)
+        : consulta.like('cpf', `%${digitos}%`)
+    }
+    return consulta
+  }, { tetoTotal: 10_000 })
+  const termoNome = chaveBusca(busca)
+  const achados = pareceCpf
+    ? achadosBrutos
+    : achadosBrutos.filter(f => chaveBusca(f.nome).includes(termoNome))
 
   // Escopo do suporte é async (consulta `suporte_escopo`) — resolvido ANTES
   // do filtro síncrono abaixo, uma vez só, não por candidato.
@@ -4499,7 +4509,7 @@ export async function localizarFuncionario(
 
   // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
   // "não encontrado" também protege quem está fora do escopo dele.
-  const visiveis = (achados ?? []).filter(f => {
+  const visiveis = achados.filter(f => {
     if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
     if (ehMaster(perfil.role)) return true
     if (perfil.role === 'suporte') {

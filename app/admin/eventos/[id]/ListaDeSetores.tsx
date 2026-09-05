@@ -4,7 +4,7 @@ import { Search, Users, X, User, MessageCircle, Phone } from 'lucide-react'
 import FornecedorCard from './FornecedorCard'
 import CopiarLinks, { type SetorParaCopiar } from './CopiarLinks'
 import FuncionarioDetalheModal from './fornecedor/[fid]/FuncionarioDetalheModal'
-import { formatCpf } from '@/lib/format'
+import { chaveBusca, formatCpf } from '@/lib/format'
 
 /**
  * A lista de setores do evento, com busca e cópia em massa dos links.
@@ -95,7 +95,7 @@ export default function ListaDeSetores({
   const [busca, setBusca] = useState('')
 
   const visiveis = useMemo(() => {
-    const t = busca.trim().toLowerCase()
+    const t = chaveBusca(busca)
     if (!t) return fornecedores
     /*
      * Busca também pelo nome do supervisor.
@@ -104,8 +104,8 @@ export default function ListaDeSetores({
      * quem organiza costuma lembrar da pessoa antes de lembrar do setor.
      */
     return fornecedores.filter(f =>
-      f.nome.toLowerCase().includes(t) ||
-      (supervisoresPorFornecedor[f.id] ?? []).some(s => s.nome.toLowerCase().includes(t)),
+      chaveBusca(f.nome).includes(t) ||
+      (supervisoresPorFornecedor[f.id] ?? []).some(s => chaveBusca(s.nome).includes(t)),
     )
   }, [fornecedores, supervisoresPorFornecedor, busca])
 
@@ -120,10 +120,10 @@ export default function ListaDeSetores({
    */
   const digitosBusca = busca.replace(/\D/g, '')
   const pessoasEncontradas = useMemo(() => {
-    const t = busca.trim().toLowerCase()
+    const t = chaveBusca(busca)
     if (t.length < MINIMO_PARA_BUSCAR_PESSOA) return []
     return funcionariosDoEvento.filter(f =>
-      f.nome.toLowerCase().includes(t) || (digitosBusca.length >= 3 && f.cpf?.includes(digitosBusca)),
+      chaveBusca(f.nome).includes(t) || (digitosBusca.length >= 3 && f.cpf?.includes(digitosBusca)),
     ).slice(0, 20)
   }, [funcionariosDoEvento, busca, digitosBusca])
 
