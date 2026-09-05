@@ -65,6 +65,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
   REGISTRO_SAIDA_ASSISTIDA: 'atencao',
   CORRECAO_PONTO: 'atencao',
   RESET_SENHA: 'atencao',
+  REABERTURA_TURNO: 'atencao',
 }
 
 export default async function AuditoriaPage({

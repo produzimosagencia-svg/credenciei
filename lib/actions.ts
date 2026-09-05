@@ -2752,9 +2752,25 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
  *   2. Já tem entrada E saída com a data de HOJE? → recusa (3ª leitura).
  *   3. Caso contrário → ENTRADA. Dia novo, turno novo.
  */
+/**
+ * O que a leitura de agora significa: entrada, saída, ou a volta de quem já
+ * tinha ido embora hoje.
+ *
+ * `reabrir` é o terceiro caso, e existe porque o banco não aceita duas
+ * entradas no mesmo dia (índice único `registros_unico_por_dia`). Quem sai no
+ * almoço e volta à tarde não consegue uma entrada nova — então a volta APAGA
+ * a saída daquele dia e o turno fica aberto de novo, com a chegada original
+ * preservada. A próxima leitura vira a saída final.
+ *
+ * O que se perde com isso é o intervalo: o relatório mostra 08:00 → 20:00,
+ * não os dois blocos. Foi decisão do Juan em 05/09/2026, com o evento em
+ * andamento; a versão completa (vários turnos por dia) precisa trocar aquele
+ * índice e reescrever as leituras de presença do sistema inteiro. A saída
+ * apagada não some: vai pra Auditoria com o horário.
+ */
 async function inferirMomentoQR(
   funcionarioId: string, eventoId: string, agora: Date,
-): Promise<{ momento: 'entrada' | 'fim' } | { erro: string }> {
+): Promise<{ momento: 'entrada' | 'fim' } | { reabrir: { id: string; em: string } } | { erro: string }> {
   const entrada = await entradaDoTurno(funcionarioId, eventoId, agora)
 
   if (entrada) {
@@ -2812,7 +2828,7 @@ async function inferirMomentoQR(
   const hoje = diaBRT(agora)
   const { data: deHoje } = await supabaseAdmin
     .from('registros')
-    .select('tipo, created_at')
+    .select('id, tipo, created_at')
     .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
     .eq('data_ref', hoje)
     .in('tipo', ['entrada', 'fim'])
@@ -2820,10 +2836,25 @@ async function inferirMomentoQR(
   const entradaHoje = (deHoje ?? []).find(r => r.tipo === 'entrada')
   const saidaHoje = (deHoje ?? []).find(r => r.tipo === 'fim')
   if (entradaHoje && saidaHoje) {
-    return {
-      erro: `Esta pessoa já registrou entrada e saída hoje (saída às ${formatarBR(saidaHoje.created_at as string, 'hora')}). `
-        + 'Se isso estiver errado, corrija pelo histórico dela em vez de escanear de novo.',
+    /*
+     * Ela já foi embora hoje e está de volta — caso real: sai no almoço,
+     * volta à tarde. Antes era recusa seca, e a pessoa ficava no portão sem
+     * poder voltar a trabalhar.
+     *
+     * A carência é a mesma da saída, e pelo mesmo motivo: sem ela, o QR lido
+     * duas vezes seguidas na despedida apagaria a saída que acabou de ser
+     * gravada. Ninguém vai embora e volta em cinco minutos.
+     */
+    const desdeSaidaMs = agora.getTime() - new Date(saidaHoje.created_at as string).getTime()
+    const carenciaMs = CARENCIA_SAIDA_MIN * 60 * 1000
+    if (desdeSaidaMs < carenciaMs) {
+      const faltam = Math.max(1, Math.ceil((carenciaMs - desdeSaidaMs) / 60_000))
+      return {
+        erro: `Esta pessoa acabou de registrar a SAÍDA (às ${formatarBR(saidaHoje.created_at as string, 'hora')}). `
+          + `Se ela está voltando a trabalhar, aguarde ${faltam} min e leia de novo.`,
+      }
     }
+    return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string } }
   }
   return { momento: 'entrada' }
 }
@@ -3589,6 +3620,43 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
   const agora = new Date()
   const decidido = await inferirMomentoQR(func.id, eventoId, agora)
   if ('erro' in decidido) return { success: false, message: decidido.erro, funcionario: funcInfo }
+
+  /*
+   * A VOLTA DE QUEM JÁ TINHA IDO EMBORA HOJE.
+   *
+   * Apaga a saída daquele dia e o turno fica aberto de novo, com a chegada
+   * original preservada — ver `inferirMomentoQR` pro porquê de não ser uma
+   * entrada nova. A próxima leitura dela vira a saída final.
+   *
+   * Não passa por `resolverRegistro`: não há batida nova pra validar contra
+   * janela de horário, e a pessoa está voltando ao trabalho num horário que,
+   * por definição, não é o da entrada nem o da saída do dia.
+   */
+  if ('reabrir' in decidido) {
+    const { error: erroReabrir } = await supabaseAdmin
+      .from('registros').delete().eq('id', decidido.reabrir.id)
+    if (erroReabrir) {
+      return { success: false, message: 'Não consegui reabrir o turno desta pessoa. Tente de novo.', funcionario: funcInfo }
+    }
+
+    // A saída apagada não some: fica aqui, com horário e com quem leu o QR.
+    after(() => registrarAuditoria({
+      perfil, acao: 'REABERTURA_TURNO', eventoId,
+      campoAlterado: 'Voltou a trabalhar no mesmo dia',
+      valorAnterior: `Saída às ${formatarBR(decidido.reabrir.em, 'hora')}`,
+      valorNovo: `Turno reaberto às ${formatarBR(agora.toISOString(), 'hora')}`,
+      funcionarioId: func.id,
+    }))
+
+    return {
+      success: true,
+      message: `Bem-vindo de volta! Turno reaberto — a saída das ${formatarBR(decidido.reabrir.em, 'hora')} foi desfeita. `
+        + 'Leia o QR de novo quando esta pessoa for embora de vez.',
+      funcionario: funcInfo,
+      momento: 'entrada' as const,
+    }
+  }
+
   const momento = decidido.momento
 
   const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento, agora)
