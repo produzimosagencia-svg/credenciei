@@ -48,7 +48,6 @@ import { urlBase } from './ia/ferramentas/base'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import {
   consultarAutorizacaoCadastroIndividual,
-  consumirAutorizacaoCadastroIndividual,
   criarAutorizacaoCadastroIndividual,
 } from './cadastro-individual'
 
@@ -3976,13 +3975,13 @@ export async function cadastrarFuncionarioPublico(
    *   setor desligado  → `alternarLinkDoSetor` (fecha só este)
    *
    * Qualquer uma das duas basta pra recusar; nenhuma vence a outra. A única
-   * exceção é o link individual emitido pelo master, preso no servidor a
-   * ESTE evento e ESTE setor e consumido depois de um cadastro concluído.
+   * exceção é o link temporário emitido pelo master, preso no servidor a
+   * ESTE evento e ESTE setor durante 48 horas.
    */
   const eventoSuspenso = Boolean((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso)
   const setorSuspenso = (fornecedor as { link_ativo?: boolean }).link_ativo === false
   let excecaoIndividualValida = false
-  if ((eventoSuspenso || setorSuspenso) && autorizacaoIndividual) {
+  if (autorizacaoIndividual) {
     const autorizacao = await consultarAutorizacaoCadastroIndividual(autorizacaoIndividual)
     excecaoIndividualValida = Boolean(
       autorizacao.valido
@@ -4000,7 +3999,7 @@ export async function cadastrarFuncionarioPublico(
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
   // enche o setor de cadastros falsos e trava a operação no dia do evento.
-  if (!podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
+  if (!excecaoIndividualValida && !podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
     return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
   }
 
@@ -4065,9 +4064,6 @@ export async function cadastrarFuncionarioPublico(
   if (existentes && existentes.length) {
     const existente = existentes[0] as any
     if (existente.fornecedor_id === fornecedorId) {
-      if (excecaoIndividualValida && autorizacaoIndividual) {
-        await consumirAutorizacaoCadastroIndividual(autorizacaoIndividual)
-      }
       return { qrToken: existente.qr_token }
     }
     const setorExistente = existente.fornecedores?.nome ?? 'outro setor'
@@ -4120,9 +4116,6 @@ export async function cadastrarFuncionarioPublico(
     funcionarioId: data.id,
     telefone: dados.telefone,
   }).catch(console.error))
-  if (excecaoIndividualValida && autorizacaoIndividual) {
-    await consumirAutorizacaoCadastroIndividual(autorizacaoIndividual)
-  }
   return { qrToken: data.qr_token }
 }
 
@@ -5159,7 +5152,7 @@ export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId
     perfil,
     acao: 'REABERTURA_CADASTRO_INDIVIDUAL',
     campoAlterado: `Cadastro por link · ${setor.nome}`,
-    valorNovo: 'Um cadastro individual liberado por link de uso único',
+    valorNovo: 'Cadastros liberados por link temporário durante 48 horas',
     eventoId,
     organizacaoId: eventoRel?.organizacao_id ?? undefined,
   }))

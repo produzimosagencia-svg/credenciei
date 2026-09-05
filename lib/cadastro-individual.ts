@@ -4,20 +4,22 @@ import { createHash, randomBytes } from 'node:crypto'
 import { supabaseAdmin } from './supabase-server'
 
 const PREFIXO = 'cadastro_individual:'
-const VALIDADE_MS = 7 * 24 * 60 * 60 * 1000
+const VALIDADE_MS = 48 * 60 * 60 * 1000
+const VALIDADE_ANTIGA_MS = 7 * 24 * 60 * 60 * 1000
 
 type EstadoAutorizacao = {
   evento_id: string
   fornecedor_id: string
+  criado_em?: string
   expira_em: string
-  usado_em: string | null
+  usado_em?: string | null
 }
 
 export type AutorizacaoCadastroIndividual = {
   valido: boolean
   eventoId?: string
   fornecedorId?: string
-  motivo?: 'invalido' | 'expirado' | 'usado'
+  motivo?: 'invalido' | 'expirado'
 }
 
 function chaveDoToken(token: string): string | null {
@@ -41,10 +43,10 @@ async function buscarEstado(token: string): Promise<{ chave: string; estado: Est
 }
 
 /**
- * Cria uma exceção pessoal sem reabrir o link público do evento.
+ * Cria uma exceção temporária de setor sem reabrir o link público do evento.
  *
  * Só o hash do segredo fica no banco. Evento e setor ficam presos ao segredo
- * no servidor; o link libera exatamente UM cadastro novo naquele setor.
+ * no servidor; o link libera cadastros naquele setor durante 48 horas.
  */
 export async function criarAutorizacaoCadastroIndividual(params: {
   eventoId: string
@@ -52,12 +54,13 @@ export async function criarAutorizacaoCadastroIndividual(params: {
 }): Promise<{ token: string; expiraEm: string }> {
   const token = randomBytes(32).toString('base64url')
   const chave = chaveDoToken(token)!
-  const expiraEm = new Date(Date.now() + VALIDADE_MS).toISOString()
+  const criadoEm = new Date()
+  const expiraEm = new Date(criadoEm.getTime() + VALIDADE_MS).toISOString()
   const estado: EstadoAutorizacao = {
     evento_id: params.eventoId,
     fornecedor_id: params.fornecedorId,
+    criado_em: criadoEm.toISOString(),
     expira_em: expiraEm,
-    usado_em: null,
   }
 
   const { error } = await supabaseAdmin.from('sistema_estado').insert({ chave, valor: estado })
@@ -69,8 +72,23 @@ export async function criarAutorizacaoCadastroIndividual(params: {
 export async function consultarAutorizacaoCadastroIndividual(token: string): Promise<AutorizacaoCadastroIndividual> {
   const autorizacao = await buscarEstado(token)
   if (!autorizacao) return { valido: false, motivo: 'invalido' }
-  if (autorizacao.estado.usado_em) return { valido: false, motivo: 'usado' }
-  if (new Date(autorizacao.estado.expira_em).getTime() <= Date.now()) {
+
+  /*
+   * Compatibilidade com os links criados antes desta mudança: eles não
+   * guardavam `criado_em`, mas `expira_em` era exatamente criação + 7 dias.
+   * Assim recuperamos o instante original e aplicamos as mesmas 48 horas,
+   * inclusive ao link que já tinha sido marcado como usado após o primeiro
+   * cadastro.
+   */
+  const expiraAntigoEm = new Date(autorizacao.estado.expira_em).getTime()
+  const criadoEm = autorizacao.estado.criado_em
+    ? new Date(autorizacao.estado.criado_em).getTime()
+    : expiraAntigoEm - VALIDADE_ANTIGA_MS
+  const expiraEm = autorizacao.estado.criado_em
+    ? expiraAntigoEm
+    : criadoEm + VALIDADE_MS
+
+  if (!Number.isFinite(expiraEm) || expiraEm <= Date.now()) {
     return { valido: false, motivo: 'expirado' }
   }
 
@@ -79,20 +97,4 @@ export async function consultarAutorizacaoCadastroIndividual(token: string): Pro
     eventoId: autorizacao.estado.evento_id,
     fornecedorId: autorizacao.estado.fornecedor_id,
   }
-}
-
-/** Marca a exceção como usada somente depois que o cadastro termina. */
-export async function consumirAutorizacaoCadastroIndividual(token: string): Promise<void> {
-  const autorizacao = await buscarEstado(token)
-  if (!autorizacao || autorizacao.estado.usado_em) return
-
-  const usadoEm = new Date().toISOString()
-  await supabaseAdmin
-    .from('sistema_estado')
-    .update({
-      valor: { ...autorizacao.estado, usado_em: usadoEm },
-      atualizado_em: usadoEm,
-    })
-    .eq('chave', autorizacao.chave)
-    .is('valor->>usado_em', null)
 }

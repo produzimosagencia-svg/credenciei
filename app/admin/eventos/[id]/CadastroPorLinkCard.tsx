@@ -122,7 +122,7 @@ export default function CadastroPorLinkCard({
             <div>
               <p className="text-slate-800 text-sm font-extrabold">Reabrir um cadastro individual</p>
               <p className="text-slate-500 text-xs mt-0.5">
-                Escolha o setor. O link geral continua fechado e o novo endereço permite apenas um cadastro.
+                Escolha o setor. O link geral continua fechado e o novo endereço aceita cadastros por 48 horas.
               </p>
             </div>
             <button type="button" onClick={() => setAbrindoIndividual(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
@@ -164,7 +164,7 @@ export default function CadastroPorLinkCard({
           {erroIndividual && <p className="text-red-500 text-xs mt-2">{erroIndividual}</p>}
           {linkIndividual && (
             <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3">
-              <p className="text-green-800 text-xs font-bold">Link liberado por 7 dias ou até o primeiro cadastro concluído</p>
+              <p className="text-green-800 text-xs font-bold">Link liberado por 48 horas, sem limite de cadastros</p>
               <div className="flex items-center gap-2 mt-2">
                 <input readOnly value={linkIndividual} className="input text-xs bg-white flex-1 min-w-0" />
                 <button
