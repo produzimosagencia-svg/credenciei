@@ -97,6 +97,8 @@ export type LinhaExportacao = {
   pago: boolean
   pago_em: string | null
   ativo: boolean
+  /** Quando a pessoa se credenciou neste evento. */
+  created_at?: string | null
   /** Só vêm quando a exportação pediu fluxo de presença (ver `colunas`). */
   entrada?: string | null
   meio?: string | null
@@ -145,12 +147,15 @@ export async function exportarPlanilhaDeEquipe(
     Pago: f.pago ? 'Sim' : 'Não',
     'Data do pagamento': f.pago_em ? new Date(f.pago_em).toLocaleDateString('pt-BR') : '',
     Ativo: f.ativo ? 'Sim' : 'Não',
+    // Data do credenciamento: é por ela que se separa quem entrou na lista
+    // original de quem entrou depois, na véspera ou no portão.
+    'Credenciado em': f.created_at ? new Date(f.created_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '',
     ...Object.fromEntries(colunas.map(c => [ROTULO_ETAPA[c], soHora(f[c])])),
   }))
 
   const ws = XLSX.utils.json_to_sheet(linhas)
   ws['!cols'] = [
-    { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 8 },
+    { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 8 }, { wch: 20 },
     ...colunas.map(() => ({ wch: 10 })),
   ]
   const wb = XLSX.utils.book_new()

@@ -1974,7 +1974,7 @@ export async function exportarFuncionariosDoSetor(
 
   const { data: funcionarios, error } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo')
+    .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo, created_at')
     .eq('fornecedor_id', fornecedorId)
     .order('nome')
   if (error) throw new Error(mensagemAmigavel(error))
@@ -5940,4 +5940,113 @@ export async function salvarPermissao(
    */
   revalidatePath('/admin', 'layout')
   return { ok: true as const }
+}
+
+/**
+ * Desde quando esta pessoa está na base do Credenciei.
+ *
+ * Duas datas diferentes se confundem o tempo todo: "quando ela se credenciou
+ * NESTE evento" (o `created_at` do cadastro deste evento, que a tela já tem
+ * em mãos) e "quando ela entrou na nossa base" — o primeiro cadastro dela em
+ * qualquer evento, de qualquer cliente. A segunda é esta, e só ela responde
+ * "essa pessoa é nova ou já trabalha com a gente há dois anos?".
+ *
+ * Por CPF, e não por id: a mesma pessoa tem um cadastro por evento, e é
+ * justamente a soma deles que forma a base.
+ */
+export async function desdeQuandoNaBase(cpfDigitado: string): Promise<{
+  primeiroCadastro: string | null
+  totalEventos: number
+} | null> {
+  const perfil = await getPerfil()
+  if (!perfil) return null
+  const cpf = normalizarCpf(cpfDigitado ?? '')
+  if (cpf.length !== 11) return null
+
+  const { data, error } = await supabaseAdmin
+    .from('funcionarios')
+    .select('created_at, fornecedores!inner(evento_id)')
+    .eq('cpf', cpf)
+    .order('created_at', { ascending: true })
+  if (error || !data?.length) return null
+
+  const eventos = new Set(
+    data.map(f => (f.fornecedores as unknown as { evento_id: string } | null)?.evento_id).filter(Boolean),
+  )
+  return { primeiroCadastro: data[0].created_at as string, totalEventos: eventos.size }
+}
+
+/**
+ * Corrige o telefone de um funcionário — e a fila de WhatsApp junto.
+ *
+ * O telefone é o canal: é por ele que chega a credencial, o aviso do dia e
+ * cada lembrete de ponto. Um dígito errado no cadastro não é um detalhe do
+ * registro, é a pessoa inteira fora da comunicação do evento — e o motivo
+ * pelo qual alguém abre esta ficha pra corrigir.
+ *
+ * POR ISSO A FILA VAI JUNTO. `mensagens_agendadas` guarda o telefone no
+ * momento em que a mensagem é agendada, não na hora de enviar. Corrigir só o
+ * cadastro deixaria tudo que já está agendado saindo para o número errado —
+ * e quem corrigiu iria embora achando que resolveu.
+ */
+export async function editarTelefoneFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, novoTelefoneBruto: string, motivo?: string,
+): Promise<{ ok: true; corrigidasNaFila: number } | { erro: string }> {
+  const perfil = await getPerfil()
+  if (!perfil) return { erro: 'Sem permissão.' }
+
+  /*
+   * Quem cuida da equipe corrige (admin, master, supervisor do setor) — e o
+   * suporte, dentro do escopo dele, que é justamente quem é chamado quando a
+   * pessoa reclama que não recebeu nada.
+   */
+  if (perfil.role === 'suporte') {
+    const { data: forn } = await supabaseAdmin
+      .from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
+    if (!forn || forn.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+    const organizacaoId = (forn.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { erro: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  } else {
+    try {
+      await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    } catch {
+      return { erro: 'Sem permissão para corrigir o telefone desta pessoa.' }
+    }
+  }
+
+  const novo = (novoTelefoneBruto ?? '').replace(/\D/g, '')
+  // Mesma régua de `criarSupervisor`: com DDD, com ou sem o 55 na frente.
+  if (novo.length < 10 || novo.length > 13) {
+    return { erro: 'Telefone inválido. Informe com DDD — ex.: (27) 99999-9999.' }
+  }
+
+  const { data: atual } = await supabaseAdmin
+    .from('funcionarios').select('id, nome, telefone, fornecedor_id').eq('id', funcionarioId).single()
+  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste setor.' }
+  if ((atual.telefone as string) === novo) return { ok: true, corrigidasNaFila: 0 }
+
+  const { error } = await supabaseAdmin.from('funcionarios').update({ telefone: novo }).eq('id', funcionarioId)
+  if (error) return { erro: mensagemAmigavel(error) }
+
+  // Só o que ainda NÃO saiu: mexer no que já foi enviado reescreveria o
+  // histórico do que de fato aconteceu.
+  const { data: corrigidas } = await supabaseAdmin
+    .from('mensagens_agendadas')
+    .update({ telefone: novo })
+    .eq('funcionario_id', funcionarioId)
+    .eq('status', 'pendente')
+    .select('id')
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_TELEFONE', campoAlterado: 'Telefone',
+    valorAnterior: (atual.telefone as string) || '—', valorNovo: novo,
+    motivo: motivo ?? null, funcionarioId, eventoId,
+  }))
+
+  after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const, corrigidasNaFila: corrigidas?.length ?? 0 }
 }

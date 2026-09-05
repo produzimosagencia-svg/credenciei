@@ -99,6 +99,8 @@ type Pessoa = {
   compareceu: number
   autorizou: boolean
   ultimo: string
+  /** O cadastro mais ANTIGO deste CPF — desde quando a pessoa existe na base. */
+  desde: string
 }
 
 export default async function EncontrarPage({
@@ -208,6 +210,7 @@ export default async function EncontrarPage({
       compareceu: 0,
       autorizou: false,
       ultimo: c.created_at,
+      desde: c.created_at,
     }
     if (!p.cidade && c.cidade) p.cidade = normalizarCidade(c.cidade) || null
     if (c.cargo?.trim()) p.cargos.set(c.cargo.trim(), (p.cargos.get(c.cargo.trim()) ?? 0) + 1)
@@ -216,6 +219,7 @@ export default async function EncontrarPage({
     if (compareceu.has(c.id)) p.compareceu++
     if (c.consentimento_base) p.autorizou = true
     if (c.created_at > p.ultimo) p.ultimo = c.created_at
+    if (c.created_at < p.desde) p.desde = c.created_at
     porCpf.set(c.cpf, p)
   }
 
@@ -405,6 +409,7 @@ export default async function EncontrarPage({
                       </span>
                       <span className="tabular-nums">{formatCpf(p.cpf)}</span>
                       <span>{p.organizacoes.size} organizaç{p.organizacoes.size !== 1 ? 'ões' : 'ão'}</span>
+                      <span>na base desde {formatarBR(p.desde, 'data')}</span>
                       <span>último em {formatarBR(p.ultimo, 'data')}</span>
                     </div>
                   </Link>

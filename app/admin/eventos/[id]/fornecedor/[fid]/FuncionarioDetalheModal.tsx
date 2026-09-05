@@ -3,10 +3,11 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, alternarAtivacao, obterQRDoFuncionario, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarTelefoneFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
+import { TelefoneInput } from '@/components/inputs'
 import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
 
@@ -23,6 +24,7 @@ type Funcionario = {
   chavePix: string | null
   pago: boolean
   pagoEm: string | null
+  cadastradoEm?: string | null
   fotoUrl: string | null
   ativo?: boolean
   entrada: Presenca
@@ -78,6 +80,18 @@ export default function FuncionarioDetalheModal({
 }) {
   const motivoObrigatorio = role === 'suporte'
   const [open, setOpen] = useState(false)
+
+  /*
+   * Desde quando a pessoa existe na base — buscado ao ABRIR a ficha, não ao
+   * montar a linha: a tabela tem centenas de linhas e ninguém abre todas.
+   * Falha em silêncio; é contexto, e não pode impedir a ficha de abrir.
+   */
+  const [naBase, setNaBase] = useState<{ primeiroCadastro: string | null; totalEventos: number } | null>(null)
+
+  const abrirFicha = () => {
+    setOpen(true)
+    if (!naBase) desdeQuandoNaBase(f.cpf).then(setNaBase).catch(() => setNaBase(null))
+  }
   const [aba, setAba] = useState<Aba>('dados')
   const [valor, setValor] = useState(String(f.valorReceber))
   const [erro, setErro] = useState<string | null>(null)
@@ -109,6 +123,42 @@ export default function FuncionarioDetalheModal({
         setErroMover(mensagemAmigavel(e))
         setConfirmandoMover(false)
       }
+    })
+  }
+
+  // ── Corrigir telefone ────────────────────────────────────────────────────────
+  /*
+   * O telefone é o canal: credencial, aviso do dia e cada lembrete de ponto
+   * chegam por ele. Um dígito errado não é detalhe de cadastro — é a pessoa
+   * inteira fora da comunicação do evento, e é por isso que alguém abre esta
+   * ficha. A action corrige a fila de WhatsApp junto (ver lá).
+   */
+  const [editandoTelefone, setEditandoTelefone] = useState(false)
+  const [novoTelefone, setNovoTelefone] = useState(f.telefone)
+  const [motivoTelefone, setMotivoTelefone] = useState('')
+  const [erroTelefone, setErroTelefone] = useState<string | null>(null)
+  const [okTelefone, setOkTelefone] = useState<string | null>(null)
+  const [isPendingTelefone, startTransitionTelefone] = useTransition()
+
+  const abrirEditarTelefone = () => {
+    setErroTelefone(null)
+    setOkTelefone(null)
+    setNovoTelefone(f.telefone)
+    setMotivoTelefone('')
+    setEditandoTelefone(true)
+  }
+
+  const salvarTelefone = () => {
+    setErroTelefone(null)
+    if (motivoObrigatorio && !motivoTelefone.trim()) { setErroTelefone('Informe o motivo da correção.'); return }
+    startTransitionTelefone(async () => {
+      const r = await editarTelefoneFuncionario(f.id, fornecedorId, eventoId, novoTelefone, motivoTelefone || undefined)
+      if ('erro' in r) { setErroTelefone(r.erro); return }
+      setEditandoTelefone(false)
+      setOkTelefone(r.corrigidasNaFila
+        ? `Telefone corrigido. ${r.corrigidasNaFila} mensagem${r.corrigidasNaFila === 1 ? '' : 's'} da fila ${r.corrigidasNaFila === 1 ? 'passou' : 'passaram'} para o número novo.`
+        : 'Telefone corrigido.')
+      router.refresh()
     })
   }
 
@@ -337,7 +387,7 @@ export default function FuncionarioDetalheModal({
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className="text-left">{trigger}</button>
+      <button onClick={abrirFicha} className="text-left">{trigger}</button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4" onClick={() => setOpen(false)}>
@@ -423,8 +473,43 @@ export default function FuncionarioDetalheModal({
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs">Telefone</p>
-                    <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-slate-700 font-medium tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</p>
+                      <button
+                        onClick={abrirEditarTelefone}
+                        className="p-0.5 text-slate-300 hover:text-brand-500"
+                        title="Corrigir telefone"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/*
+                    * Duas datas, e elas não são a mesma: quando ela se
+                    * credenciou NESTE evento, e desde quando existe na base do
+                    * Credenciei. A segunda é o que responde "essa pessoa é nova
+                    * ou já trabalha com a gente há dois anos?".
+                    */}
+                  {f.cadastradoEm && (
+                    <div>
+                      <p className="text-slate-400 text-xs">Credenciado neste evento</p>
+                      <p className="text-slate-700 font-medium tabular-nums">
+                        {formatarBR(f.cadastradoEm, 'completo')}
+                      </p>
+                    </div>
+                  )}
+                  {naBase?.primeiroCadastro && (
+                    <div>
+                      <p className="text-slate-400 text-xs">Na base desde</p>
+                      <p className="text-slate-700 font-medium tabular-nums">
+                        {formatarBR(naBase.primeiroCadastro, 'data')}
+                      </p>
+                      <p className="text-slate-400 text-2xs">
+                        {naBase.totalEventos} evento{naBase.totalEventos === 1 ? '' : 's'} com a gente
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/*
@@ -433,6 +518,55 @@ export default function FuncionarioDetalheModal({
                   * porque errar o CPF muda quem a pessoa É pro sistema: merece
                   * mais destaque que um campo qualquer.
                   */}
+                {okTelefone && (
+                  <p className="text-green-700 text-xs bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                    {okTelefone}
+                  </p>
+                )}
+
+                {editandoTelefone && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                    <p className="text-amber-800 text-xs">
+                      O que já está agendado no WhatsApp passa para o número novo junto — o que
+                      já foi enviado fica como está, no histórico.
+                    </p>
+                    {/* `TelefoneInput` é não-controlado e formata sozinho: entra
+                        o valor de hoje como padrão e ele devolve já mascarado. */}
+                    <TelefoneInput
+                      defaultValue={f.telefone}
+                      onValueChange={setNovoTelefone}
+                      className="input text-sm tabular-nums"
+                      placeholder="(27) 99999-9999"
+                    />
+                    {motivoObrigatorio && (
+                      <input
+                        type="text"
+                        value={motivoTelefone}
+                        onChange={e => setMotivoTelefone(e.target.value)}
+                        className="input text-sm"
+                        placeholder="Motivo da correção (obrigatório)"
+                      />
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={salvarTelefone}
+                        disabled={isPendingTelefone || novoTelefone.replace(/\D/g, '').length < 10}
+                        className="btn btn-primario btn-sm disabled:opacity-50"
+                      >
+                        {isPendingTelefone ? 'Salvando…' : 'Confirmar'}
+                      </button>
+                      <button
+                        onClick={() => setEditandoTelefone(false)}
+                        disabled={isPendingTelefone}
+                        className="btn btn-secundario btn-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {erroTelefone && <p className="text-red-500 text-xs">{erroTelefone}</p>}
+                  </div>
+                )}
+
                 {editandoCpf && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
                     <p className="text-amber-800 text-xs">

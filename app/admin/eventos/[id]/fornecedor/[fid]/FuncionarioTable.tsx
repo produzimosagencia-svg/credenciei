@@ -42,6 +42,8 @@ type Funcionario = {
   chavePix: string | null
   pago: boolean
   pagoEm: string | null
+  /** Quando a pessoa se credenciou NESTE evento. */
+  cadastradoEm?: string | null
   ativo: boolean
   /** Carimbo de quando saiu do evento. `null` = está na equipe. */
   descredenciadoEm?: string | null
@@ -394,6 +396,11 @@ export default function FuncionarioTable({
 
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <span className="tabular-nums">{f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}</span>
+                  {f.cadastradoEm && (
+                    <span className="tabular-nums text-slate-400">
+                      cadastro {formatarBR(f.cadastradoEm, 'curto')}
+                    </span>
+                  )}
                   {f.valorReceber > 0 && (
                     <span className="font-semibold tabular-nums text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-lg">
                       {brl(f.valorReceber)}
@@ -412,7 +419,7 @@ export default function FuncionarioTable({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  {['Nome', 'CPF', 'Telefone', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
+                  {['Nome', 'CPF', 'Telefone', 'Cadastro', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -455,6 +462,11 @@ export default function FuncionarioTable({
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-sm tabular-nums whitespace-nowrap">
                     {f.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')}
+                  </td>
+                  {/* Quando ela se credenciou neste evento — ordenar a lista
+                      por ela responde "quem entrou depois que eu fechei?". */}
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-slate-500 tabular-nums">
+                    {f.cadastradoEm ? formatarBR(f.cadastradoEm, 'curto') : '—'}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   CalendarDays, Building2, Briefcase, MapPin, Phone, MessageCircle, IdCard, CalendarPlus,
-  ShieldCheck, ShieldAlert,
+  ShieldCheck, ShieldAlert, UserPlus,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
@@ -85,6 +85,13 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
       data: forn.eventos.data_inicio,
       dataFim: forn.eventos.data_fim,
       ativo: c.ativo !== false,
+      /*
+       * Quando a pessoa se cadastrou NESTE evento — não quando o evento
+       * aconteceu. São coisas diferentes e a linha mostrava só a segunda:
+       * quem entrou na lista em maio e quem entrou na véspera apareciam
+       * exatamente iguais.
+       */
+      cadastradoEm: c.created_at as string,
       etapas: ETAPAS.filter(t => feitas.has(t)),
       compareceu: feitas.has('entrada'),
     }
@@ -102,6 +109,14 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
   const organizacoes = new Set(trabalhos.map(t => t.organizacao))
   const compareceu = trabalhos.filter(t => t.compareceu).length
   const ultimoTrabalho = trabalhos[0]?.data ? formatarBR(trabalhos[0].data, 'data') : '—'
+
+  /*
+   * Desde quando ela existe pra nós: o cadastro mais ANTIGO de todos. A
+   * consulta vem do mais novo pro mais velho, então é o último da lista.
+   */
+  const naBaseDesde = cadastros.length
+    ? formatarBR(cadastros[cadastros.length - 1].created_at as string, 'data')
+    : '—'
   // Taxa de presença: chamou e a pessoa apareceu. É o número que decide se
   // vale a pena convidar de novo — mais útil que "quantos eventos".
   const taxa = trabalhos.length ? Math.round((compareceu / trabalhos.length) * 100) : 0
@@ -154,11 +169,12 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Eventos trabalhados" value={trabalhos.length} icon={CalendarDays} tom="acento" />
         <StatCard label="Organizações" value={organizacoes.size} icon={Building2} tom="info" />
         <StatCard label="Taxa de presença" value={`${taxa}%`} sub={`compareceu em ${compareceu}`} icon={Briefcase} tom="sucesso" />
         <StatCard label="Último trabalho" value={ultimoTrabalho} icon={CalendarDays} small tom="aviso" />
+        <StatCard label="Na base desde" value={naBaseDesde} sub="primeiro cadastro" icon={UserPlus} small tom="info" />
       </div>
 
       <Secao
@@ -252,6 +268,11 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
                       <span className="truncate">{t.organizacao}</span>
                     </span>
                     <span className="truncate">{t.setor}{t.cargo ? ` · ${t.cargo}` : ''}</span>
+                    {/* A data que faltava: quando ela entrou NESTA equipe. */}
+                    <span className="flex items-center gap-1 whitespace-nowrap text-slate-400">
+                      <UserPlus className="w-3 h-3 shrink-0" />
+                      cadastrou-se em {formatarBR(t.cadastradoEm, 'completo')}
+                    </span>
                     {!!t.etapas.length && (
                       <span className="truncate">{t.etapas.map(e => ROTULO[e]).join(' · ')}</span>
                     )}
