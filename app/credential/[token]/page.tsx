@@ -10,7 +10,7 @@ import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { gerarCodigoQR, NOME_DA_FASE } from '@/lib/credencial-qr'
 import {
-  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio, faseDoDia,
+  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio, faseAtualDoQR,
   TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
@@ -298,11 +298,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * têm crachás diferentes, e o da montagem não entra no dia do evento.
    * Ver lib/credencial-qr.ts.
    *
-   * A etapa vem de `hoje`, não de `dataRef`: num turno que vira a madrugada o
-   * registro pertence a ontem, mas o crachá na mão da pessoa é o de hoje, que
-   * é o que o scanner confere.
+   * A etapa vem do instante atual, não de `dataRef`: num turno que vira a
+   * madrugada o registro pertence a ontem e o QR do evento continua válido
+   * até o término configurado, que é o mesmo critério usado pelo scanner.
    */
-  const faseHoje = faseDoDia(hoje, evento?.data_inicio ? diaBRT(evento.data_inicio) : '')
+  const faseHoje = faseAtualDoQR(agora, evento?.data_inicio, evento?.data_fim)
   const { codigo } = gerarCodigoQR(token, faseHoje)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 

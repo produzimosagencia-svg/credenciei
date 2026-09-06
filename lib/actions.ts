@@ -32,7 +32,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseDoDia, conferirHorariosDoEvento,
+  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
@@ -3548,8 +3548,8 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
    * É o que impede o crachá que circulou a semana toda na montagem de entrar
    * no dia do evento.
    */
-  const inicioDoEvento = (evento as { data_inicio?: string | null }).data_inicio
-  const faseDeHoje = faseDoDia(diaBRT(), inicioDoEvento ? diaBRT(inicioDoEvento) : '')
+  const dadosDoEvento = evento as { data_inicio?: string | null; data_fim?: string | null }
+  const faseDeHoje = faseAtualDoQR(new Date(), dadosDoEvento.data_inicio, dadosDoEvento.data_fim)
   const etapa = faseConfere(leitura.fase, faseDeHoje)
   if (!etapa.ok) {
     /*
@@ -3563,7 +3563,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
      */
     return {
       success: false,
-      message: `Este QR Code não é do dia do evento — é da ${NOME_DA_FASE[leitura.fase ?? 'montagem']}. Confira se esta pessoa está credenciada: peça o CPF dela.`,
+      message: `Este QR Code é da ${NOME_DA_FASE[leitura.fase ?? 'montagem']}, mas agora vale o da ${NOME_DA_FASE[faseDeHoje]}. Peça para a pessoa atualizar a credencial. Se ainda não resolver, confira pelo CPF.`,
       faseErrada: { doQR: NOME_DA_FASE[leitura.fase ?? 'montagem'], deHoje: NOME_DA_FASE[faseDeHoje] },
     }
   }
@@ -4508,13 +4508,15 @@ export async function obterQRDoFuncionario(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedores!inner(eventos!inner(data_inicio))')
+    .select('qr_token, fornecedores!inner(eventos!inner(data_inicio, data_fim))')
     .eq('id', funcionarioId)
     .single()
   if (!func?.qr_token) return { error: 'Funcionário não encontrado.' }
 
-  const evento = (func.fornecedores as unknown as { eventos: { data_inicio: string | null } })?.eventos
-  const fase = faseDoDia(diaBRT(), evento?.data_inicio ? diaBRT(evento.data_inicio) : '')
+  const evento = (func.fornecedores as unknown as {
+    eventos: { data_inicio: string | null; data_fim: string | null }
+  })?.eventos
+  const fase = faseAtualDoQR(new Date(), evento?.data_inicio, evento?.data_fim)
   const { codigo } = gerarCodigoQR(func.qr_token as string, fase)
 
   const QRCode = (await import('qrcode')).default

@@ -374,6 +374,37 @@ export function faseDoDia(dia: string, diaPrincipal: string): FaseDoDia {
   return dia < diaPrincipal ? 'montagem' : 'desmontagem'
 }
 
+/**
+ * Fase que deve assinar e validar o QR exibido ao vivo.
+ *
+ * A comunicação diária continua usando `faseDoDia`: no calendário, o dia
+ * seguinte é desmontagem. O QR tem uma necessidade diferente. Se o evento
+ * atravessa a meia-noite, a equipe ainda está no mesmo turno e o crachá do
+ * evento precisa continuar válido até o horário real de término.
+ */
+export function faseAtualDoQR(
+  agora: Date,
+  dataInicio: string | null | undefined,
+  dataFim: string | null | undefined,
+): FaseDoDia {
+  if (!dataInicio) return 'montagem'
+
+  const hoje = diaBRT(agora)
+  const diaPrincipal = diaBRT(dataInicio)
+
+  if (hoje < diaPrincipal) return 'montagem'
+  if (hoje === diaPrincipal) return 'evento'
+
+  if (dataFim) {
+    const fim = new Date(dataFim)
+    if (!Number.isNaN(fim.getTime()) && agora.getTime() <= fim.getTime()) {
+      return 'evento'
+    }
+  }
+
+  return 'desmontagem'
+}
+
 /** Hora em que o aviso do dia sai, nos dias de montagem e desmontagem. */
 export const HORA_AVISO_DIA = '07:00'
 
