@@ -827,6 +827,32 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
 
   const agoraISO = new Date().toISOString()
 
+  /*
+   * Convite de acesso não pode esperar atrás da operação do evento.
+   *
+   * Supervisor novo precisa do link para criar a senha antes de conseguir
+   * entrar no sistema. Durante um evento, a fila pode ter centenas de
+   * lembretes de entrada/meio/saída mais antigos; como a seleção era apenas
+   * cronológica, o convite imediato ficava vários minutos no fim da fila.
+   *
+   * O conteúdo de `disparo_manual` é texto JSON. Filtrar pela assinatura
+   * exata gravada por `agendarTemplateSupervisor` prioriza somente o convite
+   * de acesso — campanhas manuais continuam na ordem normal e não furam a
+   * fila operacional inteira.
+   */
+  const { data: acessosPrioritarios } = await supabase
+    .from('mensagens_agendadas')
+    .select('id')
+    .eq('status', 'pendente')
+    .eq('tipo', 'disparo_manual')
+    .lte('agendado_para', agoraISO)
+    .or(`proxima_tentativa.is.null,proxima_tentativa.lte.${agoraISO}`)
+    .like('mensagem', '%"template":"cadastro_supervisor_cpf_link"%')
+    .order('agendado_para', { ascending: true })
+    .limit(limite)
+
+  const idsPrioritarios = (acessosPrioritarios ?? []).map(c => c.id)
+
   const { data: candidatos } = await supabase
     .from('mensagens_agendadas')
     .select('id')
@@ -834,9 +860,13 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
     .lte('agendado_para', agoraISO)
     .or(`proxima_tentativa.is.null,proxima_tentativa.lte.${agoraISO}`)
     .order('agendado_para', { ascending: true })
-    .limit(limite)
+    // Compensa possíveis duplicatas com a consulta prioritária acima.
+    .limit(limite + idsPrioritarios.length)
 
-  const ids = (candidatos ?? []).map(c => c.id)
+  const ids = [...new Set([
+    ...idsPrioritarios,
+    ...(candidatos ?? []).map(c => c.id),
+  ])].slice(0, limite)
   if (!ids.length) return { processadas: 0 }
 
   // Claim: UPDATE guardado por status='pendente'. Não precisa de lock
