@@ -2063,7 +2063,7 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   const db = supabaseAdmin
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
-  if (!validarCpf(cpf)) throw new Error('O CPF precisa ter 11 dígitos.')
+  if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os 11 dígitos.')
 
   // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento
   const { data: existentes } = await db
@@ -2120,7 +2120,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   if (!ehMaster(perfil?.role)) throw new Error('Apenas o master atribui colaboradores da base')
 
   const cpf = cpfBruto.replace(/\D/g, '')
-  if (!validarCpf(cpf)) throw new Error('O CPF precisa ter 11 dígitos.')
+  if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os 11 dígitos.')
 
   const db = supabaseAdmin
 
@@ -2293,7 +2293,7 @@ export async function editarCpfFuncionario(
   if (!podeEditarIdentidade(perfil)) return { erro: 'Sem permissão para corrigir CPF.' }
 
   const novoCpf = normalizarCpf(novoCpfBruto)
-  if (!validarCpf(novoCpf)) return { erro: 'O CPF precisa ter 11 dígitos.' }
+  if (!validarCpf(novoCpf)) return { erro: 'CPF inválido. Confira os 11 dígitos.' }
 
   const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
   if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
@@ -4073,7 +4073,7 @@ export async function cadastrarFuncionarioPublico(
     return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
   }
 
-  if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
+  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os 11 dígitos.' }
 
   /*
    * CPF barrado pelo supervisor do setor (ver `bloquearCpf`).
@@ -4342,7 +4342,7 @@ export async function identificarNaPortaria(
   cpfBruto: string
 ): Promise<{ qrToken?: string; naoEncontrado?: boolean; error?: string }> {
   const cpf = cpfBruto.replace(/\D/g, '')
-  if (!validarCpf(cpf)) return { error: 'O CPF precisa ter 11 dígitos.' }
+  if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os 11 dígitos.' }
 
   // Mesmo teto do resto do fluxo público: protege um QR fixo, impresso e
   // exposto, de virar varredura de CPF.
@@ -4417,6 +4417,8 @@ export type CandidatoLocalizado = {
   cargo: string | null
   setorNome: string
   eventoNome: string
+  /** O CPF exato não existe; este cadastro difere em no máximo dois dígitos. */
+  cpfAproximado?: boolean
 }
 
 /**
@@ -4446,6 +4448,14 @@ async function escopoDoSuporteComoConjuntos(perfilId: string): Promise<{ eventos
 
 /** Teto de resultados por busca — lista maior que isso não se escolhe, se refina. */
 const MAX_CANDIDATOS = 25
+
+/** Quantos algarismos diferem entre dois CPFs completos. */
+function distanciaEntreCpfs(a: string, b: string): number {
+  if (!/^\d{11}$/.test(a) || !/^\d{11}$/.test(b)) return Number.POSITIVE_INFINITY
+  let diferentes = 0
+  for (let i = 0; i < 11; i++) if (a[i] !== b[i]) diferentes++
+  return diferentes
+}
 
 /**
  * O histórico de batidas para a aba do modal do funcionário.
@@ -4547,7 +4557,7 @@ export async function localizarFuncionario(
   if (!busca) return { error: 'Digite o CPF ou o nome da pessoa.' }
   if (!pareceCpf && busca.length < 3) return { error: 'Digite pelo menos 3 letras do nome.' }
   if (pareceCpf && digitos.length === 11 && !validarCpf(digitos)) {
-    return { error: 'O CPF precisa ter 11 dígitos.' }
+    return { error: 'CPF inválido. Confira os 11 dígitos.' }
   }
 
   /*
@@ -4581,7 +4591,7 @@ export async function localizarFuncionario(
 
   // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
   // "não encontrado" também protege quem está fora do escopo dele.
-  const visiveis = achados.filter(f => {
+  const dentroDoEscopo = (f: LinhaLocalizada) => {
     if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
     if (ehMaster(perfil.role)) return true
     if (perfil.role === 'suporte') {
@@ -4589,7 +4599,35 @@ export async function localizarFuncionario(
       return !!evento && (escopoSuporte!.eventos.has(evento.id) || escopoSuporte!.orgs.has(evento.organizacao_id ?? ''))
     }
     return comEvento(f.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
-  })
+  }
+  let visiveis = achados.filter(dentroDoEscopo)
+  let buscaAproximada = false
+
+  /*
+   * Rede de segurança para CPF digitado errado NO CADASTRO.
+   *
+   * O documento na mão do operador está certo, mas a consulta exata não acha
+   * uma linha gravada com um algarismo trocado. Só no caminho de falha
+   * carregamos os eventos ativos e oferecemos cadastros com até dois dígitos
+   * diferentes. Nunca escolhemos automaticamente, mesmo quando aparece uma
+   * pessoa só: a tela mostra nome, CPF salvo, setor e evento para o operador
+   * confirmar quem está na frente dele.
+   */
+  if (pareceCpf && digitos.length === 11 && !visiveis.length) {
+    const possiveis = await buscarTudo<LinhaLocalizada>((de, ate) =>
+      supabaseAdmin
+        .from('funcionarios')
+        .select(SELECT_LOCALIZAR)
+        .eq('fornecedores.eventos.ativo', true)
+        .order('nome')
+        .range(de, ate),
+    { tetoTotal: 10_000 })
+
+    visiveis = possiveis
+      .filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
+      .filter(dentroDoEscopo)
+    buscaAproximada = visiveis.length > 0
+  }
 
   if (!visiveis.length) {
     const onde = perfil.role === 'supervisor' ? 'no seu setor' : 'nos eventos ativos'
@@ -4603,7 +4641,7 @@ export async function localizarFuncionario(
   // Mais de uma pessoa: quem escolhe é o supervisor, não o sistema. Com nome
   // isso é o normal; com CPF acontece quando a pessoa está em dois eventos
   // ativos ao mesmo tempo.
-  if (visiveis.length > 1) {
+  if (buscaAproximada || visiveis.length > 1) {
     return {
       candidatos: visiveis.slice(0, MAX_CANDIDATOS).map(f => {
         const forn = comEvento(f.fornecedores)
@@ -4614,6 +4652,7 @@ export async function localizarFuncionario(
           cargo: f.cargo,
           setorNome: forn?.nome ?? '—',
           eventoNome: forn?.eventos?.nome ?? '—',
+          cpfAproximado: buscaAproximada,
         }
       }),
     }

@@ -73,7 +73,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (!r.ok) return r.erro
 
         const digitos = String(cpf).replace(/\D/g, '')
-        if (!validarCpf(digitos)) return 'O CPF precisa ter 11 dígitos — confira com o usuário.'
+        if (!validarCpf(digitos)) return 'CPF inválido — confira os 11 dígitos com o usuário.'
 
         const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id)
         if (outroSetor) {
@@ -166,7 +166,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         // CPF por evento). Muda, mas só validado e sem colidir com ninguém.
         if (cpf != null) {
           const digitos = String(cpf).replace(/\D/g, '')
-          if (!validarCpf(digitos)) return 'O CPF precisa ter 11 dígitos.'
+          if (!validarCpf(digitos)) return 'CPF inválido. Confira os 11 dígitos.'
           const outroSetor = await cpfJaNoEvento(digitos, r.func.evento_id, funcionario_id)
           if (outroSetor) return `Já existe outra pessoa com este CPF neste evento, no setor "${outroSetor}".`
           mudancas.cpf = digitos
@@ -412,4 +412,3 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
     }),
   ]
 }
-

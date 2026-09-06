@@ -206,7 +206,9 @@ export default function LocalizarFuncionario() {
       {candidatos && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <p className="text-slate-500 text-xs font-semibold px-4 py-3 border-b border-slate-100 bg-slate-50">
-            {candidatos.length} pessoas encontradas — toque em quem você está atendendo
+            {candidatos.some(c => c.cpfAproximado)
+              ? `CPF exato não encontrado — ${candidatos.length} cadastro${candidatos.length === 1 ? '' : 's'} parecido${candidatos.length === 1 ? '' : 's'}. Confirme pelo nome antes de continuar.`
+              : `${candidatos.length} pessoas encontradas — toque em quem você está atendendo`}
           </p>
           <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
             {candidatos.map(c => (

@@ -106,7 +106,7 @@ export default function FormularioFuncionario({
     setAutofill(false)
     const digitos = value.replace(/\D/g, '')
     if (digitos.length < 11) { setErroCpf(null); return }
-    if (!validarCpf(digitos)) { setErroCpf('O CPF precisa ter 11 dígitos.'); return }
+    if (!validarCpf(digitos)) { setErroCpf('CPF inválido. Confira os números.'); return }
     setErroCpf(null)
     if (cpfBuscado.current === digitos) return
     cpfBuscado.current = digitos
@@ -161,7 +161,7 @@ export default function FormularioFuncionario({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validarCpf(form.cpf)) {
-      setErroCpf('O CPF precisa ter 11 dígitos.')
+      setErroCpf('CPF inválido. Confira os números.')
       return
     }
     setLoading(true)
