@@ -1,24 +1,29 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Minus, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
+import { RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
 import { salvarPermissao, type PermissaoSalva } from '@/lib/actions'
 import { CAPACIDADES, PAPEIS_CONFIGURAVEIS, ROLE_LABELS, chaveDaPermissao, type Role } from '@/lib/permissions'
 
-type Estado = 'padrao' | 'liberado' | 'bloqueado'
-
 /**
- * A grade de permissões — cada célula tem TRÊS estados, não dois.
+ * A grade de permissões — um interruptor por papel, por capacidade.
  *
- * "Padrão" não é o mesmo que "bloqueado": é "o que o sistema decide", e ele
- * pode mudar numa versão futura sem que ninguém tenha de reconfigurar nada.
- * Uma grade de duas posições obrigaria a congelar hoje a régua inteira em
- * banco, e no dia em que uma regra do código mudasse, toda organização
- * continuaria presa à cópia velha, sem saber.
+ * ─── POR QUE O INTERRUPTOR É BINÁRIO, SE O DADO TEM TRÊS ESTADOS ────────────
  *
- * Cada clique salva na hora. Não existe "Salvar" no fim: com cinquenta
- * células, um botão só transformaria qualquer engano numa dúvida sobre o que
- * exatamente foi enviado.
+ * No banco existem três situações: liberado, bloqueado e "sem linha" (segue o
+ * padrão do código). A primeira versão desta tela expunha as três num clique
+ * que ciclava entre elas — e ficou ilegível: ninguém olha uma grade de
+ * cinquenta células para descobrir em que ponto do ciclo cada uma está.
+ *
+ * O interruptor mostra o que VALE agora, que é a única pergunta que se faz
+ * olhando pra cá. O terceiro estado continua existindo no banco, mas deixou
+ * de precisar de clique próprio: ao ligar/desligar, se o valor escolhido for
+ * igual ao padrão do sistema, a exceção é APAGADA em vez de gravada. Voltar
+ * ao padrão passou a ser consequência, não mais um passo a decorar.
+ *
+ * A marca laranja diz "isto aqui foi decidido por alguém, não é o padrão" —
+ * e é ela que dá o botão de desfazer, para o caso de a regra do código mudar
+ * um dia e a organização querer voltar a acompanhá-la.
  */
 export default function GradePermissoes({
   organizacaoId, salvas,
@@ -33,30 +38,12 @@ export default function GradePermissoes({
 
   const mapa = new Map(salvas.map(p => [chaveDaPermissao(p.role, p.chave), p.permitido]))
 
-  const estadoDe = (role: Role, chave: string): Estado => {
-    const salvo = mapa.get(chaveDaPermissao(role, chave))
-    if (salvo === undefined) return 'padrao'
-    return salvo ? 'liberado' : 'bloqueado'
-  }
-
-  /*
-   * O ciclo do clique é sempre o mesmo: o que o sistema faz hoje → o
-   * contrário disso → de volta ao padrão. Assim um clique só já resolve o
-   * caso comum ("quero o oposto do que está aí"), e o terceiro desfaz.
-   */
-  const proximo = (atual: Estado, padrao: boolean): boolean | null => {
-    if (atual === 'padrao') return !padrao
-    if (atual === (padrao ? 'bloqueado' : 'liberado')) return padrao
-    return null
-  }
-
-  const clicar = (role: Role, chave: string, padrao: boolean) => {
+  const gravar = (role: Role, chave: string, valor: boolean | null) => {
     const id = chaveDaPermissao(role, chave)
-    const alvo = proximo(estadoDe(role, chave), padrao)
     setErro(null)
     setSalvando(id)
     startTransition(async () => {
-      const r = await salvarPermissao(organizacaoId, role, chave, alvo)
+      const r = await salvarPermissao(organizacaoId, role, chave, valor)
       setSalvando(null)
       if (r.error) { setErro(r.error); return }
       router.refresh()
@@ -64,19 +51,22 @@ export default function GradePermissoes({
   }
 
   return (
-    <div className="space-y-2">
+    <div>
       {erro && (
-        <p className="flex items-start gap-1.5 text-red-600 text-xs px-1">
+        <p className="flex items-start gap-1.5 text-red-600 text-xs px-4 pt-3">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
         </p>
       )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-slate-400 text-2xs uppercase tracking-wide border-b border-slate-100">
-              <th className="text-left font-semibold px-4 py-2.5">Funcionalidade</th>
+            <tr className="border-b border-slate-100">
+              <th className="text-left px-4 py-3 text-2xs uppercase tracking-wide text-slate-400 font-semibold">
+                Funcionalidade
+              </th>
               {PAPEIS_CONFIGURAVEIS.map(p => (
-                <th key={p} className="font-semibold px-4 py-2.5 text-center whitespace-nowrap">
+                <th key={p} className="px-4 py-3 text-2xs uppercase tracking-wide text-slate-400 font-semibold text-center whitespace-nowrap">
                   {ROLE_LABELS[p]}
                 </th>
               ))}
@@ -84,29 +74,52 @@ export default function GradePermissoes({
           </thead>
           <tbody>
             {CAPACIDADES.map(c => (
-              <tr key={c.chave} className="border-b border-slate-50 last:border-0">
-                <td className="px-4 py-3 align-top">
+              <tr key={c.chave} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/40">
+                <td className="px-4 py-3.5 align-middle max-w-md">
                   <p className="text-slate-800 font-medium">{c.nome}</p>
-                  <p className="text-slate-400 text-xs mt-0.5">{c.descricao}</p>
-                  {c.peso && (
-                    <p className="text-amber-700 text-2xs mt-1 flex items-start gap-1">
-                      <AlertTriangle className="w-3 h-3 shrink-0 mt-px" /> {c.peso}
-                    </p>
-                  )}
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    {c.descricao}
+                    {/* O peso entra na MESMA linha da descrição, em cinza. Em
+                        âmbar e em linha própria, metade da tabela virava
+                        aviso e a grade ficava impossível de ler. */}
+                    {c.peso && (
+                      <span className="text-amber-600"> · {c.peso}</span>
+                    )}
+                  </p>
                 </td>
                 {PAPEIS_CONFIGURAVEIS.map(role => {
                   const padrao = c.padrao(role)
-                  const estado = estadoDe(role, c.chave)
                   const id = chaveDaPermissao(role, c.chave)
+                  const salvo = mapa.get(id)
+                  const alterado = salvo !== undefined
+                  const vale = alterado ? salvo : padrao
                   return (
-                    <td key={role} className="px-4 py-3 text-center">
-                      <Celula
-                        estado={estado}
-                        padrao={padrao}
-                        salvando={salvando === id}
-                        onClick={() => clicar(role, c.chave, padrao)}
-                        rotulo={`${c.nome} para ${ROLE_LABELS[role]}`}
-                      />
+                    <td key={role} className="px-4 py-3.5 text-center">
+                      <div className="inline-flex items-center gap-1.5">
+                        <Interruptor
+                          ligado={vale}
+                          alterado={alterado}
+                          salvando={salvando === id}
+                          rotulo={`${c.nome} para ${ROLE_LABELS[role]}`}
+                          /*
+                           * Se o valor novo é o próprio padrão do sistema, a
+                           * exceção deixa de existir em vez de virar uma linha
+                           * dizendo o mesmo que o código já diz.
+                           */
+                          onClick={() => gravar(role, c.chave, !vale === padrao ? null : !vale)}
+                        />
+                        {alterado && (
+                          <button
+                            onClick={() => gravar(role, c.chave, null)}
+                            disabled={salvando === id}
+                            title={`Voltar ao padrão do sistema (${padrao ? 'ligado' : 'desligado'})`}
+                            aria-label={`Voltar ${c.nome} de ${ROLE_LABELS[role]} ao padrão do sistema`}
+                            className="btn-press text-brand-500 hover:text-brand-600 disabled:opacity-40"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )
                 })}
@@ -115,47 +128,55 @@ export default function GradePermissoes({
           </tbody>
         </table>
       </div>
-      <p className="text-slate-400 text-xs px-4 pb-1">
-        Clique para alternar: <strong className="text-slate-500">padrão do sistema</strong> →{' '}
-        o contrário → de volta ao padrão. Alterado aparece com a marca laranja.
+
+      <p className="text-slate-400 text-xs px-4 py-3 border-t border-slate-100">
+        O interruptor mostra o que vale agora: <span className="text-brand-600 font-medium">laranja</span> pode,
+        cinza não pode. O que tiver <span className="text-brand-600 font-medium">anel e a seta de desfazer</span>{' '}
+        foi mudado aqui e não segue mais o padrão do sistema — a seta devolve.
       </p>
     </div>
   )
 }
 
-function Celula({
-  estado, padrao, salvando, onClick, rotulo,
+/**
+ * O interruptor.
+ *
+ * `button` com `role="switch"`, e não `input[type=checkbox]`: o estado vem do
+ * servidor e volta pelo `router.refresh()`, então quem manda na posição é a
+ * prop, nunca o navegador. Um checkbox se moveria sozinho no clique e depois
+ * pularia de volta se a gravação falhasse.
+ */
+function Interruptor({
+  ligado, alterado, salvando, onClick, rotulo,
 }: {
-  estado: Estado
-  padrao: boolean
+  ligado: boolean
+  alterado: boolean
   salvando: boolean
   onClick: () => void
   rotulo: string
 }) {
-  const vale = estado === 'padrao' ? padrao : estado === 'liberado'
-  const alterado = estado !== 'padrao'
-
   return (
     <button
+      type="button"
+      role="switch"
+      aria-checked={ligado}
+      aria-label={rotulo}
       onClick={onClick}
       disabled={salvando}
-      aria-label={rotulo}
-      title={alterado
-        ? `${vale ? 'Liberado' : 'Bloqueado'} por configuração — clique para ${estado === (padrao ? 'bloqueado' : 'liberado') ? 'inverter' : 'voltar ao padrão'}`
-        : `Padrão do sistema: ${vale ? 'pode' : 'não pode'}`}
-      className={`btn-press w-9 h-9 inline-flex items-center justify-center rounded-lg border transition-colors ${
-        alterado
-          ? 'border-brand-300 bg-brand-50'
-          : 'border-transparent hover:bg-slate-100'
-      } ${salvando ? 'opacity-50' : ''}`}
+      title={`${ligado ? 'Pode' : 'Não pode'}${alterado ? ' — alterado nesta organização' : ' — padrão do sistema'}`}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
+        ligado
+          ? 'bg-brand-500 border-brand-500'
+          : 'bg-slate-200 border-slate-200'
+      } ${alterado ? 'ring-2 ring-brand-200 ring-offset-1' : ''}`}
     >
-      {salvando
-        ? <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
-        : vale
-          ? <Check className={`w-4 h-4 ${alterado ? 'text-brand-600' : 'text-green-600'}`} />
-          : alterado
-            ? <RotateCcw className="w-3.5 h-3.5 text-brand-600" />
-            : <Minus className="w-4 h-4 text-slate-300" />}
+      <span
+        className={`inline-flex items-center justify-center h-4 w-4 rounded-full bg-white shadow transition-transform ${
+          ligado ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
+        }`}
+      >
+        {salvando && <Loader2 className="w-2.5 h-2.5 text-slate-400 animate-spin" />}
+      </span>
     </button>
   )
 }
