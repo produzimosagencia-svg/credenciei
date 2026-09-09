@@ -1,5 +1,9 @@
 import type { CustoWhatsAppDoEvento } from '@/lib/actions-whatsapp'
 import { formatarBR } from '@/lib/tz'
+// Tipo vem do pacote normal (type-only, apagado na compilação — não influencia
+// qual arquivo é carregado em runtime). O valor vem do caminho explícito
+// logo abaixo, pelo motivo explicado no comentário dentro da função.
+import type { jsPDF as JsPDFCtor } from 'jspdf'
 
 /**
  * Monta o PDF de "Extrair custo evento" — o fechamento do gasto de WhatsApp
@@ -24,7 +28,18 @@ const CINZA_TEXTO: [number, number, number] = [51, 65, 85]
 const CINZA_CLARO: [number, number, number] = [248, 250, 252]
 
 export async function gerarPdfCustoWhatsApp(dados: CustoWhatsAppDoEvento): Promise<void> {
-  const { jsPDF } = await import('jspdf')
+  /*
+   * Caminho explícito do build de NAVEGADOR, e não `import('jspdf')` puro.
+   *
+   * O `package.json` do jsPDF declara `exports` condicionais com um build
+   * para "node" (usa `fs`, não existe no navegador) e outro para "browser".
+   * Quando o bundle resolveu a condição errada, `doc.save()` chamava a
+   * versão que grava em disco via `fs` — e quebrava com um erro genérico de
+   * runtime dentro do modal (relato do Juan, 09/09/2026). O caminho
+   * `jspdf/dist/jspdf.es.min.js` aponta direto pro arquivo certo, sem
+   * depender de qual condição o bundler escolher.
+   */
+  const { jsPDF } = await import('jspdf/dist/jspdf.es.min.js') as unknown as { jsPDF: typeof JsPDFCtor }
   const { autoTable } = await import('jspdf-autotable')
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
