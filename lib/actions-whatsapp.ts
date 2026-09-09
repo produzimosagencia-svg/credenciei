@@ -7,7 +7,6 @@ import { formatarNumeroWhatsApp, responderConversa, provedor } from './whatsapp'
 import { enviarTemplate } from './whatsapp-meta'
 import {
   registrarEnviada, registrarLeituraConversa, FLUXOS, numerosWhatsApp, templatesAprovados,
-  custoWhatsAppDetalhadoDoEvento, type CustoWhatsAppDoEvento,
 } from './whatsapp-painel'
 import { podePassar } from './limite'
 
@@ -281,53 +280,4 @@ export async function salvarFluxos(ativos: Record<string, boolean>) {
 
   revalidatePath('/admin/whatsapp/fluxos')
   return { ok: true as const }
-}
-
-/**
- * O gasto de WhatsApp de UM evento, do começo ao fim dele — pro "Extrair
- * custo evento" que monta o PDF pra anexar como comprovante no Financeiro.
- */
-export type { CustoWhatsAppDoEvento }
-
-/**
- * O resultado vem como VALOR, não como exceção — e essa é a correção, não um
- * detalhe de estilo.
- *
- * Em produção o Next.js mascara toda exceção lançada dentro de uma Server
- * Action: o navegador recebe sempre "An error occurred in the Server
- * Components render. The specific message is omitted…", nunca a mensagem que
- * a gente escreveu. Foi exatamente o que o Juan viu duas vezes seguidas
- * (09/09/2026) — e é por isso que a tentativa anterior, que convertia a
- * exceção num `Error` de mensagem própria antes de relançar, não mudou uma
- * vírgula do que aparecia na tela: o que mascara é o `throw`, não o tipo do
- * erro.
- *
- * Valor devolvido não passa por essa máscara. Com `{ ok: false, erro }` a
- * causa real chega inteira em quem clicou (e no log do servidor, com o
- * marcador abaixo), em vez de virar um parágrafo genérico em inglês.
- */
-export type ResultadoCustoWhatsApp =
-  | { ok: true; dados: CustoWhatsAppDoEvento | null }
-  | { ok: false; erro: string }
-
-export async function custoWhatsAppDoEventoParaExportar(eventoId: string): Promise<ResultadoCustoWhatsApp> {
-  try {
-    // `exigirMaster` lança — aqui a recusa também precisa virar valor, senão
-    // "não é master" chegaria mascarado igual a um erro de banco.
-    const perfil = await getPerfil()
-    if (!perfil || !ehMaster(perfil.role)) {
-      return { ok: false, erro: 'Apenas o master pode extrair o relatório de WhatsApp.' }
-    }
-
-    const templates = await templatesAprovados()
-    return { ok: true, dados: await custoWhatsAppDetalhadoDoEvento(eventoId, templates) }
-  } catch (e) {
-    const bruta = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
-    // Marcador fixo pra achar esta falha no log da Vercel sem depender de
-    // ninguém descrever o que apareceu na tela.
-    console.error('[custo-whatsapp-pdf] falhou', {
-      eventoId, erro: bruta, stack: e instanceof Error ? e.stack : null,
-    })
-    return { ok: false, erro: bruta }
-  }
 }

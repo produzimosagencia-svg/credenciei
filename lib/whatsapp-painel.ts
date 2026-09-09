@@ -6,6 +6,10 @@
 
 import { supabaseAdmin } from './supabase-server'
 import { formatarNumeroWhatsApp } from './whatsapp'
+// Só o tipo — o import some na compilação, então nem o `jspdf` que aquele
+// arquivo usa nem nada dele entra no bundle de quem importa este aqui.
+import type { CustoWhatsAppDoEvento } from './relatorio-custo-whatsapp'
+export type { CustoWhatsAppDoEvento }
 
 const VERSAO = 'v21.0'
 
@@ -740,31 +744,29 @@ export async function custoWhatsAppPorEvento(
   return porEvento
 }
 
-// ─── Custo detalhado de UM evento (pro "Extrair custo evento" em PDF) ────────
-
-export type CustoWhatsAppDoEvento = {
-  eventoNome: string
-  eventoData: string | null
-  organizacaoNome: string | null
-  enviados: number
-  custoTotal: number
-  /** Telefones distintos que receberam alguma mensagem — "pra quantas pessoas". */
-  destinatarios: number
-  porTipo: { tipo: string; rotulo: string; enviados: number; custo: number }[]
-  porCategoria: { categoria: CategoriaMeta; enviados: number; custo: number }[]
-}
+// ─── Custo de WhatsApp de UM evento (pro "Extrair custo evento" em PDF) ─────
 
 /**
- * Tudo que o evento gastou de WhatsApp, do início ao fim dele — SEM o corte
- * de dias que `custoWhatsAppPorEvento` aplica (aquele existe pro dashboard
- * "últimos 30 dias"; este é pro relatório de fechamento de UM evento
- * específico, que pode ser extraído semanas depois do evento acabar).
+ * Os números do comprovante de UM evento, contados do zero.
+ *
+ * SEM o corte de dias que `custoWhatsAppPorEvento` aplica: aquele existe pro
+ * dashboard "últimos 30 dias"; este é o fechamento de um evento específico,
+ * que pode ser extraído semanas depois de ele acabar.
+ *
+ * Tudo aqui filtra por `evento_id` — o relatório do próximo evento não herda
+ * nada deste. Era a preocupação explícita do Juan (09/09/2026: "o Luan
+ * Santana tem que ser contado a partir de zero, não venha esse valor junto").
+ *
+ * Enxugou de propósito: a versão anterior devolvia destinatários únicos e
+ * quebra por categoria da Meta, que ninguém pedia e só davam mais peça pra
+ * quebrar. Ficaram os três números do pedido — mensagens, valor, equipe — e
+ * a listinha por tipo, que sai de graça no mesmo laço.
  */
-export async function custoWhatsAppDetalhadoDoEvento(
+export async function custoWhatsAppDoEvento(
   eventoId: string, templates: TemplateMeta[],
 ): Promise<CustoWhatsAppDoEvento | null> {
   const { data: evento } = await supabaseAdmin
-    .from('eventos').select('nome, data_inicio, organizacoes(nome)').eq('id', eventoId).maybeSingle()
+    .from('eventos').select('nome, data_inicio, data_fim, organizacoes(nome)').eq('id', eventoId).maybeSingle()
   if (!evento) return null
 
   const categorias = new Map(templates
@@ -772,57 +774,64 @@ export async function custoWhatsAppDetalhadoDoEvento(
     .map(t => [t.nome, t.categoria as CategoriaMeta]))
 
   const porTipoMapa = new Map<string, { enviados: number; custo: number }>()
-  const porCategoriaMapa = new Map<CategoriaMeta, { enviados: number; custo: number }>()
-  const telefones = new Set<string>()
   let enviados = 0
   let custoTotal = 0
 
+  /*
+   * Paginado à mão porque `buscarTudo` mora em lib/supabase-server, e este
+   * arquivo também roda fora do Next (worker de mensagens). Mesmo motivo de
+   * `custoWhatsAppPorEvento` logo acima.
+   */
   const tamanho = 1000
   for (let inicio = 0; ; inicio += tamanho) {
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('mensagens_agendadas')
-      .select('tipo, mensagem, telefone')
+      .select('tipo, mensagem')
       .eq('evento_id', eventoId)
       .eq('status', 'enviado')
       .range(inicio, inicio + tamanho - 1)
+    if (error) throw new Error(`Não consegui ler as mensagens do evento: ${error.message}`)
     for (const linha of data ?? []) {
       let meta: { template?: string } = {}
       try { meta = JSON.parse(linha.mensagem as string) as typeof meta } catch { /* automação */ }
       const tipo = linha.tipo as string
       const categoria = categoriaDoTemplate(meta.template ?? TEMPLATE_AUTOMATICO[tipo] ?? '', tipo, categorias)
-      const custo = PRECO_META_BRL[categoria]
+      const custo = PRECO_META_BRL[categoria] ?? 0
 
       enviados++
       custoTotal += custo
-      if (linha.telefone) telefones.add(linha.telefone as string)
-
       const doTipo = porTipoMapa.get(tipo) ?? { enviados: 0, custo: 0 }
       doTipo.enviados++
       doTipo.custo += custo
       porTipoMapa.set(tipo, doTipo)
-
-      const daCategoria = porCategoriaMapa.get(categoria) ?? { enviados: 0, custo: 0 }
-      daCategoria.enviados++
-      daCategoria.custo += custo
-      porCategoriaMapa.set(categoria, daCategoria)
     }
     if ((data?.length ?? 0) < tamanho) break
   }
 
+  /*
+   * A equipe do evento — `head: true` devolve só a contagem, sem trazer 2 mil
+   * linhas pra contar no servidor (e sem esbarrar no teto de 1000 do
+   * PostgREST, que contagem não tem).
+   */
+  const { count: funcionarios, error: erroEquipe } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
+    .eq('fornecedores.evento_id', eventoId)
+  if (erroEquipe) throw new Error(`Não consegui contar a equipe do evento: ${erroEquipe.message}`)
+
+  const rel = evento.organizacoes as unknown as { nome: string } | { nome: string }[] | null
+
   return {
     eventoNome: evento.nome as string,
-    eventoData: (evento.data_inicio as string | null) ?? null,
-    organizacaoNome: (evento.organizacoes as unknown as { nome: string } | { nome: string }[] | null)
-      ? (Array.isArray(evento.organizacoes) ? evento.organizacoes[0]?.nome : (evento.organizacoes as unknown as { nome: string }).nome) ?? null
-      : null,
+    organizacaoNome: (Array.isArray(rel) ? rel[0]?.nome : rel?.nome) ?? null,
+    eventoInicio: (evento.data_inicio as string | null) ?? null,
+    eventoFim: (evento.data_fim as string | null) ?? null,
     enviados,
     custoTotal,
-    destinatarios: telefones.size,
+    funcionarios: funcionarios ?? 0,
     porTipo: [...porTipoMapa.entries()]
-      .map(([tipo, v]) => ({ tipo, rotulo: ROTULO_DISPARO[tipo] ?? tipo.replaceAll('_', ' '), ...v }))
+      .map(([tipo, v]) => ({ rotulo: ROTULO_DISPARO[tipo] ?? tipo.replaceAll('_', ' '), ...v }))
       .sort((a, b) => b.enviados - a.enviados),
-    porCategoria: [...porCategoriaMapa.entries()]
-      .map(([categoria, v]) => ({ categoria, ...v }))
-      .sort((a, b) => b.custo - a.custo),
+    geradoEm: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
   }
 }

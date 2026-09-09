@@ -61,7 +61,7 @@ const TRADUCOES: { padrao: RegExp; mensagem: string }[] = [
    * navegador como este parágrafo em inglês, e não como a mensagem escrita.
    * (Por isso, quando a action precisa EXPLICAR o problema, ela devolve
    * `{ ok: false, erro }` em vez de lançar — ver
-   * `custoWhatsAppDoEventoParaExportar`.)
+   * a rota /api/whatsapp/custo-evento, que responde erro em texto.)
    *
    * Quando este texto aparece, as duas causas prováveis são: uma falha real
    * no servidor (que só o log da Vercel mostra) ou a aba estar rodando o

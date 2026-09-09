@@ -1,19 +1,24 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
 import { FileDown, X, AlertTriangle, Loader2 } from 'lucide-react'
-import { custoWhatsAppDoEventoParaExportar } from '@/lib/actions-whatsapp'
-import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 
 /**
- * "Extrair custo evento" — o PDF de fechamento do gasto de WhatsApp de UM
- * evento, do início ao fim dele (pedido do Juan, 09/09/2026): quanto foi
- * gasto, com quantos disparos, pra quantas pessoas. O PDF pronto é pra
- * anexar como comprovante de custo no Financeiro — não é a mesma coisa que
- * o custo já entrar sozinho lá; o master decide se e quando lança.
+ * "Extrair custo evento" — o comprovante do gasto de WhatsApp de UM evento:
+ * quantas mensagens saíram, quanto custou e quantas pessoas tinha na equipe.
+ * Um PDF de uma página, pra anexar como despesa no Financeiro.
  *
- * Vive no layout do WhatsApp, então aparece em toda aba da seção — o mesmo
- * lugar de "Gerenciador da Meta".
+ * ─── O CLIENTE NÃO MONTA MAIS O PDF ──────────────────────────────────────────
+ *
+ * Antes isto chamava uma Server Action, recebia os números e montava o PDF
+ * aqui no navegador com um `import()` dinâmico do jsPDF. Falhava em produção
+ * com a mensagem mascarada do Next ("An error occurred in the Server
+ * Components render…"), que não diz nada e não deixa rastro na tela.
+ *
+ * Agora é um GET comum numa rota (`/api/whatsapp/custo-evento`) que devolve o
+ * PDF pronto. Menos peça no caminho, e — o que importa mais — quando dá erro,
+ * o servidor responde com um status e um texto de verdade, que aparece aqui
+ * embaixo em vez de virar um parágrafo genérico em inglês.
  */
 export default function ExtrairCustoEventoModal({
   eventos,
@@ -23,45 +28,39 @@ export default function ExtrairCustoEventoModal({
   const [aberto, setAberto] = useState(false)
   const [eventoId, setEventoId] = useState('')
   const [erro, setErro] = useState<string | null>(null)
-  const [gerando, startTransition] = useTransition()
+  const [gerando, setGerando] = useState(false)
 
-  const gerar = () => {
+  const gerar = async () => {
     if (!eventoId) { setErro('Escolha o evento.'); return }
     setErro(null)
-    startTransition(async () => {
-      /*
-       * A busca devolve `{ ok, ... }` em vez de lançar — em produção o
-       * Next.js mascara toda exceção de Server Action, e era isso que estava
-       * transformando qualquer falha aqui num parágrafo genérico em inglês na
-       * tela do Juan (09/09/2026). Ver `ResultadoCustoWhatsApp` em
-       * lib/actions-whatsapp.ts.
-       *
-       * O `catch` continua, mas agora só cobre o que a action NÃO controla: a
-       * ida e a volta em si (rede caída, ou a aba rodando o bundle de um
-       * deploy antigo, cuja Server Action o servidor novo não conhece mais).
-       * `mensagemAmigavel` reconhece essa máscara e manda recarregar.
-       */
-      let resposta
-      try {
-        resposta = await custoWhatsAppDoEventoParaExportar(eventoId)
-      } catch (e) {
-        setErro(mensagemAmigavel(e))
+    setGerando(true)
+    try {
+      const resposta = await fetch(`/api/whatsapp/custo-evento?evento=${encodeURIComponent(eventoId)}`)
+      if (!resposta.ok) {
+        // A rota responde erro em texto puro, escrito pra ser lido.
+        setErro(await resposta.text() || `O servidor respondeu ${resposta.status}.`)
         return
       }
-      if (!resposta.ok) { setErro(mensagemAmigavel(resposta.erro)); return }
 
-      const dados = resposta.dados
-      if (!dados) { setErro('Não encontrei esse evento.'); return }
-      if (!dados.enviados) { setErro('Este evento não tem nenhuma mensagem enviada ainda.'); return }
-
-      try {
-        const { gerarPdfCustoWhatsApp } = await import('./pdfCustoWhatsApp')
-        await gerarPdfCustoWhatsApp(dados)
-        setAberto(false)
-      } catch (e) {
-        setErro(mensagemAmigavel(e))
-      }
-    })
+      const arquivo = await resposta.blob()
+      const nome = /filename="([^"]+)"/.exec(resposta.headers.get('Content-Disposition') ?? '')?.[1]
+        ?? 'custo-whatsapp.pdf'
+      const url = URL.createObjectURL(arquivo)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = nome
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      // Revoga depois do clique: revogar na mesma linha cancela o download em
+      // parte dos navegadores.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      setAberto(false)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não consegui falar com o servidor. Verifique a conexão e tente de novo.')
+    } finally {
+      setGerando(false)
+    }
   }
 
   return (
@@ -84,9 +83,9 @@ export default function ExtrairCustoEventoModal({
             </div>
 
             <p className="text-slate-500 text-sm">
-              Gera um PDF com tudo que este evento gastou de WhatsApp — quantos disparos, pra
-              quantas pessoas e o custo total, por tipo de mensagem. Pronto pra anexar como
-              comprovante de custo no Financeiro.
+              Um PDF de uma página com quantas mensagens este evento enviou, quanto custou e
+              quantas pessoas tinha na equipe. Conta só este evento — cada evento começa do
+              zero.
             </p>
 
             <div>
