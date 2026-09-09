@@ -51,6 +51,29 @@ const TRADUCOES: { padrao: RegExp; mensagem: string }[] = [
   { padrao: /bucket not found|object not found|storage/i,
     mensagem: 'Não foi possível salvar o arquivo agora. Tente de novo em alguns instantes.' },
 
+  /*
+   * ── A máscara do Next.js em produção ──────────────────────────────────────
+   *
+   * Em produção o Next.js/React NUNCA manda a mensagem real de uma exceção
+   * lançada no servidor: toda ela vira este texto fixo, com só um `digest`
+   * pra correlacionar com o log do servidor. Ou seja — `throw new
+   * Error('mensagem em português')` dentro de uma Server Action chega no
+   * navegador como este parágrafo em inglês, e não como a mensagem escrita.
+   * (Por isso, quando a action precisa EXPLICAR o problema, ela devolve
+   * `{ ok: false, erro }` em vez de lançar — ver
+   * `custoWhatsAppDoEventoParaExportar`.)
+   *
+   * Quando este texto aparece, as duas causas prováveis são: uma falha real
+   * no servidor (que só o log da Vercel mostra) ou a aba estar rodando o
+   * bundle de um deploy antigo, cuja Server Action não existe mais no
+   * servidor novo. Recarregar resolve a segunda e não atrapalha a primeira —
+   * então é o que a mensagem pede. Precisa vir ANTES do bloco de erros
+   * técnicos abaixo, que casaria com "server component" e devolveria um
+   * texto sem saída.
+   */
+  { padrao: /an error occurred in the server components render|specific message is omitted|failed to find server action/i,
+    mensagem: 'Esta tela ficou desatualizada (o sistema foi atualizado enquanto ela estava aberta) ou o servidor recusou a operação. Recarregue a página com Ctrl+F5 e tente de novo.' },
+
   // ── Erros técnicos de código (nunca devem chegar ao usuário) ──────────────
   { padrao: /attempted to call|client component|server component|use server|use client|hydration|is not a function|cannot read propert|undefined is not|null is not|typeerror|referenceerror|unexpected token|dynamic server usage|next_/i,
     mensagem: 'Ocorreu um erro interno nesta tela. Já registramos o problema — recarregue a página e tente de novo.' },
