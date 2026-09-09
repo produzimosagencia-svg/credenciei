@@ -1241,24 +1241,27 @@ export async function obterAuditoria(
  */
 export async function opcoesDaAuditoria(): Promise<{
   autores: { id: string; nome: string; role: string; setor: string | null }[]
-  setores: string[]
+  eventos: { id: string; nome: string }[]
+  /** `eventoId` amarra o setor ao evento dele — é o que deixa a tela filtrar
+   *  Setor em cascata depois que Evento é escolhido, sem outra ida ao banco. */
+  setores: { nome: string; eventoId: string }[]
 }> {
   const perfil = await getPerfil()
   if (!perfil || !(podeGerenciarUsuarios(perfil) || perfil.role === 'suporte')) {
-    return { autores: [], setores: [] }
+    return { autores: [], eventos: [], setores: [] }
   }
 
   let consultaPerfis = supabaseAdmin
     .from('perfis').select('id, nome, role, fornecedor_id, fornecedores(nome)').order('nome')
   if (!ehMaster(perfil.role)) consultaPerfis = consultaPerfis.eq('organizacao_id', perfil.organizacao_id)
 
-  let consultaEventos = supabaseAdmin.from('eventos').select('id')
+  let consultaEventos = supabaseAdmin.from('eventos').select('id, nome').order('data_inicio', { ascending: false })
   if (!ehMaster(perfil.role)) consultaEventos = consultaEventos.eq('organizacao_id', perfil.organizacao_id)
 
   const [{ data: perfis }, { data: eventos }] = await Promise.all([consultaPerfis, consultaEventos])
 
   const { data: setores } = await supabaseAdmin
-    .from('fornecedores').select('nome')
+    .from('fornecedores').select('nome, evento_id')
     .in('evento_id', (eventos ?? []).map(e => e.id as string))
     .order('nome')
 
@@ -1269,7 +1272,8 @@ export async function opcoesDaAuditoria(): Promise<{
       role: (p.role as string) ?? '',
       setor: (p.fornecedores as unknown as { nome: string } | null)?.nome ?? null,
     })),
-    setores: [...new Set((setores ?? []).map(f => f.nome as string))],
+    eventos: (eventos ?? []).map(e => ({ id: e.id as string, nome: e.nome as string })),
+    setores: (setores ?? []).map(f => ({ nome: f.nome as string, eventoId: f.evento_id as string })),
   }
 }
 

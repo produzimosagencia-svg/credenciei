@@ -71,7 +71,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
 export default async function AuditoriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string }>
+  searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string; evento?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil || !(podeGerenciarUsuarios(perfil) || perfil.role === 'suporte')) redirect('/admin')
@@ -83,13 +83,14 @@ export default async function AuditoriaPage({
    * quase sempre é sobre esta semana. Abrindo com o histórico inteiro, o
    * que aconteceu hoje some no meio de meses de registro.
    */
-  const { dias: diasParam, autor, setor, acao } = await searchParams
+  const { dias: diasParam, autor, setor, acao, evento } = await searchParams
   const escolhido = PERIODOS.find(p => String(p.dias) === diasParam) ?? PERIODOS[1]
 
   const [linhas, opcoes] = await Promise.all([
     obterAuditoria({
       limite: LIMITE, dias: escolhido.dias,
       autorId: autor || undefined, acao: acao || undefined, setor: setor || undefined,
+      eventoId: evento || undefined,
     }),
     opcoesDaAuditoria(),
   ])
@@ -109,6 +110,7 @@ export default async function AuditoriaPage({
           // e muda de "7 dias" pra "tudo" quer a MESMA pessoa em mais tempo.
           const q = new URLSearchParams()
           if (p.dias !== 7) q.set('dias', String(p.dias))
+          if (evento) q.set('evento', evento)
           if (autor) q.set('autor', autor)
           if (setor) q.set('setor', setor)
           if (acao) q.set('acao', acao)
@@ -138,10 +140,10 @@ export default async function AuditoriaPage({
         {!linhas.length ? (
           <EmptyState
             icone={<ClipboardList className="w-7 h-7" />}
-            titulo={autor || setor || acao
+            titulo={evento || autor || setor || acao
               ? 'Nada encontrado com esses filtros'
               : escolhido.dias === 0 ? 'Nenhuma alteração registrada ainda' : 'Nenhuma alteração neste período'}
-            descricao={autor || setor || acao
+            descricao={evento || autor || setor || acao
               ? 'Tente limpar um filtro ou aumentar o período.'
               : escolhido.dias === 0 ? undefined : 'Escolha um período maior aí em cima.'}
           />

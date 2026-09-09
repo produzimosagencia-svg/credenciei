@@ -12,7 +12,11 @@ import SeletorLista from '@/components/SeletorLista'
 
 export type OpcoesFiltro = {
   autores: { id: string; nome: string; role: string; setor: string | null }[]
-  setores: string[]
+  eventos: { id: string; nome: string }[]
+  /** `eventoId` amarra cada setor ao evento dele — é o que deixa o filtro de
+   *  Setor em cascata (só os setores do evento escolhido) sem outra ida ao
+   *  banco: a lista inteira já vem carregada, só filtra na hora de montar. */
+  setores: { nome: string; eventoId: string }[]
 }
 
 /**
@@ -42,15 +46,29 @@ export default function FiltrosAuditoria({
   const [baixando, setBaixando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
+  const evento = params.get('evento') ?? ''
   const autor = params.get('autor') ?? ''
   const setor = params.get('setor') ?? ''
   const acao = params.get('acao') ?? ''
-  const temFiltro = !!(autor || setor || acao)
+  const temFiltro = !!(evento || autor || setor || acao)
+
+  /*
+   * Setor em cascata: com evento escolhido, só os setores DAQUELE evento
+   * aparecem — senão "Bar" de três clientes diferentes se misturava na
+   * mesma lista, e escolher um filtrava pelos três ao mesmo tempo (o filtro
+   * de setor casa por NOME, não por id).
+   */
+  const setoresDoEvento = evento ? opcoes.setores.filter(s => s.eventoId === evento) : opcoes.setores
+  const nomesDeSetor = [...new Set(setoresDoEvento.map(s => s.nome))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 
   const trocar = (chave: string, valor: string) => {
     const novo = new URLSearchParams(params.toString())
     if (valor) novo.set(chave, valor)
     else novo.delete(chave)
+    // Trocar de evento derruba o setor escolhido: um setor de outro evento
+    // não faz sentido mais — ficaria filtrando por um nome que não existe
+    // dentro do evento novo.
+    if (chave === 'evento') novo.delete('setor')
     router.push(`${pathname}?${novo.toString()}`)
   }
 
@@ -72,6 +90,7 @@ export default function FiltrosAuditoria({
       const linhas = await obterAuditoria({
         limite: 5000,
         dias: periodoDias,
+        eventoId: evento || undefined,
         autorId: autor || undefined,
         acao: acao || undefined,
         setor: setor || undefined,
@@ -80,7 +99,7 @@ export default function FiltrosAuditoria({
         setErro('Nada para exportar neste recorte.')
         return
       }
-      await baixarPlanilha(linhas, nomeDoArquivo({ autor, setor, acao, periodoDias, opcoes }))
+      await baixarPlanilha(linhas, nomeDoArquivo({ evento, autor, setor, acao, periodoDias, opcoes }))
     } catch (e) {
       setErro(mensagemAmigavel(e))
     } finally {
@@ -90,7 +109,51 @@ export default function FiltrosAuditoria({
 
   return (
     <div className="space-y-2">
+      {/*
+        * Ordem: Evento → Setor → Ação → Quem fez. O evento é o recorte mais
+        * largo e vem primeiro; o setor depende dele e vem logo depois
+        * (pedido do Juan, 09/09/2026: "Evento > Setor > Fez o que").
+        */}
       <div className="flex flex-wrap items-center gap-2">
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={evento}
+          onChange={v => trocar('evento', v)}
+          placeholder="Evento: todos"
+          titulo="Evento"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todos' },
+            ...opcoes.eventos.map(e => ({ valor: e.id, rotulo: e.nome })),
+          ]}
+        />
+
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={setor}
+          onChange={v => trocar('setor', v)}
+          placeholder="Setor: todos"
+          titulo="Setor"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todos' },
+            ...nomesDeSetor.map(s => ({ valor: s, rotulo: s })),
+          ]}
+        />
+
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={acao}
+          onChange={v => trocar('acao', v)}
+          placeholder="Ação: todas"
+          titulo="Ação"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todas' },
+            ...Object.entries(ACAO_LABELS).map(([valor, label]) => ({ valor, rotulo: label })),
+          ]}
+        />
+
         <SeletorLista
           className="w-auto text-sm"
           valor={autor}
@@ -105,32 +168,6 @@ export default function FiltrosAuditoria({
               rotulo: a.nome,
               detalhe: `${a.setor ? `${a.setor} · ` : ''}${ROLE_LABELS[a.role as Role] ?? a.role}`,
             })),
-          ]}
-        />
-
-        <SeletorLista
-          className="w-auto text-sm"
-          valor={setor}
-          onChange={v => trocar('setor', v)}
-          placeholder="Setor: todos"
-          titulo="Setor"
-          busca
-          opcoes={[
-            { valor: '', rotulo: 'Todos' },
-            ...opcoes.setores.map(s => ({ valor: s, rotulo: s })),
-          ]}
-        />
-
-        <SeletorLista
-          className="w-auto text-sm"
-          valor={acao}
-          onChange={v => trocar('acao', v)}
-          placeholder="Ação: todas"
-          titulo="Ação"
-          busca
-          opcoes={[
-            { valor: '', rotulo: 'Todas' },
-            ...Object.entries(ACAO_LABELS).map(([valor, label]) => ({ valor, rotulo: label })),
           ]}
         />
 
@@ -161,11 +198,13 @@ export default function FiltrosAuditoria({
 
 /** O nome diz o recorte — três arquivos na pasta de Downloads não se confundem. */
 function nomeDoArquivo({
-  autor, setor, acao, periodoDias, opcoes,
+  evento, autor, setor, acao, periodoDias, opcoes,
 }: {
-  autor: string; setor: string; acao: string; periodoDias: number; opcoes: OpcoesFiltro
+  evento: string; autor: string; setor: string; acao: string; periodoDias: number; opcoes: OpcoesFiltro
 }): string {
   const partes = ['Auditoria']
+  const doEvento = opcoes.eventos.find(e => e.id === evento)
+  if (doEvento) partes.push(doEvento.nome)
   const quem = opcoes.autores.find(a => a.id === autor)
   if (quem) partes.push(quem.nome)
   if (setor) partes.push(setor)
