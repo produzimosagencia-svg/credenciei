@@ -360,10 +360,31 @@ export type ResumoFinanceiroWhatsApp = {
   enviados: number
   custoEstimado: number
   porCategoria: Record<CategoriaMeta, { enviados: number; custo: number }>
+  /** Quantos dias este total cobre. Vai pro rótulo da tela. */
+  dias: number
 }
 
-/** Total histórico, paginado para não depender do limite padrão do PostgREST. */
-export async function resumoFinanceiroWhatsApp(templates: TemplateMeta[]): Promise<ResumoFinanceiroWhatsApp> {
+/** Quanto tempo o custo mostrado cobre. Trinta dias, a pedido do Juan (09/09/2026). */
+export const DIAS_DA_JANELA_DE_CUSTO = 30
+
+/**
+ * O custo de WhatsApp de uma JANELA de tempo — por padrão, os últimos 30 dias.
+ *
+ * Era o total desde sempre, e só crescia: em algumas semanas vira um número
+ * grande que não responde mais "quanto estou gastando", que é a pergunta que
+ * se faz olhando pra ele. É janela móvel, e não um contador que zera de
+ * repente no dia 30: assim o número significa sempre a mesma coisa, dá pra
+ * comparar uma semana com a outra, e nenhum gasto some da tela de um dia pro
+ * outro por causa da data.
+ *
+ * De quebra, a consulta encolheu: antes varria a tabela inteira de mensagens
+ * enviadas a cada carregamento do painel do master.
+ */
+export async function resumoFinanceiroWhatsApp(
+  templates: TemplateMeta[],
+  { dias = DIAS_DA_JANELA_DE_CUSTO }: { dias?: number } = {},
+): Promise<ResumoFinanceiroWhatsApp> {
+  const corte = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString()
   const categorias = new Map(templates
     .filter(t => t.categoria === 'AUTHENTICATION' || t.categoria === 'MARKETING' || t.categoria === 'UTILITY')
     .map(t => [t.nome, t.categoria as CategoriaMeta]))
@@ -379,6 +400,7 @@ export async function resumoFinanceiroWhatsApp(templates: TemplateMeta[]): Promi
       .from('mensagens_agendadas')
       .select('tipo, mensagem')
       .eq('status', 'enviado')
+      .gte('enviado_em', corte)
       .range(inicio, inicio + tamanho - 1)
     for (const linha of data ?? []) {
       let meta: { template?: string } = {}
@@ -408,6 +430,7 @@ export async function resumoFinanceiroWhatsApp(templates: TemplateMeta[]): Promi
       .select('bruto')
       .eq('direcao', 'enviada')
       .not('bruto->>template', 'is', null)
+      .gte('created_at', corte)
       .range(inicio, inicio + tamanho - 1)
     for (const linha of data ?? []) {
       const template = (linha.bruto as { template?: string } | null)?.template ?? ''
@@ -422,6 +445,7 @@ export async function resumoFinanceiroWhatsApp(templates: TemplateMeta[]): Promi
     enviados: Object.values(porCategoria).reduce((soma, item) => soma + item.enviados, 0),
     custoEstimado: Object.values(porCategoria).reduce((soma, item) => soma + item.custo, 0),
     porCategoria,
+    dias,
   }
 }
 
@@ -663,4 +687,55 @@ export async function fluxosAtivos(): Promise<Record<string, boolean>> {
   } catch {
     return Object.fromEntries(FLUXOS.map(f => [f.chave, true]))
   }
+}
+
+/**
+ * O custo de WhatsApp de cada evento, na mesma janela do resumo geral.
+ *
+ * Separado por evento porque a pergunta de Financeiro é outra: não é "quanto
+ * a plataforma gastou", é "quanto ESTE evento custou de mensagem" — o número
+ * que entra na conta ao lado do que foi pago à equipe.
+ *
+ * Mesma tabela de preços e a mesma leitura de categoria do resumo geral, de
+ * propósito: dois cálculos para a mesma pergunta divergiriam no primeiro
+ * ajuste de preço da Meta, e aí o total de uma tela não bateria com a soma
+ * da outra.
+ *
+ * Só a fila (`mensagens_agendadas`) entra aqui — é ela que tem `evento_id`.
+ * Os disparos diretos de autenticação não pertencem a evento nenhum, e por
+ * isso aparecem só no total geral.
+ */
+export async function custoWhatsAppPorEvento(
+  templates: TemplateMeta[],
+  { dias = DIAS_DA_JANELA_DE_CUSTO }: { dias?: number } = {},
+): Promise<Map<string, { enviados: number; custo: number }>> {
+  const categorias = new Map(templates
+    .filter(t => t.categoria === 'AUTHENTICATION' || t.categoria === 'MARKETING' || t.categoria === 'UTILITY')
+    .map(t => [t.nome, t.categoria as CategoriaMeta]))
+  const corte = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString()
+
+  const porEvento = new Map<string, { enviados: number; custo: number }>()
+  const tamanho = 1000
+  for (let inicio = 0; ; inicio += tamanho) {
+    const { data } = await supabaseAdmin
+      .from('mensagens_agendadas')
+      .select('evento_id, tipo, mensagem')
+      .eq('status', 'enviado')
+      .gte('enviado_em', corte)
+      .range(inicio, inicio + tamanho - 1)
+    for (const linha of data ?? []) {
+      const eventoId = linha.evento_id as string | null
+      if (!eventoId) continue
+      let meta: { template?: string } = {}
+      try { meta = JSON.parse(linha.mensagem as string) as typeof meta } catch { /* automação */ }
+      const tipo = linha.tipo as string
+      const categoria = categoriaDoTemplate(meta.template ?? TEMPLATE_AUTOMATICO[tipo] ?? '', tipo, categorias)
+      const atual = porEvento.get(eventoId) ?? { enviados: 0, custo: 0 }
+      atual.enviados++
+      atual.custo += PRECO_META_BRL[categoria]
+      porEvento.set(eventoId, atual)
+    }
+    if ((data?.length ?? 0) < tamanho) break
+  }
+  return porEvento
 }

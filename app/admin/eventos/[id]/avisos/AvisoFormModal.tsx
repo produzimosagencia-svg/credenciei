@@ -11,9 +11,22 @@ import type { LinhaAviso } from './TabelaAvisos'
 type FuncionarioDoEvento = { id: string; nome: string; cpf: string }
 type Fornecedor = { id: string; nome: string }
 
+/**
+ * `aoFechar` marca o modo CONTROLADO: quem monta o componente já o quer
+ * aberto, e some quando o pai desmontar. É o caso de "editar" no menu da
+ * linha — ver o comentário abaixo.
+ */
+type Comum = {
+  eventoId: string
+  fornecedores: Fornecedor[]
+  funcionarios: FuncionarioDoEvento[]
+  renderTrigger?: (abrir: () => void) => React.ReactNode
+  aoFechar?: () => void
+}
+
 type Props =
-  | { mode: 'criar'; eventoId: string; fornecedores: Fornecedor[]; funcionarios: FuncionarioDoEvento[]; renderTrigger?: (abrir: () => void) => React.ReactNode }
-  | { mode: 'editar'; eventoId: string; fornecedores: Fornecedor[]; funcionarios: FuncionarioDoEvento[]; aviso: LinhaAviso; renderTrigger?: (abrir: () => void) => React.ReactNode }
+  | ({ mode: 'criar' } & Comum)
+  | ({ mode: 'editar'; aviso: LinhaAviso } & Comum)
 
 const PUBLICOS = [
   { valor: 'todos', label: 'Todos' },
@@ -30,9 +43,27 @@ const PUBLICOS = [
  * ações da linha (`AcoesAviso.tsx`) — o clique que abre este modal também
  * precisa fechar aquele menu, então quem abre é o pai, não este componente.
  * Sem `renderTrigger`, usa o próprio botão padrão (o caso "criar").
+ *
+ * ─── E POR QUE EXISTE O MODO CONTROLADO (`aoFechar`) ────────────────────────
+ *
+ * Editar não abria nada. O modal era filho do menu de ações, e o menu só
+ * renderiza os filhos enquanto está aberto: o clique chamava `abrir()` e
+ * `fechar()` na sequência, o menu desmontava os filhos, e o modal ia junto
+ * antes de aparecer. Os outros itens do menu funcionavam porque os modais
+ * deles já moravam FORA — este era o único dentro.
+ *
+ * No modo controlado o pai monta o componente já aberto, fora do menu. Como
+ * ele monta do zero, o estado inicial dos campos já nasce com o aviso certo
+ * e não existe reset pra esquecer de chamar.
  */
 export default function AvisoFormModal(props: Props) {
-  const [open, setOpen] = useState(false)
+  const controlado = typeof props.aoFechar === 'function'
+  const [openInterno, setOpenInterno] = useState(false)
+  const open = controlado || openInterno
+  const setOpen = (v: boolean) => {
+    if (!v && controlado) props.aoFechar!()
+    else setOpenInterno(v)
+  }
   const [isPending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
   const router = useRouter()
@@ -91,7 +122,9 @@ export default function AvisoFormModal(props: Props) {
 
   return (
     <>
-      {props.renderTrigger
+      {controlado
+        ? null
+        : props.renderTrigger
         ? props.renderTrigger(abrir)
         : (
           <button onClick={abrir} className="btn btn-primario">

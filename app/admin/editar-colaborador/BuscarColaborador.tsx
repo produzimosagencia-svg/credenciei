@@ -83,7 +83,7 @@ export default function BuscarColaborador({
       tom="acento"
       icone={<Users className="w-3.5 h-3.5" />}
       titulo="Encontre a pessoa"
-      descricao={`${colaboradores.length.toLocaleString('pt-BR')} pessoas neste evento — busque por nome, CPF ou setor`}
+      descricao="Busque por nome ou CPF"
       corpoClassName={encontrados.length ? '' : 'p-4'}
     >
       <div className="relative px-4 pt-4 pb-2">
@@ -91,7 +91,7 @@ export default function BuscarColaborador({
         <input
           value={busca}
           onChange={e => setBusca(e.target.value)}
-          placeholder="Nome, CPF ou setor…"
+          placeholder="Nome ou CPF…"
           aria-label="Buscar colaborador"
           autoFocus
           className="input pl-9 pr-9"

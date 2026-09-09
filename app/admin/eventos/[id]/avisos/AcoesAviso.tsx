@@ -24,6 +24,12 @@ export default function AcoesAviso({
 }) {
   const [isPending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
+  /*
+   * O modal de editar mora FORA do menu, e por isso precisa deste estado.
+   * Dentro dele, o `fechar()` do clique desmontava o modal junto com o menu
+   * e "Editar" não abria nada — ver o comentário em `AvisoFormModal`.
+   */
+  const [editando, setEditando] = useState(false)
   const [verVisualizacoes, setVerVisualizacoes] = useState(false)
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false)
   const router = useRouter()
@@ -58,14 +64,9 @@ export default function AcoesAviso({
       <MenuAcoes disabled={isPending} rotulo={`Ações do aviso ${aviso.titulo}`}>
         {fechar => (
           <>
-            <AvisoFormModal
-              mode="editar" eventoId={eventoId} aviso={aviso} fornecedores={fornecedores} funcionarios={funcionarios}
-              renderTrigger={abrir => (
-                <ItemMenu onClick={() => { abrir(); fechar() }}>
-                  <Pencil className="w-3.5 h-3.5" /> Editar
-                </ItemMenu>
-              )}
-            />
+            <ItemMenu onClick={() => { setEditando(true); fechar() }}>
+              <Pencil className="w-3.5 h-3.5" /> Editar
+            </ItemMenu>
             <ItemMenu onClick={() => { toggleAtivo(); fechar() }}>
               <Power className="w-3.5 h-3.5" /> {aviso.ativo ? 'Desativar' : 'Ativar'}
             </ItemMenu>
@@ -80,6 +81,16 @@ export default function AcoesAviso({
       </MenuAcoes>
 
       {erro && <p className="text-red-500 text-2xs mt-1 max-w-[10rem] text-right ml-auto">{erro}</p>}
+
+      {/* Montado só quando vai aparecer: assim nasce com os campos do aviso
+          certo e não existe reset pra esquecer de chamar. */}
+      {editando && (
+        <AvisoFormModal
+          mode="editar" eventoId={eventoId} aviso={aviso}
+          fornecedores={fornecedores} funcionarios={funcionarios}
+          aoFechar={() => setEditando(false)}
+        />
+      )}
 
       <VisualizacoesAvisoModal avisoId={aviso.id} eventoId={eventoId} titulo={aviso.titulo} open={verVisualizacoes} onClose={() => setVerVisualizacoes(false)} />
 

@@ -115,7 +115,7 @@ function SemSetorVinculado() {
   )
 }
 
-type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; custoMensagens: number }
+type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; custoMensagens: number; diasDoCusto: number }
 
 /**
  * Os quatro números que respondem "como vai o negócio", pro master. Rodam em
@@ -124,29 +124,47 @@ type StatsMestre = { funcionariosNaBase: number; valorTotalCobrado: number; cust
  * de tudo que a página já busca.
  *
  * "Funcionários na base" conta CPF distinto — a mesma régua de
- * `/admin/encontrar` — e "valor cobrado" soma `funcionarios.valor_receber`
- * de TODOS os eventos, não só os ativos: é o volume de negócio que a
- * plataforma já processou, não uma foto do momento (essa é "Eventos ativos",
- * ao lado). "Custo de disparo" reaproveita `resumoFinanceiroWhatsApp` — o
- * mesmo cálculo que o painel de WhatsApp já mostra — pra nunca existirem
- * dois números diferentes pra a mesma pergunta em duas telas.
+ * `/admin/encontrar`.
+ *
+ * "Valor cobrado" someçou somando TODOS os eventos, como volume histórico da
+ * plataforma. Virou só os ATIVOS a pedido do Juan (09/09/2026): no painel do
+ * dia a dia o número que importa é o que está em jogo agora, e o histórico
+ * inteiro só crescia sem responder nada. O acumulado de verdade tem lugar
+ * próprio, em Financeiro.
+ *
+ * "Custo de disparo" reaproveita `resumoFinanceiroWhatsApp` — o mesmo
+ * cálculo que o painel de WhatsApp já mostra, agora numa janela de 30 dias
+ * (ver lá) — pra nunca existirem dois números diferentes pra a mesma
+ * pergunta em duas telas.
  *
  * `buscarTudo` (não `.limit()`) porque a base já passou de 1000 — ver o
  * comentário dela em lib/supabase-server.ts.
  */
 async function calcularStatsMestre(): Promise<StatsMestre> {
-  const [funcionarios, templates] = await Promise.all([
-    buscarTudo<{ cpf: string; valor_receber: number | null }>((de, ate) =>
-      supabaseAdmin.from('funcionarios').select('cpf, valor_receber').range(de, ate)
+  const [funcionarios, ativos, templates] = await Promise.all([
+    buscarTudo<{ cpf: string }>((de, ate) =>
+      supabaseAdmin.from('funcionarios').select('cpf').range(de, ate)
+    ),
+    /*
+     * Só quem está em evento ATIVO. O vínculo é indireto (funcionário →
+     * setor → evento), por isso o `!inner`: sem ele o filtro não desce até
+     * o evento e a soma volta a ser a de sempre, calada.
+     */
+    buscarTudo<{ valor_receber: number | null }>((de, ate) =>
+      supabaseAdmin
+        .from('funcionarios')
+        .select('valor_receber, fornecedores!inner(eventos!inner(ativo))')
+        .eq('fornecedores.eventos.ativo', true)
+        .range(de, ate)
     ),
     templatesAprovados(),
   ])
 
   const funcionariosNaBase = new Set(funcionarios.map(f => f.cpf)).size
-  const valorTotalCobrado = funcionarios.reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
-  const { custoEstimado } = await resumoFinanceiroWhatsApp(templates)
+  const valorTotalCobrado = ativos.reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
+  const { custoEstimado, dias } = await resumoFinanceiroWhatsApp(templates)
 
-  return { funcionariosNaBase, valorTotalCobrado, custoMensagens: custoEstimado }
+  return { funcionariosNaBase, valorTotalCobrado, custoMensagens: custoEstimado, diasDoCusto: dias }
 }
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
@@ -416,7 +434,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {
           label: 'Valor cobrado nos eventos',
           value: statsMestre.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          sub: 'soma do combinado com a equipe',
+          sub: 'combinado com a equipe, nos eventos ativos',
           icon: TrendingUp,
           tom: 'aviso' as const,
           small: true,
@@ -424,7 +442,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {
           label: 'Custo de disparo (WhatsApp)',
           value: statsMestre.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          sub: 'todas as mensagens já enviadas',
+          sub: `últimos ${statsMestre.diasDoCusto} dias`,
           icon: Activity,
           tom: 'info' as const,
           small: true,

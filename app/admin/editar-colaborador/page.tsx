@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { UserCog, CalendarDays } from 'lucide-react'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import {
   veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade,
 } from '@/lib/permissions'
@@ -75,13 +75,22 @@ export default async function EditarColaboradorPage({
     .from('fornecedores').select('id, nome, valor_combinado').eq('evento_id', eventoParam).order('nome')
   const idsSetores = (setores ?? []).map(s => s.id as string)
 
-  const [{ data: funcionarios }, { data: registros }] = await Promise.all([
+  const [funcionarios, { data: registros }] = await Promise.all([
+    /*
+     * `buscarTudo`, e não uma consulta só: o PostgREST corta em 1000 linhas
+     * (db.max_rows) e ninguém avisa. Num evento de 1.920 pessoas, 920 delas
+     * simplesmente não existiam nesta busca — e a tela ainda anunciava
+     * "1.000 pessoas neste evento", que era o teto se apresentando como
+     * número real. Ver o comentário de `buscarTudo` em lib/supabase-server.
+     */
     idsSetores.length
-      ? supabase
-          .from('funcionarios')
-          .select('id, nome, cpf, telefone, empresa, cargo, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo, fornecedor_id')
-          .in('fornecedor_id', idsSetores).order('nome')
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+      ? buscarTudo<Record<string, unknown>>((de, ate) =>
+          supabase
+            .from('funcionarios')
+            .select('id, nome, cpf, telefone, empresa, cargo, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo, fornecedor_id')
+            .in('fornecedor_id', idsSetores).order('nome').range(de, ate),
+        )
+      : Promise.resolve([] as Record<string, unknown>[]),
     /*
      * Só hoje e ontem: a ficha mostra "Presença hoje", e ontem entra por
      * causa do turno que vira a madrugada — mesma regra da tela do setor.

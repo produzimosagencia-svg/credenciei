@@ -142,10 +142,14 @@ export default function FornecedorCard({
           href={`/admin/eventos/${eventoId}/fornecedor/${f.id}`}
           className="min-w-0 group flex-1"
         >
-          <h3 className="text-slate-800 font-semibold text-base truncate group-hover:text-brand-500 transition-colors">
+          {/* O nome do setor é o que se procura na tela: são dezenas de
+              cartões iguais, e achar o certo é varrer os títulos. Em `text-base`
+              ele tinha o mesmo peso do resto do cartão e se perdia no meio
+              (relato do Juan, 09/09/2026). */}
+          <h3 className="text-slate-800 font-bold text-lg leading-tight truncate group-hover:text-brand-500 transition-colors">
             {f.nome}
           </h3>
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500 text-xs mt-0.5">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500 text-xs mt-1">
             <span className="inline-flex items-center gap-1 tabular-nums">
               <Users className="w-3 h-3 shrink-0" />
               {count} {count === 1 ? 'pessoa' : 'pessoas'}

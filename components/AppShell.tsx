@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -150,6 +150,8 @@ function gruposPara(role: string): Grupo[] {
       titulo: 'Operacional',
       itens: [
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
+        // A conta do negócio — só o master. Ver o cabeçalho de /admin/financeiro.
+        { href: '/admin/financeiro', label: 'Financeiro', icon: Wallet },
         /*
          * Só master cria/edita: o escopo do suporte atravessa organizações
          * ("Cliente A e Cliente B"), é a plataforma que contrata, não um
