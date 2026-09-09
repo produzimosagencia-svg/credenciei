@@ -8,6 +8,7 @@ import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
 import { TelefoneInput } from '@/components/inputs'
+import SeletorLista from '@/components/SeletorLista'
 import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
 
@@ -626,16 +627,15 @@ export default function FuncionarioDetalheModal({
 
                     {!confirmandoMover ? (
                       <div className="flex items-center gap-2">
-                        <select
-                          value={destino}
-                          onChange={e => setDestino(e.target.value)}
-                          className="input text-sm flex-1"
-                        >
-                          <option value="">Mover para…</option>
-                          {outrosSetores.map(s => (
-                            <option key={s.id} value={s.id}>{s.nome}</option>
-                          ))}
-                        </select>
+                        <SeletorLista
+                          className="text-sm flex-1"
+                          valor={destino}
+                          onChange={setDestino}
+                          placeholder="Mover para…"
+                          titulo="Mover para qual setor?"
+                          busca
+                          opcoes={outrosSetores.map(s => ({ valor: s.id, rotulo: s.nome }))}
+                        />
                         <button
                           onClick={() => destino && setConfirmandoMover(true)}
                           disabled={!destino}

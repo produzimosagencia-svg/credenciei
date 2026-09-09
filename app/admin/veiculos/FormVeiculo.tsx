@@ -5,6 +5,7 @@ import { Truck, Search, Check, AlertTriangle, User, Camera, X } from 'lucide-rea
 import { buscarCondutorPorCpf, cadastrarVeiculo, type CondutorEncontrado } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
+import SeletorLista from '@/components/SeletorLista'
 
 const TIPOS = ['Caminhão', 'Van', 'Carro', 'Moto', 'Outro']
 
@@ -147,10 +148,16 @@ export default function FormVeiculo({
             </div>
             <div>
               <label className="text-slate-600 text-xs font-medium block mb-1">Tipo</label>
-              <select name="tipo" className="input" defaultValue="">
-                <option value="">Não informado</option>
-                {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <SeletorLista
+                name="tipo"
+                defaultValor=""
+                placeholder="Não informado"
+                titulo="Tipo de veículo"
+                opcoes={[
+                  { valor: '', rotulo: 'Não informado' },
+                  ...TIPOS.map(t => ({ valor: t, rotulo: t })),
+                ]}
+              />
             </div>
             <div>
               <label className="text-slate-600 text-xs font-medium block mb-1">Cor</label>

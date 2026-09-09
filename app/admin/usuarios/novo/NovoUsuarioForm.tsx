@@ -5,6 +5,7 @@ import { criarSupervisor } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { mensagemAmigavel } from '@/lib/erros'
+import SeletorLista from '@/components/SeletorLista'
 
 type Fornecedor = { id: string; nome: string }
 type Evento = { id: string; nome: string; fornecedores: Fornecedor[] }
@@ -56,29 +57,33 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
 
       <div className="space-y-1.5" data-tutorial="novo-usr-evento">
         <label className="text-sm font-medium text-slate-700">Evento *</label>
-        <select
-          value={eventoId}
-          onChange={e => setEventoId(e.target.value)}
-          className="input"
-        >
-          {eventos.map(e => (
-            <option key={e.id} value={e.id}>{e.nome}</option>
-          ))}
-        </select>
+        <SeletorLista
+          valor={eventoId}
+          onChange={setEventoId}
+          titulo="Escolha o evento"
+          busca
+          opcoes={eventos.map(e => ({ valor: e.id, rotulo: e.nome }))}
+        />
       </div>
 
       <div className="space-y-1.5" data-tutorial="novo-usr-setor">
         <label className="text-sm font-medium text-slate-700">Setor *</label>
+        {/* `key={eventoId}`: remonta ao trocar de evento, pra não herdar um
+            setor escolhido que não existe mais na lista nova. */}
         {!setores.length ? (
           <p className="text-xs text-slate-400 bg-slate-50 rounded-xl p-3">
             Este evento ainda não tem setores (fornecedores) cadastrados.
           </p>
         ) : (
-          <select name="fornecedor_id" required className="input">
-            {setores.map(s => (
-              <option key={s.id} value={s.id}>{s.nome}</option>
-            ))}
-          </select>
+          <SeletorLista
+            key={eventoId}
+            name="fornecedor_id"
+            required
+            defaultValor=""
+            titulo="Escolha o setor"
+            busca
+            opcoes={setores.map(s => ({ valor: s.id, rotulo: s.nome }))}
+          />
         )}
       </div>
 
@@ -98,10 +103,10 @@ export default function NovoUsuarioForm({ eventos }: { eventos: Evento[] }) {
       </div>
       <div className="space-y-1.5" data-tutorial="novo-usr-status">
         <label className="text-sm font-medium text-slate-700">Status</label>
-        <select name="ativo" defaultValue="true" className="input">
-          <option value="true">Ativo</option>
-          <option value="false">Inativo</option>
-        </select>
+        <SeletorLista name="ativo" defaultValor="true" titulo="Status" opcoes={[
+          { valor: 'true', rotulo: 'Ativo' },
+          { valor: 'false', rotulo: 'Inativo' },
+        ]} />
       </div>
 
       {erro && <p className="text-red-500 text-xs">{erro}</p>}

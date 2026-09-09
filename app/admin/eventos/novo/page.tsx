@@ -2,6 +2,7 @@ import { criarEvento } from '@/lib/actions'
 import ConferenciaDeHorarios from '../ConferenciaDeHorarios'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
+import SeletorLista from '@/components/SeletorLista'
 import { getPerfil, licencasDeEventoRestantes, supabaseAdmin } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -82,14 +83,19 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       {!!organizacoes.length && (
         <Field label="Organização dona do evento *">
-          <select name="organizacao_id" required defaultValue="" className="input">
-            <option value="" disabled>Escolha o cliente…</option>
-            {organizacoes.map(o => (
-              <option key={o.id} value={o.id} disabled={!o.ativo}>
-                {o.nome}{o.ativo ? '' : ' (suspensa)'}
-              </option>
-            ))}
-          </select>
+          <SeletorLista
+            name="organizacao_id"
+            required
+            defaultValor=""
+            placeholder="Escolha o cliente…"
+            titulo="Organização"
+            opcoes={organizacoes.map(o => ({
+              valor: o.id,
+              rotulo: o.nome,
+              detalhe: o.ativo ? undefined : 'Suspensa',
+              desabilitada: !o.ativo,
+            }))}
+          />
           <p className="text-slate-500 text-xs mt-1.5">
             É quem vai enxergar e operar este evento. Sem dono, o evento não aparece pra nenhum administrador.
           </p>

@@ -3,6 +3,7 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarPlus, Check, AlertCircle } from 'lucide-react'
 import { atribuirColaboradorAoEvento } from '@/lib/actions'
+import SeletorLista from '@/components/SeletorLista'
 
 export type SetorOpcao = { id: string; nome: string; eventoId: string }
 export type EventoOpcao = { id: string; nome: string; ativo: boolean; data: string }
@@ -63,35 +64,33 @@ export default function AtribuirEvento({
       <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
         <label className="block min-w-0">
           <span className="text-slate-500 text-xs">Evento</span>
-          <select
-            value={eventoId}
-            onChange={e => { setEventoId(e.target.value); setSetorId(''); setFeito(null); setErro(null) }}
-            className="input mt-1"
-          >
-            <option value="">Escolha o evento…</option>
-            {eventos.map(e => (
-              <option key={e.id} value={e.id}>
-                {e.nome} · {e.data}{e.ativo ? '' : ' (encerrado)'}
-              </option>
-            ))}
-          </select>
+          <SeletorLista
+            className="mt-1"
+            valor={eventoId}
+            onChange={v => { setEventoId(v); setSetorId(''); setFeito(null); setErro(null) }}
+            placeholder="Escolha o evento…"
+            titulo="Escolha o evento"
+            busca
+            opcoes={eventos.map(e => ({
+              valor: e.id,
+              rotulo: e.nome,
+              detalhe: `${e.data}${e.ativo ? '' : ' · encerrado'}`,
+            }))}
+          />
         </label>
 
         <label className="block min-w-0">
           <span className="text-slate-500 text-xs">Setor</span>
-          <select
-            value={setorId}
-            onChange={e => { setSetorId(e.target.value); setFeito(null); setErro(null) }}
+          <SeletorLista
+            className="mt-1"
+            valor={setorId}
+            onChange={v => { setSetorId(v); setFeito(null); setErro(null) }}
             disabled={!eventoId || jaEsta}
-            className="input mt-1 disabled:opacity-50"
-          >
-            <option value="">
-              {!eventoId ? 'Escolha o evento primeiro' : setoresDoEvento.length ? 'Escolha o setor…' : 'Este evento não tem setores'}
-            </option>
-            {setoresDoEvento.map(s => (
-              <option key={s.id} value={s.id}>{s.nome}</option>
-            ))}
-          </select>
+            placeholder={!eventoId ? 'Escolha o evento primeiro' : setoresDoEvento.length ? 'Escolha o setor…' : 'Este evento não tem setores'}
+            titulo="Escolha o setor"
+            busca
+            opcoes={setoresDoEvento.map(s => ({ valor: s.id, rotulo: s.nome }))}
+          />
         </label>
 
         <button

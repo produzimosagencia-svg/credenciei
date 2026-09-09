@@ -11,8 +11,21 @@ import { ChevronDown, Search } from 'lucide-react'
  * escolha é o passo principal da tela — não um detalhe de formulário — vale o
  * mesmo tratamento que a data e a hora recebem.
  *
- * Um `<select>` continua sendo a escolha certa para lista curta e secundária
- * (tolerância, status). Aqui a lista é de eventos, com nome longo e data.
+ * Passou a valer em TODA escolha do sistema (pedido do Juan, 09/09/2026):
+ * um `<select>` nativo no meio de campos desenhados denuncia que aquela
+ * parte da tela não foi feita junto com o resto — e no Windows a lista abre
+ * azul, com barra de rolagem cinza, sem nada a ver com o produto.
+ *
+ * `name` existe pros formulários que leem `FormData`: o valor escolhido vai
+ * num input escondido, então trocar o `<select>` por este componente não
+ * exige reescrever o envio de quem o usava.
+ *
+ * CONTROLADO OU NÃO, como o próprio `<select>` (`value` vs `defaultValue`):
+ * passe `valor` + `onChange` quando algo fora precisa saber a escolha na
+ * hora; passe só `defaultValor` quando o valor só importa no envio do
+ * formulário (ação de servidor lendo `FormData`) — é o caso mais comum, e o
+ * que deixa usar este componente dentro de uma página server sem precisar
+ * virar 'use client' só por causa de um campo.
  */
 
 export type OpcaoLista = {
@@ -24,12 +37,19 @@ export type OpcaoLista = {
 }
 
 export default function SeletorLista({
-  opcoes, valor, onChange, placeholder = 'Escolher…', titulo = 'Escolha uma opção',
-  vazio = 'Nada para escolher', busca = false, className = '',
+  opcoes, valor: valorControlado, defaultValor, onChange, placeholder = 'Escolher…', titulo = 'Escolha uma opção',
+  vazio = 'Nada para escolher', busca = false, className = '', name, required, disabled,
 }: {
   opcoes: OpcaoLista[]
-  valor: string
-  onChange: (valor: string) => void
+  /** Modo controlado: o valor atual, sempre junto de `onChange`. */
+  valor?: string
+  /** Modo não controlado: só o valor inicial — o componente guarda o resto. */
+  defaultValor?: string
+  onChange?: (valor: string) => void
+  /** Manda o valor no `FormData` do formulário, como fazia o `<select name>`. */
+  name?: string
+  required?: boolean
+  disabled?: boolean
   placeholder?: string
   /** Cabeçalho do modal. */
   titulo?: string
@@ -40,24 +60,36 @@ export default function SeletorLista({
 }) {
   const [aberto, setAberto] = useState(false)
   const [termo, setTermo] = useState('')
+  const [valorInterno, setValorInterno] = useState(defaultValor ?? '')
+  const controlado = valorControlado !== undefined
+  const valor = controlado ? valorControlado! : valorInterno
 
   const escolhida = opcoes.find(o => o.valor === valor)
+  /*
+   * Busca automática em lista longa. Quem chama não tem como saber quantos
+   * setores o evento tem — e foi exatamente uma lista de 43 setores, sem
+   * busca, que motivou este componente virar padrão.
+   */
+  const comBusca = busca || opcoes.length > 8
   const filtradas = termo.trim()
     ? opcoes.filter(o => `${o.rotulo} ${o.detalhe ?? ''}`.toLowerCase().includes(termo.trim().toLowerCase()))
     : opcoes
 
   const escolher = (v: string) => {
-    onChange(v)
+    if (controlado) onChange!(v)
+    else setValorInterno(v)
     setAberto(false)
     setTermo('')
   }
 
   return (
     <>
+      {name && <input type="hidden" name={name} value={valor} required={required} />}
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setAberto(true)}
-        className={`input flex items-center justify-between gap-2 text-left ${className}`}
+        className={`input flex items-center justify-between gap-2 text-left disabled:opacity-60 ${className}`}
       >
         <span className={`truncate ${escolhida ? 'text-slate-800' : 'text-slate-400'}`}>
           {escolhida ? escolhida.rotulo : placeholder}
@@ -74,7 +106,7 @@ export default function SeletorLista({
           >
             <div className="px-5 pt-5 pb-3 shrink-0">
               <p className="text-sm font-bold text-slate-800">{titulo}</p>
-              {busca && (
+              {comBusca && (
                 <div className="relative mt-3">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input

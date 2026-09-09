@@ -8,6 +8,7 @@ import { ROLE_LABELS, type Role } from '@/lib/permissions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
+import SeletorLista from '@/components/SeletorLista'
 
 export type OpcoesFiltro = {
   autores: { id: string; nome: string; role: string; setor: string | null }[]
@@ -90,26 +91,48 @@ export default function FiltrosAuditoria({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <select value={autor} onChange={e => trocar('autor', e.target.value)} className="input w-auto text-sm">
-          <option value="">Quem fez: todos</option>
-          {opcoes.autores.map(a => (
-            <option key={a.id} value={a.id}>
-              {a.nome}{a.setor ? ` · ${a.setor}` : ''} ({ROLE_LABELS[a.role as Role] ?? a.role})
-            </option>
-          ))}
-        </select>
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={autor}
+          onChange={v => trocar('autor', v)}
+          placeholder="Quem fez: todos"
+          titulo="Quem fez"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todos' },
+            ...opcoes.autores.map(a => ({
+              valor: a.id,
+              rotulo: a.nome,
+              detalhe: `${a.setor ? `${a.setor} · ` : ''}${ROLE_LABELS[a.role as Role] ?? a.role}`,
+            })),
+          ]}
+        />
 
-        <select value={setor} onChange={e => trocar('setor', e.target.value)} className="input w-auto text-sm">
-          <option value="">Setor: todos</option>
-          {opcoes.setores.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={setor}
+          onChange={v => trocar('setor', v)}
+          placeholder="Setor: todos"
+          titulo="Setor"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todos' },
+            ...opcoes.setores.map(s => ({ valor: s, rotulo: s })),
+          ]}
+        />
 
-        <select value={acao} onChange={e => trocar('acao', e.target.value)} className="input w-auto text-sm">
-          <option value="">Ação: todas</option>
-          {Object.entries(ACAO_LABELS).map(([valor, label]) => (
-            <option key={valor} value={valor}>{label}</option>
-          ))}
-        </select>
+        <SeletorLista
+          className="w-auto text-sm"
+          valor={acao}
+          onChange={v => trocar('acao', v)}
+          placeholder="Ação: todas"
+          titulo="Ação"
+          busca
+          opcoes={[
+            { valor: '', rotulo: 'Todas' },
+            ...Object.entries(ACAO_LABELS).map(([valor, label]) => ({ valor, rotulo: label })),
+          ]}
+        />
 
         {temFiltro && (
           <button onClick={limpar} className="btn btn-secundario btn-sm">

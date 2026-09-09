@@ -85,17 +85,35 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
    * Quem ainda está credenciado. Quem já foi descredenciado cumpriu o evento e
    * foi embora — cobrar dele a saída de amanhã seria cobrar de quem terminou.
    */
-  let equipeQuery = supabase
-    .from('funcionarios')
-    .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id)')
-    .eq('fornecedores.evento_id', eventoId)
-    .eq('ativo', true)
-    .is('descredenciado_em', null)
-    .order('nome')
-  if (fornecedorId) equipeQuery = equipeQuery.eq('fornecedor_id', fornecedorId)
-
-  const { data: equipe } = await equipeQuery
-  if (!equipe?.length) return []
+  /*
+   * PAGINADO. O PostgREST corta em 1000 linhas por padrão (`db.max_rows`) e
+   * não avisa — um evento como o Henrique e Juliano tem mais de 1400 pessoas
+   * ATIVAS e não descredenciadas ao mesmo tempo. Sem paginar, esta consulta
+   * devolvia só as primeiras 1000 (por nome), e a contagem de pendência batia
+   * bem perto de 1000 por coincidência de teto, não porque fosse o número
+   * real (relato do Juan, 09/09/2026 — "Pendências: 1000" cravado).
+   *
+   * Sem `buscarTudo` de lib/supabase-server: esta função roda também no
+   * worker de WhatsApp, fora do Next.js, e aquele helper importa `next/
+   * headers`. O laço fica aqui, do jeito mais simples possível.
+   */
+  const equipe: { id: string; nome: string; cpf: string; telefone: string | null; fornecedor_id: string; fornecedores: unknown }[] = []
+  for (let de = 0; ; de += 1000) {
+    let pagina = supabase
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, fornecedor_id, fornecedores!inner(id, nome, evento_id)')
+      .eq('fornecedores.evento_id', eventoId)
+      .eq('ativo', true)
+      .is('descredenciado_em', null)
+      .order('nome')
+      .range(de, de + 999)
+    if (fornecedorId) pagina = pagina.eq('fornecedor_id', fornecedorId)
+    const { data: bloco } = await pagina
+    if (!bloco?.length) break
+    equipe.push(...(bloco as typeof equipe))
+    if (bloco.length < 1000) break
+  }
+  if (!equipe.length) return []
 
   // Os registros DAQUELE dia. `data_ref` é o que separa o dia 2 do dia 1 num
   // evento de vários dias — sem ele esta consulta traria a operação inteira.

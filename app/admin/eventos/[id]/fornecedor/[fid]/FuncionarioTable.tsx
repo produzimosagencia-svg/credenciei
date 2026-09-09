@@ -11,6 +11,7 @@ import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca } from '@/lib/format'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
+import SeletorLista from '@/components/SeletorLista'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -573,15 +574,13 @@ Se ela só não vai mais trabalhar aqui, use "Tirar da equipe": o QR dela para d
 
 function SelectStatus({ label, value, onChange }: { label: string; value: StatusEtapa | 'todos'; onChange: (v: StatusEtapa | 'todos') => void }) {
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value as StatusEtapa | 'todos')}
-      className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 outline-none focus:border-brand-400"
-    >
-      {OPCOES_STATUS.map(o => (
-        <option key={o.value} value={o.value}>{label}: {o.label}</option>
-      ))}
-    </select>
+    <SeletorLista
+      className="text-xs px-2 py-1.5 bg-slate-50"
+      titulo={`Status — ${label}`}
+      valor={value}
+      onChange={v => onChange(v as StatusEtapa | 'todos')}
+      opcoes={OPCOES_STATUS.map(o => ({ valor: o.value, rotulo: `${label}: ${o.label}` }))}
+    />
   )
 }
 

@@ -98,17 +98,24 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
             </button>
           )}
         </div>
+        {/*
+          * Sem borda por item: com 36+ setores, uma borda colorida em cada
+          * caixinha virava uma grade de traços grossos e pesava mais do que
+          * a informação em si (relato do Juan, 09/09/2026). Marcado é só
+          * fundo, do mesmo jeito que o resto do sistema marca seleção — ver
+          * `.menu-item-ativo` em globals.css.
+          */}
         {!config.setores.length ? (
           <p className="text-slate-400 text-xs">Este evento ainda não tem setores cadastrados.</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-44 overflow-y-auto">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-0.5 max-h-52 overflow-y-auto">
             {config.setores.map(s => {
               const marcado = setores.has(s.id)
               return (
                 <label
                   key={s.id}
-                  className={`flex items-center gap-2 cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
-                    marcado ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  className={`flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 text-xs transition-colors ${
+                    marcado ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <input
@@ -151,8 +158,8 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
                   key={d.data}
                   type="button"
                   onClick={() => { setFeito(null); setDias(a => alternar(a, d.data)) }}
-                  className={`w-[62px] py-1.5 rounded-lg border text-center transition-colors ${
-                    marcado ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-slate-200 text-slate-500 hover:border-brand-300'
+                  className={`w-[62px] py-1.5 rounded-lg text-center transition-colors ${
+                    marcado ? 'bg-brand-50 text-brand-700 font-medium' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                   }`}
                 >
                   <span className="block text-2xs uppercase tracking-wide opacity-70">

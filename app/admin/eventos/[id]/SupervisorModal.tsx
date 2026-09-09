@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, Pencil, X, Trash2, ArrowLeft, Search, ChevronRight } from 'lucide-react'
 import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
+import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -270,10 +271,7 @@ export default function SupervisorModal(props: Props) {
                   />
                 </Field>}
                 <Field label="Status">
-                  <select name="ativo" defaultValue={isEditar ? String(props.supervisor.ativo) : 'true'} className="input">
-                    <option value="true">Ativo</option>
-                    <option value="false">Inativo</option>
-                  </select>
+                  <SeletorLista name="ativo" defaultValor={isEditar ? String(props.supervisor.ativo) : 'true'} titulo="Status" opcoes={[{ valor: 'true', rotulo: 'Ativo' }, { valor: 'false', rotulo: 'Inativo' }]} />
                 </Field>
 
                 {erro && <p className="text-red-500 text-xs">{erro}</p>}

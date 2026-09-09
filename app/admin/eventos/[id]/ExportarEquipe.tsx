@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { FileDown, AlertCircle, X, CalendarClock } from 'lucide-react'
 import { exportarFuncionariosDoSetor } from '@/lib/actions'
 import { exportarPlanilhaDeEquipe } from '@/lib/planilha'
+import SeletorLista from '@/components/SeletorLista'
 import { mensagemAmigavel } from '@/lib/erros'
 
 type Dia = { data: string; tipo: string }
@@ -112,13 +113,16 @@ export default function ExportarEquipe({
                 <div className="pl-6 space-y-3">
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Dia</p>
-                    <select value={dia} onChange={e => setDia(e.target.value)} className="input text-sm">
-                      {dias.map(d => (
-                        <option key={d.data} value={d.data}>
-                          {dataCurta(d.data)} {d.tipo === 'principal' ? '— dia do evento' : '— montagem/preparação'}
-                        </option>
-                      ))}
-                    </select>
+                    <SeletorLista
+                      className="text-sm"
+                      valor={dia}
+                      onChange={setDia}
+                      titulo="Dia"
+                      opcoes={dias.map(d => ({
+                        valor: d.data,
+                        rotulo: `${dataCurta(d.data)} ${d.tipo === 'principal' ? '— dia do evento' : '— montagem/preparação'}`,
+                      }))}
+                    />
                   </div>
 
                   <div>

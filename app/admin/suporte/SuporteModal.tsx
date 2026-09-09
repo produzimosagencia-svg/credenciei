@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, X, Pencil, Trash2 } from 'lucide-react'
 import { criarSuporte, editarSuporte, revogarSuporte } from '@/lib/actions'
+import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { mensagemAmigavel } from '@/lib/erros'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -156,10 +157,7 @@ export default function SuporteModal(props: Props) {
               </Field>
 
               <Field label="Status">
-                <select name="ativo" defaultValue={isEditar ? String(props.suporte.ativo) : 'true'} className="input">
-                  <option value="true">Ativo</option>
-                  <option value="false">Inativo</option>
-                </select>
+                <SeletorLista name="ativo" defaultValor={isEditar ? String(props.suporte.ativo) : 'true'} titulo="Status" opcoes={[{ valor: 'true', rotulo: 'Ativo' }, { valor: 'false', rotulo: 'Inativo' }]} />
               </Field>
 
               {erro && <p className="text-red-500 text-xs">{erro}</p>}

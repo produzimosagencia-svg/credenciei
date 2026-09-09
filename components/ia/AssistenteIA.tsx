@@ -368,8 +368,14 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
               {/* Ocupa a largura toda do modal: com `max-w-lg` sobrava um vão
                   branco de 200px à direita, e o conteúdo de abertura ficava
                   espremido num canto de um painel de 44rem. */}
+              {/*
+                * Centralizado na altura do modal, não encostado no topo: o
+                * modal tem 80vh e a saudação + 4 sugestões + aviso ocupam bem
+                * menos que isso — encostado no topo sobrava um vazio enorme
+                * embaixo (relato do Juan, 09/09/2026).
+                */}
               {!mensagens.length && (
-                <div className="space-y-3">
+                <div className="h-full flex flex-col justify-center space-y-3">
                   <p className="text-slate-500 text-sm">
                     Eu conheço todas as telas e regras do sistema. Posso ensinar, consultar e executar o que você já
                     poderia fazer sozinho.

@@ -88,8 +88,17 @@ export default async function OrganizacoesPage() {
               return (
                 <div
                   key={org.id}
-                  className={`px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors ${org.ativo ? '' : 'opacity-70'}`}
+                  className={`px-4 py-3 hover:bg-slate-50 transition-colors ${org.ativo ? '' : 'opacity-70'}`}
                 >
+                  {/*
+                    * Duas linhas, não três colunas: cabeçalho (info + menu “…”)
+                    * em cima, eventos em largura total embaixo. Os dois eram
+                    * irmãos do mesmo `flex justify-between` antes — e como
+                    * `EventosDaOrganizacao` já nasce como bloco cheio (tem
+                    * `border-t`/`mt-3` próprios), ele virava uma terceira
+                    * "coluna" e empurrava o menu “…” pro meio da linha.
+                    */}
+                  <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
                     <OrganizacaoAvatar url={fotoUrl} nome={org.nome} size={34} />
                     <div className="min-w-0 space-y-1">
@@ -136,6 +145,7 @@ export default async function OrganizacoesPage() {
                         fotoUrl,
                       }}
                     />
+                  </div>
                   </div>
 
                   <EventosDaOrganizacao

@@ -8,6 +8,7 @@ import {
 import {
   dispararEmMassa, previaDisparo, type ContatoDisparo, type PreviaDisparo,
 } from '@/lib/actions-whatsapp'
+import SeletorLista from '@/components/SeletorLista'
 
 type Evento = { id: string; nome: string; ativo: boolean }
 type Setor = { id: string; nome: string; eventoId: string }
@@ -327,8 +328,27 @@ export default function FormDisparo({ eventos, setores, templates, numeros }: {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <label><span className="text-xs text-slate-500">Evento de referência</span><select value={eventoId} onChange={e => { setEventoId(e.target.value); setSetorId(''); invalidarPublico() }} className="input mt-1">{eventos.map(e => <option key={e.id} value={e.id}>{e.nome}{e.ativo ? '' : ' · encerrado'}</option>)}</select></label>
-              {origem === 'equipe' && <label><span className="text-xs text-slate-500">Setor</span><select value={setorId} onChange={e => { setSetorId(e.target.value); invalidarPublico() }} className="input mt-1"><option value="">Todos os setores</option>{setoresDoEvento.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>}
+              <label><span className="text-xs text-slate-500">Evento de referência</span>
+                <SeletorLista
+                  className="mt-1"
+                  valor={eventoId}
+                  onChange={v => { setEventoId(v); setSetorId(''); invalidarPublico() }}
+                  titulo="Evento de referência"
+                  busca
+                  opcoes={eventos.map(e => ({ valor: e.id, rotulo: `${e.nome}${e.ativo ? '' : ' · encerrado'}` }))}
+                />
+              </label>
+              {origem === 'equipe' && <label><span className="text-xs text-slate-500">Setor</span>
+                <SeletorLista
+                  className="mt-1"
+                  valor={setorId}
+                  onChange={v => { setSetorId(v); invalidarPublico() }}
+                  placeholder="Todos os setores"
+                  titulo="Setor"
+                  busca
+                  opcoes={[{ valor: '', rotulo: 'Todos os setores' }, ...setoresDoEvento.map(s => ({ valor: s.id, rotulo: s.nome }))]}
+                />
+              </label>}
             </div>
 
             {origem === 'equipe' ? (

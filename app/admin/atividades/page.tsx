@@ -10,6 +10,7 @@ import StatCard from '@/components/StatCard'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import { Secao, PageHeader, EmptyState } from '@/components/ui/Superficie'
 import TabelaPresenca from '../eventos/[id]/presenca/TabelaPresenca'
+import SeletorLista from '@/components/SeletorLista'
 
 export const revalidate = 0
 
@@ -145,16 +146,22 @@ export default async function AtividadesPage({
         descricao={`${escolhido.nome} · ${rotuloDia(diaEscolhido)}${diaEscolhido === hoje ? ' (hoje)' : ''}`}
         acoes={
           eventos.length > 1 ? (
-            /* Sem JS: um <select> dentro de form GET troca de evento. Esta tela
-               é aberta no celular no meio do evento — não vale carregar um
-               componente cliente só pra um seletor. */
+            /*
+              * Continua um form GET comum — o seletor só troca o input
+              * escondido, quem submete é o botão "Ver". Deixou de ser um
+              * `<select>` nativo (era a exceção "sem JS" da tela) pra entrar
+              * no padrão do sistema, a pedido do Juan (09/09/2026).
+              */
             <form className="flex items-center gap-2">
-              <label htmlFor="evento" className="text-slate-500 text-xs">Evento</label>
-              <select id="evento" name="evento" defaultValue={escolhido.id} className="input w-auto">
-                {eventos.map(e => (
-                  <option key={e.id} value={e.id}>{rotuloEvento(e)}</option>
-                ))}
-              </select>
+              <span className="text-slate-500 text-xs">Evento</span>
+              <SeletorLista
+                className="w-auto"
+                name="evento"
+                defaultValor={escolhido.id}
+                titulo="Escolha o evento"
+                busca
+                opcoes={eventos.map(e => ({ valor: e.id, rotulo: rotuloEvento(e) }))}
+              />
               <button type="submit" className="btn btn-secundario">Ver</button>
             </form>
           ) : undefined

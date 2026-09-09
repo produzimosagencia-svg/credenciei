@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound } from 'lucide-react'
 import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso } from '@/lib/actions'
+import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -335,10 +336,7 @@ function ModalOperador({
               </Field>
             )}
             <Field label="Status">
-              <select name="ativo" defaultValue={editando ? String(operador!.ativo) : 'true'} className="input">
-                <option value="true">Ativo</option>
-                <option value="false">Inativo</option>
-              </select>
+              <SeletorLista name="ativo" defaultValor={editando ? String(operador!.ativo) : 'true'} titulo="Status" opcoes={[{ valor: 'true', rotulo: 'Ativo' }, { valor: 'false', rotulo: 'Inativo' }]} />
             </Field>
 
             {erro && <p className="text-red-500 text-xs">{erro}</p>}

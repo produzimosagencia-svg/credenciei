@@ -5,6 +5,7 @@ import { obterDadosRelatorioEvento, obterDadosRelatorioSetor } from '@/lib/relat
 import type { Periodo } from '@/lib/relatorios'
 import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip, gerarRelatorioAusentes } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
+import SeletorLista from '@/components/SeletorLista'
 import { Secao } from '@/components/ui/Superficie'
 import SeletorDePeriodo from '@/components/SeletorDePeriodo'
 
@@ -186,9 +187,13 @@ export default function ExportarRelatorio({
           >
             <div>
               <label className="text-slate-500 text-xs font-medium block mb-1.5">Selecione o setor</label>
-              <select value={setorId} onChange={e => setSetorId(e.target.value)} className="input">
-                {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-              </select>
+              <SeletorLista
+                valor={setorId}
+                onChange={setSetorId}
+                titulo="Escolha o setor"
+                busca
+                opcoes={setores.map(s => ({ valor: s.id, rotulo: s.nome }))}
+              />
             </div>
             {erroSetor && (
               <p className="flex items-start gap-1.5 text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
