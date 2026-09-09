@@ -64,7 +64,7 @@ export default function FiltrosFinanceiro({
         valor={categoria}
         onChange={v => trocar('categoria', v)}
         placeholder="Categoria: todas"
-        titulo="Categoria do custo"
+        titulo="Categoria da despesa"
         opcoes={[{ valor: '', rotulo: 'Todas' }, ...CATEGORIAS_CUSTO.map(c => ({ valor: c, rotulo: c }))]}
       />
 

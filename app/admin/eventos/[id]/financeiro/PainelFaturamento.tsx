@@ -55,7 +55,7 @@ export default function PainelFaturamento({
     return (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-slate-400 text-xs">Faturamento do evento</p>
+          <p className="text-slate-400 text-xs">Receita do evento</p>
           <p className="text-slate-800 text-2xl font-bold tabular-nums">{brl(faturamento)}</p>
           {temNfe ? (
             <button
@@ -81,7 +81,7 @@ export default function PainelFaturamento({
     <form action={salvar} className="space-y-3">
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-slate-500 text-xs font-medium block mb-1">Faturamento (R$)</label>
+          <label className="text-slate-500 text-xs font-medium block mb-1">Receita (R$)</label>
           <input
             name="faturamento" type="number" min="0" step="0.01" required
             defaultValue={faturamento || ''} placeholder="0,00" className="input tabular-nums"

@@ -57,7 +57,7 @@ export type LinhaPorEvento = { evento: string; faturamento: number; custos: numb
  */
 export function FaturamentoCustosLucroPorEvento({ dados }: { dados: LinhaPorEvento[] }) {
   if (!dados.length) {
-    return <p className="text-slate-500 text-sm text-center py-16">Nenhum evento com faturamento ou custo neste recorte</p>
+    return <p className="text-slate-500 text-sm text-center py-16">Nenhum evento com receita ou despesa neste recorte</p>
   }
   const altura = Math.max(180, dados.length * 46 + 24)
   return (
@@ -77,8 +77,8 @@ export function FaturamentoCustosLucroPorEvento({ dados }: { dados: LinhaPorEven
               <Caixa
                 titulo={String(label)}
                 linhas={[
-                  { nome: 'Faturamento', valor: Number(payload.find(p => p.dataKey === 'faturamento')?.value ?? 0), cor: COR.faturamento },
-                  { nome: 'Custos', valor: Number(payload.find(p => p.dataKey === 'custos')?.value ?? 0), cor: COR.custos },
+                  { nome: 'Receita', valor: Number(payload.find(p => p.dataKey === 'faturamento')?.value ?? 0), cor: COR.faturamento },
+                  { nome: 'Despesas', valor: Number(payload.find(p => p.dataKey === 'custos')?.value ?? 0), cor: COR.custos },
                   { nome: 'Lucro', valor: Number(payload.find(p => p.dataKey === 'lucro')?.value ?? 0), cor: COR.lucro },
                 ]}
               />
@@ -123,8 +123,8 @@ export function EvolucaoFinanceira({ dados }: { dados: PontoEvolucao[] }) {
               <Caixa
                 titulo={String(label)}
                 linhas={[
-                  { nome: 'Faturamento', valor: Number(payload.find(p => p.dataKey === 'faturamento')?.value ?? 0), cor: COR.faturamento },
-                  { nome: 'Custos', valor: Number(payload.find(p => p.dataKey === 'custos')?.value ?? 0), cor: COR.custos },
+                  { nome: 'Receita', valor: Number(payload.find(p => p.dataKey === 'faturamento')?.value ?? 0), cor: COR.faturamento },
+                  { nome: 'Despesas', valor: Number(payload.find(p => p.dataKey === 'custos')?.value ?? 0), cor: COR.custos },
                   { nome: 'Lucro', valor: Number(payload.find(p => p.dataKey === 'lucro')?.value ?? 0), cor: COR.lucro },
                 ]}
               />
@@ -145,7 +145,7 @@ export type FatiaCategoria = { categoria: string; total: number }
 
 export function CustosPorCategoria({ dados }: { dados: FatiaCategoria[] }) {
   if (!dados.length) {
-    return <p className="text-slate-500 text-sm text-center py-16">Nenhum custo lançado neste recorte</p>
+    return <p className="text-slate-500 text-sm text-center py-16">Nenhuma despesa lançada neste recorte</p>
   }
   const altura = Math.max(160, dados.length * 38 + 24)
   return (

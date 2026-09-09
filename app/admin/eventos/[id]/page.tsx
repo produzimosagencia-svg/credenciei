@@ -431,19 +431,19 @@ export default async function EventoPage({
       {resumoFinanceiro && (
         <div data-tutorial="evt-financeiro" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
-            label="Faturamento" value={brlEvento(resumoFinanceiro.faturamento)}
-            sub="receita lançada do evento" icon={Wallet} tom="acento"
+            label="Receita" value={brlEvento(resumoFinanceiro.faturamento)}
+            sub="o que foi cobrado do cliente" icon={Wallet} tom="acento"
             href={`/admin/eventos/${id}/financeiro`}
           />
           <StatCard
-            label="Custos" value={brlEvento(resumoFinanceiro.custoTotal)}
+            label="Despesas" value={brlEvento(resumoFinanceiro.custoTotal)}
             sub={`${resumoFinanceiro.custos.length} lançamento${resumoFinanceiro.custos.length === 1 ? '' : 's'}`}
             icon={Receipt} tom="aviso"
             href={`/admin/eventos/${id}/financeiro`}
           />
           <StatCard
             label="Lucro" value={brlEvento(resumoFinanceiro.lucro)}
-            sub={resumoFinanceiro.margem !== null ? `${resumoFinanceiro.margem.toFixed(0)}% de margem` : 'sem faturamento lançado'}
+            sub={resumoFinanceiro.margem !== null ? `${resumoFinanceiro.margem.toFixed(0)}% de margem` : 'sem receita lançada'}
             icon={resumoFinanceiro.lucro >= 0 ? TrendingUp : TrendingDown}
             tom={resumoFinanceiro.lucro >= 0 ? 'sucesso' : 'erro'}
             href={`/admin/eventos/${id}/financeiro`}

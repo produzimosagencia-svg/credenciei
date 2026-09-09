@@ -145,26 +145,32 @@ export default async function AtividadesPage({
         titulo="Atividades do evento"
         descricao={`${escolhido.nome} · ${rotuloDia(diaEscolhido)}${diaEscolhido === hoje ? ' (hoje)' : ''}`}
         acoes={
-          eventos.length > 1 ? (
-            /*
-              * Continua um form GET comum — o seletor só troca o input
-              * escondido, quem submete é o botão "Ver". Deixou de ser um
-              * `<select>` nativo (era a exceção "sem JS" da tela) pra entrar
-              * no padrão do sistema, a pedido do Juan (09/09/2026).
-              */
-            <form className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs">Evento</span>
-              <SeletorLista
-                className="w-auto"
-                name="evento"
-                defaultValor={escolhido.id}
-                titulo="Escolha o evento"
-                busca
-                opcoes={eventos.map(e => ({ valor: e.id, rotulo: rotuloEvento(e) }))}
-              />
-              <button type="submit" className="btn btn-secundario">Ver</button>
-            </form>
-          ) : undefined
+          /*
+            * Continua um form GET comum — o seletor só troca o input
+            * escondido, quem submete é o botão "Ver". Deixou de ser um
+            * `<select>` nativo (era a exceção "sem JS" da tela) pra entrar
+            * no padrão do sistema, a pedido do Juan (09/09/2026).
+            *
+            * Aparece SEMPRE, mesmo com um evento só. Antes era escondido
+            * quando `eventos.length === 1` — e como hoje existe um evento
+            * ativo apenas, o filtro simplesmente não estava na tela quando o
+            * Juan foi procurar por ele (09/09/2026). Um seletor que some
+            * sozinho vira "o sistema não filtra por evento" pra quem olha;
+            * com um evento só ele custa uma linha e continua dizendo qual
+            * evento está sendo mostrado.
+            */
+          <form className="flex items-center gap-2">
+            <span className="text-slate-500 text-xs">Evento</span>
+            <SeletorLista
+              className="w-auto"
+              name="evento"
+              defaultValor={escolhido.id}
+              titulo="Escolha o evento"
+              busca
+              opcoes={eventos.map(e => ({ valor: e.id, rotulo: rotuloEvento(e) }))}
+            />
+            <button type="submit" className="btn btn-secundario">Ver</button>
+          </form>
         }
       />
 

@@ -11,6 +11,16 @@ export { CATEGORIAS_CUSTO, type CategoriaCusto, EVENTO_INTERNO } from './finance
  * `app/admin/eventos/[id]/financeiro/page.tsx`), e as mutações em
  * `lib/actions-financeiro.ts` checam de novo, cada uma, porque uma Server
  * Action pode ser chamada direto — a tela que a esconde não é a barreira.
+ *
+ * ─── VOCABULÁRIO: A TELA NÃO FALA COMO O CÓDIGO ─────────────────────────────
+ *
+ * Na interface, desde 09/09/2026 (pedido do Juan), o que a gente cobra do
+ * cliente chama RECEITA e o que a gente gasta chama DESPESA. No código e no
+ * banco os nomes continuam `faturamento` e `custo`/`custos_evento` — renomear
+ * coluna, campo de formulário e Server Action pra trocar um rótulo de tela
+ * seria uma migração de banco e um churn de dezenas de arquivos sem ganhar
+ * nada pra quem usa. A tradução mora nos rótulos JSX das telas de Financeiro,
+ * e só lá.
  */
 
 export type Custo = {

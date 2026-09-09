@@ -56,15 +56,15 @@ export default function PainelCustos({
           {custos.length} lançamento{custos.length === 1 ? '' : 's'}
         </p>
         <button onClick={() => setFormulario({ modo: 'criar' })} className="btn btn-primario btn-sm">
-          <Plus className="w-3.5 h-3.5 shrink-0" /> Adicionar custo
+          <Plus className="w-3.5 h-3.5 shrink-0" /> Adicionar despesa
         </button>
       </div>
 
       {!custos.length ? (
         <EmptyState
           icone={<Receipt className="w-7 h-7" />}
-          titulo="Nenhum custo lançado ainda"
-          descricao='Clique em "Adicionar custo" pra registrar o primeiro gasto deste evento.'
+          titulo="Nenhuma despesa lançada ainda"
+          descricao='Clique em "Adicionar despesa" pra registrar o primeiro gasto deste evento.'
         />
       ) : (
         /*
@@ -199,7 +199,7 @@ function FormularioCusto({
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 sticky top-0 bg-white z-10">
           <h2 className="text-slate-800 font-bold flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-brand-500" /> {isEditar ? 'Editar custo' : 'Adicionar custo'}
+            <Receipt className="w-4 h-4 text-brand-500" /> {isEditar ? 'Editar despesa' : 'Adicionar despesa'}
           </h2>
           <button onClick={onFechar} disabled={pendente} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 shrink-0">
             <X className="w-4 h-4" />
@@ -219,7 +219,7 @@ function FormularioCusto({
               <SeletorLista
                 valor={categoria}
                 onChange={setCategoria}
-                titulo="Categoria do custo"
+                titulo="Categoria da despesa"
                 opcoes={CATEGORIAS_CUSTO.map(c => ({ valor: c, rotulo: c }))}
               />
             </Field>
@@ -261,7 +261,7 @@ function FormularioCusto({
 
           <div className="flex gap-2 pt-1">
             <button type="submit" disabled={pendente} className="btn btn-primario disabled:opacity-50">
-              <Save className="w-3.5 h-3.5 shrink-0" /> {pendente ? 'Salvando…' : 'Salvar custo'}
+              <Save className="w-3.5 h-3.5 shrink-0" /> {pendente ? 'Salvando…' : 'Salvar despesa'}
             </button>
             <button type="button" onClick={onFechar} disabled={pendente} className="btn btn-secundario">
               Cancelar
@@ -304,7 +304,7 @@ function ExcluirCustoModal({
       onClose={onFechar}
       onConfirm={confirmar}
       isPending={pendente}
-      titulo="Excluir custo"
+      titulo="Excluir despesa"
       mensagem={custo
         ? `Apagar "${custo.descricao}" (${brl(custo.valor)})? Isso não tem desfazer${erro ? `\n\n${erro}` : ''}.`
         : ''}

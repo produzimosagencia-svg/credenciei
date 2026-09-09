@@ -114,7 +114,7 @@ function Formulario({
           </div>
           <p className="text-slate-800 font-semibold mt-3">NFe lançada</p>
           <p className="text-slate-500 text-sm mt-1">
-            {tipoEfetivo === 'custo' ? `Entrou como custo de ${eventoNome}.` : `Faturamento de ${eventoNome} atualizado.`}
+            {tipoEfetivo === 'custo' ? `Entrou como despesa de ${eventoNome}.` : `Receita de ${eventoNome} atualizada.`}
           </p>
           <div className="flex gap-2 mt-5">
             <button onClick={onFechar} className="btn btn-secundario flex-1 justify-center">Fechar</button>
@@ -163,12 +163,12 @@ function Formulario({
 
           <Field label="Essa nota é de *">
             <div className="grid grid-cols-2 gap-2">
-              <BotaoTipo ativo={tipoEfetivo === 'custo'} onClick={() => setTipo('custo')} titulo="Custo" descricao="O que cobraram da gente" />
+              <BotaoTipo ativo={tipoEfetivo === 'custo'} onClick={() => setTipo('custo')} titulo="Despesa" descricao="O que cobraram da gente" />
               <BotaoTipo
                 ativo={tipoEfetivo === 'faturamento'}
                 onClick={() => !interno && setTipo('faturamento')}
                 desabilitado={interno}
-                titulo="Faturamento"
+                titulo="Receita"
                 descricao={interno ? 'Não existe pra despesa interna' : 'O que a gente cobrou do cliente'}
               />
             </div>
@@ -181,7 +181,7 @@ function Formulario({
               </Field>
               <div className="grid sm:grid-cols-2 gap-3">
                 <Field label="Categoria *">
-                  <SeletorLista valor={categoria} onChange={setCategoria} titulo="Categoria do custo" opcoes={CATEGORIAS_CUSTO.map(c => ({ valor: c, rotulo: c }))} />
+                  <SeletorLista valor={categoria} onChange={setCategoria} titulo="Categoria da despesa" opcoes={CATEGORIAS_CUSTO.map(c => ({ valor: c, rotulo: c }))} />
                 </Field>
                 <Field label="Valor (R$) *">
                   <input name="valor" type="number" min="0" step="0.01" required placeholder="0,00" className="input tabular-nums" />
@@ -196,12 +196,12 @@ function Formulario({
             </>
           ) : (
             <>
-              <Field label="Valor faturado (R$) *">
+              <Field label="Valor da receita (R$) *">
                 <input name="faturamento" type="number" min="0" step="0.01" required placeholder="0,00" className="input tabular-nums" />
               </Field>
               <p className="flex items-start gap-1.5 text-amber-700 text-xs bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-                Isto substitui o faturamento atual do evento — não soma. Se já existe um valor
+                Isto substitui a receita atual do evento — não soma. Se já existe um valor
                 lançado, confira no Financeiro do evento antes de continuar.
               </p>
             </>

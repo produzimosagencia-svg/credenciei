@@ -101,41 +101,41 @@ export default async function FinanceiroPage({
     <div className="space-y-5">
       <PageHeader
         titulo="Financeiro"
-        descricao="Faturamento, custos e lucro da operação — visível só para o master"
+        descricao="Receita, despesas e lucro da operação — visível só para o master"
         acoes={<LancarNfeModal eventos={eventosFiltro.map(e => ({ id: e.id, nome: e.nome }))} />}
       />
 
       <FiltrosFinanceiro eventos={eventosFiltro} />
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label="Faturamento total" value={brl(kpis.faturamentoTotal)} icon={Wallet} tom="acento" />
+        <StatCard label="Receita total" value={brl(kpis.faturamentoTotal)} icon={Wallet} tom="acento" />
         <StatCard
           label="Lucro total" value={brl(kpis.lucroTotal)}
-          sub={kpis.margem !== null ? `${kpis.margem.toFixed(1)}% de margem` : 'sem faturamento no recorte'}
+          sub={kpis.margem !== null ? `${kpis.margem.toFixed(1)}% de margem` : 'sem receita no recorte'}
           icon={kpis.lucroTotal >= 0 ? TrendingUp : TrendingDown} tom={kpis.lucroTotal >= 0 ? 'sucesso' : 'erro'}
         />
-        <StatCard label="Custos totais" value={brl(kpis.custosTotal)} icon={Receipt} tom="aviso" />
+        <StatCard label="Despesas totais" value={brl(kpis.custosTotal)} icon={Receipt} tom="aviso" />
         <StatCard label="Margem de lucro" value={kpis.margem !== null ? `${kpis.margem.toFixed(1)}%` : '—'} icon={Percent} tom="info" small />
         <StatCard label="Gastos com WhatsApp" value={brl(kpis.gastosWhatsApp)} icon={MessageCircle} tom="info" small />
         <StatCard label="Gastos com funcionários" value={brl(kpis.gastosFuncionarios)} icon={Users} tom="info" small />
         <StatCard label="Outros gastos" value={brl(kpis.outrosGastos)} icon={PieChart} tom="neutro" small />
         <StatCard label="Eventos no recorte" value={kpis.quantidadeEventos} icon={CalendarDays} tom="neutro" small />
-        <StatCard label="Ticket médio" value={brl(kpis.ticketMedio)} sub="faturamento por evento" icon={Ticket} tom="neutro" small />
+        <StatCard label="Ticket médio" value={brl(kpis.ticketMedio)} sub="receita por evento" icon={Ticket} tom="neutro" small />
       </div>
 
       <Secao
         tom="acento" icone={<LineChart className="w-3.5 h-3.5" />}
-        titulo="Faturamento × Custos × Lucro" descricao="Por evento, no recorte escolhido"
+        titulo="Receita × Despesas × Lucro" descricao="Por evento, no recorte escolhido"
         corpoClassName="p-4"
       >
         <FaturamentoCustosLucroPorEvento dados={porEvento.map(l => ({ evento: l.evento, faturamento: l.faturamento, custos: l.custos, lucro: l.lucro }))} />
       </Secao>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Secao icone={<LineChart className="w-3.5 h-3.5" />} titulo="Evolução ao longo do tempo" descricao="Faturamento, custos e lucro por mês" corpoClassName="p-4">
+        <Secao icone={<LineChart className="w-3.5 h-3.5" />} titulo="Evolução ao longo do tempo" descricao="Receita, despesas e lucro por mês" corpoClassName="p-4">
           <EvolucaoFinanceira dados={evolucao} />
         </Secao>
-        <Secao icone={<PieChart className="w-3.5 h-3.5" />} titulo="Custos por categoria" descricao="Distribuição de todos os gastos lançados" corpoClassName="p-4">
+        <Secao icone={<PieChart className="w-3.5 h-3.5" />} titulo="Despesas por categoria" descricao="Distribuição de todos os gastos lançados" corpoClassName="p-4">
           <CustosPorCategoria dados={porCategoria} />
         </Secao>
       </div>
@@ -153,7 +153,7 @@ export default async function FinanceiroPage({
       {/* ─── Referência operacional (automática) ──────────────────────────── */}
       <Secao
         titulo="Referência operacional"
-        descricao="Combinado com a equipe e custo estimado de WhatsApp — dado automático, não entra no lucro acima"
+        descricao="Combinado com a equipe e despesa estimada de WhatsApp — dado automático, não entra no lucro acima"
         icone={<Users className="w-3.5 h-3.5" />}
         acoes={
           <Link href={soAtivos ? '/admin/financeiro?escopo=todos' : '/admin/financeiro'} className="btn btn-secundario btn-sm">
@@ -208,7 +208,7 @@ export default async function FinanceiroPage({
       </Secao>
 
       <p className="text-slate-400 text-xs px-1">
-        Faturamento e custos acima são lançamentos manuais, feitos evento a evento — abra um evento
+        Receita e despesas acima são lançamentos manuais, feitos evento a evento — abra um evento
         e entre em &ldquo;Financeiro&rdquo; pra cadastrar. A referência operacional é estimativa automática do
         que a operação já registrou (combinado com a equipe, envio de WhatsApp); serve pra
         dimensionar, não entra na conta de lucro.
