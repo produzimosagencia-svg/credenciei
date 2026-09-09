@@ -22,6 +22,12 @@
 -- (lib/financeiro.ts), não numa CHECK constraint, porque adicionar uma
 -- categoria nova não pode exigir migração de banco.
 --
+-- `evento_id` ACEITA NULL — é a despesa INTERNA (Juan, 09/09/2026): salário
+-- da equipe da agência, serviço contratado pra empresa, nada que pertença a
+-- um evento específico. NULL vira "Interno" na tela de lançar NFe, e entra
+-- nos totais gerais do dashboard sem aparecer em nenhum evento — porque não
+-- é de nenhum.
+--
 -- Lucro e custo total NÃO são colunas — são sempre calculados na hora
 -- (`lucroDoEvento` em lib/financeiro.ts): faturamento menos a soma dos
 -- custos. Guardar o lucro pronto criaria um número que pode ficar
@@ -44,7 +50,9 @@ create table if not exists financeiro_eventos (
 
 create table if not exists custos_evento (
   id                 uuid primary key default gen_random_uuid(),
-  evento_id          uuid not null references eventos(id) on delete cascade,
+  -- NULL = despesa interna (não pertence a evento nenhum). Ver o comentário
+  -- acima.
+  evento_id          uuid references eventos(id) on delete cascade,
   descricao          text not null,
   categoria          text not null,
   valor              numeric(12,2) not null,

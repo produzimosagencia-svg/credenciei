@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { FileText, X, Save, Paperclip, AlertTriangle, Check } from 'lucide-react'
 import { criarCusto, salvarFaturamento } from '@/lib/actions-financeiro'
-import { CATEGORIAS_CUSTO } from '@/lib/financeiro-categorias'
+import { CATEGORIAS_CUSTO, EVENTO_INTERNO } from '@/lib/financeiro-categorias'
 import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -63,7 +63,12 @@ function Formulario({
   const [feito, setFeito] = useState(false)
   const [pendente, startTransition] = useTransition()
 
-  const eventoNome = eventos.find(e => e.id === eventoId)?.nome ?? ''
+  const interno = eventoId === EVENTO_INTERNO
+  const eventoNome = interno ? 'despesas internas' : eventos.find(e => e.id === eventoId)?.nome ?? ''
+  // Interno não é evento — não existe "faturamento de despesa interna".
+  // Trava o tipo em custo assim que a pessoa escolhe Interno, mesmo se ela
+  // tinha marcado Faturamento antes de trocar o evento.
+  const tipoEfetivo: Tipo = interno ? 'custo' : tipo
 
   const salvar = (formData: FormData) => {
     setErro(null)
@@ -72,14 +77,14 @@ function Formulario({
 
     startTransition(async () => {
       try {
-        if (tipo === 'custo') {
+        if (tipoEfetivo === 'custo') {
           formData.set('categoria', categoria)
           // O input de arquivo chama "nfe" nesta tela (é o rótulo que a
           // pessoa entende); a action de custo espera "comprovante".
           const arquivo = formData.get('nfe')
           formData.delete('nfe')
           if (arquivo) formData.set('comprovante', arquivo)
-          await criarCusto(eventoId, formData)
+          await criarCusto(interno ? null : eventoId, formData)
         } else {
           await salvarFaturamento(eventoId, formData)
         }
@@ -101,7 +106,7 @@ function Formulario({
           </div>
           <p className="text-slate-800 font-semibold mt-3">NFe lançada</p>
           <p className="text-slate-500 text-sm mt-1">
-            {tipo === 'custo' ? `Entrou como custo de ${eventoNome}.` : `Faturamento de ${eventoNome} atualizado.`}
+            {tipoEfetivo === 'custo' ? `Entrou como custo de ${eventoNome}.` : `Faturamento de ${eventoNome} atualizado.`}
           </p>
           <div className="flex gap-2 mt-5">
             <button onClick={onFechar} className="btn btn-secundario flex-1 justify-center">Fechar</button>
@@ -141,18 +146,27 @@ function Formulario({
               placeholder="Pra qual evento é essa nota?"
               titulo="Escolha o evento"
               busca
-              opcoes={eventos.map(e => ({ valor: e.id, rotulo: e.nome }))}
+              opcoes={[
+                { valor: EVENTO_INTERNO, rotulo: 'Interno — despesas da empresa', detalhe: 'Salário, serviço contratado — não é de nenhum evento' },
+                ...eventos.map(e => ({ valor: e.id, rotulo: e.nome })),
+              ]}
             />
           </Field>
 
           <Field label="Essa nota é de *">
             <div className="grid grid-cols-2 gap-2">
-              <BotaoTipo ativo={tipo === 'custo'} onClick={() => setTipo('custo')} titulo="Custo" descricao="O que cobraram da gente" />
-              <BotaoTipo ativo={tipo === 'faturamento'} onClick={() => setTipo('faturamento')} titulo="Faturamento" descricao="O que a gente cobrou do cliente" />
+              <BotaoTipo ativo={tipoEfetivo === 'custo'} onClick={() => setTipo('custo')} titulo="Custo" descricao="O que cobraram da gente" />
+              <BotaoTipo
+                ativo={tipoEfetivo === 'faturamento'}
+                onClick={() => !interno && setTipo('faturamento')}
+                desabilitado={interno}
+                titulo="Faturamento"
+                descricao={interno ? 'Não existe pra despesa interna' : 'O que a gente cobrou do cliente'}
+              />
             </div>
           </Field>
 
-          {tipo === 'custo' ? (
+          {tipoEfetivo === 'custo' ? (
             <>
               <Field label="Descrição do gasto *">
                 <input name="descricao" required placeholder="Ex.: Serviço de som, diária dos seguranças…" className="input" />
@@ -216,12 +230,21 @@ function Formulario({
   )
 }
 
-function BotaoTipo({ ativo, onClick, titulo, descricao }: { ativo: boolean; onClick: () => void; titulo: string; descricao: string }) {
+function BotaoTipo({
+  ativo, onClick, titulo, descricao, desabilitado,
+}: {
+  ativo: boolean
+  onClick: () => void
+  titulo: string
+  descricao: string
+  desabilitado?: boolean
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`text-left rounded-xl border px-3.5 py-2.5 transition-colors ${
+      disabled={desabilitado}
+      className={`text-left rounded-xl border px-3.5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
         ativo ? 'border-brand-300 bg-brand-50' : 'border-slate-200 hover:border-slate-300'
       }`}
     >

@@ -89,7 +89,12 @@ export async function salvarFaturamento(eventoId: string, formData: FormData) {
   revalidatePath('/admin/financeiro')
 }
 
-export async function criarCusto(eventoId: string, formData: FormData) {
+/**
+ * `eventoId: null` é despesa INTERNA — não pertence a evento nenhum (salário
+ * da equipe da agência, serviço contratado pra empresa). Ver o porquê da
+ * coluna aceitar NULL em supabase/upgrade-financeiro.sql.
+ */
+export async function criarCusto(eventoId: string | null, formData: FormData) {
   const perfil = await exigirMaster()
 
   const descricao = String(formData.get('descricao') ?? '').trim()
@@ -115,7 +120,7 @@ export async function criarCusto(eventoId: string, formData: FormData) {
    * levaria o master a achar que nem o custo foi lançado.
    */
   try {
-    const comprovante = await subirAnexo(`custos/${eventoId}`, formData.get('comprovante'))
+    const comprovante = await subirAnexo(`custos/${eventoId ?? 'interno'}`, formData.get('comprovante'))
     if (comprovante) {
       await supabaseAdmin.from('custos_evento')
         .update({ comprovante_path: comprovante.path, comprovante_nome: comprovante.nome })
@@ -125,11 +130,11 @@ export async function criarCusto(eventoId: string, formData: FormData) {
     console.error('[criarCusto] falha ao subir comprovante', { custoId: novo.id, erro: erroAnexo })
   }
 
-  revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
+  if (eventoId) revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
 }
 
-export async function editarCusto(custoId: string, eventoId: string, formData: FormData) {
+export async function editarCusto(custoId: string, eventoId: string | null, formData: FormData) {
   await exigirMaster()
 
   const { data: atual } = await supabaseAdmin
@@ -154,7 +159,7 @@ export async function editarCusto(custoId: string, eventoId: string, formData: F
    */
   let novoComprovante: { path: string; nome: string } | null = null
   try {
-    novoComprovante = await subirAnexo(`custos/${eventoId}`, formData.get('comprovante'))
+    novoComprovante = await subirAnexo(`custos/${eventoId ?? 'interno'}`, formData.get('comprovante'))
   } catch (erroAnexo) {
     console.error('[editarCusto] falha ao subir comprovante novo', { custoId, erro: erroAnexo })
   }
@@ -172,11 +177,11 @@ export async function editarCusto(custoId: string, eventoId: string, formData: F
     await supabaseAdmin.storage.from('financeiro').remove([atual.comprovante_path as string])
   }
 
-  revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
+  if (eventoId) revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
 }
 
-export async function excluirCusto(custoId: string, eventoId: string) {
+export async function excluirCusto(custoId: string, eventoId: string | null) {
   await exigirMaster()
 
   const { data: atual } = await supabaseAdmin
@@ -190,7 +195,7 @@ export async function excluirCusto(custoId: string, eventoId: string) {
     await supabaseAdmin.storage.from('financeiro').remove([atual.comprovante_path as string])
   }
 
-  revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
+  if (eventoId) revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
 }
 

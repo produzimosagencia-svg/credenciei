@@ -25,7 +25,7 @@ const hoje = () => new Date().toISOString().slice(0, 10)
 export default function PainelCustos({
   eventoId, custos,
 }: {
-  eventoId: string
+  eventoId: string | null
   custos: Custo[]
 }) {
   const [formulario, setFormulario] = useState<{ modo: 'criar' } | { modo: 'editar'; custo: Custo } | null>(null)
@@ -163,7 +163,7 @@ function BotaoComprovante({ custoId }: { custoId: string }) {
 function FormularioCusto({
   eventoId, alvo, onFechar,
 }: {
-  eventoId: string
+  eventoId: string | null
   alvo: { modo: 'criar' } | { modo: 'editar'; custo: Custo }
   onFechar: () => void
 }) {
@@ -277,7 +277,7 @@ function ExcluirCustoModal({
   custo, eventoId, onFechar,
 }: {
   custo: Custo | null
-  eventoId: string
+  eventoId: string | null
   onFechar: () => void
 }) {
   const router = useRouter()

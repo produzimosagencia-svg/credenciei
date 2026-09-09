@@ -3,7 +3,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { X } from 'lucide-react'
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
-import { CATEGORIAS_CUSTO } from '@/lib/financeiro-categorias'
+import { CATEGORIAS_CUSTO, EVENTO_INTERNO } from '@/lib/financeiro-categorias'
 
 /**
  * Os filtros do dashboard — período, evento, categoria. Vivem na URL, igual
@@ -52,7 +52,11 @@ export default function FiltrosFinanceiro({
         placeholder="Evento: todos"
         titulo="Evento"
         busca
-        opcoes={[{ valor: '', rotulo: 'Todos' }, ...eventos.map(e => ({ valor: e.id, rotulo: e.nome }))]}
+        opcoes={[
+          { valor: '', rotulo: 'Todos' },
+          { valor: EVENTO_INTERNO, rotulo: 'Interno — despesas da empresa' },
+          ...eventos.map(e => ({ valor: e.id, rotulo: e.nome })),
+        ]}
       />
 
       <SeletorLista

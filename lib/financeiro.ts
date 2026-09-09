@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase-server'
-export { CATEGORIAS_CUSTO, type CategoriaCusto } from './financeiro-categorias'
+import { EVENTO_INTERNO } from './financeiro-categorias'
+export { CATEGORIAS_CUSTO, type CategoriaCusto, EVENTO_INTERNO } from './financeiro-categorias'
 
 /**
  * O módulo Financeiro — faturamento, custos e lucro por evento.
@@ -14,7 +15,8 @@ export { CATEGORIAS_CUSTO, type CategoriaCusto } from './financeiro-categorias'
 
 export type Custo = {
   id: string
-  eventoId: string
+  /** `null` = despesa interna, não pertence a evento nenhum. */
+  eventoId: string | null
   descricao: string
   categoria: string
   valor: number
@@ -41,7 +43,7 @@ export type FinanceiroDoEvento = {
 
 /** Linha crua de `custos_evento`, com o nome de quem criou já resolvido. */
 type LinhaCusto = {
-  id: string; evento_id: string; descricao: string; categoria: string; valor: number
+  id: string; evento_id: string | null; descricao: string; categoria: string; valor: number
   data: string; observacao: string | null; comprovante_path: string | null
   criado_em: string; perfis: { nome: string } | { nome: string }[] | null
 }
@@ -109,6 +111,54 @@ export async function financeiroDoEvento(eventoId: string): Promise<FinanceiroDo
   }
 }
 
+export type FinanceiroInterno = {
+  custoTotal: number
+  custos: Custo[]
+  custosPorCategoria: { categoria: string; total: number }[]
+}
+
+/**
+ * As despesas internas — salário da equipe da agência, serviço contratado
+ * pra empresa, nada que pertença a um evento (Juan, 09/09/2026). É o que
+ * monta o painel "Despesas internas" no dashboard.
+ *
+ * Sem faturamento nem lucro aqui: despesa interna não tem receita própria
+ * pra comparar — o lucro que ela afeta é o da operação inteira, que já
+ * aparece nos KPIs do dashboard.
+ */
+export async function financeiroInterno(): Promise<FinanceiroInterno> {
+  const { data: custosRaw } = await supabaseAdmin
+    .from('custos_evento')
+    .select('id, evento_id, descricao, categoria, valor, data, observacao, comprovante_path, criado_em, perfis(nome)')
+    .is('evento_id', null)
+    .order('data', { ascending: false })
+    .returns<LinhaCusto[]>()
+
+  const custos: Custo[] = (custosRaw ?? []).map(c => ({
+    id: c.id,
+    eventoId: null,
+    descricao: c.descricao,
+    categoria: c.categoria,
+    valor: Number(c.valor) || 0,
+    data: c.data,
+    observacao: c.observacao,
+    temComprovante: !!c.comprovante_path,
+    criadoPorNome: nomeDoCriador(c.perfis),
+    criadoEm: c.criado_em,
+  }))
+
+  const porCategoriaMapa = new Map<string, number>()
+  for (const c of custos) porCategoriaMapa.set(c.categoria, (porCategoriaMapa.get(c.categoria) ?? 0) + c.valor)
+
+  return {
+    custoTotal: custos.reduce((soma, c) => soma + c.valor, 0),
+    custos,
+    custosPorCategoria: [...porCategoriaMapa.entries()]
+      .map(([categoria, total]) => ({ categoria, total }))
+      .sort((a, b) => b.total - a.total),
+  }
+}
+
 /** A lista de eventos pro filtro do dashboard — todos, mais recente primeiro. */
 export async function eventosParaFiltro(): Promise<{ id: string; nome: string; dataInicio: string | null }[]> {
   const { data } = await supabaseAdmin
@@ -123,6 +173,7 @@ export async function eventosParaFiltro(): Promise<{ id: string; nome: string; d
 export type FiltroDashboard = {
   de?: string
   ate?: string
+  /** Um id de evento real, `EVENTO_INTERNO`, ou `undefined` (tudo). */
   eventoId?: string
   categoria?: string
 }
@@ -167,29 +218,63 @@ const zerado: DashboardFinanceiro = {
  * ela também). Os dois filtros rodam em paralelo, cada um na tabela certa.
  */
 export async function dashboardFinanceiro(filtro: FiltroDashboard): Promise<DashboardFinanceiro> {
-  let consultaEventos = supabaseAdmin.from('eventos').select('id, nome, data_inicio')
-  if (filtro.de) consultaEventos = consultaEventos.gte('data_inicio', filtro.de)
-  if (filtro.ate) consultaEventos = consultaEventos.lte('data_inicio', filtro.ate)
-  if (filtro.eventoId) consultaEventos = consultaEventos.eq('id', filtro.eventoId)
+  const apenasInterno = filtro.eventoId === EVENTO_INTERNO
+  const eventoEspecifico = filtro.eventoId && !apenasInterno ? filtro.eventoId : undefined
 
-  const { data: eventos } = await consultaEventos
-  if (!eventos?.length) return zerado
+  /*
+   * Eventos entram no recorte só quando NÃO se pediu "só interno" — despesa
+   * interna não pertence a evento nenhum, não há o que buscar aqui.
+   */
+  let eventos: { id: string; nome: string; data_inicio: string | null }[] = []
+  if (!apenasInterno) {
+    let consultaEventos = supabaseAdmin.from('eventos').select('id, nome, data_inicio')
+    if (filtro.de) consultaEventos = consultaEventos.gte('data_inicio', filtro.de)
+    if (filtro.ate) consultaEventos = consultaEventos.lte('data_inicio', filtro.ate)
+    if (eventoEspecifico) consultaEventos = consultaEventos.eq('id', eventoEspecifico)
+    const { data } = await consultaEventos
+    eventos = (data ?? []) as typeof eventos
+  }
+  if (!apenasInterno && !eventos.length) return zerado
 
-  const eventoIds = eventos.map(e => e.id as string)
-  const dataPorEvento = new Map(eventos.map(e => [e.id as string, e.data_inicio as string | null]))
+  const eventoIds = eventos.map(e => e.id)
+  const dataPorEvento = new Map(eventos.map(e => [e.id, e.data_inicio]))
 
-  let consultaCustos = supabaseAdmin
-    .from('custos_evento').select('evento_id, categoria, valor, data').in('evento_id', eventoIds)
-  if (filtro.de) consultaCustos = consultaCustos.gte('data', filtro.de)
-  if (filtro.ate) consultaCustos = consultaCustos.lte('data', filtro.ate)
-  if (filtro.categoria) consultaCustos = consultaCustos.eq('categoria', filtro.categoria)
+  /*
+   * Duas consultas de custo, não uma: a interna não tem evento pra casar
+   * contra `eventoIds`, então usa `.is('evento_id', null)` sozinha, com
+   * filtro só de data e categoria — sem o "evento também precisa estar no
+   * período" que vale pro resto (ver o comentário da função). Só entra
+   * quando faz sentido: pedida explicitamente (`apenasInterno`) ou vendo
+   * tudo junto (sem filtro de evento nenhum).
+   */
+  let buscaEventoLigado = !apenasInterno && eventoIds.length
+    ? supabaseAdmin.from('custos_evento').select('evento_id, categoria, valor, data').in('evento_id', eventoIds)
+    : null
+  if (buscaEventoLigado) {
+    if (filtro.de) buscaEventoLigado = buscaEventoLigado.gte('data', filtro.de)
+    if (filtro.ate) buscaEventoLigado = buscaEventoLigado.lte('data', filtro.ate)
+    if (filtro.categoria) buscaEventoLigado = buscaEventoLigado.eq('categoria', filtro.categoria)
+  }
 
-  const [{ data: financeiros }, { data: custos }] = await Promise.all([
-    supabaseAdmin.from('financeiro_eventos').select('evento_id, faturamento').in('evento_id', eventoIds),
-    consultaCustos,
+  let buscaInterno = apenasInterno || !filtro.eventoId
+    ? supabaseAdmin.from('custos_evento').select('evento_id, categoria, valor, data').is('evento_id', null)
+    : null
+  if (buscaInterno) {
+    if (filtro.de) buscaInterno = buscaInterno.gte('data', filtro.de)
+    if (filtro.ate) buscaInterno = buscaInterno.lte('data', filtro.ate)
+    if (filtro.categoria) buscaInterno = buscaInterno.eq('categoria', filtro.categoria)
+  }
+
+  const [financeirosRes, ligadoRes, internoRes] = await Promise.all([
+    eventoIds.length
+      ? supabaseAdmin.from('financeiro_eventos').select('evento_id, faturamento').in('evento_id', eventoIds)
+      : Promise.resolve({ data: [] as { evento_id: string; faturamento: number }[] }),
+    buscaEventoLigado ?? Promise.resolve({ data: [] as { evento_id: string | null; categoria: string; valor: number; data: string }[] }),
+    buscaInterno ?? Promise.resolve({ data: [] as { evento_id: string | null; categoria: string; valor: number; data: string }[] }),
   ])
+  const custos = [...(ligadoRes.data ?? []), ...(internoRes.data ?? [])]
 
-  const faturamentoPorEvento = new Map((financeiros ?? []).map(f => [f.evento_id as string, Number(f.faturamento) || 0]))
+  const faturamentoPorEvento = new Map((financeirosRes.data ?? []).map(f => [f.evento_id as string, Number(f.faturamento) || 0]))
 
   // Custos SÓ contam pro evento se a categoria escolhida bater — mas o
   // faturamento do evento conta de qualquer forma (categoria é atributo de
@@ -198,12 +283,14 @@ export async function dashboardFinanceiro(filtro: FiltroDashboard): Promise<Dash
   const custosPorEvento = new Map<string, number>()
   const porCategoriaMapa = new Map<string, number>()
   let custosTotal = 0
+  let custoInterno = 0
   let gastosWhatsApp = 0
   let gastosFuncionarios = 0
-  for (const c of custos ?? []) {
+  for (const c of custos) {
     const valor = Number(c.valor) || 0
-    const eventoId = c.evento_id as string
-    custosPorEvento.set(eventoId, (custosPorEvento.get(eventoId) ?? 0) + valor)
+    const eventoId = c.evento_id as string | null
+    if (eventoId) custosPorEvento.set(eventoId, (custosPorEvento.get(eventoId) ?? 0) + valor)
+    else custoInterno += valor
     porCategoriaMapa.set(c.categoria as string, (porCategoriaMapa.get(c.categoria as string) ?? 0) + valor)
     custosTotal += valor
     if (c.categoria === 'WhatsApp / disparos de mensagens') gastosWhatsApp += valor
@@ -214,42 +301,47 @@ export async function dashboardFinanceiro(filtro: FiltroDashboard): Promise<Dash
    * "Quantidade de eventos" e o faturamento total contam só quem tem
    * faturamento LANÇADO — filtrar por categoria de custo não pode fazer um
    * evento inteiro (com faturamento cadastrado) sumir do total só porque,
-   * dentro dele, não há custo daquela categoria.
+   * dentro dele, não há custo daquela categoria. Despesa interna não é
+   * evento — não entra nesta contagem.
    */
-  const comFaturamento = eventos.filter(e => faturamentoPorEvento.has(e.id as string) || custosPorEvento.has(e.id as string))
+  const comFaturamento = eventos.filter(e => faturamentoPorEvento.has(e.id) || custosPorEvento.has(e.id))
 
-  const faturamentoTotal = comFaturamento.reduce((s, e) => s + (faturamentoPorEvento.get(e.id as string) ?? 0), 0)
+  const faturamentoTotal = comFaturamento.reduce((s, e) => s + (faturamentoPorEvento.get(e.id) ?? 0), 0)
   const quantidadeEventos = comFaturamento.length
   const lucroTotal = faturamentoTotal - custosTotal
 
   const porEvento = comFaturamento
-    .map(e => {
-      const id = e.id as string
-      return {
-        evento: e.nome as string,
-        eventoId: id,
-        faturamento: faturamentoPorEvento.get(id) ?? 0,
-        custos: custosPorEvento.get(id) ?? 0,
-        lucro: (faturamentoPorEvento.get(id) ?? 0) - (custosPorEvento.get(id) ?? 0),
-      }
-    })
+    .map(e => ({
+      evento: e.nome,
+      eventoId: e.id,
+      faturamento: faturamentoPorEvento.get(e.id) ?? 0,
+      custos: custosPorEvento.get(e.id) ?? 0,
+      lucro: (faturamentoPorEvento.get(e.id) ?? 0) - (custosPorEvento.get(e.id) ?? 0),
+    }))
     .sort((a, b) => (dataPorEvento.get(a.eventoId) ?? '').localeCompare(dataPorEvento.get(b.eventoId) ?? ''))
+  // "Despesas internas" entra como se fosse mais um evento no gráfico — é a
+  // leitura mais direta pra quem está olhando "custo por evento" e precisa
+  // ver que uma fatia não é de evento nenhum.
+  if (custoInterno > 0) {
+    porEvento.push({ evento: 'Despesas internas', eventoId: EVENTO_INTERNO, faturamento: 0, custos: custoInterno, lucro: -custoInterno })
+  }
 
   /*
    * Evolução por mês — agrupa pela data do EVENTO pro faturamento, e pela
-   * data do CUSTO pro custo, cada um no mês que é dele de verdade.
+   * data do CUSTO pro custo (interno incluso, pela própria data dele), cada
+   * um no mês que é dele de verdade.
    */
   const porMes = new Map<string, { faturamento: number; custos: number }>()
   const mesDe = (iso: string) => iso.slice(0, 7) // "2026-09"
   for (const e of comFaturamento) {
-    const dataInicio = dataPorEvento.get(e.id as string)
+    const dataInicio = dataPorEvento.get(e.id)
     if (!dataInicio) continue
     const mes = mesDe(dataInicio)
     const atual = porMes.get(mes) ?? { faturamento: 0, custos: 0 }
-    atual.faturamento += faturamentoPorEvento.get(e.id as string) ?? 0
+    atual.faturamento += faturamentoPorEvento.get(e.id) ?? 0
     porMes.set(mes, atual)
   }
-  for (const c of custos ?? []) {
+  for (const c of custos) {
     const mes = mesDe(c.data as string)
     const atual = porMes.get(mes) ?? { faturamento: 0, custos: 0 }
     atual.custos += Number(c.valor) || 0

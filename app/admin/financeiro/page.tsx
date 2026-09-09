@@ -2,11 +2,12 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   Wallet, TrendingUp, TrendingDown, Receipt, PieChart, MessageCircle, Users,
-  CalendarDays, Ticket, Percent, LineChart,
+  CalendarDays, Ticket, Percent, LineChart, Building2,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
-import { dashboardFinanceiro, eventosParaFiltro, type FiltroDashboard } from '@/lib/financeiro'
+import { dashboardFinanceiro, eventosParaFiltro, financeiroInterno, type FiltroDashboard } from '@/lib/financeiro'
+import PainelCustos from '@/app/admin/eventos/[id]/financeiro/PainelCustos'
 import { templatesAprovados, custoWhatsAppPorEvento, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
@@ -52,9 +53,10 @@ export default async function FinanceiroPage({
   const { de, ate, evento, categoria, escopo } = await searchParams
   const filtro: FiltroDashboard = { de: de || undefined, ate: ate || undefined, eventoId: evento || undefined, categoria: categoria || undefined }
 
-  const [dash, eventosFiltro] = await Promise.all([
+  const [dash, eventosFiltro, interno] = await Promise.all([
     dashboardFinanceiro(filtro),
     eventosParaFiltro(),
+    financeiroInterno(),
   ])
 
   const { kpis, porEvento, evolucao, porCategoria } = dash
@@ -137,6 +139,16 @@ export default async function FinanceiroPage({
           <CustosPorCategoria dados={porCategoria} />
         </Secao>
       </div>
+
+      {/*
+        * Despesas internas — não são de nenhum evento (salário da equipe,
+        * serviço contratado pra empresa). Reaproveita o mesmo painel de
+        * custos da página do evento (`eventoId={null}`) — mesma lista, mesmo
+        * "+ Adicionar custo", mesma edição/exclusão, sem duplicar nada.
+        */}
+      <Secao icone={<Building2 className="w-3.5 h-3.5" />} titulo="Despesas internas" descricao="Gastos da empresa que não pertencem a nenhum evento" corpoClassName="p-4">
+        <PainelCustos eventoId={null} custos={interno.custos} />
+      </Secao>
 
       {/* ─── Referência operacional (automática) ──────────────────────────── */}
       <Secao

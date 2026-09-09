@@ -20,3 +20,13 @@ export const CATEGORIAS_CUSTO = [
 ] as const
 
 export type CategoriaCusto = (typeof CATEGORIAS_CUSTO)[number]
+
+/**
+ * O "evento" que não é evento nenhum — despesa interna da agência (salário
+ * da equipe, serviço contratado pra empresa). Não é uma linha em `eventos`
+ * — seria um evento falso vazando pra toda tela que lista "escolha o
+ * evento" no sistema. É `evento_id IS NULL` em `custos_evento`, e este
+ * texto é só o valor que a URL e os seletores usam pra apontar pra esse
+ * caso — ver lib/financeiro.ts.
+ */
+export const EVENTO_INTERNO = 'interno'
