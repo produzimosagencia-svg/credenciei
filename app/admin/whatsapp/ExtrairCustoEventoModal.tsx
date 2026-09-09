@@ -2,7 +2,6 @@
 import { useState, useTransition } from 'react'
 import { FileDown, X, AlertTriangle, Loader2 } from 'lucide-react'
 import { custoWhatsAppDoEventoParaExportar } from '@/lib/actions-whatsapp'
-import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 
 /**
@@ -29,15 +28,40 @@ export default function ExtrairCustoEventoModal({
     if (!eventoId) { setErro('Escolha o evento.'); return }
     setErro(null)
     startTransition(async () => {
+      /*
+       * DIAGNÓSTICO TEMPORÁRIO (09/09/2026): a geração do PDF quebrou no
+       * navegador com um erro genérico ("erro interno") duas vezes seguidas,
+       * mesmo com a busca de dados e a lógica do PDF testadas e funcionando
+       * fora do navegador (Node, com os dados reais). Sem saber o erro de
+       * verdade, a próxima tentativa de correção seria só mais um palpite —
+       * por isso cada etapa fica separada e mostra a mensagem técnica crua,
+       * em vez de passar por `mensagemAmigavel` (que existe pra esconder
+       * justamente esse tipo de detalhe do usuário comum; aqui, por ora, o
+       * detalhe é o que importa). Reverter pra `mensagemAmigavel(e)` assim
+       * que o motivo real for encontrado e corrigido.
+       */
+      let dados
       try {
-        const dados = await custoWhatsAppDoEventoParaExportar(eventoId)
-        if (!dados) { setErro('Não encontrei esse evento.'); return }
-        if (!dados.enviados) { setErro('Este evento não tem nenhuma mensagem enviada ainda.'); return }
-        const { gerarPdfCustoWhatsApp } = await import('./pdfCustoWhatsApp')
-        gerarPdfCustoWhatsApp(dados)
+        dados = await custoWhatsAppDoEventoParaExportar(eventoId)
+      } catch (e) {
+        setErro(`[buscar dados] ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
+        return
+      }
+      if (!dados) { setErro('Não encontrei esse evento.'); return }
+      if (!dados.enviados) { setErro('Este evento não tem nenhuma mensagem enviada ainda.'); return }
+
+      let modulo
+      try {
+        modulo = await import('./pdfCustoWhatsApp')
+      } catch (e) {
+        setErro(`[carregar módulo do PDF] ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
+        return
+      }
+      try {
+        await modulo.gerarPdfCustoWhatsApp(dados)
         setAberto(false)
       } catch (e) {
-        setErro(mensagemAmigavel(e))
+        setErro(`[gerar PDF] ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`)
       }
     })
   }

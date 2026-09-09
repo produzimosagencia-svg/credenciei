@@ -71,6 +71,19 @@ create index if not exists custos_evento_por_evento on custos_evento (evento_id)
 create index if not exists custos_evento_por_data on custos_evento (data);
 create index if not exists custos_evento_por_categoria on custos_evento (categoria);
 
+/*
+ * Solta o NOT NULL mesmo que a tabela já exista de uma execução anterior
+ * desta migração — `create table if not exists` acima é pulado inteiro
+ * quando a tabela já está lá, e sozinho NÃO alteraria a coluna que já
+ * nasceu `not null` na primeira vez que esta migração rodou (09/09/2026,
+ * antes do pedido do "Interno"). Sem esta linha, lançar um custo Interno
+ * quebra com "null value in column evento_id violates not-null
+ * constraint" mesmo depois deste arquivo ser atualizado. `drop not null`
+ * é idempotente — rodar de novo numa coluna que já aceita NULL não faz
+ * nada, então é seguro em qualquer ordem de execução.
+ */
+alter table custos_evento alter column evento_id drop not null;
+
 alter table financeiro_eventos enable row level security;
 alter table custos_evento enable row level security;
 

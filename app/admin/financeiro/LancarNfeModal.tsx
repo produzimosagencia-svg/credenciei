@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import { FileText, X, Save, Paperclip, AlertTriangle, Check } from 'lucide-react'
 import { criarCusto, salvarFaturamento } from '@/lib/actions-financeiro'
 import { CATEGORIAS_CUSTO, EVENTO_INTERNO } from '@/lib/financeiro-categorias'
-import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
 
@@ -75,6 +74,15 @@ function Formulario({
     if (!eventoId) { setErro('Escolha o evento.'); return }
     if (!nomeArquivo) { setErro('Anexe o arquivo da NFe.'); return }
 
+    /*
+     * DIAGNÓSTICO TEMPORÁRIO (09/09/2026): o envio quebrou com a mesma
+     * mensagem genérica que o PDF de custo de WhatsApp — as duas vêm do
+     * mesmo bloco de `mensagemAmigavel` (erros técnicos do Next/React, tipo
+     * TypeError ou algo na fronteira client/server), então esconder o
+     * detalhe atrás do texto amigável estava me impedindo de ver ONDE o
+     * erro de verdade acontece. Mostra a mensagem crua por ora; volta pra
+     * `mensagemAmigavel(e)` assim que a causa for achada e corrigida.
+     */
     startTransition(async () => {
       try {
         if (tipoEfetivo === 'custo') {
@@ -91,7 +99,7 @@ function Formulario({
         setFeito(true)
         router.refresh()
       } catch (e) {
-        setErro(mensagemAmigavel(e))
+        setErro(e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       }
     })
   }
