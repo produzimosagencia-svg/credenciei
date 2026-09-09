@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
@@ -87,25 +87,58 @@ export default function EscolherEvento({
       {!eventos.length ? (
         <EmptyState icone={icone} titulo={vazio.titulo} descricao={vazio.descricao} />
       ) : (
-        <div className="divide-y divide-slate-50">
+        /*
+         * Cada evento vira um cartão de verdade, não uma linha fina de texto
+         * — esta lista costuma ter uma ou duas entradas, e uma linha rasa
+         * fazia o passo inteiro de "escolher o evento" parecer um detalhe
+         * qualquer da tela, quando às vezes é a única coisa nela (relato do
+         * Juan, 09/09/2026).
+         */
+        <div className="p-2 space-y-1.5">
           {eventos.map(e => (
             <Link
               key={e.id}
               href={href(e.id)}
-              className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition-colors"
+              className={`btn-press group flex items-center gap-3 rounded-2xl border px-4 py-3.5 transition-colors ${
+                e.ativo
+                  ? 'border-slate-200 hover:border-brand-300 hover:bg-brand-50/40'
+                  : 'border-slate-100 opacity-70 hover:border-slate-200 hover:bg-slate-50'
+              }`}
             >
-              <div className="min-w-0">
-                <p className="text-slate-800 font-medium truncate flex items-center gap-2">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                e.ativo ? 'bg-brand-50 text-brand-600' : 'bg-slate-100 text-slate-400'
+              }`}>
+                <CalendarDays className="w-4 h-4" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-slate-800 font-semibold text-sm truncate flex items-center gap-2">
                   {e.nome}
                   {!e.ativo && <Badge tom="neutro">Encerrado</Badge>}
                 </p>
-                <p className="text-slate-400 text-xs truncate">
-                  {e.data_inicio ? formatarBR(e.data_inicio, 'data') : 'Sem data'}
-                  {e.local ? ` · ${e.local}` : ''}
-                  {mostrarOrganizacao && e.organizacaoNome ? ` · ${e.organizacaoNome}` : ''}
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-slate-500 text-xs mt-0.5">
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarDays className="w-3 h-3 shrink-0 text-slate-300" />
+                    {e.data_inicio ? formatarBR(e.data_inicio, 'data') : 'Sem data'}
+                  </span>
+                  {e.local && (
+                    <span className="inline-flex items-center gap-1 min-w-0">
+                      <MapPin className="w-3 h-3 shrink-0 text-slate-300" />
+                      <span className="truncate">{e.local}</span>
+                    </span>
+                  )}
+                  {mostrarOrganizacao && e.organizacaoNome && (
+                    <span className="inline-flex items-center gap-1 min-w-0">
+                      <Building2 className="w-3 h-3 shrink-0 text-slate-300" />
+                      <span className="truncate">{e.organizacaoNome}</span>
+                    </span>
+                  )}
                 </p>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+
+              <div className="w-7 h-7 rounded-full bg-slate-50 group-hover:bg-brand-100 flex items-center justify-center shrink-0 transition-colors">
+                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600" />
+              </div>
             </Link>
           ))}
         </div>
