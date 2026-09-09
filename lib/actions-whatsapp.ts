@@ -291,6 +291,23 @@ export type { CustoWhatsAppDoEvento }
 
 export async function custoWhatsAppDoEventoParaExportar(eventoId: string): Promise<CustoWhatsAppDoEvento | null> {
   await exigirMaster()
-  const templates = await templatesAprovados()
-  return custoWhatsAppDetalhadoDoEvento(eventoId, templates)
+  /*
+   * Qualquer exceção que não seja um `Error` limpo — vinda do Supabase, de
+   * um `fetch` pra Meta, o que for — cruza a fronteira da Server Action e
+   * volta pro navegador como "An error occurred in the Server Components
+   * render... The specific message is omitted" (relato do Juan, 09/09/2026):
+   * o Next.js redige QUALQUER exceção não tratada em produção, e essa
+   * redação não mostra nada, nem no servidor pra quem só tem o navegador
+   * aberto. Convertendo aqui pra um `Error` de mensagem própria, ele passa
+   * pelo mesmo caminho que toda outra action deste sistema já usa — e a
+   * causa real aparece pra quem clicou, não só no log da Vercel.
+   */
+  try {
+    const templates = await templatesAprovados()
+    return await custoWhatsAppDetalhadoDoEvento(eventoId, templates)
+  } catch (e) {
+    const bruta = e instanceof Error ? e.message : String(e)
+    console.error('[custoWhatsAppDoEventoParaExportar] falhou', { eventoId, erro: e })
+    throw new Error(`Não consegui montar o relatório de WhatsApp deste evento: ${bruta}`)
+  }
 }

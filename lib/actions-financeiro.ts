@@ -17,6 +17,31 @@ async function exigirMaster() {
   return perfil!
 }
 
+/**
+ * Garante que QUALQUER exceção cruze a Server Action como um `Error` com
+ * mensagem própria — nunca crua.
+ *
+ * O Next.js redige em produção qualquer exceção não tratada que atravesse
+ * uma Server Action: o navegador recebe só "An error occurred... The
+ * specific message is omitted", sem log nenhum visível pra quem clicou
+ * (relato do Juan, 09/09/2026, no fluxo de "Lançar NFe"). Um `throw new
+ * Error('mensagem própria')` passa reto por esse filtro — é o que toda
+ * outra action deste arquivo já faz caso a caso; esta função garante isso
+ * mesmo se algo escapar sem passar por `mensagemAmigavel`.
+ */
+async function comErroLegivel<T>(rotulo: string, corpo: () => Promise<T>): Promise<T> {
+  try {
+    return await corpo()
+  } catch (e) {
+    // Um `Error` já tem mensagem própria — repassa como está, é o que os
+    // catches client-side (`e.message`) já leem. Só o que NÃO é `Error`
+    // (raro: uma string crua, um objeto) ganha uma mensagem por aqui.
+    if (e instanceof Error) throw e
+    console.error(`[${rotulo}] lançou algo que não é Error`, e)
+    throw new Error(`Não consegui concluir "${rotulo}". Tente de novo em alguns instantes.`)
+  }
+}
+
 const TIPOS_ANEXO_ACEITOS = new Set([
   'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf',
 ])
@@ -53,6 +78,10 @@ function parseValor(bruto: FormDataEntryValue | null): number {
  * existe "criar financeiro do evento" separado de "editar".
  */
 export async function salvarFaturamento(eventoId: string, formData: FormData) {
+  return comErroLegivel('Salvar faturamento', () => salvarFaturamentoInterno(eventoId, formData))
+}
+
+async function salvarFaturamentoInterno(eventoId: string, formData: FormData) {
   const perfil = await exigirMaster()
 
   const faturamento = parseValor(formData.get('faturamento'))
@@ -95,6 +124,10 @@ export async function salvarFaturamento(eventoId: string, formData: FormData) {
  * coluna aceitar NULL em supabase/upgrade-financeiro.sql.
  */
 export async function criarCusto(eventoId: string | null, formData: FormData) {
+  return comErroLegivel('Adicionar custo', () => criarCustoInterno(eventoId, formData))
+}
+
+async function criarCustoInterno(eventoId: string | null, formData: FormData) {
   const perfil = await exigirMaster()
 
   const descricao = String(formData.get('descricao') ?? '').trim()
@@ -135,6 +168,10 @@ export async function criarCusto(eventoId: string | null, formData: FormData) {
 }
 
 export async function editarCusto(custoId: string, eventoId: string | null, formData: FormData) {
+  return comErroLegivel('Editar custo', () => editarCustoInterno(custoId, eventoId, formData))
+}
+
+async function editarCustoInterno(custoId: string, eventoId: string | null, formData: FormData) {
   await exigirMaster()
 
   const { data: atual } = await supabaseAdmin
@@ -182,6 +219,10 @@ export async function editarCusto(custoId: string, eventoId: string | null, form
 }
 
 export async function excluirCusto(custoId: string, eventoId: string | null) {
+  return comErroLegivel('Excluir custo', () => excluirCustoInterno(custoId, eventoId))
+}
+
+async function excluirCustoInterno(custoId: string, eventoId: string | null) {
   await exigirMaster()
 
   const { data: atual } = await supabaseAdmin
