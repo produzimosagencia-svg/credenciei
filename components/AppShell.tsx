@@ -170,16 +170,6 @@ function gruposPara(role: string): Grupo[] {
         { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
       ],
     })
-    /*
-     * Configurações fica sozinha no fim, sem rótulo de grupo: ela não é um
-     * assunto com vários itens, é uma tela só — e é a de maior alcance do
-     * sistema (liga e desliga funcionalidade pros outros). Separá-la das
-     * outras é o que evita clicar nela por engano.
-     *
-     * Só master por enquanto; o papel de "suporte" (ver `podeEditarIdentidade`
-     * em lib/permissions.ts) vai entrar aqui quando existir.
-     */
-    grupos.push({ itens: [{ href: '/admin/configuracoes', label: 'Configurações', icon: Settings }] })
   }
 
   return grupos
@@ -335,6 +325,24 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
           <div className="px-3 py-2 border-b border-slate-100">
             <span className="indicador-selo selo-neutro">{ROLE_LABELS[perfil.role] ?? perfil.role}</span>
           </div>
+          {/*
+            * Saiu da barra lateral e entrou aqui (pedido do Juan, 09/09/2026).
+            * Mesmo motivo de "Sair" morar neste menu, e não na barra:
+            * Configurações não é um lugar do dia a dia, é liga/desliga de
+            * funcionalidade pros outros — fica ao lado da saída, não no
+            * meio da navegação, onde um clique errado tinha consequência.
+            */}
+          {ehMaster(perfil.role) && (
+            <Link
+              href="/admin/configuracoes"
+              role="menuitem"
+              onClick={() => setAberto(false)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors border-b border-slate-100"
+            >
+              <Settings className="w-4 h-4" />
+              Configurações
+            </Link>
+          )}
           <BotaoTema className="border-b border-slate-100" />
           <button
             role="menuitem"

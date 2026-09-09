@@ -256,7 +256,7 @@ const TEMPLATE_AUTOMATICO: Record<string, string> = {
   aviso_desmontagem: 'aviso_desmontagem',
 }
 
-const ROTULO_DISPARO: Record<string, string> = {
+export const ROTULO_DISPARO: Record<string, string> = {
   lembrete_entrada: 'Lembrete de entrada', lembrete_meio: 'Lembrete de meio', lembrete_fim: 'Lembrete de saída',
   reforco_entrada: 'Reforço de entrada', reforco_meio: 'Reforço de meio', reforco_fim: 'Reforço de saída',
   alerta_supervisor_entrada: 'Alerta ao supervisor — entrada', alerta_supervisor_meio: 'Alerta ao supervisor — meio', alerta_supervisor_fim: 'Alerta ao supervisor — saída',
@@ -738,4 +738,91 @@ export async function custoWhatsAppPorEvento(
     if ((data?.length ?? 0) < tamanho) break
   }
   return porEvento
+}
+
+// ─── Custo detalhado de UM evento (pro "Extrair custo evento" em PDF) ────────
+
+export type CustoWhatsAppDoEvento = {
+  eventoNome: string
+  eventoData: string | null
+  organizacaoNome: string | null
+  enviados: number
+  custoTotal: number
+  /** Telefones distintos que receberam alguma mensagem — "pra quantas pessoas". */
+  destinatarios: number
+  porTipo: { tipo: string; rotulo: string; enviados: number; custo: number }[]
+  porCategoria: { categoria: CategoriaMeta; enviados: number; custo: number }[]
+}
+
+/**
+ * Tudo que o evento gastou de WhatsApp, do início ao fim dele — SEM o corte
+ * de dias que `custoWhatsAppPorEvento` aplica (aquele existe pro dashboard
+ * "últimos 30 dias"; este é pro relatório de fechamento de UM evento
+ * específico, que pode ser extraído semanas depois do evento acabar).
+ */
+export async function custoWhatsAppDetalhadoDoEvento(
+  eventoId: string, templates: TemplateMeta[],
+): Promise<CustoWhatsAppDoEvento | null> {
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('nome, data_inicio, organizacoes(nome)').eq('id', eventoId).maybeSingle()
+  if (!evento) return null
+
+  const categorias = new Map(templates
+    .filter(t => t.categoria === 'AUTHENTICATION' || t.categoria === 'MARKETING' || t.categoria === 'UTILITY')
+    .map(t => [t.nome, t.categoria as CategoriaMeta]))
+
+  const porTipoMapa = new Map<string, { enviados: number; custo: number }>()
+  const porCategoriaMapa = new Map<CategoriaMeta, { enviados: number; custo: number }>()
+  const telefones = new Set<string>()
+  let enviados = 0
+  let custoTotal = 0
+
+  const tamanho = 1000
+  for (let inicio = 0; ; inicio += tamanho) {
+    const { data } = await supabaseAdmin
+      .from('mensagens_agendadas')
+      .select('tipo, mensagem, telefone')
+      .eq('evento_id', eventoId)
+      .eq('status', 'enviado')
+      .range(inicio, inicio + tamanho - 1)
+    for (const linha of data ?? []) {
+      let meta: { template?: string } = {}
+      try { meta = JSON.parse(linha.mensagem as string) as typeof meta } catch { /* automação */ }
+      const tipo = linha.tipo as string
+      const categoria = categoriaDoTemplate(meta.template ?? TEMPLATE_AUTOMATICO[tipo] ?? '', tipo, categorias)
+      const custo = PRECO_META_BRL[categoria]
+
+      enviados++
+      custoTotal += custo
+      if (linha.telefone) telefones.add(linha.telefone as string)
+
+      const doTipo = porTipoMapa.get(tipo) ?? { enviados: 0, custo: 0 }
+      doTipo.enviados++
+      doTipo.custo += custo
+      porTipoMapa.set(tipo, doTipo)
+
+      const daCategoria = porCategoriaMapa.get(categoria) ?? { enviados: 0, custo: 0 }
+      daCategoria.enviados++
+      daCategoria.custo += custo
+      porCategoriaMapa.set(categoria, daCategoria)
+    }
+    if ((data?.length ?? 0) < tamanho) break
+  }
+
+  return {
+    eventoNome: evento.nome as string,
+    eventoData: (evento.data_inicio as string | null) ?? null,
+    organizacaoNome: (evento.organizacoes as unknown as { nome: string } | { nome: string }[] | null)
+      ? (Array.isArray(evento.organizacoes) ? evento.organizacoes[0]?.nome : (evento.organizacoes as unknown as { nome: string }).nome) ?? null
+      : null,
+    enviados,
+    custoTotal,
+    destinatarios: telefones.size,
+    porTipo: [...porTipoMapa.entries()]
+      .map(([tipo, v]) => ({ tipo, rotulo: ROTULO_DISPARO[tipo] ?? tipo.replaceAll('_', ' '), ...v }))
+      .sort((a, b) => b.enviados - a.enviados),
+    porCategoria: [...porCategoriaMapa.entries()]
+      .map(([categoria, v]) => ({ categoria, ...v }))
+      .sort((a, b) => b.custo - a.custo),
+  }
 }

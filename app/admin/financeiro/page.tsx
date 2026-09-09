@@ -12,6 +12,7 @@ import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import StatCard from '@/components/StatCard'
 import FiltrosFinanceiro from './FiltrosFinanceiro'
+import LancarNfeModal from './LancarNfeModal'
 import { FaturamentoCustosLucroPorEvento, EvolucaoFinanceira, CustosPorCategoria } from '@/components/financeiro/graficos'
 
 export const revalidate = 0
@@ -96,7 +97,11 @@ export default async function FinanceiroPage({
 
   return (
     <div className="space-y-5">
-      <PageHeader titulo="Financeiro" descricao="Faturamento, custos e lucro da operação — visível só para o master" />
+      <PageHeader
+        titulo="Financeiro"
+        descricao="Faturamento, custos e lucro da operação — visível só para o master"
+        acoes={<LancarNfeModal eventos={eventosFiltro.map(e => ({ id: e.id, nome: e.nome }))} />}
+      />
 
       <FiltrosFinanceiro eventos={eventosFiltro} />
 

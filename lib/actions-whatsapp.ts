@@ -5,7 +5,10 @@ import { getPerfil, supabaseAdmin } from './supabase-server'
 import { ehMaster } from './permissions'
 import { formatarNumeroWhatsApp, responderConversa, provedor } from './whatsapp'
 import { enviarTemplate } from './whatsapp-meta'
-import { registrarEnviada, registrarLeituraConversa, FLUXOS, numerosWhatsApp, templatesAprovados } from './whatsapp-painel'
+import {
+  registrarEnviada, registrarLeituraConversa, FLUXOS, numerosWhatsApp, templatesAprovados,
+  custoWhatsAppDetalhadoDoEvento, type CustoWhatsAppDoEvento,
+} from './whatsapp-painel'
 import { podePassar } from './limite'
 
 /**
@@ -278,4 +281,16 @@ export async function salvarFluxos(ativos: Record<string, boolean>) {
 
   revalidatePath('/admin/whatsapp/fluxos')
   return { ok: true as const }
+}
+
+/**
+ * O gasto de WhatsApp de UM evento, do começo ao fim dele — pro "Extrair
+ * custo evento" que monta o PDF pra anexar como comprovante no Financeiro.
+ */
+export type { CustoWhatsAppDoEvento }
+
+export async function custoWhatsAppDoEventoParaExportar(eventoId: string): Promise<CustoWhatsAppDoEvento | null> {
+  await exigirMaster()
+  const templates = await templatesAprovados()
+  return custoWhatsAppDetalhadoDoEvento(eventoId, templates)
 }
