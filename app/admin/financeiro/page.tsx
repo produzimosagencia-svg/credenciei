@@ -1,177 +1,173 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Wallet, MessageCircle, Users, TrendingUp, CalendarDays } from 'lucide-react'
+import {
+  Wallet, TrendingUp, TrendingDown, Receipt, PieChart, MessageCircle, Users,
+  CalendarDays, Ticket, Percent, LineChart,
+} from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
+import { dashboardFinanceiro, eventosParaFiltro, type FiltroDashboard } from '@/lib/financeiro'
 import { templatesAprovados, custoWhatsAppPorEvento, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import StatCard from '@/components/StatCard'
+import FiltrosFinanceiro from './FiltrosFinanceiro'
+import { FaturamentoCustosLucroPorEvento, EvolucaoFinanceira, CustosPorCategoria } from '@/components/financeiro/graficos'
 
 export const revalidate = 0
 
-/**
- * Financeiro — a conta do negócio, e só pra quem é dono dele.
- *
- * SÓ MASTER, e isto não é detalhe de permissão: aqui ficam lado a lado
- * quanto cada evento custa de equipe e de WhatsApp. É a informação com que
- * os sócios decidem preço, e ela não pertence a quem opera o evento — nem ao
- * suporte, que entra pra consertar operação, nem ao admin do cliente, que
- * veria a margem de quem o contratou.
- *
- * ─── O QUE ESTES NÚMEROS SÃO, E O QUE NÃO SÃO ───────────────────────────────
- *
- * "Equipe" é a soma de `funcionarios.valor_receber` — o combinado com cada
- * pessoa, não o que já saiu do caixa. Por isso ela aparece quebrada em PAGO e
- * A PAGAR (`funcionarios.pago`), que é a pergunta real de quem fecha o
- * evento.
- *
- * "WhatsApp" é estimativa, e assumidamente: vem da tabela de preços da Meta
- * por categoria de template, aplicada ao que a fila registrou como enviado —
- * não da fatura. Serve pra dimensionar ("o meio do turno custou quanto?"),
- * não pra conciliar com o extrato.
- *
- * Nada aqui é lançamento manual: todo valor é derivado do que a operação já
- * registrou. Gasto que o sistema não conhece (cachê, transporte, alimentação)
- * ainda não tem lugar — quando tiver, é uma tabela nova, não um campo
- * escondido aqui.
- */
-
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-type Evento = {
-  id: string
-  nome: string
-  ativo: boolean
-  data_inicio: string | null
-  organizacoes: { nome: string } | null
-}
+type EventoRef = { id: string; nome: string; ativo: boolean; data_inicio: string | null; organizacoes: { nome: string } | null }
 
+/**
+ * O dashboard financeiro — visão geral da operação. Só master (checado
+ * abaixo; a isolação de dado mora nas tabelas próprias, ver
+ * supabase/upgrade-financeiro.sql).
+ *
+ * KPIs e gráficos vêm de `dashboardFinanceiro` (lib/financeiro.ts), com o
+ * MESMO filtro que a barra no topo desta tela manda — nunca dois recortes
+ * diferentes calculando a mesma coisa.
+ *
+ * ─── A SEÇÃO DE BAIXO NÃO É O MESMO DINHEIRO ────────────────────────────────
+ *
+ * "Referência operacional" mostra o combinado com a equipe e o custo
+ * estimado de WhatsApp — dado que o sistema já tinha antes deste módulo,
+ * derivado do que a operação registra sozinha. Fica separado dos KPIs de
+ * cima de propósito: o lucro oficial é `faturamento manual - custos
+ * manuais`, e misturar os dois faria um número "pago" da equipe entrar
+ * como custo duas vezes se o master também lançasse "Funcionários" como
+ * custo manual.
+ */
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ escopo?: string }>
+  searchParams: Promise<{ de?: string; ate?: string; evento?: string; categoria?: string; escopo?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!ehMaster(perfil.role)) redirect('/admin')
 
-  const { escopo } = await searchParams
-  const soAtivos = escopo !== 'todos'
+  const { de, ate, evento, categoria, escopo } = await searchParams
+  const filtro: FiltroDashboard = { de: de || undefined, ate: ate || undefined, eventoId: evento || undefined, categoria: categoria || undefined }
 
-  const [{ data: eventos }, equipe, templates] = await Promise.all([
-    supabase
-      .from('eventos')
-      .select('id, nome, ativo, data_inicio, organizacoes(nome)')
-      .order('data_inicio', { ascending: false })
-      .returns<Evento[]>(),
-    /*
-     * A equipe inteira de uma vez, com o evento junto — e não uma consulta
-     * por evento. Com dezenas de eventos e milhares de pessoas, o laço de
-     * consultas é o que faz esta tela levar dez segundos pra abrir.
-     *
-     * `buscarTudo` porque a base passa de 1000 linhas (ver o comentário dele
-     * em lib/supabase-server.ts).
-     */
-    buscarTudo<{ valor_receber: number | null; pago: boolean | null; fornecedores: { evento_id: string }[] }>(
-      (de, ate) => supabase
-        .from('funcionarios')
-        .select('valor_receber, pago, fornecedores!inner(evento_id)')
-        .range(de, ate),
+  const [dash, eventosFiltro] = await Promise.all([
+    dashboardFinanceiro(filtro),
+    eventosParaFiltro(),
+  ])
+
+  const { kpis, porEvento, evolucao, porCategoria } = dash
+
+  // ─── Referência operacional (automática, dado antigo) ──────────────────────
+  const soAtivos = escopo !== 'todos'
+  const [{ data: eventosRef }, equipe, templates] = await Promise.all([
+    supabase.from('eventos').select('id, nome, ativo, data_inicio, organizacoes(nome)').order('data_inicio', { ascending: false }).returns<EventoRef[]>(),
+    buscarTudo<{ valor_receber: number | null; pago: boolean | null; fornecedores: { evento_id: string }[] }>((de2, ate2) =>
+      supabase.from('funcionarios').select('valor_receber, pago, fornecedores!inner(evento_id)').range(de2, ate2),
     ),
     templatesAprovados(),
   ])
-
   const [whatsPorEvento, resumoGeral] = await Promise.all([
     custoWhatsAppPorEvento(templates),
     resumoFinanceiroWhatsApp(templates),
   ])
-
-  const porEvento = new Map<string, { pessoas: number; combinado: number; pago: number }>()
+  const porEventoRef = new Map<string, { pessoas: number; combinado: number; pago: number }>()
   for (const f of equipe) {
-    // O `!inner` vem inferido como array pelo supabase-js, mesmo sendo 1:1.
-    const eventoId = (f.fornecedores as unknown as { evento_id: string }[] | { evento_id: string } | null)
-      ? (Array.isArray(f.fornecedores) ? f.fornecedores[0]?.evento_id : (f.fornecedores as unknown as { evento_id: string }).evento_id)
-      : undefined
+    const eventoId = Array.isArray(f.fornecedores) ? f.fornecedores[0]?.evento_id : (f.fornecedores as unknown as { evento_id: string } | null)?.evento_id
     if (!eventoId) continue
-    const atual = porEvento.get(eventoId) ?? { pessoas: 0, combinado: 0, pago: 0 }
+    const atual = porEventoRef.get(eventoId) ?? { pessoas: 0, combinado: 0, pago: 0 }
     const valor = Number(f.valor_receber) || 0
     atual.pessoas++
     atual.combinado += valor
     if (f.pago) atual.pago += valor
-    porEvento.set(eventoId, atual)
+    porEventoRef.set(eventoId, atual)
   }
-
-  const linhas = (eventos ?? [])
+  const linhasRef = (eventosRef ?? [])
     .filter(e => !soAtivos || e.ativo)
     .map(e => {
-      const eq = porEvento.get(e.id) ?? { pessoas: 0, combinado: 0, pago: 0 }
+      const eq = porEventoRef.get(e.id) ?? { pessoas: 0, combinado: 0, pago: 0 }
       const zap = whatsPorEvento.get(e.id) ?? { enviados: 0, custo: 0 }
       return { ...e, ...eq, aPagar: eq.combinado - eq.pago, zapEnviados: zap.enviados, zapCusto: zap.custo }
     })
-    // Sem gente e sem mensagem, o evento não tem nada a dizer aqui.
     .filter(l => l.pessoas > 0 || l.zapEnviados > 0)
-
-  const totalCombinado = linhas.reduce((s, l) => s + l.combinado, 0)
-  const totalPago = linhas.reduce((s, l) => s + l.pago, 0)
-  const totalZap = linhas.reduce((s, l) => s + l.zapCusto, 0)
+  const totalCombinadoRef = linhasRef.reduce((s, l) => s + l.combinado, 0)
+  const totalPagoRef = linhasRef.reduce((s, l) => s + l.pago, 0)
+  const totalZapRef = linhasRef.reduce((s, l) => s + l.zapCusto, 0)
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        titulo="Financeiro"
-        descricao="A conta de cada evento — equipe e WhatsApp. Visível só para o master."
+      <PageHeader titulo="Financeiro" descricao="Faturamento, custos e lucro da operação — visível só para o master" />
+
+      <FiltrosFinanceiro eventos={eventosFiltro} />
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard label="Faturamento total" value={brl(kpis.faturamentoTotal)} icon={Wallet} tom="acento" />
+        <StatCard
+          label="Lucro total" value={brl(kpis.lucroTotal)}
+          sub={kpis.margem !== null ? `${kpis.margem.toFixed(1)}% de margem` : 'sem faturamento no recorte'}
+          icon={kpis.lucroTotal >= 0 ? TrendingUp : TrendingDown} tom={kpis.lucroTotal >= 0 ? 'sucesso' : 'erro'}
+        />
+        <StatCard label="Custos totais" value={brl(kpis.custosTotal)} icon={Receipt} tom="aviso" />
+        <StatCard label="Margem de lucro" value={kpis.margem !== null ? `${kpis.margem.toFixed(1)}%` : '—'} icon={Percent} tom="info" small />
+        <StatCard label="Gastos com WhatsApp" value={brl(kpis.gastosWhatsApp)} icon={MessageCircle} tom="info" small />
+        <StatCard label="Gastos com funcionários" value={brl(kpis.gastosFuncionarios)} icon={Users} tom="info" small />
+        <StatCard label="Outros gastos" value={brl(kpis.outrosGastos)} icon={PieChart} tom="neutro" small />
+        <StatCard label="Eventos no recorte" value={kpis.quantidadeEventos} icon={CalendarDays} tom="neutro" small />
+        <StatCard label="Ticket médio" value={brl(kpis.ticketMedio)} sub="faturamento por evento" icon={Ticket} tom="neutro" small />
+      </div>
+
+      <Secao
+        tom="acento" icone={<LineChart className="w-3.5 h-3.5" />}
+        titulo="Faturamento × Custos × Lucro" descricao="Por evento, no recorte escolhido"
+        corpoClassName="p-4"
+      >
+        <FaturamentoCustosLucroPorEvento dados={porEvento.map(l => ({ evento: l.evento, faturamento: l.faturamento, custos: l.custos, lucro: l.lucro }))} />
+      </Secao>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Secao icone={<LineChart className="w-3.5 h-3.5" />} titulo="Evolução ao longo do tempo" descricao="Faturamento, custos e lucro por mês" corpoClassName="p-4">
+          <EvolucaoFinanceira dados={evolucao} />
+        </Secao>
+        <Secao icone={<PieChart className="w-3.5 h-3.5" />} titulo="Custos por categoria" descricao="Distribuição de todos os gastos lançados" corpoClassName="p-4">
+          <CustosPorCategoria dados={porCategoria} />
+        </Secao>
+      </div>
+
+      {/* ─── Referência operacional (automática) ──────────────────────────── */}
+      <Secao
+        titulo="Referência operacional"
+        descricao="Combinado com a equipe e custo estimado de WhatsApp — dado automático, não entra no lucro acima"
+        icone={<Users className="w-3.5 h-3.5" />}
         acoes={
-          <Link
-            href={soAtivos ? '/admin/financeiro?escopo=todos' : '/admin/financeiro'}
-            className="btn btn-secundario"
-          >
+          <Link href={soAtivos ? '/admin/financeiro?escopo=todos' : '/admin/financeiro'} className="btn btn-secundario btn-sm">
             <CalendarDays className="w-3.5 h-3.5 shrink-0" />
             {soAtivos ? 'Ver todos os eventos' : 'Ver só os ativos'}
           </Link>
         }
-      />
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Combinado com a equipe" value={brl(totalCombinado)} sub={soAtivos ? 'eventos ativos' : 'todos os eventos'} icon={Users} tom="acento" small />
-        <StatCard label="Já pago" value={brl(totalPago)} sub={`${totalCombinado ? Math.round((totalPago / totalCombinado) * 100) : 0}% do combinado`} icon={Wallet} tom="sucesso" small />
-        <StatCard label="Falta pagar" value={brl(totalCombinado - totalPago)} sub="ainda em aberto" icon={TrendingUp} tom="aviso" small />
-        <StatCard label="WhatsApp" value={brl(totalZap)} sub={`últimos ${resumoGeral.dias} dias · estimativa`} icon={MessageCircle} tom="info" small />
-      </div>
-
-      <Secao
-        tom="acento"
-        icone={<Wallet className="w-3.5 h-3.5" />}
-        titulo={`${linhas.length} evento${linhas.length === 1 ? '' : 's'}`}
-        descricao={soAtivos ? 'Só os que estão ativos agora' : 'Todo o histórico da plataforma'}
-        corpoClassName={linhas.length ? '' : 'p-4'}
+        corpoClassName={linhasRef.length ? '' : 'p-4'}
       >
-        {!linhas.length ? (
-          <EmptyState
-            icone={<Wallet className="w-7 h-7" />}
-            titulo="Nenhum evento com movimento"
-            descricao={soAtivos ? 'Nenhum evento ativo tem equipe ou mensagem registrada.' : 'Ainda não há equipe nem mensagem em evento nenhum.'}
-          />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 pb-0">
+          <StatCard label="Combinado com a equipe" value={brl(totalCombinadoRef)} sub={soAtivos ? 'eventos ativos' : 'todos os eventos'} icon={Users} tom="neutro" small />
+          <StatCard label="Já pago" value={brl(totalPagoRef)} sub={`${totalCombinadoRef ? Math.round((totalPagoRef / totalCombinadoRef) * 100) : 0}% do combinado`} icon={Wallet} tom="neutro" small />
+          <StatCard label="Falta pagar" value={brl(totalCombinadoRef - totalPagoRef)} sub="ainda em aberto" icon={TrendingUp} tom="neutro" small />
+          <StatCard label="WhatsApp (estimado)" value={brl(totalZapRef)} sub={`últimos ${resumoGeral.dias} dias`} icon={MessageCircle} tom="neutro" small />
+        </div>
+
+        {!linhasRef.length ? (
+          <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum evento com movimento" descricao={soAtivos ? 'Nenhum evento ativo tem equipe ou mensagem registrada.' : 'Ainda não há equipe nem mensagem em evento nenhum.'} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto mt-3">
             <table className="tabela">
               <thead>
                 <tr>
-                  <th>Evento</th>
-                  <th>Equipe</th>
-                  <th>Combinado</th>
-                  <th>Pago</th>
-                  <th>Falta pagar</th>
-                  <th>WhatsApp</th>
+                  <th>Evento</th><th>Equipe</th><th>Combinado</th><th>Pago</th><th>Falta pagar</th><th>WhatsApp</th>
                 </tr>
               </thead>
               <tbody>
-                {linhas.map(l => (
+                {linhasRef.map(l => (
                   <tr key={l.id}>
                     <td>
-                      <Link href={`/admin/eventos/${l.id}`} className="text-brand-500 font-medium hover:underline">
-                        {l.nome}
-                      </Link>
+                      <Link href={`/admin/eventos/${l.id}/financeiro`} className="text-brand-500 font-medium hover:underline">{l.nome}</Link>
                       <p className="text-slate-400 text-2xs">
                         {l.organizacoes?.nome ?? '—'}
                         {l.data_inicio ? ` · ${formatarBR(l.data_inicio, 'data')}` : ''}
@@ -181,9 +177,7 @@ export default async function FinanceiroPage({
                     <td className="tabular-nums text-slate-600">{l.pessoas}</td>
                     <td className="tabular-nums text-slate-700 font-medium">{brl(l.combinado)}</td>
                     <td className="tabular-nums text-green-700">{brl(l.pago)}</td>
-                    <td className={`tabular-nums ${l.aPagar > 0 ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>
-                      {brl(l.aPagar)}
-                    </td>
+                    <td className={`tabular-nums ${l.aPagar > 0 ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>{brl(l.aPagar)}</td>
                     <td className="tabular-nums text-slate-600">
                       {brl(l.zapCusto)}
                       <span className="text-slate-400 text-2xs block">{l.zapEnviados} msg</span>
@@ -197,10 +191,10 @@ export default async function FinanceiroPage({
       </Secao>
 
       <p className="text-slate-400 text-xs px-1">
-        O valor da equipe é o combinado em cada cadastro, não o que saiu do caixa — por isso
-        aparece separado em pago e a pagar. O de WhatsApp é estimativa pela tabela de preços da
-        Meta por categoria de template, sobre o que a fila registrou como enviado nos últimos{' '}
-        {resumoGeral.dias} dias; serve para dimensionar, não para conciliar com a fatura.
+        Faturamento e custos acima são lançamentos manuais, feitos evento a evento — abra um evento
+        e entre em &ldquo;Financeiro&rdquo; pra cadastrar. A referência operacional é estimativa automática do
+        que a operação já registrou (combinado com a equipe, envio de WhatsApp); serve pra
+        dimensionar, não entra na conta de lucro.
       </p>
     </div>
   )

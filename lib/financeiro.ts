@@ -1,0 +1,295 @@
+import { supabaseAdmin } from './supabase-server'
+export { CATEGORIAS_CUSTO, type CategoriaCusto } from './financeiro-categorias'
+
+/**
+ * O módulo Financeiro — faturamento, custos e lucro por evento.
+ *
+ * Leitura pura, sem `'use server'`: quem muda dado é `lib/actions-financeiro.ts`.
+ * Nenhuma função aqui checa `ehMaster` sozinha — MAS toda página que as chama
+ * checa antes de renderizar (ver `app/admin/financeiro/page.tsx` e
+ * `app/admin/eventos/[id]/financeiro/page.tsx`), e as mutações em
+ * `lib/actions-financeiro.ts` checam de novo, cada uma, porque uma Server
+ * Action pode ser chamada direto — a tela que a esconde não é a barreira.
+ */
+
+export type Custo = {
+  id: string
+  eventoId: string
+  descricao: string
+  categoria: string
+  valor: number
+  data: string
+  observacao: string | null
+  temComprovante: boolean
+  criadoPorNome: string | null
+  criadoEm: string
+}
+
+export type FinanceiroDoEvento = {
+  eventoId: string
+  eventoNome: string
+  faturamento: number
+  temNfe: boolean
+  nfeNome: string | null
+  custoTotal: number
+  lucro: number
+  /** Percentual — `null` quando não há faturamento pra calcular margem sobre. */
+  margem: number | null
+  custos: Custo[]
+  custosPorCategoria: { categoria: string; total: number }[]
+}
+
+/** Linha crua de `custos_evento`, com o nome de quem criou já resolvido. */
+type LinhaCusto = {
+  id: string; evento_id: string; descricao: string; categoria: string; valor: number
+  data: string; observacao: string | null; comprovante_path: string | null
+  criado_em: string; perfis: { nome: string } | { nome: string }[] | null
+}
+
+function nomeDoCriador(p: LinhaCusto['perfis']): string | null {
+  if (!p) return null
+  return Array.isArray(p) ? p[0]?.nome ?? null : p.nome
+}
+
+/**
+ * O financeiro de UM evento — faturamento, custos, lucro. É o que monta
+ * `/admin/eventos/[id]/financeiro`.
+ *
+ * `financeiro_eventos` pode não ter linha ainda (nasce só quando o master
+ * salva o faturamento pela primeira vez) — sem linha, faturamento é 0 e o
+ * evento aparece com "lucro" igual ao custo total negativo, o que é
+ * matematicamente certo: sem faturamento lançado, todo custo já lançado é
+ * prejuízo até alguém preencher a receita.
+ */
+export async function financeiroDoEvento(eventoId: string): Promise<FinanceiroDoEvento | null> {
+  const [{ data: evento }, { data: fin }, { data: custosRaw }] = await Promise.all([
+    supabaseAdmin.from('eventos').select('id, nome').eq('id', eventoId).maybeSingle(),
+    supabaseAdmin.from('financeiro_eventos').select('faturamento, nfe_path, nfe_nome').eq('evento_id', eventoId).maybeSingle(),
+    supabaseAdmin
+      .from('custos_evento')
+      .select('id, evento_id, descricao, categoria, valor, data, observacao, comprovante_path, criado_em, perfis(nome)')
+      .eq('evento_id', eventoId)
+      .order('data', { ascending: false })
+      .returns<LinhaCusto[]>(),
+  ])
+  if (!evento) return null
+
+  const custos: Custo[] = (custosRaw ?? []).map(c => ({
+    id: c.id,
+    eventoId: c.evento_id,
+    descricao: c.descricao,
+    categoria: c.categoria,
+    valor: Number(c.valor) || 0,
+    data: c.data,
+    observacao: c.observacao,
+    temComprovante: !!c.comprovante_path,
+    criadoPorNome: nomeDoCriador(c.perfis),
+    criadoEm: c.criado_em,
+  }))
+
+  const faturamento = Number(fin?.faturamento) || 0
+  const custoTotal = custos.reduce((soma, c) => soma + c.valor, 0)
+
+  const porCategoriaMapa = new Map<string, number>()
+  for (const c of custos) porCategoriaMapa.set(c.categoria, (porCategoriaMapa.get(c.categoria) ?? 0) + c.valor)
+
+  return {
+    eventoId,
+    eventoNome: evento.nome as string,
+    faturamento,
+    temNfe: !!fin?.nfe_path,
+    nfeNome: (fin?.nfe_nome as string | null) ?? null,
+    custoTotal,
+    lucro: faturamento - custoTotal,
+    margem: faturamento > 0 ? ((faturamento - custoTotal) / faturamento) * 100 : null,
+    custos,
+    custosPorCategoria: [...porCategoriaMapa.entries()]
+      .map(([categoria, total]) => ({ categoria, total }))
+      .sort((a, b) => b.total - a.total),
+  }
+}
+
+/** A lista de eventos pro filtro do dashboard — todos, mais recente primeiro. */
+export async function eventosParaFiltro(): Promise<{ id: string; nome: string; dataInicio: string | null }[]> {
+  const { data } = await supabaseAdmin
+    .from('eventos').select('id, nome, data_inicio').order('data_inicio', { ascending: false })
+  return (data ?? []).map(e => ({
+    id: e.id as string,
+    nome: e.nome as string,
+    dataInicio: (e.data_inicio as string | null) ?? null,
+  }))
+}
+
+export type FiltroDashboard = {
+  de?: string
+  ate?: string
+  eventoId?: string
+  categoria?: string
+}
+
+export type DashboardFinanceiro = {
+  kpis: {
+    faturamentoTotal: number
+    lucroTotal: number
+    custosTotal: number
+    /** Percentual — `null` sem faturamento no recorte. */
+    margem: number | null
+    gastosWhatsApp: number
+    gastosFuncionarios: number
+    outrosGastos: number
+    quantidadeEventos: number
+    ticketMedio: number
+  }
+  porEvento: { evento: string; eventoId: string; faturamento: number; custos: number; lucro: number }[]
+  evolucao: { periodo: string; faturamento: number; custos: number; lucro: number }[]
+  porCategoria: { categoria: string; total: number }[]
+}
+
+const zerado: DashboardFinanceiro = {
+  kpis: {
+    faturamentoTotal: 0, lucroTotal: 0, custosTotal: 0, margem: null,
+    gastosWhatsApp: 0, gastosFuncionarios: 0, outrosGastos: 0,
+    quantidadeEventos: 0, ticketMedio: 0,
+  },
+  porEvento: [], evolucao: [], porCategoria: [],
+}
+
+/**
+ * O dashboard financeiro — os KPIs e os dados dos três gráficos, tudo com o
+ * mesmo recorte de filtro (o pedido do Juan: "ao alterar os filtros, todos
+ * os KPIs e gráficos devem ser atualizados").
+ *
+ * PERÍODO FILTRA DUAS COISAS DIFERENTES, DE PROPÓSITO: quais EVENTOS entram
+ * (pela data de início dele — é o que decide se o faturamento do evento
+ * conta) e quais CUSTOS entram (pela data própria de cada custo — um custo
+ * pago depois do evento, tipo uma fatura de fornecedor que chegou na
+ * semana seguinte, tem a SUA PRÓPRIA data, e o período tem que respeitar
+ * ela também). Os dois filtros rodam em paralelo, cada um na tabela certa.
+ */
+export async function dashboardFinanceiro(filtro: FiltroDashboard): Promise<DashboardFinanceiro> {
+  let consultaEventos = supabaseAdmin.from('eventos').select('id, nome, data_inicio')
+  if (filtro.de) consultaEventos = consultaEventos.gte('data_inicio', filtro.de)
+  if (filtro.ate) consultaEventos = consultaEventos.lte('data_inicio', filtro.ate)
+  if (filtro.eventoId) consultaEventos = consultaEventos.eq('id', filtro.eventoId)
+
+  const { data: eventos } = await consultaEventos
+  if (!eventos?.length) return zerado
+
+  const eventoIds = eventos.map(e => e.id as string)
+  const dataPorEvento = new Map(eventos.map(e => [e.id as string, e.data_inicio as string | null]))
+
+  let consultaCustos = supabaseAdmin
+    .from('custos_evento').select('evento_id, categoria, valor, data').in('evento_id', eventoIds)
+  if (filtro.de) consultaCustos = consultaCustos.gte('data', filtro.de)
+  if (filtro.ate) consultaCustos = consultaCustos.lte('data', filtro.ate)
+  if (filtro.categoria) consultaCustos = consultaCustos.eq('categoria', filtro.categoria)
+
+  const [{ data: financeiros }, { data: custos }] = await Promise.all([
+    supabaseAdmin.from('financeiro_eventos').select('evento_id, faturamento').in('evento_id', eventoIds),
+    consultaCustos,
+  ])
+
+  const faturamentoPorEvento = new Map((financeiros ?? []).map(f => [f.evento_id as string, Number(f.faturamento) || 0]))
+
+  // Custos SÓ contam pro evento se a categoria escolhida bater — mas o
+  // faturamento do evento conta de qualquer forma (categoria é atributo de
+  // custo, não existe "faturamento da categoria X"). Por isso, quando há
+  // filtro de categoria, o faturamento não pode ser zerado — só os custos.
+  const custosPorEvento = new Map<string, number>()
+  const porCategoriaMapa = new Map<string, number>()
+  let custosTotal = 0
+  let gastosWhatsApp = 0
+  let gastosFuncionarios = 0
+  for (const c of custos ?? []) {
+    const valor = Number(c.valor) || 0
+    const eventoId = c.evento_id as string
+    custosPorEvento.set(eventoId, (custosPorEvento.get(eventoId) ?? 0) + valor)
+    porCategoriaMapa.set(c.categoria as string, (porCategoriaMapa.get(c.categoria as string) ?? 0) + valor)
+    custosTotal += valor
+    if (c.categoria === 'WhatsApp / disparos de mensagens') gastosWhatsApp += valor
+    if (c.categoria === 'Funcionários') gastosFuncionarios += valor
+  }
+
+  /*
+   * "Quantidade de eventos" e o faturamento total contam só quem tem
+   * faturamento LANÇADO — filtrar por categoria de custo não pode fazer um
+   * evento inteiro (com faturamento cadastrado) sumir do total só porque,
+   * dentro dele, não há custo daquela categoria.
+   */
+  const comFaturamento = eventos.filter(e => faturamentoPorEvento.has(e.id as string) || custosPorEvento.has(e.id as string))
+
+  const faturamentoTotal = comFaturamento.reduce((s, e) => s + (faturamentoPorEvento.get(e.id as string) ?? 0), 0)
+  const quantidadeEventos = comFaturamento.length
+  const lucroTotal = faturamentoTotal - custosTotal
+
+  const porEvento = comFaturamento
+    .map(e => {
+      const id = e.id as string
+      return {
+        evento: e.nome as string,
+        eventoId: id,
+        faturamento: faturamentoPorEvento.get(id) ?? 0,
+        custos: custosPorEvento.get(id) ?? 0,
+        lucro: (faturamentoPorEvento.get(id) ?? 0) - (custosPorEvento.get(id) ?? 0),
+      }
+    })
+    .sort((a, b) => (dataPorEvento.get(a.eventoId) ?? '').localeCompare(dataPorEvento.get(b.eventoId) ?? ''))
+
+  /*
+   * Evolução por mês — agrupa pela data do EVENTO pro faturamento, e pela
+   * data do CUSTO pro custo, cada um no mês que é dele de verdade.
+   */
+  const porMes = new Map<string, { faturamento: number; custos: number }>()
+  const mesDe = (iso: string) => iso.slice(0, 7) // "2026-09"
+  for (const e of comFaturamento) {
+    const dataInicio = dataPorEvento.get(e.id as string)
+    if (!dataInicio) continue
+    const mes = mesDe(dataInicio)
+    const atual = porMes.get(mes) ?? { faturamento: 0, custos: 0 }
+    atual.faturamento += faturamentoPorEvento.get(e.id as string) ?? 0
+    porMes.set(mes, atual)
+  }
+  for (const c of custos ?? []) {
+    const mes = mesDe(c.data as string)
+    const atual = porMes.get(mes) ?? { faturamento: 0, custos: 0 }
+    atual.custos += Number(c.valor) || 0
+    porMes.set(mes, atual)
+  }
+  const evolucao = [...porMes.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mes, v]) => ({
+      periodo: rotuloMes(mes),
+      faturamento: v.faturamento,
+      custos: v.custos,
+      lucro: v.faturamento - v.custos,
+    }))
+
+  const porCategoria = [...porCategoriaMapa.entries()]
+    .map(([categoria, total]) => ({ categoria, total }))
+    .sort((a, b) => b.total - a.total)
+
+  return {
+    kpis: {
+      faturamentoTotal,
+      lucroTotal,
+      custosTotal,
+      margem: faturamentoTotal > 0 ? (lucroTotal / faturamentoTotal) * 100 : null,
+      gastosWhatsApp,
+      gastosFuncionarios,
+      outrosGastos: Math.max(0, custosTotal - gastosWhatsApp - gastosFuncionarios),
+      quantidadeEventos,
+      ticketMedio: quantidadeEventos > 0 ? faturamentoTotal / quantidadeEventos : 0,
+    },
+    porEvento,
+    evolucao,
+    porCategoria,
+  }
+}
+
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+/** "2026-09" → "set/26". */
+function rotuloMes(chave: string): string {
+  const [ano, mes] = chave.split('-')
+  return `${MESES[Number(mes) - 1] ?? mes}/${ano.slice(2)}`
+}

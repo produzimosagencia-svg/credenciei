@@ -4,7 +4,8 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera } from 'lucide-react'
+import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, Wallet, Receipt, TrendingUp, TrendingDown } from 'lucide-react'
+import { financeiroDoEvento } from '@/lib/financeiro'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
@@ -19,6 +20,8 @@ import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
 
 export const revalidate = 0
+
+const brlEvento = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-detalhe',
@@ -81,6 +84,14 @@ export default async function EventoPage({
    * inteiro para o servidor descartar quase tudo em memória; num evento de
    * onze dias isso cresce sem teto a cada dia que passa.
    */
+  /*
+   * Disparado aqui, aguardado só perto do fim (junto do JSX) — corre em
+   * paralelo com as duas ondas abaixo sem entrar na array delas. Só master
+   * consulta: um não-master nem toca nas tabelas financeiras, que é a
+   * isolação que o módulo promete (ver supabase/upgrade-financeiro.sql).
+   */
+  const resumoFinanceiroPromise = ehMaster(perfil?.role) ? financeiroDoEvento(id) : null
+
   const [{ data: evento }, { data: fornecedores }, { data: diasTrabalho }, { count: viaPortaria }] =
     await Promise.all([
       supabase.from('eventos').select('*').eq('id', id).single(),
@@ -292,6 +303,7 @@ export default async function EventoPage({
   // fica no Progresso de presença, logo abaixo — repetir os dois seria dizer
   // a mesma coisa duas vezes na mesma tela.
   const presentesAgora = [...entraram].filter(fid => !sairam.has(fid)).length
+  const resumoFinanceiro = resumoFinanceiroPromise ? await resumoFinanceiroPromise : null
   const pct = (v: number) => (totalFuncionarios > 0 ? Math.round((v / totalFuncionarios) * 100) : 0)
 
   return (
@@ -408,6 +420,36 @@ export default async function EventoPage({
           href={`/admin/eventos/${id}/presenca?ver=fim&dia=${diaEscolhido}`}
         />
       </div>
+
+      {/*
+        * Faturamento → Custos → Lucro, evidente na própria tela do evento —
+        * pedido explícito do Juan (09/09/2026). Só master vê (`resumoFinanceiro`
+        * só existe pra ele); os três cartões levam pro módulo completo, onde
+        * dá pra lançar e editar. Isolado das outras tabelas por desenho — ver
+        * supabase/upgrade-financeiro.sql.
+        */}
+      {resumoFinanceiro && (
+        <div data-tutorial="evt-financeiro" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard
+            label="Faturamento" value={brlEvento(resumoFinanceiro.faturamento)}
+            sub="receita lançada do evento" icon={Wallet} tom="acento"
+            href={`/admin/eventos/${id}/financeiro`}
+          />
+          <StatCard
+            label="Custos" value={brlEvento(resumoFinanceiro.custoTotal)}
+            sub={`${resumoFinanceiro.custos.length} lançamento${resumoFinanceiro.custos.length === 1 ? '' : 's'}`}
+            icon={Receipt} tom="aviso"
+            href={`/admin/eventos/${id}/financeiro`}
+          />
+          <StatCard
+            label="Lucro" value={brlEvento(resumoFinanceiro.lucro)}
+            sub={resumoFinanceiro.margem !== null ? `${resumoFinanceiro.margem.toFixed(0)}% de margem` : 'sem faturamento lançado'}
+            icon={resumoFinanceiro.lucro >= 0 ? TrendingUp : TrendingDown}
+            tom={resumoFinanceiro.lucro >= 0 ? 'sucesso' : 'erro'}
+            href={`/admin/eventos/${id}/financeiro`}
+          />
+        </div>
+      )}
 
       {/*
         * Os setores ocupam a largura inteira.
