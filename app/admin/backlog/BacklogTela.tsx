@@ -15,12 +15,12 @@ import Quadro from './Quadro'
 import CartaoItem, { diaLongo } from './CartaoItem'
 import FormularioItem, { type Opcoes } from './FormularioItem'
 import PainelDoItem from './PainelDoItem'
-import Agenda from './Agenda'
+import Calendario, { type Escala } from './Calendario'
 import type { Visao } from './page'
 
 const VISOES: { valor: Visao; rotulo: string; Icone: React.ElementType }[] = [
   { valor: 'quadro', rotulo: 'Quadro', Icone: KanbanSquare },
-  { valor: 'agenda', rotulo: 'Agenda', Icone: CalendarDays },
+  { valor: 'agenda', rotulo: 'Calendário', Icone: CalendarDays },
   { valor: 'contatos', rotulo: 'Precisa de atenção', Icone: BellRing },
   { valor: 'lista', rotulo: 'Lista', Icone: List },
 ]
@@ -34,7 +34,7 @@ const VISOES: { valor: Visao; rotulo: string; Icone: React.ElementType }[] = [
  * painel, seriam três painéis pra manter em sincronia com a mesma ação.
  */
 export default function BacklogTela({
-  itens, opcoes, ver, tipo, numeros, fila, compromissos, mes, hoje, meuId,
+  itens, opcoes, ver, tipo, numeros, fila, compromissos, escala, ancora, hoje, meuId,
 }: {
   itens: ItemBacklog[]
   opcoes: Opcoes
@@ -43,7 +43,8 @@ export default function BacklogTela({
   numeros: ResumoBacklog
   fila: { atrasados: Cobranca[]; hoje: Cobranca[]; proximos: Cobranca[] }
   compromissos: Compromisso[]
-  mes: string
+  escala: Escala
+  ancora: string
   hoje: string
   meuId: string
 }) {
@@ -267,12 +268,18 @@ export default function BacklogTela({
       )}
 
       {ver === 'agenda' && (
-        <Secao icone={<CalendarDays className="w-3.5 h-3.5" />} titulo="Agenda" descricao="Retornos, prazos e eventos — do Backlog e dos eventos já cadastrados" corpoClassName="p-4">
-          <Agenda
+        <Secao
+          icone={<CalendarDays className="w-3.5 h-3.5" />}
+          titulo="Calendário"
+          descricao="Cada card é um item do Backlog com data — a cor vem da prioridade"
+          corpoClassName="p-4"
+        >
+          <Calendario
             compromissos={compromissos}
-            mes={mes}
+            escala={escala}
+            ancora={ancora}
             hoje={hoje}
-            hrefDoMes={m => url({ mes: m, ver: 'agenda' })}
+            href={m => url({ ver: 'agenda', escala: m.escala ?? escala, dia: m.dia ?? ancora, mes: null })}
             onAbrirItem={abrirPorId}
           />
         </Secao>

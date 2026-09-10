@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase-server'
 import {
-  STATUS_ENCERRADOS, STATUS_GANHOS, ORDEM_PRIORIDADE,
+  STATUS_ENCERRADOS, STATUS_GANHOS, ORDEM_PRIORIDADE, rotuloDoStatus,
   type TipoItem, type Prioridade,
 } from './backlog-constantes'
 
@@ -292,7 +292,15 @@ export type Compromisso = {
   /** Pra onde o clique leva — item do Backlog ou evento de verdade. */
   itemId: string | null
   eventoId: string | null
+  /*
+   * Prioridade, responsável e status vêm JUNTO — o card do calendário mostra
+   * os quatro, e a cor sai da prioridade. `null` em tudo isso quando é evento
+   * cadastrado: evento não tem prioridade nem responsável, e forçar um valor
+   * ali seria inventar dado que ninguém preencheu.
+   */
   prioridade: Prioridade | null
+  responsavelNome: string | null
+  status: string | null
 }
 
 /**
@@ -327,6 +335,7 @@ export async function agendaDoBacklog(
         titulo: item.titulo,
         detalhe: item.contatoNome ? `Retornar para ${item.contatoNome}` : 'Retornar contato',
         itemId: item.id, eventoId: null, prioridade: item.prioridade,
+        responsavelNome: item.responsavelNome, status: rotuloDoStatus(item.tipo, item.status),
       })
     }
     if (item.tipo === 'tarefa' && dentro(item.prazo)) {
@@ -335,6 +344,7 @@ export async function agendaDoBacklog(
         titulo: item.titulo,
         detalhe: item.responsavelNome ? `Responsável: ${item.responsavelNome}` : 'Sem responsável',
         itemId: item.id, eventoId: null, prioridade: item.prioridade,
+        responsavelNome: item.responsavelNome, status: rotuloDoStatus(item.tipo, item.status),
       })
     }
     if (dentro(item.dataEventoPrevista)) {
@@ -343,6 +353,7 @@ export async function agendaDoBacklog(
         titulo: item.eventoPrevistoNome || item.titulo,
         detalhe: `Previsto · ${item.titulo}`,
         itemId: item.id, eventoId: null, prioridade: item.prioridade,
+        responsavelNome: item.responsavelNome, status: rotuloDoStatus(item.tipo, item.status),
       })
     }
   }
@@ -359,6 +370,7 @@ export async function agendaDoBacklog(
       titulo: e.nome as string,
       detalhe: nomeDaRelacao(e.organizacoes as LinhaCrua['organizacoes']),
       itemId: null, eventoId: e.id as string, prioridade: null,
+      responsavelNome: null, status: null,
     })
   }
 

@@ -9,11 +9,14 @@ import {
 import type { TipoItem } from '@/lib/backlog-constantes'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
 import BacklogTela from './BacklogTela'
+import type { Escala } from './Calendario'
 
 export const revalidate = 0
 
 export type Visao = 'quadro' | 'agenda' | 'contatos' | 'lista'
 const VISOES: Visao[] = ['quadro', 'agenda', 'contatos', 'lista']
+
+const ESCALAS: Escala[] = ['mes', 'semana', 'dia']
 
 /**
  * Backlog Operacional — o centro de controle comercial e operacional do
@@ -37,7 +40,7 @@ export default async function BacklogPage({
   searchParams: Promise<{
     ver?: string; tipo?: string; status?: string; prioridade?: string
     responsavel?: string; evento?: string; origem?: string; busca?: string
-    encerrados?: string; mes?: string
+    encerrados?: string; mes?: string; escala?: string; dia?: string
   }>
 }) {
   const perfil = await getPerfil()
@@ -65,10 +68,21 @@ export default async function BacklogPage({
     incluirEncerrados: p.encerrados === '1',
   }
 
+  /*
+   * O calendário mostra mês, semana ou dia. Em vez de um parâmetro por escala,
+   * são dois: a ESCALA e um DIA que ancora o período. Assim navegar não muda a
+   * forma da URL — trocar de "mês de setembro" pra "semana do dia 14" é mudar
+   * `escala`, e o dia âncora continua servindo. `mes=YYYY-MM` ainda é aceito
+   * porque links antigos (os cartões do Painel, por exemplo) já existem.
+   */
   const hoje = hojeBRT()
-  const mes = /^\d{4}-\d{2}$/.test(p.mes ?? '') ? p.mes! : hoje.slice(0, 7)
-  const primeiroDia = `${mes}-01`
-  const ultimoDia = ultimoDiaDoMes(mes)
+  const escala: Escala = ESCALAS.includes(p.escala as Escala) ? (p.escala as Escala) : 'mes'
+  const ancora =
+    (/^\d{4}-\d{2}-\d{2}$/.test(p.dia ?? '') ? p.dia! : null)
+    ?? (/^\d{4}-\d{2}$/.test(p.mes ?? '') ? `${p.mes}-01` : null)
+    ?? hoje
+
+  const { de: primeiroDia, ate: ultimoDia } = periodoDaEscala(escala, ancora)
 
   /*
    * A migração pode ainda não ter rodado — o SQL é aplicado pelo Juan, não
@@ -106,7 +120,8 @@ export default async function BacklogPage({
         numeros={numeros}
         fila={fila}
         compromissos={compromissos}
-        mes={mes}
+        escala={escala}
+        ancora={ancora}
         hoje={hoje}
         meuId={perfil.id as string}
       />
@@ -141,9 +156,32 @@ function BancoPendente({ detalhe }: { detalhe: string }) {
   )
 }
 
-/** Último dia do mês `YYYY-MM`, sem depender de fuso (dia 0 do mês seguinte). */
-function ultimoDiaDoMes(mes: string): string {
-  const [ano, m] = mes.split('-').map(Number)
-  const d = new Date(Date.UTC(ano, m, 0))
-  return d.toISOString().slice(0, 10)
+/**
+ * O intervalo que o calendário precisa buscar, dado a escala e o dia âncora.
+ *
+ * Tudo em UTC a partir de `YYYY-MM-DD`: usar o fuso do servidor faria o mês
+ * começar no dia 31 do anterior pra quem roda em Washington, que é onde isto
+ * roda de verdade.
+ */
+function periodoDaEscala(escala: Escala, ancora: string): { de: string; ate: string } {
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  const base = new Date(`${ancora}T12:00:00Z`)
+
+  if (escala === 'dia') return { de: ancora, ate: ancora }
+
+  if (escala === 'semana') {
+    const domingo = new Date(base)
+    domingo.setUTCDate(domingo.getUTCDate() - domingo.getUTCDay())
+    const sabado = new Date(domingo)
+    sabado.setUTCDate(sabado.getUTCDate() + 6)
+    return { de: iso(domingo), ate: iso(sabado) }
+  }
+
+  const ano = base.getUTCFullYear()
+  const mes = base.getUTCMonth()
+  return {
+    de: iso(new Date(Date.UTC(ano, mes, 1))),
+    // Dia 0 do mês seguinte = último dia deste, sem tabela de 30/31/28.
+    ate: iso(new Date(Date.UTC(ano, mes + 1, 0))),
+  }
 }
