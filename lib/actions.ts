@@ -18,7 +18,6 @@ import {
   podeGerenciarEventos,
   podeGerenciarVeiculos,
   podeGerenciarOrganizacoes,
-  podeExcluirEventos,
   podeExcluir,
   podeExcluirDaEquipe,
   CAPACIDADES,
@@ -32,11 +31,10 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, dentroDaJanela, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento,
+  diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
-import { normalizarCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { podePassar } from './limite'
@@ -1279,18 +1277,6 @@ export async function opcoesDaAuditoria(): Promise<{
 
 export type EscopoSuporte = { organizacaoNome: string | null; eventoNome: string | null }
 
-/** O escopo de um suporte, com nomes prontos pra tela — não IDs crus. */
-export async function obterEscopoDoSuporte(perfilId: string): Promise<EscopoSuporte[]> {
-  const { data } = await supabaseAdmin
-    .from('suporte_escopo')
-    .select('organizacao_id, evento_id, organizacoes(nome), eventos(nome)')
-    .eq('perfil_id', perfilId)
-  return (data ?? []).map(e => ({
-    organizacaoNome: (e.organizacoes as unknown as { nome: string } | null)?.nome ?? null,
-    eventoNome: (e.eventos as unknown as { nome: string } | null)?.nome ?? null,
-  }))
-}
-
 /**
  * Revoga na hora — não espera a data marcada. Zera `acesso_expira_em` pra
  * "agora": `getPerfil()` já trata isso como deslogado no próximo request,
@@ -1541,7 +1527,7 @@ export async function toggleAtivoEvento(id: string, ativo: boolean) {
 
 export async function deletarEvento(id: string) {
   const perfil = await getPerfil()
-  if (!podeExcluirEventos(perfil)) throw new Error('Apenas o master pode excluir eventos')
+  if (!podeExcluir(perfil)) throw new Error('Apenas o master pode excluir eventos')
   const db = supabaseAdmin
 
   /*
@@ -2013,52 +1999,7 @@ export async function exportarFuncionariosDoSetor(
 
 // ─── Setores ─────────────────────────────────────────────────────────────────
 
-export async function criarSetor(eventoId: string, formData: FormData) {
-  await exigirEventoDaOrg(eventoId)
-  const nome = (formData.get('nome') as string)?.trim()
-  if (!nome) return
-  const db = supabaseAdmin
-  await db.from('setores').insert([{ evento_id: eventoId, nome }])
-  revalidatePath(`/admin/eventos/${eventoId}`)
-}
-
-export async function deletarSetor(id: string, eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
-  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
-  // checagem é a que vale: esconder o botão não impede a chamada direta.
-  const perfilExclusao = await getPerfil()
-  if (!podeExcluir(perfilExclusao)) {
-    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
-  }
-  const db = supabaseAdmin
-  await db.from('setores').delete().eq('id', id)
-  revalidatePath(`/admin/eventos/${eventoId}`)
-}
-
 // ─── QR Codes ────────────────────────────────────────────────────────────────
-
-/**
- * Renova a validade dos QR codes de todos os funcionários do evento por +24h.
- * O token (link/QR impresso) NÃO muda — só a data de expiração.
- */
-export async function renovarQRs(eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
-  const admin = getAdminSupabase()
-
-  const { data: fornecedores } = await admin.from('fornecedores').select('id').eq('evento_id', eventoId)
-  const fornecedorIds = fornecedores?.map(f => f.id) ?? []
-  if (!fornecedorIds.length) return { renovados: 0 }
-
-  const novaValidade = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-  const { data } = await admin
-    .from('funcionarios')
-    .update({ qr_expira_em: novaValidade })
-    .in('fornecedor_id', fornecedorIds)
-    .select('id')
-
-  revalidatePath(`/admin/eventos/${eventoId}`)
-  return { renovados: data?.length ?? 0 }
-}
 
 // ─── Funcionários ────────────────────────────────────────────────────────────
 
@@ -4194,54 +4135,6 @@ export async function cadastrarFuncionarioPublico(
 }
 
 /**
- * Cadastro emergencial — a mesma `cadastrarFuncionarioPublico` de sempre
- * (formulário, QR, boas-vindas, tudo igual), só que chamada de dentro do
- * admin, por alguém autenticado, no lugar do link público.
- *
- * Existe pro caso "chegou gente sem estar em lista nenhuma e o link não
- * está à mão" — hoje só resolvia enviando o link público pra pessoa
- * preencher sozinha. `cadastrarFuncionarioPublico` não tem checagem de
- * permissão nenhuma (ela nasceu pra ser chamada por qualquer um com o link);
- * aqui é o inverso: quem chama já provou quem é, então a checagem entra
- * ANTES de delegar pra ela — não duplica a lógica de cadastro, só decide
- * quem pode disparar.
- */
-export async function cadastrarFuncionarioEmergencial(
-  fornecedorId: string,
-  eventoId: string,
-  dados: { nome: string; cpf: string; telefone: string; cargo: string },
-  motivo?: string,
-): Promise<{ qrToken?: string; error?: string }> {
-  const perfil = await getPerfil()
-  if (!perfil) return { error: 'Sem permissão.' }
-
-  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-  if (!fornecedor || fornecedor.evento_id !== eventoId) return { error: 'Setor não encontrado neste evento.' }
-  const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
-
-  if (podeGerenciarEventos(perfil)) {
-    if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) return { error: 'Sem permissão sobre este evento.' }
-  } else if (perfil.role === 'suporte') {
-    if (!(motivo ?? '').trim()) return { error: 'Informe o motivo do cadastro emergencial.' }
-    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
-      return { error: 'Este evento não está no seu escopo de atendimento.' }
-    }
-  } else {
-    return { error: 'Sem permissão para cadastrar funcionário.' }
-  }
-
-  const r = await cadastrarFuncionarioPublico(fornecedorId, { ...dados, origem: 'admin' })
-  if (r.error) return r
-
-  after(() => registrarAuditoria({
-    perfil, acao: 'CADASTRO_EMERGENCIAL', valorNovo: dados.nome, motivo: motivo ?? null,
-    eventoId, organizacaoId: organizacaoId ?? undefined,
-  }))
-  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
-  return r
-}
-
-/**
  * Base central de cadastros: busca o cadastro mais recente deste CPF para
  * pré-preencher o formulário público — quem já trabalhou antes não digita tudo
  * de novo.
@@ -5117,71 +5010,6 @@ export async function apagarBatida(
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
   revalidatePath(`/admin/eventos/${evento.id}/presenca`)
   return { ok: true, nome: func.nome as string, etapa: etapaEscolhida.rotulo }
-}
-
-/**
- * URL temporária de uma foto de presença, para o admin conferir a batida.
- *
- * ⚠️ Esta função é uma Server Action: qualquer pessoa na internet pode
- * chamá-la. Antes ela aceitava um caminho QUALQUER e devolvia uma URL
- * assinada — bastava adivinhar o caminho pra baixar a selfie de qualquer
- * funcionário de qualquer organização, ou a foto de perfil de qualquer
- * cliente. Um IDOR clássico.
- *
- * Agora o caminho não é confiado: ele é procurado no banco, e só é liberado
- * se pertencer a um registro/funcionário que ESTE usuário pode ver.
- */
-export async function urlAssinadaFoto(path: string): Promise<string | null> {
-  const perfil = await getPerfil()
-  if (!perfil) return null
-
-  const caminho = String(path ?? '').trim()
-  if (!caminho) return null
-
-  /*
-   * De onde a foto pode vir, e quem pode vê-la:
-   *   registros.foto_url       → selfie de presença   → quem enxerga o evento
-   *   funcionarios.foto_perfil → avatar da pessoa     → quem enxerga o evento
-   *   organizacoes.foto_perfil → logo do cliente      → a própria org, ou master
-   * Qualquer caminho fora disso não existe pro sistema, então não é assinado.
-   */
-  const [{ data: registro }, { data: func }, { data: org }] = await Promise.all([
-    supabaseAdmin.from('registros')
-      .select('evento_id, funcionarios!inner(fornecedor_id)')
-      .eq('foto_url', caminho).limit(1).maybeSingle(),
-    supabaseAdmin.from('funcionarios')
-      .select('fornecedor_id, fornecedores!inner(evento_id)')
-      .eq('foto_perfil_path', caminho).limit(1).maybeSingle(),
-    supabaseAdmin.from('organizacoes')
-      .select('id').eq('foto_perfil_path', caminho).limit(1).maybeSingle(),
-  ])
-
-  let liberado = false
-
-  if (org) {
-    liberado = ehMaster(perfil.role) || org.id === perfil.organizacao_id
-  } else if (registro || func) {
-    const eventoId = registro
-      ? (registro.evento_id as string)
-      : ((func!.fornecedores as unknown as { evento_id: string }).evento_id)
-    const fornecedorId = registro
-      ? ((registro.funcionarios as unknown as { fornecedor_id: string }).fornecedor_id)
-      : (func!.fornecedor_id as string)
-
-    if (perfil.role === 'supervisor') {
-      // Supervisor vê a foto só de quem é do setor dele.
-      liberado = perfil.fornecedor_id === fornecedorId
-    } else {
-      const { data: evento } = await supabaseAdmin
-        .from('eventos').select('organizacao_id').eq('id', eventoId).single()
-      liberado = ehMaster(perfil.role) || (!!evento && evento.organizacao_id === perfil.organizacao_id)
-    }
-  }
-
-  if (!liberado) return null
-
-  const { data } = await supabaseAdmin.storage.from('presencas').createSignedUrl(caminho, 60 * 60)
-  return data?.signedUrl ?? null
 }
 
 // ─── Portaria: o QR impresso para quem chega sem cadastro ────────────────────

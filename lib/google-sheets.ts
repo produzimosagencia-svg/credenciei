@@ -97,7 +97,6 @@ export async function criarPlanilhaEvento(nomeEvento: string, clienteFolderId?: 
 
   // Descobre o nome da aba padrão (varia por idioma: "Plan1", "Sheet1", etc.)
   const meta = await sheets.spreadsheets.get({ spreadsheetId })
-  const abaAtual = meta.data.sheets?.[0]?.properties?.title ?? 'Plan1'
   const sheetId = meta.data.sheets?.[0]?.properties?.sheetId ?? 0
 
   // Renomeia para "Geral"

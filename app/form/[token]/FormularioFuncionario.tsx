@@ -96,7 +96,6 @@ export default function FormularioFuncionario({
    */
   const campoNome = useCampoFormatado(titleCaseNome, v => set('nome', v))
   const campoCargo = useCampoFormatado(titleCaseNome, v => set('cargo', v))
-  const campoCidade = useCampoFormatado(titleCaseNome, v => set('cidade', v))
 
   // Base central de cadastros: quando o CPF fica completo, busca o cadastro
   // mais recente da pessoa (eventos anteriores do mesmo organizador) e

@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto'
 import { getPerfil, supabaseAdmin } from './supabase-server'
 import { ehMaster } from './permissions'
 import { formatarNumeroWhatsApp, responderConversa, provedor } from './whatsapp'
-import { enviarTemplate } from './whatsapp-meta'
 import {
   registrarEnviada, registrarLeituraConversa, FLUXOS, numerosWhatsApp, templatesAprovados,
 } from './whatsapp-painel'
@@ -240,27 +239,6 @@ export async function responderNoChat(telefone: string, texto: string) {
   }
 
   await registrarEnviada({ telefone: numero, texto: corpo, waMessageId: r.messageId ?? null })
-  revalidatePath(`/admin/whatsapp/conversas/${telefone}`)
-  return { ok: true as const }
-}
-
-/** Manda um template para UM número — o caminho quando a janela de 24h fechou. */
-export async function enviarTemplateAvulso(telefone: string, template: string, parametros: string[]) {
-  await exigirMaster()
-  const numero = formatarNumeroWhatsApp(telefone)
-  if (!numero) throw new Error('Telefone inválido.')
-
-  const r = await enviarTemplate(numero, template, parametros)
-  if (!r.ok) {
-    const detalhe = (r.resposta as { error?: { message?: string } } | null)?.error?.message
-    throw new Error(detalhe ?? 'A Meta recusou o envio.')
-  }
-  await registrarEnviada({
-    telefone: numero,
-    texto: `[${template}] ${parametros.join(' · ')}`,
-    waMessageId: r.messageId ?? null,
-    bruto: { origem: 'template_avulso', template, parametros },
-  })
   revalidatePath(`/admin/whatsapp/conversas/${telefone}`)
   return { ok: true as const }
 }

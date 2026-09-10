@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Credenciei
 
-## Getting Started
+Plataforma multi-organização de credenciamento e controle de presença para
+eventos: cadastro de equipe por setor, credencial com QR assinado por etapa
+do dia, registro de entrada/meio/saída (scanner + foto/GPS), lembretes por
+WhatsApp, relatórios, financeiro e backlog comercial.
 
-First, run the development server:
+## Antes de mexer no código
+
+Leia **[AGENTS.md](AGENTS.md)**. Este é um fork do Next.js com mudanças de
+API e convenção — entre elas, `middleware.ts` se chama `proxy.ts`. A
+documentação que vale é a de `node_modules/next/dist/docs/`.
+
+## Rodar localmente
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Precisa de um `.env.local` com as chaves do Supabase e da Meta — ver
+**[SETUP.md](SETUP.md)**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Comando | O quê |
+| --- | --- |
+| `npm run dev` | Servidor de desenvolvimento (Turbopack) |
+| `npm run build` | Build de produção |
+| `npm run lint` | ESLint |
+| `npm run coerencia` | Testa que as mensagens ao usuário não contradizem as regras do código — roda antes de todo deploy |
 
-## Learn More
+## Estrutura
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Pasta | |
+| --- | --- |
+| `app/` | Rotas (App Router). `app/admin/` é o painel; `app/form`, `app/credential`, `app/portaria` são as telas públicas |
+| `lib/` | Regra de negócio e Server Actions. `lib/actions*.ts` são as mutações; o resto é leitura |
+| `components/` | UI compartilhada |
+| `supabase/` | Migrações versionadas (`upgrade-*.sql`), aplicadas manualmente no SQL Editor |
+| `worker/` | Worker de WhatsApp que roda 24/7 numa VPS, fora da Vercel |
+| `testes/` | `coerencia.mjs` |
+| `docs/` | Material de referência (marca, guias de processo) |

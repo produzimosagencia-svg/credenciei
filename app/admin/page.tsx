@@ -7,7 +7,7 @@ import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos, podeGerenciarBacklog } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluir, podeGerenciarBacklog } from '@/lib/permissions'
 import AtencaoHoje from './AtencaoHoje'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -200,7 +200,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   }
 
   const db = supabaseAdmin
-  const podeExcluir = podeExcluirEventos(perfil)
+  const podeApagarEvento = podeExcluir(perfil)
 
   /*
    * KPIs do MASTER — disparados aqui, cedo, pra correr em paralelo com todo
@@ -608,7 +608,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         {linhasAtivas.length ? (
           <div className={`grid gap-4 ${linhasAtivas.length > 1 ? 'lg:grid-cols-2' : ''}`}>
             {linhasAtivas.map((e, i) => (
-              <EventoAoVivo key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} destacar={i === 0} />
+              <EventoAoVivo key={e.id} evento={e} podeExcluir={podeApagarEvento} podeGerir={podeGerir} destacar={i === 0} />
             ))}
           </div>
         ) : (
@@ -638,7 +638,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             <span className="pl-4">Status</span><span />
           </div>
           <div>
-            {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeExcluir} podeGerir={podeGerir} />)}
+            {linhasEncerradas.map(e => <EventoLinha key={e.id} evento={e} podeExcluir={podeApagarEvento} podeGerir={podeGerir} />)}
           </div>
 
           <div className="flex items-center justify-between px-5 py-3">

@@ -112,8 +112,6 @@ export const podeGerenciarEventos = capacidade('gerenciar_eventos', role =>
  */
 export const podeExcluir = capacidade('excluir', role => role === 'master')
 
-/** @deprecated Use `podeExcluir`. Mantido porque já é chamado em algumas telas. */
-export const podeExcluirEventos = podeExcluir
 
 /**
  * Pode APAGAR alguém da equipe de um setor.

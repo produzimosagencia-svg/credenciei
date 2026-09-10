@@ -6,7 +6,7 @@ import {
   STATUS_INICIAL, STATUS_GANHOS, rotuloDoStatus, rotuloDaPrioridade,
   type TipoItem, type Prioridade,
 } from './backlog-constantes'
-import { itemDoBacklog, type ItemBacklog } from './backlog'
+import { itemDoBacklog } from './backlog'
 
 /**
  * Escrita no Backlog Operacional.
