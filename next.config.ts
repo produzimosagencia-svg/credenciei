@@ -16,6 +16,22 @@ const nextConfig: NextConfig = {
   experimental: {
     // As fotos de presença são enviadas (comprimidas) via server action
     serverActions: { bodySizeLimit: '5mb' },
+    /*
+     * Cache de navegação no CLIENTE (Router Cache).
+     *
+     * O Next 16 zera isto por padrão (`dynamic: 0` desde a v15): todo segmento
+     * de página com `revalidate = 0` — que aqui é toda tela do admin — é
+     * rebuscado no servidor A CADA navegação, mesmo voltar pra uma tela aberta
+     * segundos atrás. É o "refaz tudo do zero" ao ir Eventos → Backlog →
+     * Eventos.
+     *
+     * `dynamic: 30` faz o cliente reaproveitar o RSC já carregado por 30s: a
+     * volta é instantânea, e o skeleton (loading.tsx) prefetchado gruda pelo
+     * período `static`. NÃO afeta dado após mutação — Server Action que chama
+     * `revalidatePath` continua furando este cache na hora. É janela de
+     * staleness só em navegação passiva, e telas de painel toleram 30s.
+     */
+    staleTimes: { dynamic: 30, static: 180 },
   },
 };
 

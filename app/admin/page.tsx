@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
@@ -168,6 +169,38 @@ async function calcularStatsMestre(): Promise<StatsMestre> {
   return { funcionariosNaBase, valorTotalCobrado, custoMensagens: custoEstimado, diasDoCusto: dias }
 }
 
+/**
+ * Os quatro cartões do master, servidos por <Suspense> — o `calcularStatsMestre`
+ * (que varre a base de funcionários) roda AQUI, fora do corpo da página, então
+ * não segura o primeiro paint. "Eventos ativos" já é conhecido no corpo e entra
+ * por prop, pra ele não piscar skeleton junto dos que de fato demoram.
+ */
+async function CartoesDoMestre({ eventosAtivos, totalEventos }: { eventosAtivos: number; totalEventos: number }) {
+  const m = await calcularStatsMestre()
+  const cartoes = [
+    { label: 'Eventos ativos', value: eventosAtivos, sub: `de ${totalEventos} no total`, icon: Radio, tom: 'acento' as const },
+    { label: 'Funcionários na base', value: m.funcionariosNaBase.toLocaleString('pt-BR'), sub: 'pessoas distintas, por CPF', icon: UserCheck, tom: 'sucesso' as const },
+    { label: 'Valor cobrado nos eventos', value: m.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: 'combinado com a equipe, nos eventos ativos', icon: TrendingUp, tom: 'aviso' as const, small: true },
+    { label: 'Custo de disparo (WhatsApp)', value: m.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: `últimos ${m.diasDoCusto} dias`, icon: Activity, tom: 'info' as const, small: true },
+  ]
+  return <>{cartoes.map(c => <StatCard key={c.label} {...c} />)}</>
+}
+
+/** Placeholder dos cartões do master enquanto o cálculo pesado não volta. */
+function CartoesMestreCarregando() {
+  return (
+    <>
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm animate-pulse">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 mb-3" />
+          <div className="h-8 w-16 bg-slate-200 rounded-lg" />
+          <div className="h-3.5 w-24 bg-slate-100 rounded mt-2" />
+        </div>
+      ))}
+    </>
+  )
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -203,18 +236,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const podeApagarEvento = podeExcluir(perfil)
 
   /*
-   * KPIs do MASTER — disparados aqui, cedo, pra correr em paralelo com todo
-   * o resto que a página já busca (o `await` só acontece lá embaixo, perto
-   * de montar `stats`). Só o master vê isto: os quatro números de baixo
-   * (entrada/meio/saída/batidas de UM evento) fazem sentido pra quem opera
-   * um evento por vez; o master olha a PLATAFORMA inteira, e "presentes
-   * agora" de qual organização seria essa pergunta?
-   *
-   * A régua de escolha foi a mesma do resto do relatório este mês: o que
-   * responde "como vai o negócio", não "como vai o evento de hoje".
-   */
-  const statsMestrePromise = ehMaster(perfil.role) ? calcularStatsMestre() : null
-  /*
    * O supervisor não administra o evento — ele cuida do setor dele.
    *
    * Editar, encerrar e excluir são do produtor. As actions já recusam o
@@ -223,8 +244,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * é pior do que menu nenhum.
    */
   const podeGerir = podeGerenciarEventos(perfil)
-  const licencasRestantes = await licencasDeEventoRestantes(perfil)
-  const podeCriarEvento = licencasRestantes > 0
+
+  /*
+   * Licença de evento e saúde do WhatsApp não dependem de nada do que a página
+   * busca depois — disparadas aqui pra correr em paralelo com as consultas de
+   * evento (os `await` ficam lá embaixo). Antes eram dois `await` em série no
+   * meio do fluxo, ~2 idas ao banco de espera pura antes da primeira query de
+   * evento sair.
+   */
+  const licencasPromise = licencasDeEventoRestantes(perfil)
+  const saudePromise = (veTodosEventos(perfil) || podeGerir)
+    ? estadoWhatsAppSalvo()
+    : Promise.resolve(null)
 
   const { page: pageParam, q } = await searchParams
   const busca = (q ?? '').trim()
@@ -406,78 +437,48 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const presentes = linhasAtivas.reduce((a, e) => a + e.presentes, 0)
   const batidas = dadosFluxo.reduce((a, p) => a + p.entrada + p.meio + p.fim, 0)
 
+  const licencasRestantes = await licencasPromise
+  const podeCriarEvento = licencasRestantes > 0
+
   /*
-   * Dois conjuntos de KPI, um por audiência.
+   * KPIs da operação — admin/gerente/cliente. Um evento por vez, ao vivo,
+   * "quem chegou". Saem de dados que a página já tem em mãos aqui, então
+   * renderizam junto com o resto.
    *
-   * Admin/gerente/cliente vê a operação: um evento por vez, ao vivo, "quem
-   * chegou". Master vê o negócio: quantos eventos rodam, quanto a base
-   * cresceu, quanto está sendo cobrado, quanto o canal está custando — a
-   * régua de escolha foi "responde como vai o negócio", não "como vai o
-   * evento de hoje".
+   * O master vê outro conjunto (negócio, não evento de hoje): esse é pesado
+   * — varre a base de funcionários inteira — e por isso NÃO entra aqui. Vai
+   * em <CartoesDoMestre>, sob <Suspense>, e faz stream depois que o corpo da
+   * página já pintou. Ver o componente lá embaixo.
    */
-  const statsMestre = await statsMestrePromise
-  const stats = statsMestre
-    ? [
-        {
-          label: 'Eventos ativos',
-          value: linhasAtivas.length,
-          sub: `de ${totalEventos} no total`,
-          icon: Radio,
-          tom: 'acento' as const,
-        },
-        {
-          label: 'Funcionários na base',
-          value: statsMestre.funcionariosNaBase.toLocaleString('pt-BR'),
-          sub: 'pessoas distintas, por CPF',
-          icon: UserCheck,
-          tom: 'sucesso' as const,
-        },
-        {
-          label: 'Valor cobrado nos eventos',
-          value: statsMestre.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          sub: 'combinado com a equipe, nos eventos ativos',
-          icon: TrendingUp,
-          tom: 'aviso' as const,
-          small: true,
-        },
-        {
-          label: 'Custo de disparo (WhatsApp)',
-          value: statsMestre.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          sub: `últimos ${statsMestre.diasDoCusto} dias`,
-          icon: Activity,
-          tom: 'info' as const,
-          small: true,
-        },
-      ]
-    : [
-        {
-          label: 'Eventos ativos',
-          value: linhasAtivas.length,
-          sub: `de ${totalEventos} no total`,
-          icon: Radio,
-          tom: 'acento' as const,
-        },
-        {
-          label: 'Presentes agora',
-          value: presentes,
-          sub: esperados ? `de ${esperados} na equipe` : 'equipe não cadastrada',
-          icon: UserCheck,
-          tom: 'sucesso' as const,
-        },
-        {
-          label: 'Ainda não chegaram',
-          value: Math.max(0, esperados - presentes),
-          icon: Clock,
-          tom: 'aviso' as const,
-        },
-        {
-          label: 'Batidas na janela',
-          value: batidas,
-          sub: janela ? 'entrada, meio e saída' : 'sem janela definida',
-          icon: Activity,
-          tom: 'info' as const,
-        },
-      ]
+  const stats = [
+    {
+      label: 'Eventos ativos',
+      value: linhasAtivas.length,
+      sub: `de ${totalEventos} no total`,
+      icon: Radio,
+      tom: 'acento' as const,
+    },
+    {
+      label: 'Presentes agora',
+      value: presentes,
+      sub: esperados ? `de ${esperados} na equipe` : 'equipe não cadastrada',
+      icon: UserCheck,
+      tom: 'sucesso' as const,
+    },
+    {
+      label: 'Ainda não chegaram',
+      value: Math.max(0, esperados - presentes),
+      icon: Clock,
+      tom: 'aviso' as const,
+    },
+    {
+      label: 'Batidas na janela',
+      value: batidas,
+      sub: janela ? 'entrada, meio e saída' : 'sem janela definida',
+      icon: Activity,
+      tom: 'info' as const,
+    },
+  ]
 
   /** Subtítulo do gráfico: diz de QUE janela é a curva. */
   const iso = (ms: number) => new Date(ms).toISOString()
@@ -501,9 +502,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * vivo penduraria o Painel por até dez segundos justamente quando a VPS
    * estivesse fora do ar — a hora em que se quer ver o aviso.
    */
-  const saude = veTodosEventos(perfil) || podeGerenciarEventos(perfil)
-    ? await estadoWhatsAppSalvo()
-    : null
+  // Disparada lá em cima (saudePromise), junto de licença e stats do master —
+  // aqui só se colhe o resultado.
+  const saude = await saudePromise
   const alertaWhatsApp = !saude
     ? null
     : saude.semNoticia
@@ -705,7 +706,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       />
 
       <div data-tutorial="dash-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {stats.map(s => <StatCard key={s.label} {...s} />)}
+        {ehMaster(perfil.role) ? (
+          /*
+           * Os números do master varrem a base inteira de funcionários — se
+           * ficassem no corpo da página, seguravam a tela toda até terminarem.
+           * Sob <Suspense> eles fazem stream: o resto do Painel pinta na hora,
+           * e os quatro cartões trocam o skeleton pelo valor quando ficam prontos.
+           */
+          <Suspense fallback={<CartoesMestreCarregando />}>
+            <CartoesDoMestre eventosAtivos={linhasAtivas.length} totalEventos={totalEventos} />
+          </Suspense>
+        ) : (
+          stats.map(s => <StatCard key={s.label} {...s} />)
+        )}
       </div>
 
       {blocoEventos}

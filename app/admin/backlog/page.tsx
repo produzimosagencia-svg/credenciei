@@ -90,13 +90,18 @@ export default async function BacklogPage({
    * mensagem real ficaria só no log; com isto ela diz o que fazer.
    */
   let itens
+  let opcoes
   try {
-    itens = await listarBacklog(filtro)
+    // As duas leituras são independentes: `opcoesDoBacklog` não usa `itens`.
+    // Em série eram duas idas ao banco somadas; juntas, uma só espera. O
+    // guard de migração continua valendo pras duas (as tabelas do Backlog
+    // são o que pode faltar).
+    ;[itens, opcoes] = await Promise.all([listarBacklog(filtro), opcoesDoBacklog()])
   } catch (e) {
     return <BancoPendente detalhe={e instanceof Error ? e.message : String(e)} />
   }
 
-  const opcoes = await opcoesDoBacklog()
+  // `agendaDoBacklog` é pura (varre `itens` em memória, sem banco) — sem await de rede.
   const compromissos = await agendaDoBacklog(itens, { de: primeiroDia, ate: ultimoDia })
 
   const numeros = resumoBacklog(itens, hoje)

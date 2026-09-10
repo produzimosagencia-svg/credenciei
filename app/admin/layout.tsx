@@ -6,29 +6,31 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
 
-  // Nome e foto da organização no cabeçalho: é o "contexto" da barra superior
-  // (marca › organização), que diz de quem é o painel aberto. O master não
-  // pertence a nenhuma organização → o AppShell mostra "Plataforma".
-  let fotoOrgUrl: string | null = null
-  let orgNome: string | null = null
-  if (perfil.organizacao_id) {
-    const { data: org } = await supabaseAdmin
-      .from('organizacoes')
-      .select('nome, foto_perfil_path')
-      .eq('id', perfil.organizacao_id)
-      .single()
-    orgNome = org?.nome ?? null
-    if (org?.foto_perfil_path) {
-      const { data: assinada } = await supabaseAdmin.storage
-        .from('presencas')
-        .createSignedUrl(org.foto_perfil_path, 60 * 60)
-      fotoOrgUrl = assinada?.signedUrl ?? null
-    }
-  }
+  // Nome e foto da organização no cabeçalho, e os setores do supervisor pro
+  // "Meus setores" do menu — buscados em paralelo: um não depende do outro, e
+  // em série somavam duas idas ao banco na abertura de toda tela do admin. O
+  // master não pertence a organização (→ "Plataforma"); `meusSetores` devolve
+  // vazio pra quem não é supervisor, sem tocar no banco.
+  const [orgResult, setores] = await Promise.all([
+    perfil.organizacao_id
+      ? supabaseAdmin
+          .from('organizacoes')
+          .select('nome, foto_perfil_path')
+          .eq('id', perfil.organizacao_id)
+          .single()
+      : Promise.resolve({ data: null }),
+    meusSetores(perfil),
+  ])
 
-  // Os setores do supervisor alimentam o "Meus setores" do menu. Devolve
-  // vazio para os outros papéis, e o item some sozinho.
-  const setores = await meusSetores(perfil)
+  const org = orgResult.data
+  const orgNome: string | null = org?.nome ?? null
+  let fotoOrgUrl: string | null = null
+  if (org?.foto_perfil_path) {
+    const { data: assinada } = await supabaseAdmin.storage
+      .from('presencas')
+      .createSignedUrl(org.foto_perfil_path, 60 * 60)
+    fotoOrgUrl = assinada?.signedUrl ?? null
+  }
 
   return (
     <AppShell
