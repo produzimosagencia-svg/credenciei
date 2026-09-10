@@ -114,29 +114,45 @@ function atualizarTelas() {
 // ─── Criar ───────────────────────────────────────────────────────────────────
 
 export async function criarItemBacklog(formData: FormData): Promise<Resultado> {
-  const perfil = await exigirBacklog()
-  if (!perfil) return { ok: false, erro: SEM_ACESSO }
+  /*
+   * O try/catch de fora cobre TUDO, inclusive o que não é o insert: cadastrar
+   * quebrou com o erro mascarado do Next na primeira tentativa do Juan
+   * (09/09/2026), e como o banco respondia certo em teste direto, o que
+   * sobrava era alguma exceção fora do caminho previsto. Aqui ela vira valor,
+   * com a mensagem real, e deixa rastro no log com o marcador `[backlog]`.
+   */
+  try {
+    const perfil = await exigirBacklog()
+    if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
-  const tipo = (String(formData.get('tipo') ?? '') as TipoItem)
-  if (tipo !== 'cliente' && tipo !== 'tarefa') return { ok: false, erro: 'Escolha o tipo do item.' }
+    const tipo = (String(formData.get('tipo') ?? '') as TipoItem)
+    if (tipo !== 'cliente' && tipo !== 'tarefa') return { ok: false, erro: 'Escolha o tipo do item.' }
 
-  const campos = camposDoFormulario(tipo, formData)
-  if (!campos.titulo) {
-    return { ok: false, erro: tipo === 'cliente' ? 'Diga o nome da empresa ou do cliente.' : 'Dê um título à tarefa.' }
+    const campos = camposDoFormulario(tipo, formData)
+    if (!campos.titulo) {
+      return { ok: false, erro: tipo === 'cliente' ? 'Diga o nome da empresa ou do cliente.' : 'Dê um título à tarefa.' }
+    }
+
+    const statusPedido = limpar(formData.get('status'))
+    const { data, error } = await supabaseAdmin.from('backlog_itens').insert({
+      ...campos,
+      status: statusPedido ?? STATUS_INICIAL[tipo],
+      criado_por: perfil.id,
+    }).select('id').single()
+
+    if (error) {
+      console.error('[backlog] insert recusado', { erro: error.message, codigo: error.code, detalhe: error.details })
+      return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+    }
+
+    await registrar(data.id as string, 'CRIACAO', perfil.id as string, null, campos.titulo)
+    atualizarTelas()
+    return { ok: true, id: data.id as string }
+  } catch (e) {
+    const bruta = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    console.error('[backlog] criarItemBacklog lançou', { erro: bruta, stack: e instanceof Error ? e.stack : null })
+    return { ok: false, erro: bruta }
   }
-
-  const statusPedido = limpar(formData.get('status'))
-  const { data, error } = await supabaseAdmin.from('backlog_itens').insert({
-    ...campos,
-    status: statusPedido ?? STATUS_INICIAL[tipo],
-    criado_por: perfil.id,
-  }).select('id').single()
-
-  if (error) return { ok: false, erro: `Não consegui salvar: ${error.message}` }
-
-  await registrar(data.id as string, 'CRIACAO', perfil.id as string, null, campos.titulo)
-  atualizarTelas()
-  return { ok: true, id: data.id as string }
 }
 
 // ─── Editar ──────────────────────────────────────────────────────────────────

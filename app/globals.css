@@ -1167,3 +1167,40 @@ html[data-tema="claro"] .ring-white { --tw-ring-color: #ffffff; }
 html[data-tema="claro"] .evento-vivo {
   background: radial-gradient(120% 120% at 0% 0%, rgba(255, 74, 15, 0.35), #262322 45%, #1a1817 100%);
 }
+
+/*
+ * Cabeçalho de grupo do menu — virou botão (Juan, 09/09/2026: "tá muito
+ * poluído essa sidebar"). O master via 20 itens de uma vez; agora cada grupo
+ * recolhe e o sistema lembra a escolha por navegador.
+ *
+ * Clique, não hover: o sistema é usado em tablet e celular durante o evento,
+ * onde hover não existe — e no computador um menu que abre passando o mouse
+ * fecha sozinho quando ele desvia.
+ */
+.menu-grupo-botao {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 0.375rem;
+  border-radius: var(--radius-lg);
+  color: var(--laranja-rotulo);
+  transition: background-color 0.15s, opacity 0.15s;
+  cursor: pointer;
+}
+
+.menu-grupo-botao:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.menu-grupo-botao:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 1px;
+}
+
+/* Dentro do botão o rótulo não repete o padding — quem espaça é o botão. */
+.menu-grupo-botao .menu-grupo-titulo {
+  padding: 0;
+  margin: 0;
+}

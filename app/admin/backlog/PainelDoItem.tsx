@@ -105,6 +105,9 @@ export default function PainelDoItem({
           {/* ── Os dados ──────────────────────────────────────────────────── */}
           <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-2.5">
             <Linha icone={<Users className="w-3.5 h-3.5" />} rotulo="Responsável" valor={item.responsavelNome} />
+            {!item.eventoId && (
+              <Linha icone={<CalendarDays className="w-3.5 h-3.5" />} rotulo="Evento" valor="Interno" />
+            )}
             {item.eventoId && item.eventoNome && (
               <div className="min-w-0">
                 <dt className="flex items-center gap-1.5 text-slate-400 text-2xs font-semibold uppercase tracking-wide">

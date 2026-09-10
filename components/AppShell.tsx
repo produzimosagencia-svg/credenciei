@@ -1,12 +1,12 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -232,6 +232,51 @@ function Avatar({ fotoUrl, nome, tamanho, className = '' }: {
   )
 }
 
+const CHAVE_GRUPOS = 'credenciei:menu-grupos'
+
+/**
+ * Quantos itens o menu precisa ter pra valer a pena recolher grupo.
+ *
+ * O menu não é grande pra todo mundo: em 09/09/2026 o master via 20 itens, o
+ * admin 14, o supervisor 6 e o operador de portão 3. Recolher por padrão pra
+ * quem já tinha 6 seria esconder metade do sistema de quem não estava
+ * reclamando de nada. Acima deste número, começa fechado; abaixo, continua
+ * como sempre foi.
+ */
+const ITENS_ATE_DEIXAR_ABERTO = 10
+
+/**
+ * O grupo que contém a página atual fica SEMPRE aberto na primeira carga.
+ * Estar numa tela cujo item de menu está escondido é o tipo de coisa que faz
+ * a pessoa achar que se perdeu.
+ */
+function abertosPorPadrao(grupos: Grupo[], ativo: (href: string) => boolean): Record<string, boolean> {
+  const total = grupos.reduce((s, g) => s + g.itens.length, 0)
+  const tudoAberto = total <= ITENS_ATE_DEIXAR_ABERTO
+  return Object.fromEntries(
+    grupos
+      .filter(g => g.titulo)
+      .map(g => [g.titulo!, tudoAberto || g.itens.some(i => ativo(i.href))]),
+  )
+}
+
+/*
+ * O localStorage só muda por clique nesta própria tela, e o clique já atualiza
+ * o estado local — então não há nada pra assinar. A função existe porque
+ * `useSyncExternalStore` exige uma; devolver sempre a MESMA referência de
+ * cancelamento evita que o React reassine a cada render.
+ */
+const cancelar = () => {}
+const semAssinatura = () => cancelar
+
+function lerEscolha(): string | null {
+  try { return localStorage.getItem(CHAVE_GRUPOS) } catch { return null }
+}
+
+function interpretar(bruto: string): Record<string, boolean> {
+  try { return JSON.parse(bruto) as Record<string, boolean> } catch { return {} }
+}
+
 function NavLinks({ grupos, pathname, onNavigate, setores, setorAtualId }: {
   grupos: Grupo[]
   pathname: string
@@ -241,36 +286,90 @@ function NavLinks({ grupos, pathname, onNavigate, setores, setorAtualId }: {
   setorAtualId: string | null
 }) {
   const ativo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href))
+
+  /*
+   * O que a pessoa escolheu da última vez vem do localStorage por
+   * `useSyncExternalStore`, e não de um `useEffect` que chama `setState`: no
+   * servidor o snapshot é `null`, então o HTML sai igual dos dois lados e não
+   * há erro de hidratação nem o menu piscando na frente de quem abriu.
+   */
+  const salvo = useSyncExternalStore(semAssinatura, lerEscolha, () => null)
+  const [locais, setLocais] = useState<Record<string, boolean>>({})
+
+  /*
+   * Mescla em três camadas, nesta ordem: o padrão por papel, o que ficou
+   * salvo, e o que a pessoa clicou agora. Mesclar (em vez de substituir)
+   * importa porque um grupo que só apareceu depois — permissão nova, módulo
+   * novo — não pode nascer fechado por causa de uma escolha antiga que nem
+   * sabia que ele existia.
+   */
+  const abertos: Record<string, boolean> = {
+    ...abertosPorPadrao(grupos, ativo),
+    ...(salvo ? interpretar(salvo) : {}),
+    ...locais,
+  }
+
+  const alternar = (titulo: string) => {
+    const proximo = { ...abertos, [titulo]: !abertos[titulo] }
+    setLocais(proximo)
+    try { localStorage.setItem(CHAVE_GRUPOS, JSON.stringify(proximo)) } catch { /* aba anônima, storage bloqueado */ }
+  }
+
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-[22px]">
-      {grupos.map((grupo, i) => (
-        <div key={grupo.titulo ?? i}>
-          {grupo.titulo && <p className="menu-grupo-titulo px-3 mb-1.5">{grupo.titulo}</p>}
-          <div className="space-y-0.5">
-            {grupo.itens.map(item => {
-              const isAtivo = ativo(item.href)
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  aria-current={isAtivo ? 'page' : undefined}
-                  className={`menu-item ${isAtivo ? 'menu-item-ativo' : ''}`}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  {item.label}
-                </Link>
-              )
-            })}
+      {grupos.map((grupo, i) => {
+        const aberto = !grupo.titulo || abertos[grupo.titulo] !== false
+        const temAtivo = grupo.itens.some(item => ativo(item.href))
+        return (
+          <div key={grupo.titulo ?? i}>
+            {grupo.titulo && (
+              <button
+                type="button"
+                onClick={() => alternar(grupo.titulo!)}
+                aria-expanded={aberto}
+                className="menu-grupo-botao"
+              >
+                <ChevronRight className={`w-3 h-3 shrink-0 transition-transform ${aberto ? 'rotate-90' : ''}`} />
+                <span className="menu-grupo-titulo flex-1 text-left">{grupo.titulo}</span>
+                {/* Fechado, o número diz o que está lá dentro; e o ponto avisa
+                    que a tela aberta agora mora neste grupo. */}
+                {!aberto && (
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    {temAtivo && <span className="w-1.5 h-1.5 rounded-full bg-brand-500" aria-hidden="true" />}
+                    <span className="text-2xs tabular-nums opacity-60">{grupo.itens.length}</span>
+                  </span>
+                )}
+              </button>
+            )}
+            {aberto && (
+              <div className="space-y-0.5">
+                {grupo.itens.map(item => {
+                  const isAtivo = ativo(item.href)
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={isAtivo ? 'page' : undefined}
+                      className={`menu-item ${isAtivo ? 'menu-item-ativo' : ''}`}
+                    >
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+            {/*
+              * "Meus setores" entra logo depois do primeiro bloco, junto do que
+              * se usa todos os dias — trocar de setor é navegação, não
+              * configuração. Ele mesmo some quando há um setor só. Fica fora do
+              * recolhimento: é troca de contexto, não um item de menu.
+              */}
+            {i === 0 && <MeusSetores setores={setores} atualId={setorAtualId} onNavigate={onNavigate} />}
           </div>
-          {/*
-            * "Meus setores" entra logo depois do primeiro bloco, junto do que
-            * se usa todos os dias — trocar de setor é navegação, não
-            * configuração. Ele mesmo some quando há um setor só.
-            */}
-          {i === 0 && <MeusSetores setores={setores} atualId={setorAtualId} onNavigate={onNavigate} />}
-        </div>
-      ))}
+        )
+      })}
     </nav>
   )
 }

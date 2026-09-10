@@ -7,6 +7,7 @@ import type { ItemBacklog } from '@/lib/backlog'
 import {
   TIPOS, PRIORIDADES, ORIGENS_LEAD, COLUNAS, STATUS_INICIAL, type TipoItem,
 } from '@/lib/backlog-constantes'
+import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
 
@@ -64,13 +65,24 @@ export default function FormularioItem({
     formData.set('origem_lead', origem)
     formData.set('status', statusEfetivo)
 
+    /*
+     * O try/catch existe pra que uma falha AQUI não derrube a tela inteira.
+     * Sem ele, uma rejeição dentro do `startTransition` sobe até o error
+     * boundary da rota e o Backlog some, trocado por "Algo deu errado" — foi
+     * o que o Juan viu ao tentar cadastrar (09/09/2026). As actions devolvem
+     * erro em vez de lançar; o que sobra pro catch é a ida e a volta em si.
+     */
     startTransition(async () => {
-      const r = editando
-        ? await editarItemBacklog(item!.id, formData)
-        : await criarItemBacklog(formData)
-      if (!r.ok) { setErro(r.erro); return }
-      onFechar()
-      router.refresh()
+      try {
+        const r = editando
+          ? await editarItemBacklog(item!.id, formData)
+          : await criarItemBacklog(formData)
+        if (!r.ok) { setErro(r.erro); return }
+        onFechar()
+        router.refresh()
+      } catch (e) {
+        setErro(mensagemAmigavel(e))
+      }
     })
   }
 
@@ -153,10 +165,21 @@ export default function FormularioItem({
               <SeletorLista
                 valor={evento}
                 onChange={setEvento}
-                placeholder="Nenhum"
-                titulo="Evento já cadastrado"
+                placeholder="Interno"
+                titulo="Evento relacionado"
                 busca
-                opcoes={[{ valor: '', rotulo: 'Nenhum' }, ...opcoes.eventos.map(e => ({ valor: e.id, rotulo: e.nome }))]}
+                /*
+                 * A opção vazia se chama INTERNO, não "Nenhum" (Juan,
+                 * 09/09/2026) — e é a mesma palavra que o Financeiro usa pra
+                 * despesa que não é de evento. "Nenhum" soa a campo que
+                 * faltou preencher; "Interno" afirma o que a coisa é: tarefa
+                 * da agência, não de um cliente. É o mesmo estado no banco
+                 * (`evento_id` nulo), com o nome certo.
+                 */
+                opcoes={[
+                  { valor: '', rotulo: 'Interno', detalhe: 'Da agência — não é de nenhum evento' },
+                  ...opcoes.eventos.map(e => ({ valor: e.id, rotulo: e.nome })),
+                ]}
               />
             </Campo>
           </div>
