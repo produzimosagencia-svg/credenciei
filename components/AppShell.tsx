@@ -154,10 +154,9 @@ function gruposPara(perfil: Perfil): Grupo[] {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
   }
   /*
-   * Gastos: o registro de despesa por voz, do produtor. Tem shell próprio em
-   * `/gastos` (fora do AppShell), mas o item aqui é o caminho pra quem também
-   * usa o painel chegar lá. Mesma régua de `podeGerenciarEventos` — quem
-   * organiza o evento é quem gasta nele.
+   * Gastos virou produto à parte, do papel `produtor` (que nem usa o AppShell).
+   * `podeRegistrarGastos` hoje = produtor OU master — então aqui, no menu do
+   * admin, o item só aparece pro MASTER, que entra só pra dar suporte.
    */
   if (podeRegistrarGastos(perfil)) {
     administrativo.push({ href: '/gastos', label: 'Gastos', icon: Mic })

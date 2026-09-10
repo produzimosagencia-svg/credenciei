@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, X, Save, Paperclip, AlertTriangle } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { criarGasto, editarGasto } from '@/lib/actions-gastos'
-import { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from '@/lib/gastos-constantes'
+import { CATEGORIAS_GASTO, CATEGORIA_PADRAO, FORMAS_PAGAMENTO } from '@/lib/gastos-constantes'
 import type { Gasto } from '@/lib/gastos'
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -125,6 +125,19 @@ function Formulario({
             </Campo>
             <Campo rotulo="Data do gasto *">
               <DateTimePicker modo="data" name="data_gasto" defaultValue={gasto?.dataGasto ?? hoje()} required />
+            </Campo>
+            <Campo rotulo="Forma de pagamento">
+              <input
+                name="forma_pagamento"
+                defaultValue={gasto?.formaPagamento ?? ''}
+                list="formas-pagamento"
+                placeholder="Ex.: Pix"
+                className="input"
+                autoComplete="off"
+              />
+              <datalist id="formas-pagamento">
+                {FORMAS_PAGAMENTO.map(f => <option key={f} value={f} />)}
+              </datalist>
             </Campo>
           </div>
 

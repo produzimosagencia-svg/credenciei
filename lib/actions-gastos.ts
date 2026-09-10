@@ -84,6 +84,7 @@ function camposDoFormulario(formData: FormData) {
     categoria,
     data_gasto: dataGasto,
     fornecedor: limpar(formData.get('fornecedor')),
+    forma_pagamento: limpar(formData.get('forma_pagamento')),
     observacao: limpar(formData.get('observacao')),
   }
 }
@@ -226,4 +227,152 @@ function atualizarTelas(eventoId: string) {
   revalidatePath('/gastos/lista')
   revalidatePath('/gastos/painel')
   if (eventoId) revalidatePath(`/gastos?evento=${eventoId}`)
+}
+
+// ─── Exportação pra Excel, com a identidade do Credenciei ────────────────────
+
+const LARANJA = 'FFFF4A0F'
+const LARANJA_CLARO = 'FFFFF1EA'
+const BRANCO = 'FFFFFFFF'
+const CINZA = 'FF57534E'
+
+/**
+ * A planilha .xlsx do recorte atual — com cara de Credenciei: faixa laranja
+ * no topo, cabeçalho de coluna laranja, valores em R$, linha de TOTAL, e o
+ * bloco de informação do evento + data de geração.
+ *
+ * Roda no servidor (ExcelJS é pesado pro bundle do cliente) e devolve o
+ * arquivo em base64. Reconsulta com o mesmo filtro — não recebe a lista.
+ */
+export async function exportarGastosXlsx(filtro: {
+  eventoId: string; categoria?: string; fornecedor?: string; de?: string; ate?: string
+}): Promise<{ ok: true; base64: string; nome: string } | { ok: false; erro: string }> {
+  try {
+    const perfil = await exigirGastos()
+    if (!perfil) return { ok: false, erro: SEM_ACESSO }
+
+    const { eventosParaGastos, listarGastos } = await import('./gastos')
+    const permitidos = await eventosParaGastos()
+    const evento = permitidos.find(e => e.id === filtro.eventoId)
+    if (!evento) return { ok: false, erro: 'Esse evento não está disponível pra você.' }
+
+    const gastos = await listarGastos({
+      eventoId: filtro.eventoId,
+      categoria: filtro.categoria || undefined,
+      fornecedor: filtro.fornecedor || undefined,
+      de: filtro.de || undefined,
+      ate: filtro.ate || undefined,
+    })
+
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    wb.creator = 'Credenciei'
+    wb.created = new Date()
+    const ws = wb.addWorksheet('Gastos', { views: [{ state: 'frozen', ySplit: 8 }] })
+
+    const COLS = [
+      { h: 'Data', w: 12 }, { h: 'Descrição', w: 36 }, { h: 'Categoria', w: 18 },
+      { h: 'Fornecedor', w: 22 }, { h: 'Forma de pagamento', w: 20 },
+      { h: 'Valor (R$)', w: 15 }, { h: 'Observação', w: 34 }, { h: 'Registrado em', w: 18 },
+    ]
+    ws.columns = COLS.map(c => ({ width: c.w }))
+    const nCol = COLS.length
+
+    const merge = (linha: number) => ws.mergeCells(linha, 1, linha, nCol)
+    const bordaTudo = (linha: number, fina = true) => {
+      for (let c = 1; c <= nCol; c++) {
+        ws.getCell(linha, c).border = {
+          top: { style: fina ? 'thin' : 'medium', color: { argb: 'FFE7E2DF' } },
+          bottom: { style: fina ? 'thin' : 'medium', color: { argb: 'FFE7E2DF' } },
+          left: { style: 'thin', color: { argb: 'FFE7E2DF' } },
+          right: { style: 'thin', color: { argb: 'FFE7E2DF' } },
+        }
+      }
+    }
+
+    // 1 — Faixa laranja com o nome do evento
+    merge(1)
+    const t = ws.getCell(1, 1)
+    t.value = `CREDENCIEI · GASTOS — ${evento.nome}`
+    t.font = { bold: true, size: 14, color: { argb: BRANCO } }
+    t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } }
+    t.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 }
+    ws.getRow(1).height = 30
+
+    // 2-6 — Bloco de informação
+    const info = (linha: number, rotulo: string, valor: string) => {
+      ws.getCell(linha, 1).value = rotulo
+      ws.getCell(linha, 1).font = { bold: true, color: { argb: CINZA }, size: 10 }
+      ws.mergeCells(linha, 2, linha, nCol)
+      ws.getCell(linha, 2).value = valor
+      ws.getCell(linha, 2).font = { color: { argb: CINZA }, size: 10 }
+    }
+    const fmtData = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+    const periodo = filtro.de || filtro.ate
+      ? `${filtro.de ? fmtData(filtro.de) : '…'} a ${filtro.ate ? fmtData(filtro.ate) : '…'}`
+      : 'todos os lançamentos'
+    info(3, 'Evento', evento.nome)
+    info(4, 'Período', periodo)
+    info(5, 'Lançamentos', String(gastos.length))
+    info(6, 'Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }))
+
+    // 8 — Cabeçalho das colunas
+    const LH = 8
+    COLS.forEach((c, i) => {
+      const cel = ws.getCell(LH, i + 1)
+      cel.value = c.h
+      cel.font = { bold: true, color: { argb: BRANCO }, size: 10 }
+      cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } }
+      cel.alignment = { vertical: 'middle', horizontal: i === 5 ? 'right' : 'left', wrapText: true }
+    })
+    ws.getRow(LH).height = 24
+    bordaTudo(LH)
+
+    // 9+ — Dados
+    let linha = LH + 1
+    for (const g of gastos) {
+      ws.getCell(linha, 1).value = fmtData(g.dataGasto)
+      ws.getCell(linha, 2).value = g.descricao
+      ws.getCell(linha, 3).value = g.categoria
+      ws.getCell(linha, 4).value = g.fornecedor ?? ''
+      ws.getCell(linha, 5).value = g.formaPagamento ?? ''
+      const v = ws.getCell(linha, 6)
+      v.value = g.valor
+      v.numFmt = 'R$ #,##0.00'
+      v.alignment = { horizontal: 'right' }
+      ws.getCell(linha, 7).value = g.observacao ?? ''
+      ws.getCell(linha, 8).value = new Date(g.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      if ((linha - LH) % 2 === 0) {
+        for (let c = 1; c <= nCol; c++) {
+          ws.getCell(linha, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA_CLARO } }
+        }
+      }
+      bordaTudo(linha)
+      linha++
+    }
+
+    // Linha de TOTAL
+    const total = gastos.reduce((s, g) => s + g.valor, 0)
+    ws.mergeCells(linha, 1, linha, 5)
+    const rot = ws.getCell(linha, 1)
+    rot.value = 'TOTAL'
+    rot.font = { bold: true, color: { argb: LARANJA }, size: 11 }
+    rot.alignment = { horizontal: 'right', indent: 1 }
+    const tv = ws.getCell(linha, 6)
+    tv.value = total
+    tv.numFmt = 'R$ #,##0.00'
+    tv.font = { bold: true, color: { argb: LARANJA }, size: 11 }
+    tv.alignment = { horizontal: 'right' }
+    for (let c = 1; c <= nCol; c++) {
+      ws.getCell(linha, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA_CLARO } }
+    }
+    bordaTudo(linha, false)
+
+    const buf = await wb.xlsx.writeBuffer()
+    const base64 = Buffer.from(buf).toString('base64')
+    const nome = `gastos-${evento.nome.replace(/[^\w]+/g, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    return { ok: true, base64, nome }
+  } catch (e) {
+    return { ok: false, erro: mensagemAmigavel(e) }
+  }
 }

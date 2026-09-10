@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { LayoutDashboard } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
-import { podeRegistrarGastos } from '@/lib/permissions'
+import { podeRegistrarGastos, ehProdutor } from '@/lib/permissions'
 import BotaoSair from './BotaoSair'
 
 /**
@@ -32,9 +32,13 @@ export default async function GastosLayout({ children }: { children: React.React
             <span className="text-slate-400 text-sm font-medium shrink-0">· Gastos</span>
           </Link>
           <div className="flex items-center gap-4 shrink-0">
-            <Link href="/admin" className="hidden sm:flex items-center gap-1.5 text-slate-400 hover:text-slate-600 text-xs font-medium">
-              <LayoutDashboard className="w-3.5 h-3.5" /> Painel
-            </Link>
+            {/* O link pro painel do credenciamento só pro master (que entra
+                aqui só pra dar suporte). O Produtor não conhece o /admin. */}
+            {!ehProdutor(perfil.role) && (
+              <Link href="/admin" className="hidden sm:flex items-center gap-1.5 text-slate-400 hover:text-slate-600 text-xs font-medium">
+                <LayoutDashboard className="w-3.5 h-3.5" /> Painel
+              </Link>
+            )}
             <BotaoSair />
           </div>
         </div>

@@ -30,7 +30,7 @@
 // Papéis legados ('gerente', 'cliente') continuam válidos no banco, mas não
 // são mais oferecidos na UI. Tratamos 'gerente' como equivalente a admin.
 
-export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao' | 'suporte'
+export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao' | 'suporte' | 'produtor'
 
 // ─── Permissões editáveis por organização ────────────────────────────────────
 
@@ -99,6 +99,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   cliente: 'Cliente',
   operador_portao: 'Operador de portão',
   suporte: 'Suporte de Sistema',
+  produtor: 'Produtor',
 }
 
 /** Dono da plataforma: acesso irrestrito a todas as organizações. */
@@ -164,16 +165,19 @@ export const podeExcluirDaEquipe = capacidade('excluir_da_equipe', role =>
 export const podeGerenciarBacklog = capacidade('gerenciar_backlog', role => role === 'master')
 
 /**
- * Pode usar o módulo Gastos — registrar despesa de evento por voz ou na mão.
+ * Pode usar o módulo Gastos.
  *
- * É a ferramenta do PRODUTOR: mesmo conjunto de papéis que `podeGerenciarEventos`
- * (master, admin, gerente, cliente), porque quem organiza o evento é quem gasta
- * nele. Separado do Financeiro do master de propósito — são dois mundos, ver
- * supabase/upgrade-gastos.sql. Editável em Configurações pra ligar pra um
- * assistente de produção sem dar acesso a mais nada.
+ * Gastos virou um PRODUTO à parte, com acesso próprio: o papel `produtor`.
+ * Nenhum acesso operacional do credenciamento (admin, supervisor, gestor,
+ * suporte) entra mais aqui — a ideia é comercializar Gastos separado, ver
+ * supabase/upgrade-produtor.sql. O `master` continua entrando só pra dar
+ * suporte a um produtor com problema; o item some do menu dos outros.
  */
 export const podeRegistrarGastos = capacidade('registrar_gastos', role =>
-  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente')
+  role === 'produtor' || role === 'master')
+
+/** Cliente do produto Gastos — login próprio, só o módulo Gastos, só os eventos vinculados. */
+export const ehProdutor = (role?: string) => role === 'produtor'
 
 /** Dono de um acesso de apoio contratado pro evento — nunca administra. */
 export const ehSuporte = (role?: string) => role === 'suporte'

@@ -1075,6 +1075,87 @@ export async function criarSuporte(formData: FormData) {
   return { ok: true as const, linkSenha }
 }
 
+/**
+ * Cria um acesso de PRODUTOR — cliente do produto Gastos.
+ *
+ * CPF + link de senha por WhatsApp, como o supervisor. Amarrado a UMA
+ * organização (`organizacao_id`) e aos eventos escolhidos (`produtor_eventos`).
+ * Não toca em nada do credenciamento. Só o master cria — é venda de produto.
+ */
+export async function criarProdutor(formData: FormData) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Só o master cria acesso de produtor.')
+
+  const admin = getAdminSupabase()
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  const telefone = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const ativo = formData.get('ativo') !== 'false'
+  const organizacaoId = ((formData.get('organizacao_id') as string) ?? '').trim()
+  const eventoIds = [...new Set(formData.getAll('produtor_evento_id').map(String).filter(Boolean))]
+
+  if (!nome) throw new Error('Informe o nome.')
+  if (telefone.length < 10 || telefone.length > 13) throw new Error('Informe um telefone válido para enviar o acesso pelo WhatsApp.')
+  if (!organizacaoId) throw new Error('Escolha a organização do produtor.')
+  if (!eventoIds.length) throw new Error('Vincule ao menos um evento ao produtor.')
+
+  const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
+  if (cpf.length !== 11) throw new Error('Informe o CPF, com 11 dígitos.')
+  const email = cpfParaEmail(cpf)
+
+  const { data: org } = await admin.from('organizacoes').select('id, nome').eq('id', organizacaoId).single()
+  if (!org) throw new Error('Organização não encontrada.')
+
+  // Os eventos têm que ser DESTA organização — a org é a fronteira.
+  const { data: eventosOk } = await admin
+    .from('eventos').select('id').eq('organizacao_id', organizacaoId).in('id', eventoIds)
+  const idsValidos = (eventosOk ?? []).map(e => e.id as string)
+  if (!idsValidos.length) throw new Error('Nenhum dos eventos escolhidos é desta organização.')
+
+  const { data: existente } = await admin.from('perfis').select('id, role').eq('cpf', cpf).maybeSingle()
+  if (existente) throw new Error(`Já existe um acesso com o CPF ${formatCpf(cpf)}. Edite esse acesso em vez de criar outro.`)
+
+  const { data: user, error } = await admin.auth.admin.createUser({
+    email, password: randomBytes(32).toString('base64url'), email_confirm: true,
+  })
+  if (error) throw new Error(mensagemAuth(error.message))
+
+  const { error: erroPerfil } = await admin.from('perfis').insert([{
+    id: user.user!.id, nome, email, telefone, ativo, cpf,
+    role: 'produtor', organizacao_id: organizacaoId, fornecedor_id: null,
+  }])
+  if (erroPerfil) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    throw new Error(mensagemAmigavel(erroPerfil))
+  }
+
+  const { error: erroVinculo } = await admin.from('produtor_eventos').insert(
+    idsValidos.map(evento_id => ({ produtor_id: user.user!.id, evento_id, criado_por: perfil!.id })),
+  )
+  if (erroVinculo) console.error('[criarProdutor] vínculo de eventos falhou', erroVinculo)
+
+  let linkSenha: string | null = null
+  try {
+    const { data: refEvento } = await admin.from('eventos').select('id, nome').eq('id', idsValidos[0]).maybeSingle()
+    linkSenha = await criarConviteSenhaSupervisor({
+      cpf, perfilId: user.user!.id, nome,
+      eventoId: refEvento?.id ?? '', evento: refEvento?.nome ?? 'Credenciei', setor: 'Gastos',
+    })
+  } catch (erro) {
+    console.error('[criarProdutor] falha ao gerar link de senha', erro)
+  }
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Acesso de produtor — ${org.nome}`,
+    valorNovo: `${nome} — CPF ${formatCpf(cpf)}, ${idsValidos.length} evento(s)`,
+    organizacaoId,
+  }))
+
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const, linkSenha }
+}
+
 /** Edita nome/telefone/status/expiração/escopo de um suporte já existente. */
 export async function editarSuporte(perfilId: string, formData: FormData) {
   const perfil = await getPerfil()

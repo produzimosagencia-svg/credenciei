@@ -22,11 +22,12 @@ type EventoOpcao = { id: string; nome: string; ativo: boolean }
  * recarrega e link compartilhável mantêm o recorte.
  */
 export default function ListaGastos({
-  gastos, eventos, fornecedores,
+  gastos, eventos, fornecedores, eventoAtualId,
 }: {
   gastos: Gasto[]
   eventos: EventoOpcao[]
   fornecedores: string[]
+  eventoAtualId: string
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -63,33 +64,43 @@ export default function ListaGastos({
   return (
     <div className="space-y-4">
       {/* ── Filtros ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end gap-2">
-        <div>
-          <label className="text-slate-400 text-2xs font-medium block mb-1">De</label>
-          <DateTimePicker modo="data" value={params.get('de') ?? ''} onChange={v => trocar('de', v)} placeholder="Início" className="w-auto text-sm" />
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 sm:p-4">
+        <div className="flex flex-col md:flex-row md:items-end gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2 flex-1">
+            <div className="min-w-0">
+              <label className="text-slate-400 text-2xs font-semibold uppercase tracking-wide block mb-1">De</label>
+              <DateTimePicker modo="data" value={params.get('de') ?? ''} onChange={v => trocar('de', v)} placeholder="Início" className="w-full sm:w-36 text-sm" />
+            </div>
+            <div className="min-w-0">
+              <label className="text-slate-400 text-2xs font-semibold uppercase tracking-wide block mb-1">Até</label>
+              <DateTimePicker modo="data" value={params.get('ate') ?? ''} onChange={v => trocar('ate', v)} placeholder="Fim" className="w-full sm:w-36 text-sm" />
+            </div>
+            <div className="min-w-0">
+              <label className="text-slate-400 text-2xs font-semibold uppercase tracking-wide block mb-1">Categoria</label>
+              <SeletorLista
+                className="w-full sm:w-44 text-sm" valor={params.get('categoria') ?? ''}
+                onChange={v => trocar('categoria', v)} placeholder="Todas" titulo="Categoria"
+                opcoes={[{ valor: '', rotulo: 'Todas' }, ...CATEGORIAS_GASTO.map(c => ({ valor: c, rotulo: c }))]}
+              />
+            </div>
+            {fornecedores.length > 0 && (
+              <div className="min-w-0 col-span-2 sm:col-span-1">
+                <label className="text-slate-400 text-2xs font-semibold uppercase tracking-wide block mb-1">Fornecedor</label>
+                <SeletorLista
+                  className="w-full sm:w-44 text-sm" valor={params.get('fornecedor') ?? ''}
+                  onChange={v => trocar('fornecedor', v)} placeholder="Todos" titulo="Fornecedor" busca
+                  opcoes={[{ valor: '', rotulo: 'Todos' }, ...fornecedores.map(f => ({ valor: f, rotulo: f }))]}
+                />
+              </div>
+            )}
+            {temFiltro && (
+              <button onClick={() => router.push(`${pathname}?evento=${params.get('evento') ?? ''}`)} className="btn btn-secundario btn-sm h-9">
+                <X className="w-3.5 h-3.5" /> Limpar
+              </button>
+            )}
+          </div>
+          <div className="md:ml-auto md:pb-0.5"><ExportarGastos gastos={gastos} eventoId={eventoAtualId} /></div>
         </div>
-        <div>
-          <label className="text-slate-400 text-2xs font-medium block mb-1">Até</label>
-          <DateTimePicker modo="data" value={params.get('ate') ?? ''} onChange={v => trocar('ate', v)} placeholder="Fim" className="w-auto text-sm" />
-        </div>
-        <SeletorLista
-          className="w-auto text-sm" valor={params.get('categoria') ?? ''}
-          onChange={v => trocar('categoria', v)} placeholder="Categoria: todas" titulo="Categoria"
-          opcoes={[{ valor: '', rotulo: 'Todas' }, ...CATEGORIAS_GASTO.map(c => ({ valor: c, rotulo: c }))]}
-        />
-        {fornecedores.length > 0 && (
-          <SeletorLista
-            className="w-auto text-sm" valor={params.get('fornecedor') ?? ''}
-            onChange={v => trocar('fornecedor', v)} placeholder="Fornecedor: todos" titulo="Fornecedor" busca
-            opcoes={[{ valor: '', rotulo: 'Todos' }, ...fornecedores.map(f => ({ valor: f, rotulo: f }))]}
-          />
-        )}
-        {temFiltro && (
-          <button onClick={() => router.push(`${pathname}?evento=${params.get('evento') ?? ''}`)} className="btn btn-secundario btn-sm">
-            <X className="w-3.5 h-3.5" /> Limpar
-          </button>
-        )}
-        <div className="ml-auto"><ExportarGastos gastos={gastos} /></div>
       </div>
 
       {erro && (

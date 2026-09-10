@@ -47,7 +47,7 @@ export default async function ListaGastosPage({
 
       <SeletorEvento eventos={eventos} atual={eventoAtual.id} />
 
-      <ListaGastos gastos={gastos} eventos={eventos} fornecedores={fornecedores} />
+      <ListaGastos gastos={gastos} eventos={eventos} fornecedores={fornecedores} eventoAtualId={eventoAtual.id} />
     </div>
   )
 }

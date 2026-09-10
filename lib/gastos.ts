@@ -1,5 +1,6 @@
-import { supabaseAdmin, buscarTudo } from './supabase-server'
+import { supabaseAdmin, buscarTudo, getPerfil } from './supabase-server'
 import { diaBRT } from './janelas'
+import { ehMaster, ehProdutor } from './permissions'
 import { eventosQuePossoAbrir } from '@/app/admin/EscolherEvento'
 import type { OrigemGasto, StatusGasto } from './gastos-constantes'
 export { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from './gastos-constantes'
@@ -27,6 +28,7 @@ export type Gasto = {
   descricao: string
   valor: number
   fornecedor: string | null
+  formaPagamento: string | null
   categoria: string
   dataGasto: string
   registradoEm: string
@@ -48,7 +50,7 @@ export type FiltroGastos = {
 }
 
 const SELECT = `
-  id, evento_id, descricao, valor, fornecedor, categoria, data_gasto, registrado_em,
+  id, evento_id, descricao, valor, fornecedor, forma_pagamento, categoria, data_gasto, registrado_em,
   origem, status, observacao, transcricao, comprovante_path, comprovante_nome,
   eventos:evento_id(nome), perfis:criado_por(nome)
 `
@@ -71,6 +73,7 @@ function montar(l: LinhaCrua): Gasto {
     descricao: l.descricao as string,
     valor: Number(l.valor) || 0,
     fornecedor: (l.fornecedor as string | null) ?? null,
+    formaPagamento: (l.forma_pagamento as string | null) ?? null,
     categoria: l.categoria as string,
     dataGasto: l.data_gasto as string,
     registradoEm: l.registrado_em as string,
@@ -86,6 +89,29 @@ function montar(l: LinhaCrua): Gasto {
 
 /** Os eventos que este perfil pode registrar gasto — só os ativos vêm primeiro. */
 export async function eventosParaGastos() {
+  const perfil = await getPerfil()
+
+  // Produtor: só os eventos vinculados a ele em `produtor_eventos`.
+  if (ehProdutor(perfil?.role)) {
+    const { data } = await supabaseAdmin
+      .from('produtor_eventos')
+      .select('eventos(id, nome, ativo, data_inicio)')
+      .eq('produtor_id', perfil!.id)
+    return (data ?? [])
+      .map(r => r.eventos as unknown as { id: string; nome: string; ativo: boolean; data_inicio: string } | null)
+      .filter((e): e is { id: string; nome: string; ativo: boolean; data_inicio: string } => !!e)
+      .sort((a, b) => (b.data_inicio ?? '').localeCompare(a.data_inicio ?? ''))
+      .map(e => ({ id: e.id, nome: e.nome, ativo: e.ativo !== false }))
+  }
+
+  // Master (dando suporte) vê todos. Os demais caem na régua de sempre —
+  // mas o item de menu já sumiu pra eles.
+  if (ehMaster(perfil?.role)) {
+    const { data } = await supabaseAdmin
+      .from('eventos').select('id, nome, ativo').order('data_inicio', { ascending: false })
+    return (data ?? []).map(e => ({ id: e.id as string, nome: e.nome as string, ativo: e.ativo !== false }))
+  }
+
   const eventos = await eventosQuePossoAbrir()
   return eventos.map(e => ({ id: e.id, nome: e.nome, ativo: e.ativo }))
 }
@@ -112,6 +138,25 @@ export async function listarGastos(filtro: FiltroGastos = {}): Promise<Gasto[]> 
 export async function gastoPorId(id: string): Promise<Gasto | null> {
   const { data } = await supabaseAdmin.from('gastos_evento').select(SELECT).eq('id', id).maybeSingle()
   return data ? montar(data as LinhaCrua) : null
+}
+
+/**
+ * Total gasto por evento — pros eventos que a lista recebe. Uma consulta só
+ * (evento_id + valor) e soma em memória.
+ */
+export async function totaisPorEvento(
+  eventos: { id: string; nome: string }[],
+): Promise<{ id: string; nome: string; total: number }[]> {
+  if (!eventos.length) return []
+  const ids = eventos.map(e => e.id)
+  const linhas = await buscarTudo<{ evento_id: string; valor: number | null }>((de, ate) =>
+    supabaseAdmin.from('gastos_evento').select('evento_id, valor').in('evento_id', ids).range(de, ate),
+  )
+  const soma = new Map<string, number>()
+  for (const l of linhas) soma.set(l.evento_id, (soma.get(l.evento_id) ?? 0) + (Number(l.valor) || 0))
+  return eventos
+    .map(e => ({ id: e.id, nome: e.nome, total: soma.get(e.id) ?? 0 }))
+    .sort((a, b) => b.total - a.total)
 }
 
 /** Fornecedores já usados neste recorte — alimenta o filtro da lista. */

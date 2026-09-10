@@ -2,7 +2,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldCheck, Users, UserCog, Building2 } from 'lucide-react'
-import { criarSupervisor, criarOperadorPortaria, criarSuporte, adicionarAdmin } from '@/lib/actions'
+import { criarSupervisor, criarOperadorPortaria, criarSuporte, adicionarAdmin, criarProdutor } from '@/lib/actions'
 import { capacidadesDoPapel } from '@/lib/permissions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
@@ -12,7 +12,7 @@ import SeletorLista from '@/components/SeletorLista'
 type Evento = { id: string; nome: string; organizacao_id: string | null; fornecedores: { id: string; nome: string }[] }
 type Org = { id: string; nome: string }
 
-type Funcao = 'supervisor' | 'operador_portao' | 'suporte' | 'admin'
+type Funcao = 'supervisor' | 'operador_portao' | 'suporte' | 'admin' | 'produtor'
 
 const FUNCOES: { valor: Funcao; rotulo: string; icone: React.ElementType; vinculo: string; ajuda: string; login: 'cpf' | 'email' }[] = [
   { valor: 'admin', rotulo: 'Admin', icone: Building2, vinculo: 'organização',
@@ -23,6 +23,8 @@ const FUNCOES: { valor: Funcao; rotulo: string; icone: React.ElementType; vincul
     ajuda: 'Lê o QR no portão e registra ponto. Não gerencia evento nem equipe. Pertence à organização — cobre vários eventos do mesmo cliente.', login: 'cpf' },
   { valor: 'suporte', rotulo: 'Suporte de sistema', icone: UserCog, vinculo: 'evento',
     ajuda: 'Apoio contratado pro dia do evento: conserta CPF, setor, ponto que não bateu. Nunca administra. Pode ter prazo de validade.', login: 'cpf' },
+  { valor: 'produtor', rotulo: 'Produtor (Gastos)', icone: Building2, vinculo: 'organização + eventos',
+    ajuda: 'Cliente do produto Gastos. Login próprio, entra SÓ no módulo Gastos, e só nos eventos vinculados. Não vê nada do credenciamento.', login: 'cpf' },
 ]
 
 export default function NovoAcessoForm({
@@ -33,7 +35,7 @@ export default function NovoAcessoForm({
   ehMaster: boolean
 }) {
   const disponiveis = useMemo(
-    () => FUNCOES.filter(f => f.valor !== 'suporte' || ehMaster),
+    () => FUNCOES.filter(f => (f.valor !== 'suporte' && f.valor !== 'produtor') || ehMaster),
     [ehMaster],
   )
 
@@ -43,6 +45,11 @@ export default function NovoAcessoForm({
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  // Produtor: organização + vários eventos DELA.
+  const [orgProdutor, setOrgProdutor] = useState('')
+  const [eventosProdutor, setEventosProdutor] = useState<Set<string>>(new Set())
+  const eventosDaOrg = eventos.filter(e => e.organizacao_id === orgProdutor)
 
   const cfg = FUNCOES.find(f => f.valor === funcao)!
   const evento = eventos.find(e => e.id === eventoId)
@@ -88,6 +95,12 @@ export default function NovoAcessoForm({
           if (!eventoId) return setErro('Escolha o evento de atendimento.')
           formData.append('escopo_evento_id', eventoId)
           await criarSuporte(formData)
+        } else if (funcao === 'produtor') {
+          if (!orgProdutor) return setErro('Escolha a organização do produtor.')
+          if (!eventosProdutor.size) return setErro('Vincule ao menos um evento ao produtor.')
+          formData.set('organizacao_id', orgProdutor)
+          for (const id of eventosProdutor) formData.append('produtor_evento_id', id)
+          await criarProdutor(formData)
         } else {
           if (ehMaster && !(formData.get('organizacao_id') as string)) {
             return setErro('Escolha a organização deste admin.')
@@ -142,7 +155,48 @@ export default function NovoAcessoForm({
         <>
           {/* ─── Vínculo / escopo ─────────────────────────────────────── */}
           <div className="space-y-3" data-tutorial="novo-acesso-escopo">
-            {funcao === 'admin' ? (
+            {funcao === 'produtor' ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">Organização *</label>
+                  <SeletorLista
+                    valor={orgProdutor}
+                    onChange={v => { setOrgProdutor(v); setEventosProdutor(new Set()) }}
+                    titulo="Escolha a organização"
+                    busca
+                    opcoes={organizacoes.map(o => ({ valor: o.id, rotulo: o.nome }))}
+                  />
+                  <p className="text-xs text-slate-500">A organização é a fronteira. O produtor só vê Gastos, e só dos eventos dela que você marcar abaixo.</p>
+                </div>
+                {orgProdutor && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">Eventos vinculados *</label>
+                    {!eventosDaOrg.length ? (
+                      <p className="text-xs text-slate-400 bg-slate-50 rounded-xl p-3">Esta organização não tem eventos ativos.</p>
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                        {eventosDaOrg.map(e => (
+                          <label key={e.id} className="flex items-center gap-2.5 p-2.5 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={eventosProdutor.has(e.id)}
+                              onChange={ev => setEventosProdutor(s => {
+                                const n = new Set(s)
+                                if (ev.target.checked) n.add(e.id)
+                                else n.delete(e.id)
+                                return n
+                              })}
+                              className="h-4 w-4 accent-brand-500 shrink-0"
+                            />
+                            <span className="truncate">{e.nome}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : funcao === 'admin' ? (
               ehMaster ? (
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700">Organização *</label>

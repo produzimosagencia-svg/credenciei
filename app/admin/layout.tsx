@@ -5,6 +5,8 @@ import AppShell from '@/components/AppShell'
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
+  // Produtor é cliente do produto Gastos — não navega pelo credenciamento.
+  if (perfil.role === 'produtor') redirect('/gastos')
 
   // Nome e foto da organização no cabeçalho, e os setores do supervisor pro
   // "Meus setores" do menu — buscados em paralelo: um não depende do outro, e

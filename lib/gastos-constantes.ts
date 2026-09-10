@@ -34,6 +34,20 @@ export function categoriaValida(bruta: string | null | undefined): CategoriaGast
   return achada ?? null
 }
 
+/**
+ * Formas de pagamento — sugestão no form (datalist), aceita texto livre.
+ * Mesma lógica de `CATEGORIAS_GASTO`: a lista vive no código, não no banco.
+ */
+export const FORMAS_PAGAMENTO = [
+  'Pix',
+  'Cartão de crédito',
+  'Cartão de débito',
+  'Dinheiro',
+  'Transferência',
+  'Boleto',
+  'A prazo',
+] as const
+
 export type OrigemGasto = 'manual' | 'audio' | 'whatsapp'
 
 export const ROTULO_ORIGEM: Record<OrigemGasto, string> = {

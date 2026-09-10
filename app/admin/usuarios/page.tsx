@@ -47,6 +47,9 @@ const ROLE_BADGE: Record<Role, string> = {
   // Cor própria: suporte é um acesso de risco diferente dos demais (atravessa
   // organizações, tem prazo de validade) — vale destacar na lista.
   suporte: 'selo-aviso',
+  // Produtor é cliente de outro produto (Gastos) — cor própria pra separar do
+  // resto na lista de acessos do credenciamento.
+  produtor: 'selo-sucesso',
 }
 
 type Aba = 'todos' | 'ativos' | 'inativos'
