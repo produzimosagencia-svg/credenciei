@@ -322,5 +322,3 @@ export async function historicoParaTela(id: string): Promise<Resultado<{
     return { ok: false, erro: e instanceof Error ? e.message : 'Não consegui carregar o histórico.' }
   }
 }
-
-export type { ItemBacklog }

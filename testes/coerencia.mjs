@@ -22,7 +22,8 @@
  *
  * Rode com:  node testes/coerencia.mjs
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const ler = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 
@@ -94,6 +95,51 @@ confere('a tela só oferece o botão fora do dia principal ou com o auto-atendim
   /!diaPrincipal \|\| evento\?\.checkin_autonomo === true/.test(C.credencial), true)
 confere('e o servidor recusa mesmo chamado direto, sem a coluna ligada',
   /resolucao\.diaPrincipal && evento\.checkin_autonomo !== true/.test(C.actions), true)
+
+grupo("9 · Nenhum arquivo 'use server' re-exporta tipo")
+/*
+ * O bug que custou dois dias, em 09/09/2026.
+ *
+ * `export type { X }` — re-export puro de um tipo — num arquivo `use server`
+ * NÃO é apagado pelo Turbopack deste fork. Ele emite uma referência a um
+ * binding que não existe em runtime, e o módulo INTEIRO morre ao carregar com
+ * "ReferenceError: X is not defined at module evaluation". Todas as actions
+ * daquele arquivo param de funcionar de uma vez — e, como o Next mascara erro
+ * de Server Action em produção, o navegador mostra só "ocorreu um erro".
+ *
+ * Foi assim que o relatório de custo de WhatsApp e o cadastro do Backlog
+ * quebraram, cada um por dias, sem nenhuma pista na tela. O sintoma não
+ * aponta pra causa: o arquivo compila, o `tsc` passa, o build passa, o banco
+ * responde certo — e nada funciona.
+ *
+ * `export type X = ...` (declaração) é seguro e continua liberado; o que
+ * quebra é só o re-export. Quando precisar reexportar um tipo, faça num
+ * arquivo que NÃO tenha `use server`.
+ */
+{
+  const varrer = (dir, achados = []) => {
+    for (const nome of readdirSync(dir)) {
+      if (nome === 'node_modules' || nome === '.next' || nome.startsWith('.')) continue
+      const caminho = join(dir, nome)
+      if (statSync(caminho).isDirectory()) varrer(caminho, achados)
+      else if (/\.(ts|tsx)$/.test(nome)) achados.push(caminho)
+    }
+    return achados
+  }
+  const culpados = ['lib', 'app', 'components']
+    .flatMap(raiz => varrer(raiz))
+    .filter(caminho => {
+      const texto = ler(caminho)
+      return /^\s*['"]use server['"]/.test(texto) && /^export type \{/m.test(texto)
+    })
+  confere(
+    culpados.length
+      ? `re-export de tipo em: ${culpados.join(', ')}`
+      : "nenhum arquivo 'use server' re-exporta tipo",
+    culpados.length > 0,
+    false,
+  )
+}
 
 console.log(
   falhas
