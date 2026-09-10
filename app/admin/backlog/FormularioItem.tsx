@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Save, AlertTriangle, Building2, CheckSquare } from 'lucide-react'
+import { X, Save, AlertTriangle, Building2, CheckSquare, RefreshCw } from 'lucide-react'
 import { criarItemBacklog, editarItemBacklog } from '@/lib/actions-backlog'
 import type { ItemBacklog } from '@/lib/backlog'
 import {
@@ -52,6 +52,7 @@ export default function FormularioItem({
   const [origem, setOrigem] = useState(item?.origemLead ?? '')
   const [status, setStatus] = useState(item?.status ?? statusInicial ?? '')
   const [erro, setErro] = useState<string | null>(null)
+  const [desatualizada, setDesatualizada] = useState(false)
   const [pendente, startTransition] = useTransition()
 
   const statusEfetivo = status || STATUS_INICIAL[tipo]
@@ -81,7 +82,21 @@ export default function FormularioItem({
         onFechar()
         router.refresh()
       } catch (e) {
+        /*
+         * Chegar aqui significa uma coisa só: a action NÃO RODOU.
+         * `criarItemBacklog` embrulha o corpo inteiro num try/catch e sempre
+         * devolve `{ ok, erro }` — ela não tem como lançar. O que sobra é a
+         * ida e a volta: quase sempre a aba rodando o JavaScript de um deploy
+         * anterior, chamando um id de Server Action que o servidor novo já não
+         * conhece (Juan, 09/09/2026, testando enquanto subiam correções).
+         *
+         * Recarregar resolve — então em vez de escrever "aperte Ctrl+F5" e
+         * deixar a pessoa se virar, o botão faz isso. `desatualizada` guarda o
+         * texto digitado no aviso, porque recarregar perde o formulário e
+         * ninguém quer redigitar sem saber por quê.
+         */
         setErro(mensagemAmigavel(e))
+        setDesatualizada(true)
       }
     })
   }
@@ -259,9 +274,20 @@ export default function FormularioItem({
           </Campo>
 
           {erro && (
-            <p className="flex items-start gap-1.5 text-red-600 text-xs">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
-            </p>
+            <div className="space-y-2">
+              <p className="flex items-start gap-1.5 text-red-600 text-xs">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
+              </p>
+              {desatualizada && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="btn btn-secundario btn-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Recarregar e tentar de novo
+                </button>
+              )}
+            </div>
           )}
 
           <div className="flex gap-2 pt-1">

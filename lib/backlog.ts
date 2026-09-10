@@ -370,12 +370,20 @@ export async function agendaDoBacklog(
 export async function opcoesDoBacklog() {
   const [responsaveis, eventos, organizacoes] = await Promise.all([
     /*
-     * Só quem administra pode ser responsável. Não faz sentido atribuir "enviar
-     * proposta pra Produtora XYZ" a um operador de portão — e a lista fica
-     * curta o bastante pra escolher sem procurar.
+     * Responsável = quem tem acesso ao Backlog, e mais ninguém.
+     *
+     * Antes a lista era `master`, `admin` e `gerente` — e isso trazia os
+     * admins das ORGANIZAÇÕES CLIENTES (Homologação, Kiki, Mend apareciam pro
+     * Juan em 09/09/2026). Atribuir "enviar proposta pra Produtora XYZ" ao
+     * admin de um cliente não é só inútil: é vazar o pipeline comercial da
+     * agência num seletor.
+     *
+     * Amarrado ao mesmo papel de `podeGerenciarBacklog` (master), a lista se
+     * mantém sozinha: promoveu um sócio, ele aparece; tirou, some. Sem
+     * segunda lista de nomes pra alguém lembrar de atualizar.
      */
     supabaseAdmin.from('perfis').select('id, nome, role')
-      .in('role', ['master', 'admin', 'gerente']).eq('ativo', true).order('nome'),
+      .eq('role', 'master').eq('ativo', true).order('nome'),
     supabaseAdmin.from('eventos').select('id, nome, data_inicio').order('data_inicio', { ascending: false }),
     supabaseAdmin.from('organizacoes').select('id, nome').order('nome'),
   ])
