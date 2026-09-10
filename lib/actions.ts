@@ -755,6 +755,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     organizacao_id: organizacaoId,
     fornecedor_id: fornecedorId,
     permissoes_usuario: permissoesUsuarioDoForm(formData, 'supervisor'),
+    email_contato: ((formData.get('email_contato') as string) || '').trim().toLowerCase() || null,
   }])
 
   if (erroPerfil) {
@@ -1586,6 +1587,13 @@ export async function editarUsuario(id: string, formData: FormData) {
     patch.telefone = telefoneBruto
   } else if (alvo.role !== 'admin') {
     patch.telefone = null
+  }
+
+  // Email de contato — só faz sentido pro supervisor (o lembrete de
+  // conferência). `null` limpa; ausente não mexe.
+  if (alvo.role === 'supervisor' && formData.has('email_contato')) {
+    const e = ((formData.get('email_contato') as string) || '').trim().toLowerCase()
+    patch.email_contato = e || null
   }
 
   const { error } = await admin.from('perfis').update(patch).eq('id', id)

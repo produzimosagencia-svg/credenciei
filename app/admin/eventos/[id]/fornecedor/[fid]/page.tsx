@@ -12,6 +12,7 @@ import ImportarFuncionarios from '../../ImportarFuncionarios'
 import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
 import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
+import { conferenciaAberta } from '@/lib/conferencia'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -64,7 +65,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const agoraDoRender = new Date()
 
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }, { data: outrosSetores }] = await Promise.all([
-    supabase.from('fornecedores').select('*, eventos(nome, organizacao_id)').eq('id', fid).single(),
+    supabase.from('fornecedores').select('*, eventos(nome, organizacao_id, data_inicio)').eq('id', fid).single(),
     supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, descredenciado_em, created_at').eq('fornecedor_id', fid).order('nome'),
     /*
      * So HOJE e ONTEM.
@@ -235,17 +236,19 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 
-  /* Uma cor por cartão, fixa e diferente entre si: azul, laranja e roxo. */
+  /* Uma cor por cartão, fixa e diferente entre si: azul, laranja e roxo.
+     O "A receber (equipe)" NÃO aparece pro supervisor — quanto a equipe dele
+     recebe é dado da produção, não do supervisor (pedido do Juan). */
   const stats = [
     { label: 'Total', value: total, icon: Users, tom: 'info' as const },
     { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, tom: 'aviso' as const },
-    {
+    ...(perfil.role === 'supervisor' ? [] : [{
       label: 'A receber (equipe)',
       value: brl(totalReceber),
       icon: Wallet,
       small: true,
       tom: 'acento' as const,
-    },
+    }]),
   ]
 
   /*
@@ -258,11 +261,45 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     ? await avisosPendentesSupervisor({ eventoId: id, perfilId: perfil.id, fornecedorId: fid, cpf: perfil.cpf ?? null })
     : []
 
+  /*
+   * Conferência de equipe (D-1). Aparece pro supervisor quando falta 1 dia
+   * pro evento e ele ainda não confirmou este setor — banner forte, não
+   * trava. Ver supabase/upgrade-conferencia-equipe.sql.
+   */
+  let conferenciaPendente = false
+  if (perfil.role === 'supervisor') {
+    const dataInicio = (fornecedor.eventos as any)?.data_inicio as string | undefined
+    if (dataInicio && conferenciaAberta(dataInicio)) {
+      const { data: conf, error: erroConf } = await supabase
+        .from('conferencias_equipe').select('status').eq('fornecedor_id', fid).maybeSingle()
+      // Sem `error` = tabela existe. Sem linha ainda = precisa conferir.
+      // Com `error` (migração pendente) fica false — não mostra banner falso.
+      if (!erroConf) conferenciaPendente = conf?.status !== 'confirmada'
+    }
+  }
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="supervisor" eventoId={id} />}
     <div className="space-y-5">
       <AutoRefresh />
+
+      {conferenciaPendente && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-brand-50 border border-brand-200 rounded-2xl px-4 py-3.5">
+          <div className="flex items-start gap-2.5 flex-1 min-w-0">
+            <ClipboardList className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-brand-800 text-sm font-extrabold">Confira sua equipe para o evento</p>
+              <p className="text-brand-700/80 text-xs mt-0.5">
+                Falta 1 dia. Veja quem está vinculado a {fornecedor.nome}, tire quem não é da equipe e confirme.
+              </p>
+            </div>
+          </div>
+          <Link href={`/admin/conferencia/${fid}`} className="btn btn-primario btn-sm shrink-0">
+            Conferir agora
+          </Link>
+        </div>
+      )}
       <PageHeader
         titulo={fornecedor.nome}
         descricao={(fornecedor.eventos as any)?.nome}

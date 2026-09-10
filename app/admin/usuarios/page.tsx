@@ -116,6 +116,7 @@ export default async function UsuariosPage({
     nome: u.nome as string,
     email: u.email as string,
     telefone: (u.telefone as string | null) ?? null,
+    emailContato: (u.email_contato as string | null) ?? null,
     role: (u.role ?? 'cliente') as Role,
     ativo: u.ativo !== false,
     permissoesUsuario: (u.permissoes_usuario as Record<string, boolean> | null) ?? {},
@@ -261,6 +262,7 @@ export default async function UsuariosPage({
                     usuarioRole={u.role}
                     usuarioAtivo={u.ativo}
                     usuarioTelefone={u.telefone}
+                    usuarioEmailContato={u.emailContato}
                     permissoesUsuario={u.permissoesUsuario}
                     podeExcluir={podeExcluir(perfil!.role)}
                   />

@@ -545,9 +545,12 @@ export default function AppShell({
             </Link>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0 shrink-0">
             {contexto && (
-              <span className="pilula-contexto hidden sm:inline-flex">
+              /* Só em tela grande, e mesmo lá não pode invadir a marca:
+                 `truncate` + largura máxima. No mobile a função aparece no
+                 menu do usuário (o avatar à direita). */
+              <span className="pilula-contexto hidden lg:inline-flex min-w-0 max-w-[28vw] truncate">
                 {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
               </span>
             )}

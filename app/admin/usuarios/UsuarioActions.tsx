@@ -11,6 +11,7 @@ import { LogoLoading } from '@/components/LogoLoading'
 
 export default function UsuarioActions({
   usuarioId, usuarioNome, usuarioRole, usuarioAtivo, usuarioTelefone = null,
+  usuarioEmailContato = null,
   permissoesUsuario = {}, podeExcluir = false,
 }: {
   usuarioId: string
@@ -18,6 +19,8 @@ export default function UsuarioActions({
   usuarioRole: string
   usuarioAtivo: boolean
   usuarioTelefone?: string | null
+  /** Email real do supervisor (perfis.email_contato) — pro lembrete de conferência. */
+  usuarioEmailContato?: string | null
   /** O que já está ligado/desligado neste acesso (perfis.permissoes_usuario). */
   permissoesUsuario?: Record<string, boolean>
   /** Excluir é só do master; o resto vale pra quem gerencia acessos. */
@@ -154,6 +157,14 @@ export default function UsuarioActions({
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-slate-700">WhatsApp</label>
                 <input name="telefone" defaultValue={usuarioTelefone ?? ''} placeholder="(11) 99999-9999" className="input" />
+              </div>
+            )}
+
+            {usuarioRole === 'supervisor' && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Email (opcional)</label>
+                <input name="email_contato" type="email" defaultValue={usuarioEmailContato ?? ''} placeholder="pessoa@email.com" className="input" autoComplete="off" />
+                <p className="text-2xs text-slate-400">Lembrete de conferência de equipe (1 dia antes do evento).</p>
               </div>
             )}
 

@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/enviar-mensagens",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/conferencia-equipe",
+      "schedule": "0 12 * * *"
     }
   ]
 }

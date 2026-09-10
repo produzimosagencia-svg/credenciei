@@ -230,6 +230,13 @@ export default function NovoAcessoForm({
                   <TelefoneInput name="telefone" required placeholder="(11) 99999-9999" className="input" />
                   <p className="text-xs text-slate-500">Recebe por aqui o link para criar a senha.</p>
                 </div>
+                {funcao === 'supervisor' && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-slate-700">Email (opcional)</label>
+                    <input name="email_contato" type="email" placeholder="pessoa@email.com" className="input" autoComplete="off" />
+                    <p className="text-xs text-slate-500">Para o lembrete de conferência de equipe, 1 dia antes do evento, com a planilha anexa.</p>
+                  </div>
+                )}
               </>
             )}
 

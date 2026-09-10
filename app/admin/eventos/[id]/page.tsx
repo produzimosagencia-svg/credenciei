@@ -11,6 +11,7 @@ import ListaDeSetores from './ListaDeSetores'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
+import PainelConferencias from './PainelConferencias'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import StatCard from '@/components/StatCard'
 import { Secao, EmptyState, Badge, Aviso } from '@/components/ui/Superficie'
@@ -463,6 +464,8 @@ export default async function EventoPage({
         * certa: quem abre esta tela está organizando o evento; quem abre as
         * pendências está acompanhando a operação acontecer.
         */}
+      <PainelConferencias eventoId={id} dataInicio={evento.data_inicio} />
+
       <div data-tutorial="evt-setores">
         <Secao
           tom="acento"
