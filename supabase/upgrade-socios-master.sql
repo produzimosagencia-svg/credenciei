@@ -21,8 +21,27 @@
 --   Juan Muzy de Oliveira   juan@credenciei.com                supervisor → master
 --   Gabriel Valiati         14682085786@supervisor.credenciei  suporte    → master
 --
--- Guilherme Silva NÃO entra: ele não tem perfil no sistema, e o Juan preferiu
--- não criar agora (09/09/2026). Quando criar, é só mais um UPDATE igual.
+--   Guilherme Silva         guilherme@socio.credenciei         (criado do zero)
+--
+-- O GUILHERME É UM PERFIL SEM DONO, DE PROPÓSITO
+--
+-- O Juan pediu (09/09/2026) só o NOME dele na lista de responsáveis, sem os
+-- dados reais. Não dá pra inserir uma linha "solta" em `perfis`: a coluna `id`
+-- tem chave estrangeira para `auth.users`, então um perfil sem conta é
+-- rejeitado com 23503. O mais próximo disso é o que está aplicado: uma conta
+-- com e-mail sintético no padrão que o sistema já usa (`@supervisor.credenciei`
+-- para supervisor; aqui `@socio.credenciei`) e senha aleatória que ninguém
+-- recebe.
+--
+-- Ou seja: o nome aparece e pode receber tarefa, mas NINGUÉM entra por ela —
+-- `role = 'master'` aqui é rótulo, não acesso concedido, porque não existe
+-- senha conhecida. Quando o Guilherme for usar de verdade, troca-se o e-mail
+-- pelo real e manda-se um link de definir senha; o `id` não muda, então tudo
+-- que já estiver atribuído a ele continua atribuído.
+--
+-- Criado pela API de admin do Supabase (auth.users exige senha criptografada,
+-- que não se escreve em SQL puro):
+--   id = 9dd2405d-30ba-42c8-81ed-4445d50d0b39
 --
 -- ORGANIZAÇÃO VAI A NULO
 --
@@ -56,4 +75,7 @@ commit;
 --     update perfis
 --        set role = 'suporte'
 --      where id = 'c358bd94-ddc8-4df4-a2b3-2e082d9a2fe7';
+--     -- O Guilherme não existia antes: desfazer é apagar o perfil E a conta.
+--     delete from perfis where id = '9dd2405d-30ba-42c8-81ed-4445d50d0b39';
+--     -- e, no painel do Supabase, remover o usuário guilherme@socio.credenciei
 --   commit;
