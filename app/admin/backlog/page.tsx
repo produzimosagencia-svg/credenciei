@@ -65,7 +65,9 @@ export default async function BacklogPage({
     eventoId: p.evento || undefined,
     origem: p.origem || undefined,
     busca: p.busca || undefined,
-    incluirEncerrados: p.encerrados === '1',
+    // Concluído e Cancelado ficam VISÍVEIS por padrão (é um Kanban — a coluna
+    // "Concluído" some sem eles). `?encerrados=0` esconde, se a pessoa quiser.
+    incluirEncerrados: p.encerrados !== '0',
   }
 
   /*

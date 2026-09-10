@@ -1,13 +1,9 @@
-export default function Carregando() {
-  return (
-    <div className="space-y-5">
-      <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
-      <div className="h-40 rounded-3xl bg-slate-100 animate-pulse" />
-      <div className="h-10 rounded-xl bg-slate-100 animate-pulse" />
-      <div className="grid grid-cols-3 gap-3">
-        {Array.from({ length: 3 }, (_, i) => <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />)}
-      </div>
-      <div className="h-48 rounded-2xl bg-slate-100 animate-pulse" />
-    </div>
-  )
+import { LoadingConteudo } from '@/components/LogoLoading'
+
+// Loading de rota — a marca girando, centralizada na área de conteúdo, com a
+// barra lateral intacta. Ao trocar de tela aparece isto até o servidor
+// terminar de montar a página. Sem skeleton (a pessoa lia como "quebrado") e
+// sem tela branca.
+export default function Loading() {
+  return <LoadingConteudo />
 }

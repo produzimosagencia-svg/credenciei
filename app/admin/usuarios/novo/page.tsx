@@ -50,7 +50,7 @@ export default async function NovoAcessoPage() {
 
   return (
     <TutorialProvider tutorial={TUTORIAL}>
-      <div className="max-w-lg space-y-6">
+      <div className="max-w-lg mx-auto space-y-6">
         <PageHeader
           voltarPara="/admin/usuarios"
           titulo="Novo acesso"

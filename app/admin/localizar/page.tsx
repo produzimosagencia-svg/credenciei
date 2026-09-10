@@ -38,7 +38,7 @@ export default async function LocalizarPage() {
         enorme em monitor grande — o campo de busca é o começo da tarefa e tem
         que estar onde o olho já está, que é no canto superior esquerdo.
       */}
-      <div className="max-w-xl space-y-5">
+      <div className="max-w-xl mx-auto space-y-5">
         <PageHeader
           titulo="Registrar ponto"
           descricao="Registre a batida de quem perdeu o horário — busca por CPF ou nome, com foto na hora"

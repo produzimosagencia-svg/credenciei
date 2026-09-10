@@ -52,7 +52,7 @@ export default async function NovoEventoPage() {
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
-      <div className="max-w-xl space-y-6">
+      <div className="max-w-xl mx-auto space-y-6">
         <PageHeader
           voltarPara="/admin/eventos"
           titulo="Novo Evento"

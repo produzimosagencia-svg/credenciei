@@ -1,8 +1,12 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Save, AlertTriangle, Building2, CheckSquare, RefreshCw } from 'lucide-react'
-import { criarItemBacklog, editarItemBacklog } from '@/lib/actions-backlog'
+import { X, Save, AlertTriangle, Building2, CheckSquare, RefreshCw, Paperclip, FileText } from 'lucide-react'
+import {
+  criarItemBacklog, editarItemBacklog,
+  anexosDoItem, anexarFotoBacklog, removerAnexoBacklog, type AnexoBacklog,
+} from '@/lib/actions-backlog'
+import { LogoLoading } from '@/components/LogoLoading'
 import type { ItemBacklog } from '@/lib/backlog'
 import {
   TIPOS, PRIORIDADES, ORIGENS_LEAD, COLUNAS, STATUS_INICIAL, type TipoItem,
@@ -57,6 +61,45 @@ export default function FormularioItem({
 
   const statusEfetivo = status || STATUS_INICIAL[tipo]
 
+  // ── Fotos do item (como um card do Trello) ──────────────────────────────
+  // Criação: seguram-se aqui e sobem depois que o item ganha id.
+  // Edição: as que já existem carregam do servidor; novas sobem na hora.
+  const [fotosNovas, setFotosNovas] = useState<File[]>([])
+  const [anexos, setAnexos] = useState<AnexoBacklog[] | null>(editando ? null : [])
+  const [subindoFotos, setSubindoFotos] = useState(false)
+  const arquivoRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editando && item) anexosDoItem(item.id).then(r => setAnexos(r.ok ? r.dados.anexos : []))
+  }, [editando, item])
+
+  const escolherFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const novos = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (!novos.length) return
+    if (editando && item) {
+      // Edição: sobe na hora, no item que já existe.
+      setSubindoFotos(true)
+      Promise.all(novos.map(f => {
+        const fd = new FormData(); fd.set('arquivo', f)
+        return anexarFotoBacklog(item.id, fd)
+      })).then(rs => {
+        const falhou = rs.find(r => !r.ok)
+        if (falhou && !falhou.ok) setErro(falhou.erro)
+        anexosDoItem(item.id).then(r => setAnexos(r.ok ? r.dados.anexos : []))
+      }).finally(() => setSubindoFotos(false))
+    } else {
+      setFotosNovas(f => [...f, ...novos])
+    }
+  }
+
+  const subirFotosPendentes = async (itemId: string) => {
+    for (const f of fotosNovas) {
+      const fd = new FormData(); fd.set('arquivo', f)
+      await anexarFotoBacklog(itemId, fd)
+    }
+  }
+
   const salvar = (formData: FormData) => {
     setErro(null)
     formData.set('tipo', tipo)
@@ -79,6 +122,12 @@ export default function FormularioItem({
           ? await editarItemBacklog(item!.id, formData)
           : await criarItemBacklog(formData)
         if (!r.ok) { setErro(r.erro); return }
+        // Fotos escolhidas na criação sobem agora, no item recém-criado.
+        const novoId = editando ? item!.id : ('id' in r ? r.id : undefined)
+        if (!editando && novoId && fotosNovas.length) {
+          setSubindoFotos(true)
+          await subirFotosPendentes(novoId)
+        }
         onFechar()
         router.refresh()
       } catch (e) {
@@ -266,6 +315,78 @@ export default function FormularioItem({
             </>
           )}
 
+          <Campo rotulo="Fotos">
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => arquivoRef.current?.click()}
+                disabled={subindoFotos}
+                className="btn btn-secundario btn-sm disabled:opacity-50"
+              >
+                {subindoFotos ? <LogoLoading tamanho={14} /> : <Paperclip className="w-3.5 h-3.5 shrink-0" />}
+                {subindoFotos ? 'Enviando…' : 'Anexar foto'}
+              </button>
+              <input
+                ref={arquivoRef}
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                className="hidden"
+                onChange={escolherFotos}
+              />
+              {!editando && !fotosNovas.length && (
+                <p className="text-2xs text-slate-400">Print da conversa, proposta, logo do lead… entram junto quando você salvar.</p>
+              )}
+
+              {(anexos?.length || fotosNovas.length) ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {(anexos ?? []).map(a => (
+                    <div key={a.id} className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
+                      {a.ehImagem && a.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={a.url} alt={a.nome} className="h-16 w-full object-cover" />
+                      ) : (
+                        <div className="flex h-16 flex-col items-center justify-center p-1 text-center">
+                          <FileText className="w-4 h-4 text-slate-400" />
+                          <span className="text-2xs text-slate-500 line-clamp-1 break-all">{a.nome}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removerAnexoBacklog(a.id).then(() => item && anexosDoItem(item.id).then(r => setAnexos(r.ok ? r.dados.anexos : [])))}
+                        aria-label={`Remover ${a.nome}`}
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 bg-white/90 text-slate-500 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {fotosNovas.map((f, i) => (
+                    <div key={i} className="group relative rounded-lg border border-brand-200 overflow-hidden bg-brand-50">
+                      {f.type.startsWith('image/') ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={URL.createObjectURL(f)} alt={f.name} className="h-16 w-full object-cover" />
+                      ) : (
+                        <div className="flex h-16 flex-col items-center justify-center p-1 text-center">
+                          <FileText className="w-4 h-4 text-slate-400" />
+                          <span className="text-2xs text-slate-500 line-clamp-1 break-all">{f.name}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setFotosNovas(fs => fs.filter((_, j) => j !== i))}
+                        aria-label={`Tirar ${f.name}`}
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 bg-white/90 text-slate-500 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </Campo>
+
           <Campo rotulo="Observações">
             <textarea
               name="observacoes" rows={2} defaultValue={item?.observacoes ?? ''}
@@ -291,8 +412,9 @@ export default function FormularioItem({
           )}
 
           <div className="flex gap-2 pt-1">
-            <button type="submit" disabled={pendente} className="btn btn-primario disabled:opacity-50">
-              <Save className="w-3.5 h-3.5 shrink-0" /> {pendente ? 'Salvando…' : editando ? 'Salvar' : 'Adicionar'}
+            <button type="submit" disabled={pendente || subindoFotos} className="btn btn-primario disabled:opacity-50">
+              {(pendente || subindoFotos) ? <LogoLoading tamanho={14} /> : <Save className="w-3.5 h-3.5 shrink-0" />}
+              {pendente ? 'Salvando…' : subindoFotos ? 'Enviando fotos…' : editando ? 'Salvar' : 'Adicionar'}
             </button>
             <button type="button" onClick={onFechar} disabled={pendente} className="btn btn-secundario">
               Cancelar

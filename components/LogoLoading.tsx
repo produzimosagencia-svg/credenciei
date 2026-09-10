@@ -123,4 +123,28 @@ export function LoadingTela({
   )
 }
 
+/**
+ * Loading da ÁREA DE CONTEÚDO — a marca grande, centralizada onde a página
+ * vai aparecer, com a barra lateral intacta. É o que todo `loading.tsx` de
+ * rota usa: ao trocar de tela, em vez de skeleton (que a pessoa lê como
+ * "quebrado"), aparece a marca girando até o conteúdo ficar pronto.
+ *
+ * Ocupa a altura da viewport menos o cabeçalho (~4rem), pra ficar no meio da
+ * área e não colado no topo.
+ */
+export function LoadingConteudo({ mensagem }: { mensagem?: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={mensagem ?? 'Carregando'}
+      className="flex min-h-[65vh] w-full flex-col items-center justify-center gap-4"
+    >
+      <LogoLoading tamanho="xl" />
+      {mensagem && <p className="text-sm font-semibold text-slate-500">{mensagem}</p>}
+    </div>
+  )
+}
+
 export default LogoLoading

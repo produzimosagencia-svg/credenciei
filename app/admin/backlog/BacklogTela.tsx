@@ -212,11 +212,13 @@ export default function BacklogTela({
         >
           Meus itens
         </button>
+        {/* Encerrados (Concluído/Cancelado) vêm VISÍVEIS por padrão; este botão
+            esconde, pra quem quer o quadro mais enxuto. */}
         <button
-          onClick={() => trocar('encerrados', params.get('encerrados') === '1' ? null : '1')}
-          className={`btn btn-sm ${params.get('encerrados') === '1' ? 'btn-primario' : 'btn-secundario'}`}
+          onClick={() => trocar('encerrados', params.get('encerrados') === '0' ? null : '0')}
+          className={`btn btn-sm ${params.get('encerrados') === '0' ? 'btn-primario' : 'btn-secundario'}`}
         >
-          Mostrar encerrados
+          {params.get('encerrados') === '0' ? 'Mostrar encerrados' : 'Ocultar encerrados'}
         </button>
         {temFiltro && (
           <button onClick={() => router.push(url({

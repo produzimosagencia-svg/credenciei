@@ -1,21 +1,9 @@
-import { Secao } from '@/components/ui/Superficie'
+import { LoadingConteudo } from '@/components/LogoLoading'
 
-export default function Carregando() {
-  return (
-    <div className="space-y-5">
-      <div className="h-9 w-64 rounded-lg bg-slate-100 animate-pulse" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="h-28 rounded-2xl bg-slate-100 animate-pulse" />
-        ))}
-      </div>
-      <Secao titulo="Backlog Operacional" descricao="Carregando os itens…" corpoClassName="p-4">
-        <div className="flex gap-3 overflow-hidden">
-          {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="w-[17.5rem] h-64 shrink-0 rounded-2xl bg-slate-100 animate-pulse" />
-          ))}
-        </div>
-      </Secao>
-    </div>
-  )
+// Loading de rota — a marca girando, centralizada na área de conteúdo, com a
+// barra lateral intacta. Ao trocar de tela aparece isto até o servidor
+// terminar de montar a página. Sem skeleton (a pessoa lia como "quebrado") e
+// sem tela branca.
+export default function Loading() {
+  return <LoadingConteudo />
 }

@@ -14,7 +14,7 @@ export default async function NovaOrganizacaoPage() {
   if (!podeGerenciarOrganizacoes(perfil)) redirect('/admin')
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="max-w-xl mx-auto space-y-6">
       <PageHeader
         voltarPara="/admin/organizacoes"
         titulo="Nova Organização"
