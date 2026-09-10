@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { Eye, EyeOff, MessageCircle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 
 /**
  * Cartão de login — adaptado do template "modern stunning sign in".
@@ -95,9 +96,10 @@ export function SignIn1({ onEntrar, carregando, erro }: {
           <button
             type="submit"
             disabled={carregando}
-            className="btn-press w-full px-5 py-3.5 mt-1 rounded-xl text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition"
+            className="btn-press w-full px-5 py-3.5 mt-1 rounded-xl text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition flex items-center justify-center gap-2"
             style={{ background: 'linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%)', boxShadow: '0 10px 30px rgba(255,74,15,.45), inset 0 1px 0 rgba(255,255,255,.25)' }}
           >
+            {carregando && <LogoLoading tamanho="xs" />}
             {carregando ? 'Entrando…' : 'Entrar'}
           </button>
 

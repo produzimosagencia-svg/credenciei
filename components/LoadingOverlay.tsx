@@ -1,6 +1,7 @@
 'use client'
 import { useFormStatus } from 'react-dom'
 import { LoadingTela } from '@/components/LogoLoading'
+import { useLoadingSuave } from '@/components/loading-suave'
 
 /**
  * Overlay de carregamento em tela cheia — feedback visual pra qualquer etapa
@@ -21,6 +22,9 @@ export function LoadingOverlay({ mensagem = 'Salvando...' }: { mensagem?: string
  */
 export function FormLoadingOverlay({ mensagem }: { mensagem?: string }) {
   const { pending } = useFormStatus()
-  if (!pending) return null
+  // Anti-flicker: envio que resolve em <140ms (validação que já volta com
+  // redirect, p.ex.) não chega a piscar o overlay.
+  const mostrar = useLoadingSuave(pending)
+  if (!mostrar) return null
   return <LoadingOverlay mensagem={mensagem} />
 }
