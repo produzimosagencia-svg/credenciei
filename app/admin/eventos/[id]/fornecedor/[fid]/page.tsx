@@ -350,13 +350,26 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           setorNome={fornecedor.nome}
           valorCombinado={fornecedor.valor_combinado ?? null}
           podeExcluir={podeExcluirDaEquipe(perfil)}
-          outrosSetores={outrosSetores ?? []}
           /*
-           * Mover é decisão de quem enxerga o evento inteiro, não de um
-           * supervisor — mover gente de setor mexe na equipe de OUTRO
-           * supervisor sem ele estar envolvido na decisão.
+           * O cardápio de destino: admin/master vê todos os setores do evento;
+           * o supervisor só os OUTROS setores DELE (ele só remaneja entre os
+           * que cobre — o servidor recusa qualquer outro).
            */
-          podeMoverDeSetor={podeGerenciarEventos(perfil)}
+          outrosSetores={
+            perfil.role === 'supervisor'
+              ? setoresDoSupervisor.filter(s => s.id !== fid).map(s => ({ id: s.id, nome: s.nome }))
+              : (outrosSetores ?? [])
+          }
+          /*
+           * Admin/master move qualquer um. O supervisor também — mas só quando
+           * cobre 2+ setores, e só entre os dele (mexe na PRÓPRIA equipe dos
+           * dois lados, então não pega outro supervisor de surpresa). O
+           * servidor (`moverFuncionarioDeSetor`) reforça isso e exige motivo.
+           */
+          podeMoverDeSetor={
+            podeGerenciarEventos(perfil) ||
+            (perfil.role === 'supervisor' && setoresDoSupervisor.length >= 2)
+          }
           /*
            * A mesma permissão que `criarSupervisor` já exige no servidor —
            * mostrar o botão para quem a action ia recusar de qualquer jeito é

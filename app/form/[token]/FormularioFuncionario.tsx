@@ -6,6 +6,7 @@ import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 import SeletorLista from '@/components/SeletorLista'
 import { CIDADES_ES } from '@/lib/cidades'
+import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { useCampoFormatado } from '@/components/inputs'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 
@@ -310,7 +311,12 @@ export default function FormularioFuncionario({
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
       </Field>
       <Field label="Cargo *">
-        <input required value={form.cargo} {...campoCargo} placeholder="Ex: Segurança, Garçom..." className="input" />
+        {/* `list` sugere a grafia certa das funções comuns sem travar texto
+            livre — evento tem função que ninguém previu. Ver lib/funcoes-constantes. */}
+        <input required value={form.cargo} {...campoCargo} list="funcoes-comuns" placeholder="Ex: Segurança, Garçom..." className="input" autoComplete="off" />
+        <datalist id="funcoes-comuns">
+          {FUNCOES_COMUNS.map(f => <option key={f} value={f} />)}
+        </datalist>
       </Field>
       <Field label="Cidade onde você mora *">
         {/* Lista em vez de texto livre.

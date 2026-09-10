@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarTelefoneFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -80,7 +81,7 @@ export default function FuncionarioDetalheModal({
    */
   role?: string
 }) {
-  const motivoObrigatorio = role === 'suporte'
+  const motivoObrigatorio = role === 'suporte' || role === 'supervisor'
   const [open, setOpen] = useState(false)
 
   /*
@@ -160,6 +161,39 @@ export default function FuncionarioDetalheModal({
       setOkTelefone(r.corrigidasNaFila
         ? `Telefone corrigido. ${r.corrigidasNaFila} mensagem${r.corrigidasNaFila === 1 ? '' : 's'} da fila ${r.corrigidasNaFila === 1 ? 'passou' : 'passaram'} para o número novo.`
         : 'Telefone corrigido.')
+      router.refresh()
+    })
+  }
+
+  // ── Corrigir a função (cargo) ─────────────────────────────────────────────
+  /*
+   * Texto livre no cadastro público — a mesma função vinha escrita de dez
+   * jeitos. Quem cuida da equipe corrige aqui; o <datalist> sugere a grafia
+   * certa das comuns, mas aceita qualquer texto.
+   */
+  const [editandoCargo, setEditandoCargo] = useState(false)
+  const [novoCargo, setNovoCargo] = useState(f.cargo)
+  const [motivoCargo, setMotivoCargo] = useState('')
+  const [erroCargo, setErroCargo] = useState<string | null>(null)
+  const [okCargo, setOkCargo] = useState<string | null>(null)
+  const [isPendingCargo, startTransitionCargo] = useTransition()
+
+  const abrirEditarCargo = () => {
+    setErroCargo(null); setOkCargo(null)
+    setNovoCargo(f.cargo)
+    setMotivoCargo('')
+    setEditandoCargo(true)
+  }
+
+  const salvarCargo = () => {
+    setErroCargo(null)
+    if (!novoCargo.trim()) { setErroCargo('A função não pode ficar em branco.'); return }
+    if (motivoObrigatorio && !motivoCargo.trim()) { setErroCargo('Informe o motivo da correção.'); return }
+    startTransitionCargo(async () => {
+      const r = await editarCargoFuncionario(f.id, fornecedorId, eventoId, novoCargo, motivoCargo || undefined)
+      if ('erro' in r) { setErroCargo(r.erro); return }
+      setEditandoCargo(false)
+      setOkCargo('Função atualizada.')
       router.refresh()
     })
   }
@@ -487,6 +521,20 @@ export default function FuncionarioDetalheModal({
                     </div>
                   </div>
 
+                  <div>
+                    <p className="text-slate-400 text-xs">Função</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-slate-700 font-medium">{f.cargo || '—'}</p>
+                      <button
+                        onClick={abrirEditarCargo}
+                        className="p-0.5 text-slate-300 hover:text-brand-500"
+                        title="Corrigir função"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
                   {/*
                     * Duas datas, e elas não são a mesma: quando ela se
                     * credenciou NESTE evento, e desde quando existe na base do
@@ -566,6 +614,45 @@ export default function FuncionarioDetalheModal({
                       </button>
                     </div>
                     {erroTelefone && <p className="text-red-500 text-xs">{erroTelefone}</p>}
+                  </div>
+                )}
+
+                {okCargo && (
+                  <p className="text-green-700 text-xs bg-green-50 border border-green-200 rounded-xl px-3 py-2">{okCargo}</p>
+                )}
+                {editandoCargo && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                    <p className="text-amber-800 text-xs">
+                      A função aparece no relatório e no crachá. Comece a digitar — as mais comuns aparecem na lista.
+                    </p>
+                    <input
+                      type="text"
+                      list="funcoes-comuns-modal"
+                      value={novoCargo}
+                      onChange={e => setNovoCargo(e.target.value)}
+                      className="input text-sm"
+                      placeholder="Ex.: Caixa móvel"
+                      autoComplete="off"
+                    />
+                    <datalist id="funcoes-comuns-modal">
+                      {FUNCOES_COMUNS.map(fn => <option key={fn} value={fn} />)}
+                    </datalist>
+                    {motivoObrigatorio && (
+                      <input
+                        type="text"
+                        value={motivoCargo}
+                        onChange={e => setMotivoCargo(e.target.value)}
+                        className="input text-sm"
+                        placeholder="Motivo da correção (obrigatório)"
+                      />
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={salvarCargo} disabled={isPendingCargo || !novoCargo.trim()} className="btn btn-primario btn-sm disabled:opacity-50">
+                        {isPendingCargo ? 'Salvando…' : 'Confirmar'}
+                      </button>
+                      <button onClick={() => setEditandoCargo(false)} disabled={isPendingCargo} className="btn btn-secundario btn-sm">Cancelar</button>
+                    </div>
+                    {erroCargo && <p className="text-red-500 text-xs">{erroCargo}</p>}
                   </div>
                 )}
 

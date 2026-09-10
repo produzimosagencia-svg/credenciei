@@ -2114,11 +2114,28 @@ export async function moverFuncionarioDeSetor(
   if (!evento) throw new Error('Evento não encontrado')
 
   const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+
+  /*
+   * Quem NÃO é admin/master precisa de motivo (auditoria) e de uma checagem
+   * de escopo própria. A do supervisor depende do setor de ORIGEM, que só se
+   * conhece depois de carregar o funcionário — por isso a validação dele
+   * acontece logo abaixo, e não aqui.
+   */
+  let setoresDoSupervisor: Set<string> | null = null
   if (!podeSempre) {
-    if (perfil.role !== 'suporte') throw new Error('Sem permissão sobre este evento')
     if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da mudança de setor.')
-    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
-      throw new Error('Este evento não está no seu escopo de atendimento.')
+    if (perfil.role === 'supervisor') {
+      setoresDoSupervisor = new Set((await meusSetores(perfil)).map(s => s.id))
+      // O DESTINO tem que ser um setor dele; a ORIGEM é conferida adiante.
+      if (!setoresDoSupervisor.has(novoFornecedorId)) {
+        throw new Error('Você só pode mover para um setor que você também supervisiona.')
+      }
+    } else if (perfil.role === 'suporte') {
+      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+        throw new Error('Este evento não está no seu escopo de atendimento.')
+      }
+    } else {
+      throw new Error('Sem permissão sobre este evento')
     }
   }
   const db = supabaseAdmin
@@ -2133,6 +2150,12 @@ export async function moverFuncionarioDeSetor(
   // por engano (ou de propósito) moveria gente para um setor de outro cliente.
   if ((func.fornecedores as unknown as { evento_id: string }).evento_id !== eventoId) {
     throw new Error('Este funcionário não pertence a este evento.')
+  }
+
+  // Supervisor: a ORIGEM também tem que ser dele — só remaneja entre setores
+  // que ele cobre, nunca puxa gente de um setor de outro supervisor.
+  if (setoresDoSupervisor && !setoresDoSupervisor.has(func.fornecedor_id as string)) {
+    throw new Error('Você só pode mover pessoas de um setor que você supervisiona.')
   }
 
   if (func.fornecedor_id === novoFornecedorId) {
@@ -6259,4 +6282,60 @@ export async function editarTelefoneFuncionario(
   after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
   return { ok: true as const, corrigidasNaFila: corrigidas?.length ?? 0 }
+}
+
+/**
+ * Corrige a FUNÇÃO (cargo) de uma pessoa da equipe.
+ *
+ * O campo é texto livre no cadastro público, e a mesma função aparecia
+ * escrita de dez jeitos ("cx movel", "caixa móvel"…). Agora quem cuida da
+ * equipe conserta: admin/master da organização, o supervisor DO setor, e o
+ * suporte dentro do escopo (com motivo). Mesma régua de
+ * `editarTelefoneFuncionario`.
+ */
+export async function editarCargoFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, novoCargoBruto: string, motivo?: string,
+): Promise<{ ok: true } | { erro: string }> {
+  const perfil = await getPerfil()
+  if (!perfil) return { erro: 'Sem permissão.' }
+
+  if (perfil.role === 'suporte') {
+    const { data: forn } = await supabaseAdmin
+      .from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
+    if (!forn || forn.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+    const organizacaoId = (forn.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { erro: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  } else {
+    try {
+      await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    } catch {
+      return { erro: 'Sem permissão para corrigir a função desta pessoa.' }
+    }
+  }
+
+  const novo = (novoCargoBruto ?? '').trim().replace(/\s+/g, ' ')
+  if (!novo) return { erro: 'A função não pode ficar em branco.' }
+  if (novo.length > 60) return { erro: 'Função muito longa. Encurte.' }
+
+  const { data: atual } = await supabaseAdmin
+    .from('funcionarios').select('id, nome, cargo, fornecedor_id').eq('id', funcionarioId).single()
+  if (!atual) return { erro: 'Pessoa não encontrada.' }
+  if (atual.fornecedor_id !== fornecedorId) return { erro: 'Esta pessoa não está neste setor.' }
+  if ((atual.cargo ?? '') === novo) return { ok: true as const }
+
+  const { error } = await supabaseAdmin
+    .from('funcionarios').update({ cargo: novo }).eq('id', funcionarioId)
+  if (error) return { erro: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SETOR', campoAlterado: 'função',
+    valorAnterior: (atual.cargo as string | null) ?? null, valorNovo: novo, motivo: motivo ?? null,
+    funcionarioId, eventoId,
+  }))
+  after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true as const }
 }
