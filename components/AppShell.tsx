@@ -6,11 +6,11 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
-  podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, type Role,
+  podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeRegistrarGastos, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -149,6 +149,15 @@ function gruposPara(perfil: Perfil): Grupo[] {
    */
   if (podeGerenciarUsuarios(perfil) || role === 'suporte') {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
+  }
+  /*
+   * Gastos: o registro de despesa por voz, do produtor. Tem shell próprio em
+   * `/gastos` (fora do AppShell), mas o item aqui é o caminho pra quem também
+   * usa o painel chegar lá. Mesma régua de `podeGerenciarEventos` — quem
+   * organiza o evento é quem gasta nele.
+   */
+  if (podeRegistrarGastos(perfil)) {
+    administrativo.push({ href: '/gastos', label: 'Gastos', icon: Mic })
   }
   if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
 

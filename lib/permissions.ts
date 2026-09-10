@@ -145,6 +145,18 @@ export const podeExcluirDaEquipe = capacidade('excluir_da_equipe', role =>
  */
 export const podeGerenciarBacklog = capacidade('gerenciar_backlog', role => role === 'master')
 
+/**
+ * Pode usar o módulo Gastos — registrar despesa de evento por voz ou na mão.
+ *
+ * É a ferramenta do PRODUTOR: mesmo conjunto de papéis que `podeGerenciarEventos`
+ * (master, admin, gerente, cliente), porque quem organiza o evento é quem gasta
+ * nele. Separado do Financeiro do master de propósito — são dois mundos, ver
+ * supabase/upgrade-gastos.sql. Editável em Configurações pra ligar pra um
+ * assistente de produção sem dar acesso a mais nada.
+ */
+export const podeRegistrarGastos = capacidade('registrar_gastos', role =>
+  role === 'master' || role === 'admin' || role === 'gerente' || role === 'cliente')
+
 /** Dono de um acesso de apoio contratado pro evento — nunca administra. */
 export const ehSuporte = (role?: string) => role === 'suporte'
 
@@ -264,6 +276,9 @@ export const CAPACIDADES: {
     descricao: 'Possíveis clientes, negociações e tarefas internas do Credenciei',
     padrao: podeGerenciarBacklog,
     peso: 'Abre o pipeline comercial da agência — quem está negociando, o que foi perdido.' },
+  { chave: 'registrar_gastos', nome: 'Registrar gastos',
+    descricao: 'Lança despesa de evento por voz ou na mão, e vê o dashboard de gastos',
+    padrao: podeRegistrarGastos },
   { chave: 'excluir', nome: 'Excluir do sistema',
     descricao: 'Apaga em cascata — evento, setor, organização',
     padrao: podeExcluir,

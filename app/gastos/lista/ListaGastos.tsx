@@ -1,0 +1,256 @@
+'use client'
+import { useState, useTransition } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import {
+  X, Pencil, Trash2, FileText, Loader2, AlertTriangle, Mic, Keyboard,
+} from 'lucide-react'
+import { excluirGasto, urlComprovanteGasto } from '@/lib/actions-gastos'
+import type { Gasto } from '@/lib/gastos'
+import { CATEGORIAS_GASTO, ROTULO_ORIGEM, ROTULO_STATUS, brl } from '@/lib/gastos-constantes'
+import SeletorLista from '@/components/SeletorLista'
+import DateTimePicker from '@/components/DateTimePicker'
+import ConfirmModal from '@/components/ConfirmModal'
+import FormGastoManual from '../FormGastoManual'
+import ExportarGastos from './ExportarGastos'
+
+type EventoOpcao = { id: string; nome: string; ativo: boolean }
+
+/**
+ * A tabela completa de gastos + filtros na URL + editar / excluir / detalhe /
+ * exportar. Filtros na URL pelo mesmo motivo do resto do sistema: volta,
+ * recarrega e link compartilhável mantêm o recorte.
+ */
+export default function ListaGastos({
+  gastos, eventos, fornecedores,
+}: {
+  gastos: Gasto[]
+  eventos: EventoOpcao[]
+  fornecedores: string[]
+}) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const params = useSearchParams()
+
+  const [editando, setEditando] = useState<Gasto | null>(null)
+  const [detalhe, setDetalhe] = useState<Gasto | null>(null)
+  const [excluir, setExcluir] = useState<Gasto | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [pendente, startTransition] = useTransition()
+
+  const trocar = (chave: string, valor: string) => {
+    const novo = new URLSearchParams(params.toString())
+    if (valor) novo.set(chave, valor)
+    else novo.delete(chave)
+    router.push(`${pathname}?${novo.toString()}`)
+  }
+
+  const temFiltro = ['categoria', 'fornecedor', 'de', 'ate'].some(c => params.get(c))
+
+  const confirmarExclusao = () => {
+    if (!excluir) return
+    setErro(null)
+    startTransition(async () => {
+      const r = await excluirGasto(excluir.id)
+      if (!r.ok) { setErro(r.erro); return }
+      setExcluir(null)
+      router.refresh()
+    })
+  }
+
+  const total = gastos.reduce((s, g) => s + g.valor, 0)
+
+  return (
+    <div className="space-y-4">
+      {/* ── Filtros ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="text-slate-400 text-2xs font-medium block mb-1">De</label>
+          <DateTimePicker modo="data" value={params.get('de') ?? ''} onChange={v => trocar('de', v)} placeholder="Início" className="w-auto text-sm" />
+        </div>
+        <div>
+          <label className="text-slate-400 text-2xs font-medium block mb-1">Até</label>
+          <DateTimePicker modo="data" value={params.get('ate') ?? ''} onChange={v => trocar('ate', v)} placeholder="Fim" className="w-auto text-sm" />
+        </div>
+        <SeletorLista
+          className="w-auto text-sm" valor={params.get('categoria') ?? ''}
+          onChange={v => trocar('categoria', v)} placeholder="Categoria: todas" titulo="Categoria"
+          opcoes={[{ valor: '', rotulo: 'Todas' }, ...CATEGORIAS_GASTO.map(c => ({ valor: c, rotulo: c }))]}
+        />
+        {fornecedores.length > 0 && (
+          <SeletorLista
+            className="w-auto text-sm" valor={params.get('fornecedor') ?? ''}
+            onChange={v => trocar('fornecedor', v)} placeholder="Fornecedor: todos" titulo="Fornecedor" busca
+            opcoes={[{ valor: '', rotulo: 'Todos' }, ...fornecedores.map(f => ({ valor: f, rotulo: f }))]}
+          />
+        )}
+        {temFiltro && (
+          <button onClick={() => router.push(`${pathname}?evento=${params.get('evento') ?? ''}`)} className="btn btn-secundario btn-sm">
+            <X className="w-3.5 h-3.5" /> Limpar
+          </button>
+        )}
+        <div className="ml-auto"><ExportarGastos gastos={gastos} /></div>
+      </div>
+
+      {erro && (
+        <p className="flex items-start gap-1.5 text-red-600 text-xs">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
+        </p>
+      )}
+
+      {/* ── Tabela ──────────────────────────────────────────────────────── */}
+      {!gastos.length ? (
+        <p className="text-slate-400 text-sm py-10 text-center border border-slate-200 rounded-xl">
+          Nenhum gasto neste recorte.
+        </p>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-slate-400 text-2xs uppercase tracking-wide border-b border-slate-100">
+                <th className="text-left font-semibold px-3 py-2">Data</th>
+                <th className="text-left font-semibold px-3 py-2">Descrição</th>
+                <th className="text-left font-semibold px-3 py-2 hidden sm:table-cell">Fornecedor</th>
+                <th className="text-left font-semibold px-3 py-2 hidden md:table-cell">Categoria</th>
+                <th className="text-left font-semibold px-3 py-2 hidden lg:table-cell">Registro</th>
+                <th className="text-right font-semibold px-3 py-2">Valor</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {gastos.map(g => (
+                <tr key={g.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-3 py-2 tabular-nums text-slate-500 whitespace-nowrap">
+                    {dataBr(g.dataGasto)}
+                    <span className="block text-2xs text-slate-400">{hora(g.registradoEm)}</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => setDetalhe(g)} className="text-slate-800 hover:text-brand-600 text-left font-medium">
+                      {g.descricao}
+                    </button>
+                    <span className="sm:hidden block text-2xs text-slate-400">
+                      {g.fornecedor ? `${g.fornecedor} · ` : ''}{g.categoria}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 hidden sm:table-cell">{g.fornecedor ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{g.categoria}</td>
+                  <td className="px-3 py-2 hidden lg:table-cell">
+                    <span className="inline-flex items-center gap-1 text-2xs text-slate-500">
+                      {g.origem === 'audio' ? <Mic className="w-3 h-3" /> : <Keyboard className="w-3 h-3" />}
+                      {ROTULO_ORIGEM[g.origem]}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{brl(g.valor)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1 justify-end">
+                      <button onClick={() => setEditando(g)} className="btn-press w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-600 hover:bg-white" aria-label="Editar">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setExcluir(g)} className="btn-press w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-white" aria-label="Excluir">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-slate-100 font-semibold text-slate-800">
+                <td className="px-3 py-2" colSpan={5}>Total ({gastos.length})</td>
+                <td className="px-3 py-2 text-right tabular-nums" colSpan={2}>{brl(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {editando && (
+        <FormGastoManual
+          eventos={eventos.map(e => ({ id: e.id, nome: e.nome }))}
+          gasto={editando}
+          aberto
+          onFechar={() => setEditando(null)}
+        />
+      )}
+
+      {detalhe && <DetalheGasto gasto={detalhe} onFechar={() => setDetalhe(null)} onEditar={() => { setEditando(detalhe); setDetalhe(null) }} />}
+
+      <ConfirmModal
+        open={!!excluir}
+        onClose={() => setExcluir(null)}
+        onConfirm={confirmarExclusao}
+        isPending={pendente}
+        titulo="Excluir gasto"
+        mensagem={excluir ? `Apagar "${excluir.descricao}" (${brl(excluir.valor)})? Isso não tem desfazer.` : ''}
+      />
+    </div>
+  )
+}
+
+function DetalheGasto({ gasto, onFechar, onEditar }: { gasto: Gasto; onFechar: () => void; onEditar: () => void }) {
+  const [abrindo, startAbrir] = useTransition()
+  const [erro, setErro] = useState<string | null>(null)
+
+  const verComprovante = () => {
+    setErro(null)
+    startAbrir(async () => {
+      const r = await urlComprovanteGasto(gasto.id)
+      if (!r.ok) { setErro(r.erro); return }
+      if (r.url) window.open(r.url, '_blank', 'noopener,noreferrer')
+      else setErro('Sem comprovante anexado.')
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onFechar}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/45" />
+      <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+          <h2 className="text-slate-800 font-bold">{gasto.descricao}</h2>
+          <button onClick={onFechar} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-2.5 text-sm">
+          <Linha rotulo="Valor" valor={brl(gasto.valor)} />
+          <Linha rotulo="Evento" valor={gasto.eventoNome ?? '—'} />
+          <Linha rotulo="Fornecedor" valor={gasto.fornecedor ?? '—'} />
+          <Linha rotulo="Categoria" valor={gasto.categoria} />
+          <Linha rotulo="Data do gasto" valor={dataBr(gasto.dataGasto)} />
+          <Linha rotulo="Registrado em" valor={`${dataBr(gasto.registradoEm.slice(0, 10))} ${hora(gasto.registradoEm)}`} />
+          <Linha rotulo="Forma" valor={ROTULO_ORIGEM[gasto.origem]} />
+          <Linha rotulo="Status" valor={ROTULO_STATUS[gasto.status]} />
+          {gasto.criadoPorNome && <Linha rotulo="Lançado por" valor={gasto.criadoPorNome} />}
+          {gasto.observacao && <div><p className="text-slate-400 text-2xs uppercase tracking-wide">Observação</p><p className="text-slate-700 mt-0.5 whitespace-pre-wrap">{gasto.observacao}</p></div>}
+          {gasto.transcricao && <div><p className="text-slate-400 text-2xs uppercase tracking-wide">Áudio transcrito</p><p className="text-slate-500 italic mt-0.5">&ldquo;{gasto.transcricao}&rdquo;</p></div>}
+
+          {gasto.temComprovante && (
+            <button onClick={verComprovante} disabled={abrindo} className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-medium mt-1">
+              {abrindo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+              Ver comprovante {gasto.comprovanteNome ? `(${gasto.comprovanteNome})` : ''}
+            </button>
+          )}
+          {erro && <p className="text-red-600 text-xs">{erro}</p>}
+
+          <div className="flex gap-2 pt-2">
+            <button onClick={onEditar} className="btn btn-secundario btn-sm"><Pencil className="w-3.5 h-3.5" /> Editar</button>
+            <button onClick={onFechar} className="btn btn-secundario btn-sm">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-slate-400 text-xs">{rotulo}</span>
+      <span className="text-slate-700 text-right">{valor}</span>
+    </div>
+  )
+}
+
+function dataBr(iso: string) {
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+}
+function hora(iso: string) {
+  return new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })
+}
