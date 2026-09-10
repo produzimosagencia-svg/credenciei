@@ -129,6 +129,24 @@ export const podeExcluirEventos = podeExcluir
 export const podeExcluirDaEquipe = capacidade('excluir_da_equipe', role =>
   role === 'master' || role === 'admin' || role === 'supervisor' || role === 'suporte')
 
+/**
+ * Pode ver e mexer no Backlog Operacional — o pipeline comercial e as tarefas
+ * internas do Credenciei.
+ *
+ * Padrão só master, igual ao Financeiro e pelo mesmo motivo: ali estão os
+ * possíveis clientes, o que está em negociação e o que foi perdido. Isso é a
+ * agência olhando o próprio negócio, não o produtor de um cliente olhando o
+ * evento dele — e um "possível cliente" nem organização é ainda. O pedido do
+ * Juan diz "usuários sem permissão administrativa não devem acessar
+ * informações comerciais sensíveis"; ficar em master é o corte mais estreito
+ * que atende isso.
+ *
+ * Continua sendo `capacidade`, e não um `role === 'master'` cravado, pra o
+ * dia em que um sócio ou um comercial precisar entrar sem virar master: liga
+ * na tela de Configurações, sem deploy.
+ */
+export const podeGerenciarBacklog = capacidade('gerenciar_backlog', role => role === 'master')
+
 /** Dono de um acesso de apoio contratado pro evento — nunca administra. */
 export const ehSuporte = (role?: string) => role === 'suporte'
 
@@ -244,6 +262,10 @@ export const CAPACIDADES: {
     descricao: 'Apaga uma pessoa do setor — e as batidas de ponto dela junto',
     padrao: podeExcluirDaEquipe,
     peso: 'Apaga histórico de presença, sem desfazer.' },
+  { chave: 'gerenciar_backlog', nome: 'Gerenciar Backlog',
+    descricao: 'Possíveis clientes, negociações e tarefas internas do Credenciei',
+    padrao: podeGerenciarBacklog,
+    peso: 'Abre o pipeline comercial da agência — quem está negociando, o que foi perdido.' },
   { chave: 'excluir', nome: 'Excluir do sistema',
     descricao: 'Apaga em cascata — evento, setor, organização',
     padrao: podeExcluir,

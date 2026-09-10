@@ -7,7 +7,8 @@ import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluirEventos, podeGerenciarBacklog } from '@/lib/permissions'
+import AtencaoHoje from './AtencaoHoje'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import { COR_ETAPA } from '@/components/charts'
@@ -708,6 +709,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       </div>
 
       {blocoEventos}
+
+      {/* O Backlog cobrando o que venceu — some sozinho quando não há nada. */}
+      {podeGerenciarBacklog(perfil) && <AtencaoHoje />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         {/* Fluxo do dia: durante um evento a pergunta é "o pico já passou?",

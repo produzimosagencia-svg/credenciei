@@ -6,17 +6,26 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
-  podeGerenciarEventos, podeGerenciarVeiculos, type Role,
+  podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
 import { BotaoTema } from '@/components/Tema'
 
-type Perfil = { id: string; nome: string; email: string; role: Role }
+/*
+ * `permissoes` vem junto de `getPerfil` (as exceções da organização) e é
+ * repassado inteiro às funções de permissão, não só o `role`. Sem isso o menu
+ * ignoraria toda liberação feita na tela de Configurações: a pessoa teria
+ * acesso à página e nenhum caminho pra chegar nela.
+ */
+type Perfil = {
+  id: string; nome: string; email: string; role: Role
+  permissoes?: Record<string, boolean> | null
+}
 
 // Criado uma única vez por sessão de browser
 const supabase = createBrowserClient(
@@ -41,7 +50,8 @@ type Grupo = { titulo?: string; itens: NavItem[] }
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
  * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
-function gruposPara(role: string): Grupo[] {
+function gruposPara(perfil: Perfil): Grupo[] {
+  const role = perfil.role
   const grupos: Grupo[] = []
 
   // ─── Evento ─────────────────────────────────────────────────────────────
@@ -50,7 +60,7 @@ function gruposPara(role: string): Grupo[] {
   const doEvento: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
   // O scanner fica só com quem credencia. O supervisor cuida da equipe, não
   // do portão — mesma separação que as mensagens já dizem à equipe.
-  if (podeEscanear(role)) {
+  if (podeEscanear(perfil)) {
     doEvento.push({ href: '/scan', label: 'Scanner', icon: ScanLine })
   }
   /*
@@ -59,14 +69,14 @@ function gruposPara(role: string): Grupo[] {
    * mesmo modal que já existia dentro do setor, alcançável agora sem precisar
    * saber em qual dos 35 setores a pessoa está.
    */
-  if (podeGerenciarEventos(role)) {
+  if (podeGerenciarEventos(perfil)) {
     doEvento.push({ href: '/admin/editar-evento', label: 'Editar evento', icon: Pencil })
   }
   // Editar colaborador também pro suporte, dentro do escopo dele — é a
   // ferramenta principal do papel (CPF, setor, ativação). Editar evento
   // (datas, janelas) fica de fora: isso reagenda a fila de WhatsApp do
   // evento inteiro, é decisão de quem administra, não de quem apoia.
-  if (podeGerenciarEventos(role) || role === 'suporte') {
+  if (podeGerenciarEventos(perfil) || role === 'suporte') {
     doEvento.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
   }
   /*
@@ -74,7 +84,7 @@ function gruposPara(role: string): Grupo[] {
    * o nome do menu usa a palavra de quem contrata, e a tela explica o que o
    * papel faz e o que NÃO faz. Mesma régua da action `criarOperadorPortaria`.
    */
-  if (podeGerenciarUsuarios(role)) {
+  if (podeGerenciarUsuarios(perfil)) {
     doEvento.push({ href: '/admin/criar-porteiro', label: 'Gestor de credenciamento', icon: ShieldCheck })
   }
   /*
@@ -83,12 +93,12 @@ function gruposPara(role: string): Grupo[] {
    * dirigindo no evento (decisão do Juan, 03/09/2026). Fica no grupo
    * Evento, junto do resto que se usa durante a operação.
    */
-  if (podeGerenciarVeiculos(role)) {
+  if (podeGerenciarVeiculos(perfil)) {
     doEvento.push({ href: '/admin/veiculos', label: 'Cadastrar veículo', icon: Truck })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.
-  if (podeAcompanhar(role)) {
+  if (podeAcompanhar(perfil)) {
     doEvento.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
     doEvento.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
@@ -96,7 +106,7 @@ function gruposPara(role: string): Grupo[] {
 
   // ─── Administrativo ─────────────────────────────────────────────────────
   const administrativo: NavItem[] = []
-  if (podeGerenciarEventos(role)) {
+  if (podeGerenciarEventos(perfil)) {
     administrativo.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
   }
   /*
@@ -109,7 +119,7 @@ function gruposPara(role: string): Grupo[] {
    * Sem operador de portão pelo mesmo motivo — escrever o passado com hora
    * arbitrária é ato de gestão. Mesma régua da action `lancarPontoManual`.
    */
-  if (podeGerenciarEventos(role) || role === 'supervisor' || role === 'suporte') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte') {
     administrativo.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
   }
   /*
@@ -122,13 +132,13 @@ function gruposPara(role: string): Grupo[] {
    * pessoa tentando entrar sem estar escalada. O bloqueio vale só no evento
    * escolhido — a tela explica isso antes de deixar usar.
    */
-  if (podeGerenciarEventos(role) || role === 'supervisor' || role === 'suporte') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte') {
     administrativo.push({ href: '/admin/bloquear-cpf', label: 'Bloquear CPF', icon: ShieldBan })
   }
-  if (podeGerenciarEventos(role) || role === 'supervisor') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor') {
     administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
   }
-  if (podeGerenciarUsuarios(role)) {
+  if (podeGerenciarUsuarios(perfil)) {
     administrativo.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
   }
   /*
@@ -137,7 +147,7 @@ function gruposPara(role: string): Grupo[] {
    * aplica essa régua de novo no servidor (a régua daqui é só pra mostrar
    * ou não o item, não a proteção real).
    */
-  if (podeGerenciarUsuarios(role) || role === 'suporte') {
+  if (podeGerenciarUsuarios(perfil) || role === 'suporte') {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
   }
   if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
@@ -145,10 +155,19 @@ function gruposPara(role: string): Grupo[] {
   // ─── Operacional ────────────────────────────────────────────────────────
   // O que só o dono da plataforma enxerga: não é o trabalho DE um evento, é
   // o de manter a operação que atende todos eles.
+  const operacional: NavItem[] = []
+  /*
+   * Backlog vem antes de Organizações de propósito: é o que acontece ANTES de
+   * alguém virar cliente. E fica fora do `ehMaster` abaixo porque é a única
+   * entrada deste grupo que pode ser liberada em Configurações — se ficasse
+   * dentro, a liberação daria acesso à página sem dar caminho até ela.
+   */
+  if (podeGerenciarBacklog(perfil)) {
+    operacional.push({ href: '/admin/backlog', label: 'Backlog', icon: KanbanSquare })
+  }
   if (ehMaster(role)) {
-    grupos.push({
-      titulo: 'Operacional',
-      itens: [
+    operacional.push(
+      ...[
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
         // A conta do negócio — só o master. Ver o cabeçalho de /admin/financeiro.
         { href: '/admin/financeiro', label: 'Financeiro', icon: Wallet },
@@ -169,8 +188,9 @@ function gruposPara(role: string): Grupo[] {
         // em massa e responde conversa é o dono, nunca o produtor de um cliente.
         { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
       ],
-    })
+    )
   }
+  if (operacional.length) grupos.push({ titulo: 'Operacional', itens: operacional })
 
   return grupos
 }
@@ -380,7 +400,7 @@ export default function AppShell({
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
-  const grupos = gruposPara(perfil.role)
+  const grupos = gruposPara(perfil)
 
   // O master não pertence a organização nenhuma — pra ele o contexto é a
   // plataforma inteira, e dizer isso é mais honesto que repetir a marca.
