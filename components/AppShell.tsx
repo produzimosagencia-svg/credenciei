@@ -24,7 +24,10 @@ import { BotaoTema } from '@/components/Tema'
  */
 type Perfil = {
   id: string; nome: string; email: string; role: Role
+  /** Exceções da organização (permissoes_organizacao), chaveadas por `role:chave`. */
   permissoes?: Record<string, boolean> | null
+  /** Overrides deste acesso (perfis.permissoes_usuario), chaveados por `chave`. */
+  permissoes_usuario?: Record<string, boolean> | null
 }
 
 // Criado uma única vez por sessão de browser

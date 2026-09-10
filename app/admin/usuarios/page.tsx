@@ -115,8 +115,10 @@ export default async function UsuariosPage({
     id: u.id as string,
     nome: u.nome as string,
     email: u.email as string,
+    telefone: (u.telefone as string | null) ?? null,
     role: (u.role ?? 'cliente') as Role,
     ativo: u.ativo !== false,
+    permissoesUsuario: (u.permissoes_usuario as Record<string, boolean> | null) ?? {},
     criadoEm: u.created_at as string,
     setorNome: (u.fornecedores as { nome?: string } | null)?.nome,
     eventoCount: (u.eventos as { count: number }[] | null)?.[0]?.count ?? 0,
@@ -256,6 +258,10 @@ export default async function UsuariosPage({
                   <UsuarioActions
                     usuarioId={u.id}
                     usuarioNome={u.nome}
+                    usuarioRole={u.role}
+                    usuarioAtivo={u.ativo}
+                    usuarioTelefone={u.telefone}
+                    permissoesUsuario={u.permissoesUsuario}
                     podeExcluir={podeExcluir(perfil!.role)}
                   />
                 )}

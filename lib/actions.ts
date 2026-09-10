@@ -22,6 +22,7 @@ import {
   podeExcluirDaEquipe,
   CAPACIDADES,
   PAPEIS_CONFIGURAVEIS,
+  capacidadesDoPapel,
   podeEditarIdentidade,
   podeEscanear,
   podeAcompanhar,
@@ -753,6 +754,7 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
     role: 'supervisor',
     organizacao_id: organizacaoId,
     fornecedor_id: fornecedorId,
+    permissoes_usuario: permissoesUsuarioDoForm(formData, 'supervisor'),
   }])
 
   if (erroPerfil) {
@@ -882,6 +884,7 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
 
     const { error: erroAtualizacao } = await admin.from('perfis').update({
       nome, telefone, ativo, organizacao_id: organizacaoId,
+      permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
     }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
 
@@ -929,6 +932,7 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
     role: 'operador_portao',
     organizacao_id: organizacaoId,
     fornecedor_id: null,
+    permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
   }])
   if (erroPerfil) {
     await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
@@ -1044,6 +1048,7 @@ export async function criarSuporte(formData: FormData) {
     id: user.user!.id, nome, email, telefone, ativo, cpf,
     role: 'suporte', organizacao_id: null, fornecedor_id: null,
     acesso_expira_em: acessoExpiraEm,
+    permissoes_usuario: permissoesUsuarioDoForm(formData, 'suporte'),
   }])
   if (erroPerfil) {
     await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
@@ -1417,6 +1422,180 @@ export async function deletarUsuario(id: string) {
   await admin.auth.admin.deleteUser(id)
   await admin.from('perfis').delete().eq('id', id)
   revalidatePath('/admin/usuarios')
+}
+
+// ─── Acesso: papel, escopo, funções ligadas ─────────────────────────────────
+
+/**
+ * Lê a aba "Funções" do formulário de acesso e devolve o mapa de overrides
+ * PRONTO pra gravar em `perfis.permissoes_usuario`.
+ *
+ * Só entra o que DIFERE do padrão do papel: se o toggle está igual ao que a
+ * pessoa já teria por `role`, a chave nem vai — assim o override some sozinho
+ * quando a régua do código muda, e `{}` continua significando "comportamento
+ * padrão". Ignora chave desconhecida (o form é do cliente).
+ */
+function permissoesUsuarioDoForm(formData: FormData, role: string): Record<string, boolean> {
+  const bruto = (formData.get('permissoes_usuario') as string | null)?.trim()
+  if (!bruto) return {}
+  let cru: unknown
+  try { cru = JSON.parse(bruto) } catch { return {} }
+  if (!cru || typeof cru !== 'object') return {}
+
+  const oferecidas = capacidadesDoPapel(role)
+  const mapa: Record<string, boolean> = {}
+  for (const cap of oferecidas) {
+    const v = (cru as Record<string, unknown>)[cap.chave]
+    if (typeof v === 'boolean' && v !== cap.padraoAtual) mapa[cap.chave] = v
+  }
+  return mapa
+}
+
+/**
+ * Adiciona MAIS UM admin a uma organização que já existe.
+ *
+ * Diferente de `criarOrganizacao`, que cria a org E o primeiro admin junto:
+ * aqui a org já está lá. Master escolhe qual; admin não-master só adiciona à
+ * própria. Admin entra por E-MAIL + senha (não por CPF, como os papéis de
+ * operação).
+ */
+export async function adicionarAdmin(formData: FormData) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar acessos.')
+
+  const admin = getAdminSupabase()
+
+  let organizacaoId = perfil!.organizacao_id as string | null
+  if (ehMaster(perfil!.role)) {
+    organizacaoId = ((formData.get('organizacao_id') as string) ?? '').trim() || null
+    if (!organizacaoId) throw new Error('Escolha a organização deste admin.')
+  }
+  if (!organizacaoId) throw new Error('Seu acesso não está vinculado a uma organização.')
+
+  const { data: org } = await admin.from('organizacoes').select('id, nome, ativo').eq('id', organizacaoId).single()
+  if (!org) throw new Error('Organização não encontrada.')
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  const email = ((formData.get('email') as string) ?? '').trim().toLowerCase()
+  const senha = ((formData.get('senha') as string) ?? '').trim()
+  const ativo = formData.get('ativo') !== 'false'
+  if (!nome) throw new Error('Informe o nome.')
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Informe um e-mail válido — é por ele que o admin entra.')
+  if (senha.length < 6) throw new Error('A senha precisa ter ao menos 6 caracteres.')
+
+  const { data: jaTem } = await admin.from('perfis').select('id').eq('email', email).maybeSingle()
+  if (jaTem) throw new Error(`Já existe um acesso com o e-mail ${email}.`)
+
+  const { data: user, error } = await admin.auth.admin.createUser({ email, password: senha, email_confirm: true })
+  if (error) throw new Error(mensagemAuth(error.message))
+
+  const { error: erroPerfil } = await admin.from('perfis').insert([{
+    id: user.user!.id,
+    nome,
+    email,
+    role: 'admin',
+    organizacao_id: organizacaoId,
+    ativo,
+    permissoes_usuario: permissoesUsuarioDoForm(formData, 'admin'),
+  }])
+  if (erroPerfil) {
+    await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+    console.error('[adicionarAdmin] falha ao inserir perfil', { organizacaoId, erro: erroPerfil })
+    throw new Error(mensagemAmigavel(erroPerfil))
+  }
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Admin da organização ${org.nome}`,
+    valorNovo: `${nome} — ${email} (acesso novo)`,
+    organizacaoId,
+  }))
+
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const }
+}
+
+/**
+ * Liga/desliga um acesso (`perfis.ativo`). Inativo bloqueia o login sem perder
+ * o histórico — ver `getPerfil`, que trata `ativo = false` como não-logado.
+ */
+export async function alternarAtivoUsuario(id: string) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para alterar acessos.')
+  if (perfil!.id === id) throw new Error('Você não pode inativar o próprio acesso.')
+
+  const admin = getAdminSupabase()
+  const { data: alvo } = await admin.from('perfis').select('id, nome, ativo, role, organizacao_id').eq('id', id).single()
+  if (!alvo) throw new Error('Este acesso não existe mais.')
+  if (alvo.role === 'master') throw new Error('O acesso master não é gerenciado por aqui.')
+  if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este acesso.')
+  }
+
+  const novo = !(alvo.ativo !== false)
+  const { error } = await admin.from('perfis').update({ ativo: novo }).eq('id', id)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Status do acesso de ${alvo.nome}`,
+    valorNovo: novo ? 'Ativo' : 'Inativo',
+    organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+  }))
+
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const, ativo: novo }
+}
+
+/**
+ * Edita um acesso já existente: nome, telefone, status e as funções ligadas.
+ * NÃO troca o papel nem o escopo (setor/evento) — pra isso, inativa e cria de
+ * novo. Muda só o que não dispara recadastro de vínculo.
+ */
+export async function editarUsuario(id: string, formData: FormData) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para editar acessos.')
+
+  const admin = getAdminSupabase()
+  const { data: alvo } = await admin
+    .from('perfis').select('id, nome, role, organizacao_id, ativo').eq('id', id).single()
+  if (!alvo) throw new Error('Este acesso não existe mais.')
+  if (alvo.role === 'master') throw new Error('O acesso master não é editado por aqui.')
+  if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este acesso.')
+  }
+
+  const nome = ((formData.get('nome') as string) ?? '').trim()
+  if (!nome) throw new Error('O nome não pode ficar em branco.')
+  const telefoneBruto = ((formData.get('telefone') as string) || '').replace(/\D/g, '')
+  const patch: Record<string, unknown> = {
+    nome,
+    ativo: formData.get('ativo') !== 'false',
+    permissoes_usuario: permissoesUsuarioDoForm(formData, alvo.role as string),
+  }
+  // Telefone é opcional no admin (ele entra por e-mail); pros outros, se veio,
+  // tem que ser válido.
+  if (telefoneBruto) {
+    if (telefoneBruto.length < 10 || telefoneBruto.length > 13) {
+      throw new Error('Telefone inválido. Use DDD + número.')
+    }
+    patch.telefone = telefoneBruto
+  } else if (alvo.role !== 'admin') {
+    patch.telefone = null
+  }
+
+  const { error } = await admin.from('perfis').update(patch).eq('id', id)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Acesso de ${alvo.nome}`,
+    valorNovo: `Editado (nome/telefone/status/funções)`,
+    organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+  }))
+
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const }
 }
 
 // ─── Eventos ────────────────────────────────────────────────────────────────

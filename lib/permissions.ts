@@ -45,24 +45,42 @@ export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | '
  */
 export type AlvoPermissao =
   | string
-  | { role?: string | null; permissoes?: Record<string, boolean> | null }
+  | {
+      role?: string | null
+      /** Exceções da ORGANIZAÇÃO, chaveadas por `role:chave` (permissoes_organizacao). */
+      permissoes?: Record<string, boolean> | null
+      /** Overrides deste ACESSO, chaveados só por `chave` (perfis.permissoes_usuario). */
+      permissoes_usuario?: Record<string, boolean> | null
+    }
   | null
   | undefined
 
 export const chaveDaPermissao = (role: string, chave: string) => `${role}:${chave}`
 
 /**
- * Resolve uma permissão: exceção da organização primeiro, padrão do código
- * depois.
+ * Resolve uma permissão em três camadas, da mais específica pra mais geral:
+ *
+ *   1. override do próprio ACESSO      (perfis.permissoes_usuario[chave])
+ *   2. exceção da ORGANIZAÇÃO          (permissoes_organizacao → perfil.permissoes[role:chave])
+ *   3. padrão do código                (a função `padrao(role)`)
+ *
+ * A primeira que tiver um booleano vence. Ausência em todas = comportamento
+ * de sempre.
  *
  * MASTER NUNCA É AFETADO. Uma tela de permissões capaz de tirar do master a
  * permissão de abrir a tela de permissões se tranca sozinha, e a saída seria
- * pelo banco. Também é o que garante que, se a tabela vier corrompida ou
- * mal preenchida, ainda exista alguém que consegue consertar.
+ * pelo banco. Também é o que garante que, se o dado vier corrompido ou mal
+ * preenchido, ainda exista alguém que consegue consertar.
  */
 function resolver(alvo: AlvoPermissao, chave: string, padrao: (role?: string) => boolean): boolean {
   const role = typeof alvo === 'string' ? alvo : alvo?.role ?? undefined
   if (role === 'master') return padrao(role)
+
+  if (typeof alvo !== 'string') {
+    const doAcesso = alvo?.permissoes_usuario?.[chave]
+    if (typeof doAcesso === 'boolean') return doAcesso
+  }
+
   const excecoes = typeof alvo === 'string' ? null : alvo?.permissoes
   const excecao = role ? excecoes?.[chaveDaPermissao(role, chave)] : undefined
   return typeof excecao === 'boolean' ? excecao : padrao(role)
@@ -292,3 +310,38 @@ export const CAPACIDADES: {
  * que a operação de fato é.
  */
 export const PAPEIS_CONFIGURAVEIS: Role[] = ['admin', 'supervisor', 'operador_portao', 'suporte']
+
+/**
+ * Capacidades que um papel NÃO tem por padrão mas pode receber no criar/editar
+ * acesso (a aba "Funções"). O que o papel já tem por padrão é sempre
+ * mostrado (pra poder desligar) — isto é só o "ligar o que ele normalmente
+ * não teria". Conservador de propósito; cresce sob demanda.
+ */
+const PODEM_GANHAR: Partial<Record<Role, string[]>> = {
+  // O scanner saiu do supervisor (ver `podeEscanear`), mas há operação em que
+  // o supervisor credencia a própria equipe — liberável caso a caso.
+  supervisor: ['escanear'],
+}
+
+/**
+ * As capacidades que a aba "Funções" oferece pra um papel, cada uma com o
+ * valor que ela tem HOJE (`padraoAtual`) pra o toggle já nascer certo.
+ *
+ * master fica de fora (nunca é afetado). Só entram capacidades que o papel
+ * tem por padrão (desligáveis) ou que estão em `PODEM_GANHAR` (ligáveis).
+ */
+export function capacidadesDoPapel(role: string): {
+  chave: string
+  nome: string
+  descricao: string
+  peso?: string
+  padraoAtual: boolean
+}[] {
+  if (role === 'master') return []
+  const extras = PODEM_GANHAR[role as Role] ?? []
+  return CAPACIDADES
+    .filter(c => c.padrao(role) || extras.includes(c.chave))
+    .map(({ chave, nome, descricao, peso, padrao }) => ({
+      chave, nome, descricao, peso, padraoAtual: padrao(role),
+    }))
+}
