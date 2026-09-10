@@ -1,14 +1,16 @@
 'use client'
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   X, Pencil, Trash2, MessageSquarePlus, Building2, CheckSquare, History,
   AlertTriangle, Mail, Phone, CalendarDays, Users, Target, Handshake, ExternalLink,
+  Paperclip, FileText,
 } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import {
   comentarNoItem, excluirItemBacklog, moverItemBacklog, converterEmCliente, historicoParaTela,
+  anexosDoItem, anexarFotoBacklog, removerAnexoBacklog, type AnexoBacklog,
 } from '@/lib/actions-backlog'
 import type { ItemBacklog, EntradaHistorico } from '@/lib/backlog'
 import { COLUNAS, ROTULO_ACAO, rotuloDoStatus } from '@/lib/backlog-constantes'
@@ -46,6 +48,32 @@ export default function PainelDoItem({
     historicoParaTela(item.id).then(r => setHistorico(r.ok ? r.dados.entradas : []))
   }
   useEffect(recarregarHistorico, [item.id])
+
+  // ── Anexos (fotos do item, tipo card do Trello) ──────────────────────────
+  const [anexos, setAnexos] = useState<AnexoBacklog[] | null>(null)
+  const [subindoAnexo, setSubindoAnexo] = useState(false)
+  const arquivoRef = useRef<HTMLInputElement>(null)
+  const recarregarAnexos = () => {
+    anexosDoItem(item.id).then(r => setAnexos(r.ok ? r.dados.anexos : []))
+  }
+  useEffect(recarregarAnexos, [item.id])
+
+  const enviarAnexo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!arquivo) return
+    setErro(null)
+    setSubindoAnexo(true)
+    try {
+      const fd = new FormData()
+      fd.set('arquivo', arquivo)
+      const r = await anexarFotoBacklog(item.id, fd)
+      if (!r.ok) setErro(r.erro)
+      else { recarregarAnexos(); recarregarHistorico() }
+    } finally {
+      setSubindoAnexo(false)
+    }
+  }
 
   const agir = (acao: () => Promise<{ ok: true } | { ok: false; erro: string }>, depois?: () => void) => {
     setErro(null)
@@ -153,6 +181,62 @@ export default function PainelDoItem({
 
           {item.descricao && <Bloco titulo="Descrição" texto={item.descricao} />}
           {item.observacoes && <Bloco titulo="Observações" texto={item.observacoes} />}
+
+          {/* ── Anexos: fotos do item ────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-slate-400 text-2xs font-semibold uppercase tracking-wide">Anexos</h3>
+              <button
+                type="button"
+                onClick={() => arquivoRef.current?.click()}
+                disabled={subindoAnexo}
+                className="text-brand-600 hover:text-brand-700 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                {subindoAnexo ? <LogoLoading tamanho={13} /> : <Paperclip className="w-3.5 h-3.5" />}
+                {subindoAnexo ? 'Enviando…' : 'Anexar foto'}
+              </button>
+              <input
+                ref={arquivoRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={enviarAnexo}
+              />
+            </div>
+
+            {anexos === null ? (
+              <p className="text-slate-400 text-xs mt-2 flex items-center gap-1.5"><LogoLoading tamanho={13} /> Carregando…</p>
+            ) : !anexos.length ? (
+              <p className="text-slate-400 text-xs mt-1">Nenhuma foto ainda. Solte um print da conversa, a proposta, a logo do lead…</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {anexos.map(a => (
+                  <div key={a.id} className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50">
+                    {a.ehImagem && a.url ? (
+                      <a href={a.url} target="_blank" rel="noopener noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={a.url} alt={a.nome} className="w-full h-24 object-cover" />
+                      </a>
+                    ) : (
+                      <a href={a.url ?? '#'} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-24 p-2 text-center">
+                        <FileText className="w-5 h-5 text-slate-400" />
+                        <span className="text-2xs text-slate-500 mt-1 line-clamp-2 break-all">{a.nome}</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => agir(() => removerAnexoBacklog(a.id), recarregarAnexos)}
+                      disabled={pendente}
+                      aria-label={`Remover ${a.nome}`}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-md bg-white/90 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {erro && (
             <p className="flex items-start gap-1.5 text-red-600 text-xs">

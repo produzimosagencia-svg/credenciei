@@ -308,6 +308,115 @@ export async function excluirItemBacklog(id: string): Promise<Resultado> {
   return { ok: true }
 }
 
+// ─── Anexos de imagem no item (fotos, tipo card do Trello) ──────────────────
+
+export type AnexoBacklog = {
+  id: string
+  nome: string
+  mime: string | null
+  url: string | null
+  ehImagem: boolean
+  criadoEm: string
+}
+
+const TIPOS_ANEXO_BACKLOG = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'])
+const LIMITE_ANEXO_BACKLOG = 10 * 1024 * 1024
+
+/** Os anexos de um item, com URL assinada curta pra abrir/mostrar. */
+export async function anexosDoItem(itemId: string): Promise<Resultado<{ anexos: AnexoBacklog[] }>> {
+  const perfil = await exigirBacklog()
+  if (!perfil) return { ok: false, erro: SEM_ACESSO }
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('backlog_anexos')
+      .select('id, nome, mime, path, created_at')
+      .eq('item_id', itemId)
+      .order('created_at', { ascending: true })
+    if (error) throw new Error(error.message)
+
+    const anexos = await Promise.all((data ?? []).map(async a => {
+      const { data: assinada } = await supabaseAdmin.storage
+        .from('backlog').createSignedUrl(a.path as string, 60 * 30)
+      const mime = (a.mime as string | null) ?? null
+      return {
+        id: a.id as string,
+        nome: a.nome as string,
+        mime,
+        url: assinada?.signedUrl ?? null,
+        ehImagem: !!mime && mime.startsWith('image/'),
+        criadoEm: a.created_at as string,
+      }
+    }))
+    return { ok: true, dados: { anexos } }
+  } catch {
+    // Migração pendente ou erro de leitura — a tela abre sem anexos.
+    return { ok: true, dados: { anexos: [] } }
+  }
+}
+
+/** Sobe uma foto (ou PDF) pro item. Campo do formulário: `arquivo`. */
+export async function anexarFotoBacklog(itemId: string, formData: FormData): Promise<Resultado> {
+  const perfil = await exigirBacklog()
+  if (!perfil) return { ok: false, erro: SEM_ACESSO }
+
+  const arquivo = formData.get('arquivo')
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { ok: false, erro: 'Nenhum arquivo selecionado.' }
+  if (!TIPOS_ANEXO_BACKLOG.has(arquivo.type)) {
+    return { ok: false, erro: 'Formato não aceito. Use imagem (JPG, PNG, WEBP, GIF) ou PDF.' }
+  }
+  if (arquivo.size > LIMITE_ANEXO_BACKLOG) return { ok: false, erro: 'Arquivo muito grande. O limite é 10MB.' }
+
+  try {
+    const path = `${itemId}/${Date.now()}-${arquivo.name.replace(/[^\w.\-]/g, '_')}`
+    const buffer = Buffer.from(await arquivo.arrayBuffer())
+    const { error: erroUpload } = await supabaseAdmin.storage
+      .from('backlog').upload(path, buffer, { contentType: arquivo.type })
+    if (erroUpload) throw new Error(erroUpload.message)
+
+    const { error } = await supabaseAdmin.from('backlog_anexos').insert({
+      item_id: itemId,
+      path,
+      nome: arquivo.name,
+      mime: arquivo.type,
+      tamanho: arquivo.size,
+      criado_por: perfil.id,
+    })
+    if (error) {
+      await supabaseAdmin.storage.from('backlog').remove([path])
+      if (/backlog_anexos|does not exist|schema cache/i.test(error.message)) {
+        return { ok: false, erro: 'O banco ainda não tem a tabela de anexos. Rode supabase/upgrade-backlog-anexos.sql.' }
+      }
+      throw new Error(error.message)
+    }
+
+    await registrar(itemId, 'ANEXO_ADICIONADO', perfil.id, null, arquivo.name)
+    atualizarTelas()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Não consegui anexar o arquivo.' }
+  }
+}
+
+/** Remove um anexo — linha e arquivo. */
+export async function removerAnexoBacklog(anexoId: string): Promise<Resultado> {
+  const perfil = await exigirBacklog()
+  if (!perfil) return { ok: false, erro: SEM_ACESSO }
+  try {
+    const { data } = await supabaseAdmin
+      .from('backlog_anexos').select('id, item_id, path, nome').eq('id', anexoId).maybeSingle()
+    if (!data) return { ok: true }
+
+    const { error } = await supabaseAdmin.from('backlog_anexos').delete().eq('id', anexoId)
+    if (error) throw new Error(error.message)
+    await supabaseAdmin.storage.from('backlog').remove([data.path as string])
+    await registrar(data.item_id as string, 'ANEXO_REMOVIDO', perfil.id, data.nome as string, null)
+    atualizarTelas()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : 'Não consegui remover o anexo.' }
+  }
+}
+
 // ─── Leitura sob demanda (o histórico do painel lateral) ─────────────────────
 
 export async function historicoParaTela(id: string): Promise<Resultado<{

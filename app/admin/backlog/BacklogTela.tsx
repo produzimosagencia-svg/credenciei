@@ -3,7 +3,7 @@ import { useState, useTransition, useMemo } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
   Plus, KanbanSquare, CalendarDays, BellRing, List, Building2, CheckSquare,
-  AlertTriangle, X, Search, Handshake, Target, Send, ClipboardList, Flame, Clock,
+  AlertTriangle, X, Search, ClipboardList, Flame,
 } from 'lucide-react'
 import { moverItemBacklog } from '@/lib/actions-backlog'
 import type { ItemBacklog, Compromisso, Cobranca, ResumoBacklog } from '@/lib/backlog'
@@ -129,13 +129,6 @@ export default function BacklogTela({
           sub="entre clientes e tarefas" icon={Flame} tom="aviso"
           href={url({ ver: 'lista', prioridade: 'alta' })}
         />
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Novos leads" value={numeros.novosLeads} icon={Target} tom="neutro" small />
-        <StatCard label="Propostas enviadas" value={numeros.propostasEnviadas} icon={Send} tom="neutro" small />
-        <StatCard label="Clientes convertidos" value={numeros.convertidos} icon={Handshake} tom="neutro" small />
-        <StatCard label="Contatos para hoje" value={numeros.contatosHoje} icon={Clock} tom="neutro" small />
       </div>
 
       {/* ── Leituras + adicionar ─────────────────────────────────────────── */}

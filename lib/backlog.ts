@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase-server'
 import {
-  STATUS_ENCERRADOS, STATUS_GANHOS, ORDEM_PRIORIDADE, rotuloDoStatus,
+  STATUS_ENCERRADOS, ORDEM_PRIORIDADE, rotuloDoStatus,
   type TipoItem, type Prioridade,
 } from './backlog-constantes'
 
@@ -252,13 +252,9 @@ function diasEntre(de: string, ate: string): number {
 
 export type ResumoBacklog = {
   possiveisClientes: number
-  novosLeads: number
   emNegociacao: number
-  propostasEnviadas: number
-  convertidos: number
   tarefasPendentes: number
   tarefasAtrasadas: number
-  contatosHoje: number
   altaPrioridade: number
 }
 
@@ -269,13 +265,9 @@ export function resumoBacklog(itens: ItemBacklog[], hoje = hojeBRT()): ResumoBac
 
   return {
     possiveisClientes: clientes.filter(i => !STATUS_ENCERRADOS.has(i.status)).length,
-    novosLeads: clientes.filter(i => i.status === 'novo').length,
     emNegociacao: clientes.filter(i => i.status === 'em_negociacao').length,
-    propostasEnviadas: clientes.filter(i => i.status === 'proposta_enviada').length,
-    convertidos: clientes.filter(i => STATUS_GANHOS.has(i.status)).length,
     tarefasPendentes: tarefas.filter(i => !STATUS_ENCERRADOS.has(i.status)).length,
     tarefasAtrasadas: fila.atrasados.filter(c => c.item.tipo === 'tarefa').length,
-    contatosHoje: fila.hoje.length,
     altaPrioridade: itens.filter(i => i.prioridade === 'alta' && !STATUS_ENCERRADOS.has(i.status)).length,
   }
 }

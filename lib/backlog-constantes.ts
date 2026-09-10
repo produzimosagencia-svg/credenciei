@@ -107,4 +107,6 @@ export const ROTULO_ACAO: Record<string, string> = {
   COMENTARIO: 'Comentário',
   CONVERSAO: 'Convertido em cliente',
   CONCLUSAO: 'Concluído',
+  ANEXO_ADICIONADO: 'Anexo adicionado',
+  ANEXO_REMOVIDO: 'Anexo removido',
 }

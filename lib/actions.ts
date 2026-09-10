@@ -1533,7 +1533,11 @@ export async function alternarAtivoUsuario(id: string) {
   }
 
   const novo = !(alvo.ativo !== false)
-  const { error } = await admin.from('perfis').update({ ativo: novo }).eq('id', id)
+  // Ligar/desligar na mão desfaz o "é do evento": reativar o evento não mexe
+  // mais neste acesso.
+  const patch: Record<string, unknown> = { ativo: novo }
+  if (novo) patch.inativado_em_evento = null
+  const { error } = await admin.from('perfis').update(patch).eq('id', id)
   if (error) throw new Error(mensagemAmigavel(error))
 
   after(() => registrarAuditoria({
@@ -1696,12 +1700,98 @@ export async function editarEvento(id: string, formData: FormData) {
 }
 
 export async function toggleAtivoEvento(id: string, ativo: boolean) {
-  await exigirEventoDaOrg(id)
+  const perfil = await exigirEventoDaOrg(id)
   const db = supabaseAdmin
   await db.from('eventos').update({ ativo: !ativo }).eq('id', id)
+
+  // Encerrar (ativo → false) inativa os acessos criados PARA este evento;
+  // reativar religa exatamente quem este evento inativou. Ver
+  // supabase/upgrade-evento-encerrado-inativa-acesso.sql.
+  try {
+    if (ativo) await inativarAcessosDoEvento(id)
+    else await reativarAcessosDoEvento(id)
+  } catch (e) {
+    // A coluna pode não ter sido migrada ainda — o encerramento do evento em
+    // si não pode falhar por causa disso.
+    console.error('[toggleAtivoEvento] acessos do evento não foram atualizados', {
+      eventoId: id, erro: e instanceof Error ? e.message : e,
+    })
+  }
+
+  after(() => registrarAuditoria({
+    perfil: perfil!,
+    acao: 'ALTERACAO_EVENTO',
+    campoAlterado: 'Status do evento',
+    valorNovo: ativo ? 'Encerrado' : 'Reativado',
+    eventoId: id,
+  }))
+
   revalidatePath(`/admin/eventos/${id}`)
   revalidatePath('/admin/eventos')
+  revalidatePath('/admin/usuarios')
   revalidatePath('/admin')
+}
+
+/**
+ * Quais acessos são "deste evento": supervisor ligado a um setor do evento, e
+ * suporte cujo escopo é SÓ este evento (nenhuma organização inteira, nenhum
+ * outro evento). Operador de portão fica de fora — é da organização.
+ */
+async function acessosDoEvento(eventoId: string): Promise<string[]> {
+  const db = supabaseAdmin
+
+  const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', eventoId)
+  const idsSetores = (setores ?? []).map(s => s.id as string)
+
+  const alvos = new Set<string>()
+
+  if (idsSetores.length) {
+    const { data: sups } = await db
+      .from('perfis').select('id').eq('role', 'supervisor').in('fornecedor_id', idsSetores)
+    for (const s of sups ?? []) alvos.add(s.id as string)
+  }
+
+  // Suporte: candidatos = quem tem escopo neste evento; entra só quem NÃO tem
+  // nenhum outro escopo (org ou outro evento).
+  const { data: comEsteEvento } = await db
+    .from('suporte_escopo').select('perfil_id').eq('evento_id', eventoId)
+  const candidatos = [...new Set((comEsteEvento ?? []).map(r => r.perfil_id as string))]
+  if (candidatos.length) {
+    const { data: todosEscopos } = await db
+      .from('suporte_escopo').select('perfil_id, evento_id, organizacao_id').in('perfil_id', candidatos)
+    const porPerfil = new Map<string, { evento_id: string | null; organizacao_id: string | null }[]>()
+    for (const r of todosEscopos ?? []) {
+      const k = r.perfil_id as string
+      if (!porPerfil.has(k)) porPerfil.set(k, [])
+      porPerfil.get(k)!.push({ evento_id: r.evento_id as string | null, organizacao_id: r.organizacao_id as string | null })
+    }
+    for (const [perfilId, linhas] of porPerfil) {
+      const soEsteEvento = linhas.every(l => l.organizacao_id === null && l.evento_id === eventoId)
+      if (soEsteEvento) alvos.add(perfilId)
+    }
+  }
+
+  return [...alvos]
+}
+
+async function inativarAcessosDoEvento(eventoId: string) {
+  const ids = await acessosDoEvento(eventoId)
+  if (!ids.length) return
+  // Só quem está ativo E ainda não tem marca — pra não "roubar" pro evento
+  // alguém já inativado por outro motivo.
+  await supabaseAdmin
+    .from('perfis')
+    .update({ ativo: false, inativado_em_evento: eventoId })
+    .in('id', ids)
+    .neq('ativo', false)
+    .is('inativado_em_evento', null)
+}
+
+async function reativarAcessosDoEvento(eventoId: string) {
+  await supabaseAdmin
+    .from('perfis')
+    .update({ ativo: true, inativado_em_evento: null })
+    .eq('inativado_em_evento', eventoId)
 }
 
 export async function deletarEvento(id: string) {
