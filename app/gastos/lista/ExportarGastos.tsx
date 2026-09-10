@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { Download, Loader2, FileSpreadsheet, FileText } from 'lucide-react'
+import { Download, FileSpreadsheet, FileText } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import type { Gasto } from '@/lib/gastos'
 import { ROTULO_ORIGEM, ROTULO_STATUS } from '@/lib/gastos-constantes'
 
@@ -48,11 +49,11 @@ export default function ExportarGastos({ gastos }: { gastos: Gasto[] }) {
   return (
     <div className="flex items-center gap-2">
       <button onClick={() => baixar('xlsx')} disabled={!!ocupado || !gastos.length} className="btn btn-secundario btn-sm disabled:opacity-50">
-        {ocupado === 'xlsx' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+        {ocupado === 'xlsx' ? <LogoLoading tamanho={14} /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
         Excel
       </button>
       <button onClick={() => baixar('csv')} disabled={!!ocupado || !gastos.length} className="btn btn-secundario btn-sm disabled:opacity-50">
-        {ocupado === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+        {ocupado === 'csv' ? <LogoLoading tamanho={14} /> : <FileText className="w-3.5 h-3.5" />}
         CSV
       </button>
       <span className="hidden sm:flex items-center gap-1 text-slate-400 text-2xs">

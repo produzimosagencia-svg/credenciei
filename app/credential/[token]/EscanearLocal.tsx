@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { X, CameraOff, ScanLine, Loader2 } from 'lucide-react'
+import { X, CameraOff, ScanLine } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 
 /**
@@ -112,7 +113,7 @@ export default function EscanearLocal({
             </div>
             <p className="text-slate-400 text-sm flex items-center gap-2 text-center">
               {lendo
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Registrando…</>
+                ? <><LogoLoading tamanho="xs" /> Registrando…</>
                 : <><ScanLine className="w-4 h-4" /> Aponte para o cartaz na entrada</>}
             </p>
           </>

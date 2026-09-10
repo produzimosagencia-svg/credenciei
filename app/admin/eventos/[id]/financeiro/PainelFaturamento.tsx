@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Pencil, Save, X, FileText, Paperclip, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
+import { Pencil, Save, X, FileText, Paperclip, Trash2, AlertTriangle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { salvarFaturamento, urlNfeEvento } from '@/lib/actions-financeiro'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -63,7 +64,7 @@ export default function PainelFaturamento({
               disabled={abrindoNfe}
               className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-medium mt-1"
             >
-              {abrindoNfe ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+              {abrindoNfe ? <LogoLoading tamanho={14} /> : <FileText className="w-3 h-3" />}
               {nfeNome ?? 'Ver NFe anexada'}
             </button>
           ) : (

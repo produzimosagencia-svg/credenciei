@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { FileSpreadsheet, Download, Loader2, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX } from 'lucide-react'
+import { FileSpreadsheet, Download, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { obterDadosRelatorioEvento, obterDadosRelatorioSetor } from '@/lib/relatorios'
 import type { Periodo } from '@/lib/relatorios'
 import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip, gerarRelatorioAusentes } from '@/lib/relatorio-excel'
@@ -171,7 +172,7 @@ export default function ExportarRelatorio({
               className="btn btn-primario w-full disabled:opacity-60"
             >
               {gerandoCompleto
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando planilha...</>
+                ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar relatório completo'}</>}
             </button>
           </Secao>
@@ -207,7 +208,7 @@ export default function ExportarRelatorio({
               className="btn btn-secundario w-full disabled:opacity-60"
             >
               {gerandoSetor
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando planilha...</>
+                ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar setor'}</>}
             </button>
 
@@ -228,7 +229,7 @@ export default function ExportarRelatorio({
                   className="btn btn-secundario w-full disabled:opacity-60"
                 >
                   {gerandoTodos
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando {setores.length} planilhas...</>
+                    ? <><LogoLoading tamanho="xs" /> Gerando {setores.length} planilhas...</>
                     : <><FolderArchive className="w-4 h-4" /> Exportar todos os setores em arquivos separados</>}
                 </button>
               </div>

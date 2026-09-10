@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mic, Square, Loader2, Check, X, Pencil, AlertTriangle, Sparkles } from 'lucide-react'
+import { Mic, Square, Check, X, Pencil, AlertTriangle, Sparkles } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { criarGasto } from '@/lib/actions-gastos'
 import { CATEGORIAS_GASTO, CATEGORIA_PADRAO, ROTULO_CAMPO, brl } from '@/lib/gastos-constantes'
 import SeletorLista from '@/components/SeletorLista'
@@ -163,7 +164,7 @@ export default function GravadorDeGasto({ eventoId, eventoNome }: { eventoId: st
 
       {fase === 'processando' && (
         <div className="w-full rounded-3xl bg-slate-800 text-white py-12 flex flex-col items-center gap-3">
-          <Loader2 className="w-9 h-9 animate-spin" />
+          <LogoLoading tamanho={40} />
           <span className="font-semibold">Processando áudio…</span>
           <span className="text-white/70 text-xs">Transcrevendo e identificando o gasto</span>
         </div>
@@ -264,7 +265,7 @@ function CardConferencia({
             </dl>
             <div className="flex gap-2 pt-1">
               <button onClick={confirmar} disabled={pendente} className="btn btn-primario flex-1 justify-center disabled:opacity-50">
-                {pendente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {pendente ? <LogoLoading tamanho={14} /> : <Check className="w-3.5 h-3.5" />}
                 Confirmar gasto
               </button>
               <button onClick={() => setEditando(true)} disabled={pendente} className="btn btn-secundario">
@@ -299,7 +300,7 @@ function CardConferencia({
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={confirmar} disabled={pendente} className="btn btn-primario flex-1 justify-center disabled:opacity-50">
-                {pendente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                {pendente ? <LogoLoading tamanho={14} /> : <Check className="w-3.5 h-3.5" />}
                 Confirmar gasto
               </button>
               {!faltaEssencial && (

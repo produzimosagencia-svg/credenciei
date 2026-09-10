@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, X, Save, Paperclip, AlertTriangle, Loader2 } from 'lucide-react'
+import { Plus, X, Save, Paperclip, AlertTriangle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { criarGasto, editarGasto } from '@/lib/actions-gastos'
 import { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from '@/lib/gastos-constantes'
 import type { Gasto } from '@/lib/gastos'
@@ -147,7 +148,7 @@ function Formulario({
 
           <div className="flex gap-2 pt-1">
             <button type="submit" disabled={pendente} className="btn btn-primario disabled:opacity-50">
-              {pendente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {pendente ? <LogoLoading tamanho={14} /> : <Save className="w-3.5 h-3.5" />}
               {pendente ? 'Salvando…' : editando ? 'Salvar' : 'Adicionar gasto'}
             </button>
             <button type="button" onClick={onFechar} disabled={pendente} className="btn btn-secundario">Cancelar</button>

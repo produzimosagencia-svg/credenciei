@@ -2,7 +2,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowRight, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { identificarNaPortaria } from '@/lib/actions'
 
 type Setor = { id: string; nome: string; token_formulario: string | null }
@@ -118,7 +119,7 @@ export default function IdentificarPorCpf({ eventoId, setores }: { eventoId: str
         disabled={cpf.length !== 11 || carregando}
         className="btn btn-primario btn-lg w-full mt-4 disabled:opacity-50"
       >
-        {carregando ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+        {carregando ? <LogoLoading tamanho="xs" /> : null}
         {carregando ? 'Conferindo…' : 'Continuar'}
       </button>
     </div>

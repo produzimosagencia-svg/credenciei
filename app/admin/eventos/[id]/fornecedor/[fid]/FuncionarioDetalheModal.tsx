@@ -2,7 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, Loader2, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarTelefoneFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -708,7 +709,7 @@ export default function FuncionarioDetalheModal({
                       </button>
                     ) : verificandoAcesso ? (
                       <div className="flex items-center gap-2 text-slate-400 text-xs py-2">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Conferindo o CPF…
+                        <LogoLoading tamanho="sm" /> Conferindo o CPF…
                       </div>
                     ) : conflitoAcesso ? (
                       /*
@@ -885,7 +886,7 @@ export default function FuncionarioDetalheModal({
               <div className="p-6">
                 {carregandoHistorico ? (
                   <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-16">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Carregando histórico…
+                    <LogoLoading tamanho="xs" /> Carregando histórico…
                   </div>
                 ) : erroHistorico ? (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">
@@ -899,7 +900,7 @@ export default function FuncionarioDetalheModal({
               <div className="p-6">
                 {carregandoCracha ? (
                   <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-16">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Gerando crachá…
+                    <LogoLoading tamanho="xs" /> Gerando crachá…
                   </div>
                 ) : erroCracha ? (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm">

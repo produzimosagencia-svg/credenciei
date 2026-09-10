@@ -3,8 +3,9 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus, X, Save, Trash2, Pencil, Paperclip, ChevronDown, ChevronRight,
-  FileText, AlertTriangle, Loader2, Receipt,
+  FileText, AlertTriangle, Receipt,
 } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { criarCusto, editarCusto, excluirCusto, urlComprovanteCusto } from '@/lib/actions-financeiro'
 import type { Custo } from '@/lib/financeiro'
 import { CATEGORIAS_CUSTO } from '@/lib/financeiro-categorias'
@@ -154,7 +155,7 @@ function BotaoComprovante({ custoId }: { custoId: string }) {
   }
   return (
     <button onClick={abrir} disabled={abrindo} className="flex items-center gap-1 text-brand-600 hover:text-brand-700 text-2xs font-medium mt-1">
-      {abrindo ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+      {abrindo ? <LogoLoading tamanho={14} /> : <FileText className="w-3 h-3" />}
       {erro ? 'Não consegui abrir — tente de novo' : 'Ver comprovante'}
     </button>
   )

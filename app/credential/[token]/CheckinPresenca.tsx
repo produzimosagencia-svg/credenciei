@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, Loader2, QrCode, LogOut, Copy, CheckCheck, ScanLine } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, Copy, CheckCheck, ScanLine } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { registrarPresencaFoto, registrarPresencaLivre } from '@/lib/actions'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import EscanearLocal from './EscanearLocal'
@@ -479,7 +480,7 @@ export default function CheckinPresenca({
         */}
       {pendente && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3">
-          <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+          <LogoLoading tamanho="xs" />
           <div className="min-w-0">
             <p className="text-amber-900 text-xs font-semibold">Batida guardada — enviando</p>
             <p className="text-amber-700 text-xs mt-0.5">
@@ -639,7 +640,7 @@ function Cartao({
           className={`${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
         >
           <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+            {busy ? <LogoLoading tamanho="sm" /> : <Camera className="w-5 h-5" />}
           </div>
           <div className="min-w-0 text-left">
             <p className="font-bold text-sm">
@@ -683,7 +684,7 @@ function Cartao({
               className={`${base} w-full bg-brand-500 border-brand-500 text-white hover:bg-brand-600 transition-all disabled:opacity-60`}
             >
               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                {registrandoEsta ? <Loader2 className="w-5 h-5 animate-spin" /> : <ScanLine className="w-5 h-5" />}
+                {registrandoEsta ? <LogoLoading tamanho="sm" /> : <ScanLine className="w-5 h-5" />}
               </div>
               <div className="min-w-0 text-left">
                 <p className="font-bold text-sm">
@@ -709,7 +710,7 @@ function Cartao({
               <>
                 <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
                   {registrandoEsta
-                    ? <Loader2 className="w-5 h-5 animate-spin" />
+                    ? <LogoLoading tamanho="sm" />
                     : info.momento === 'entrada' ? <QrCode className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0 text-left">

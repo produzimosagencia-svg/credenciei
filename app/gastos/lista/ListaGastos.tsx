@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
-  X, Pencil, Trash2, FileText, Loader2, AlertTriangle, Mic, Keyboard,
+  X, Pencil, Trash2, FileText, AlertTriangle, Mic, Keyboard,
 } from 'lucide-react'
 import { excluirGasto, urlComprovanteGasto } from '@/lib/actions-gastos'
 import type { Gasto } from '@/lib/gastos'
@@ -10,6 +10,7 @@ import { CATEGORIAS_GASTO, ROTULO_ORIGEM, ROTULO_STATUS, brl } from '@/lib/gasto
 import SeletorLista from '@/components/SeletorLista'
 import DateTimePicker from '@/components/DateTimePicker'
 import ConfirmModal from '@/components/ConfirmModal'
+import { LogoLoading } from '@/components/LogoLoading'
 import FormGastoManual from '../FormGastoManual'
 import ExportarGastos from './ExportarGastos'
 
@@ -223,7 +224,7 @@ function DetalheGasto({ gasto, onFechar, onEditar }: { gasto: Gasto; onFechar: (
 
           {gasto.temComprovante && (
             <button onClick={verComprovante} disabled={abrindo} className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-medium mt-1">
-              {abrindo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+              {abrindo ? <LogoLoading tamanho={14} /> : <FileText className="w-3.5 h-3.5" />}
               Ver comprovante {gasto.comprovanteNome ? `(${gasto.comprovanteNome})` : ''}
             </button>
           )}

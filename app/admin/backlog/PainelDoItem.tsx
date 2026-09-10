@@ -4,8 +4,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   X, Pencil, Trash2, MessageSquarePlus, Building2, CheckSquare, History,
-  AlertTriangle, Loader2, Mail, Phone, CalendarDays, Users, Target, Handshake, ExternalLink,
+  AlertTriangle, Mail, Phone, CalendarDays, Users, Target, Handshake, ExternalLink,
 } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import {
   comentarNoItem, excluirItemBacklog, moverItemBacklog, converterEmCliente, historicoParaTela,
 } from '@/lib/actions-backlog'
@@ -229,7 +230,7 @@ export default function PainelDoItem({
 
             {historico === null ? (
               <p className="flex items-center gap-2 text-slate-400 text-xs py-3">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando o histórico…
+                <LogoLoading tamanho="sm" /> Carregando o histórico…
               </p>
             ) : !historico.length ? (
               <p className="text-slate-400 text-xs py-3">Nada registrado ainda.</p>

@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Sparkles, X, ArrowUp, AlertTriangle, Loader2, Trash2, History, SquarePen, ArrowLeft,
+  Sparkles, X, ArrowUp, AlertTriangle, Trash2, History, SquarePen, ArrowLeft,
   Paperclip, FileSpreadsheet, Check, CalendarPlus, UserPlus, Send, BellOff, RefreshCw,
 } from 'lucide-react'
 import {
@@ -12,6 +12,7 @@ import {
 } from './historico'
 import { lerPlanilhaDeEquipe, type LinhaPlanilha } from '@/lib/planilha'
 import { Aviso } from '@/components/ui/Superficie'
+import { LogoLoading } from '@/components/LogoLoading'
 
 /** Planilha anexada à conversa: fica no cliente e vai junto de cada mensagem. */
 type Anexo = { nome: string; linhas: LinhaPlanilha[] }
@@ -415,13 +416,13 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                       )}
                       {m.ferramenta && (
                         <p className="flex items-center gap-1.5 text-slate-400 text-xs">
-                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <LogoLoading tamanho={13} />
                           {m.ferramenta.startsWith('excluir') ? 'Verificando o impacto...' : 'Consultando o sistema...'}
                         </p>
                       )}
                       {!m.texto && !m.ferramenta && !m.erro && ocupado && (
                         <p className="flex items-center gap-1.5 text-slate-400 text-xs">
-                          <Loader2 className="w-3 h-3 animate-spin" /> Pensando...
+                          <LogoLoading tamanho={13} /> Pensando...
                         </p>
                       )}
                       {m.confirmacoes?.map(c => (

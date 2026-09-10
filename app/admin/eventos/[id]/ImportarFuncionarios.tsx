@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Upload, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import { lerPlanilhaDeEquipe } from '@/lib/planilha'
 import { formatCpf } from '@/lib/format'
@@ -75,7 +76,7 @@ export default function ImportarFuncionarios({
         <>
           <button onClick={() => fileRef.current?.click()} disabled={loading} className="linha-acao">
             {loading
-              ? <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              ? <LogoLoading tamanho="xs" />
               : <Upload className="w-4 h-4 shrink-0 text-brand-500" />}
             <span className="min-w-0">
               <span className="block text-sm font-medium text-slate-800">
@@ -103,7 +104,7 @@ export default function ImportarFuncionarios({
             className="btn btn-secundario btn-sm"
           >
             {loading
-              ? <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              ? <LogoLoading tamanho={14} />
               : <Upload className="w-3.5 h-3.5 shrink-0" />
             }
             {loading ? 'Importando...' : 'Importar planilha'}

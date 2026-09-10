@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { X, Search, ShieldCheck, ShieldAlert, Loader2, AlertTriangle } from 'lucide-react'
+import { X, Search, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { conferirCredenciamentoPorCpf, type ConferenciaCpf as Resultado } from '@/lib/actions'
 
 /**
@@ -92,7 +93,7 @@ export default function ConferenciaCpf({
                 disabled={cpf.length !== 11 || carregando}
                 className="btn btn-primario btn-lg w-full disabled:opacity-50"
               >
-                {carregando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                {carregando ? <LogoLoading tamanho="xs" /> : <Search className="w-4 h-4" />}
                 {carregando ? 'Consultando…' : 'Conferir'}
               </button>
             </>

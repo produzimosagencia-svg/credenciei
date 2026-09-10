@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { X, Loader2, AlertTriangle, Users } from 'lucide-react'
+import { X, AlertTriangle, Users } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { obterVisualizacoesDoAviso, type VisualizacaoAviso } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 import { formatarBR } from '@/lib/tz'
@@ -53,7 +54,7 @@ export default function VisualizacoesAvisoModal({
             </div>
           ) : visualizacoes === null ? (
             <div className="flex items-center justify-center gap-2 text-slate-400 text-sm py-10">
-              <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
+              <LogoLoading tamanho="xs" /> Carregando…
             </div>
           ) : !visualizacoes.length ? (
             <EmptyState icone={<Users className="w-7 h-7" />} titulo="Ninguém viu este aviso ainda" />

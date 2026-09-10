@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
+import { RotateCcw, AlertTriangle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { salvarPermissao, type PermissaoSalva } from '@/lib/actions'
 import { CAPACIDADES, PAPEIS_CONFIGURAVEIS, ROLE_LABELS, chaveDaPermissao, type Role } from '@/lib/permissions'
 
@@ -175,7 +176,7 @@ function Interruptor({
           ligado ? 'translate-x-[1.125rem]' : 'translate-x-0.5'
         }`}
       >
-        {salvando && <Loader2 className="w-2.5 h-2.5 text-slate-400 animate-spin" />}
+        {salvando && <LogoLoading tamanho={13} />}
       </span>
     </button>
   )

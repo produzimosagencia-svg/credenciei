@@ -242,6 +242,32 @@
   .animate-scan, .animate-cut { animation: none; }
 }
 
+/* Loading do sistema — a MARCA girando (components/LogoLoading.tsx).
+   Uma volta a cada 1,6s, linear (giro constante, nunca "engasgado"), e uma
+   respiração de escala/opacidade no mesmo compasso: cada volta "pulsa" uma
+   vez, como na referência. Giro e respiro ficam em elementos diferentes (o
+   <span> e o <img>) pra as duas transformações somarem em vez de brigar.
+   Suave de propósito — nada de spinner nervoso. */
+@keyframes marca-girar { to { transform: rotate(360deg); } }
+@keyframes marca-respirar {
+  0%, 100% { transform: scale(1);    opacity: 1;    }
+  50%      { transform: scale(0.92); opacity: 0.85; }
+}
+.marca-girando {
+  transform-origin: 50% 50%;
+  will-change: transform;
+  animation: marca-girar 1.6s linear infinite;
+}
+.marca-girando-pulso {
+  animation: marca-respirar 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Sem giro: só um respiro lento de opacidade — sinaliza "trabalhando" sem
+     movimento pra quem pediu menos animação no sistema. */
+  .marca-girando { animation: none; }
+  .marca-girando-pulso { animation: marca-respirar 2.4s ease-in-out infinite; }
+}
+
 body {
   background: var(--fundo-luz), var(--background);
   background-attachment: fixed;

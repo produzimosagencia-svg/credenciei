@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { FileDown, X, AlertTriangle, Loader2 } from 'lucide-react'
+import { FileDown, X, AlertTriangle } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import SeletorLista from '@/components/SeletorLista'
 
 /**
@@ -107,7 +108,7 @@ export default function ExtrairCustoEventoModal({
             )}
 
             <button onClick={gerar} disabled={gerando} className="btn btn-primario w-full justify-center disabled:opacity-50">
-              {gerando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {gerando ? <LogoLoading tamanho={14} /> : <FileDown className="w-3.5 h-3.5" />}
               {gerando ? 'Gerando PDF…' : 'Gerar PDF'}
             </button>
           </div>

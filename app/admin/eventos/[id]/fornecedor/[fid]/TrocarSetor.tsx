@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Check, ChevronDown, Loader2 } from 'lucide-react'
+import { Building2, Check, ChevronDown } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { trocarSetorAtivo } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -59,7 +60,7 @@ export default function TrocarSetor({ setores, atualId }: { setores: Setor[]; at
         disabled={isPending}
         className="btn btn-secundario btn-sm disabled:opacity-50"
       >
-        {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Building2 className="w-3.5 h-3.5" />}
+        {isPending ? <LogoLoading tamanho={14} /> : <Building2 className="w-3.5 h-3.5" />}
         <span className="truncate max-w-[10rem]">{atual?.nome ?? 'Trocar setor'}</span>
         <ChevronDown className="w-3 h-3 opacity-60" />
       </button>

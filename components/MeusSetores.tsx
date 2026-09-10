@@ -1,7 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Check, X, Loader2 } from 'lucide-react'
+import { Building2, Check, X } from 'lucide-react'
+import { LogoLoading } from '@/components/LogoLoading'
 import { trocarSetorAtivo } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -107,7 +108,7 @@ export default function MeusSetores({
                       {s.nome.trim()}
                     </span>
                     {isPending
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-300 shrink-0" />
+                      ? <LogoLoading tamanho={14} />
                       : ativo && <Check className="w-4 h-4 text-brand-500 shrink-0" />}
                   </button>
                 )
