@@ -131,17 +131,29 @@ function dataBr(iso: string) {
   return `${iso.slice(8)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
 }
 
-/** Igual ao BancoPendente do Backlog — diz o arquivo a rodar, não "erro interno". */
+/**
+ * Igual ao BancoPendente do Backlog — diz o arquivo a rodar, não "erro
+ * interno". O módulo já teve DUAS migrações (a base, e depois a do Produtor),
+ * então aponta pela mensagem do Postgres qual delas falta, em vez de sempre
+ * mandar pra primeira — foi o que confundiu o Juan em 11/09/2026.
+ */
 function BancoPendente({ detalhe }: { detalhe: string }) {
+  // upgrade-produtor.sql acrescentou `forma_pagamento` e `produtor_eventos` —
+  // se é uma dessas duas coisas que falta, é ele; senão, é a migração base.
+  const faltaProdutor = /forma_pagamento|produtor_eventos/i.test(detalhe)
+  const arquivo = faltaProdutor ? 'supabase/upgrade-produtor.sql' : 'supabase/upgrade-gastos.sql'
+  const oQueCria = faltaProdutor
+    ? <>acrescenta a coluna <code className="bg-white rounded px-1 py-0.5">forma_pagamento</code> e a tabela <code className="bg-white rounded px-1 py-0.5">produtor_eventos</code></>
+    : <>cria a tabela <code className="bg-white rounded px-1 py-0.5">gastos_evento</code> e o bucket <code className="bg-white rounded px-1 py-0.5">gastos</code></>
+
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-6 space-y-3">
       <div className="flex items-center gap-2 text-amber-800 font-semibold">
         <Database className="w-4 h-4" /> Falta um passo no banco
       </div>
       <p className="text-sm text-slate-600">
-        Rode <code className="bg-white rounded px-1.5 py-0.5 text-slate-800 border border-amber-200">supabase/upgrade-gastos.sql</code>{' '}
-        no SQL Editor do Supabase. É aditivo: cria só a tabela <code className="bg-white rounded px-1 py-0.5">gastos_evento</code> e
-        o bucket <code className="bg-white rounded px-1 py-0.5">gastos</code>, sem tocar em nada existente.
+        Rode <code className="bg-white rounded px-1.5 py-0.5 text-slate-800 border border-amber-200">{arquivo}</code>{' '}
+        no SQL Editor do Supabase. É aditivo: {oQueCria}, sem tocar em nada existente.
       </p>
       <p className="text-slate-400 text-xs">Erro do banco: {detalhe}</p>
     </div>
