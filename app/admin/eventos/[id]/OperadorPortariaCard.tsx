@@ -1,6 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound } from 'lucide-react'
 import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso } from '@/lib/actions'
 import SeletorLista from '@/components/SeletorLista'
@@ -39,6 +40,16 @@ export default function OperadorPortariaCard({
 }) {
   const [modalAberto, setModalAberto] = useState<'criar' | Operador | null>(null)
 
+  /*
+   * Operador é da ORGANIZAÇÃO — a lista cresce a cada evento, não só neste.
+   * Card de resumo, e não uma lista sem fim: mostra os primeiros, o resto
+   * mora em /admin/criar-porteiro, que já é a tela cheia de gerenciar
+   * operador (busca, editar, excluir).
+   */
+  const LIMITE = 6
+  const visiveis = operadores.slice(0, LIMITE)
+  const sobrando = operadores.length - visiveis.length
+
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-4 h-full flex flex-col">
       {/*
@@ -60,7 +71,7 @@ export default function OperadorPortariaCard({
           <p className="text-slate-400 text-xs">Nenhum operador cadastrado nesta organização.</p>
         ) : (
           <div className="-mx-1">
-            {operadores.map(o => (
+            {visiveis.map(o => (
               <button
                 key={o.id}
                 onClick={() => setModalAberto(o)}
@@ -71,9 +82,27 @@ export default function OperadorPortariaCard({
                 <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
               </button>
             ))}
+            {sobrando > 0 && (
+              <Link
+                href={`/admin/criar-porteiro?evento=${eventoId}`}
+                className="flex items-center justify-between gap-1.5 text-left text-sm px-2 py-1.5 mt-0.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-slate-50 transition-colors"
+              >
+                <span>+{sobrando} operador{sobrando === 1 ? '' : 'es'}</span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+              </Link>
+            )}
           </div>
         )}
       </div>
+
+      {operadores.length > 0 && (
+        <Link
+          href={`/admin/criar-porteiro?evento=${eventoId}`}
+          className="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-2xs font-medium mt-1"
+        >
+          Ver todos e gerenciar <ChevronRight className="w-3 h-3" />
+        </Link>
+      )}
 
       <div className="mt-3">
         {operadores.length ? (
