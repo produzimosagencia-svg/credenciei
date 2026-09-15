@@ -2,8 +2,9 @@ import { supabaseAdmin, buscarTudo, getPerfil } from './supabase-server'
 import { diaBRT } from './janelas'
 import { ehMaster, ehProdutor } from './permissions'
 import { eventosQuePossoAbrir } from '@/app/admin/EscolherEvento'
+import { EVENTO_INTERNO } from './gastos-constantes'
 import type { OrigemGasto, StatusGasto } from './gastos-constantes'
-export { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from './gastos-constantes'
+export { CATEGORIAS_GASTO, CATEGORIA_PADRAO, EVENTO_INTERNO } from './gastos-constantes'
 
 /**
  * Módulo Gastos — leitura.
@@ -23,12 +24,15 @@ export { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from './gastos-constantes'
 
 export type Gasto = {
   id: string
+  /** `EVENTO_INTERNO` quando o gasto não é de nenhum evento. */
   eventoId: string
   eventoNome: string | null
   descricao: string
   valor: number
   fornecedor: string | null
   formaPagamento: string | null
+  /** Quem adiantou o dinheiro do próprio bolso — pra saber quem reembolsar. */
+  pagador: string | null
   categoria: string
   dataGasto: string
   registradoEm: string
@@ -50,7 +54,7 @@ export type FiltroGastos = {
 }
 
 const SELECT = `
-  id, evento_id, descricao, valor, fornecedor, forma_pagamento, categoria, data_gasto, registrado_em,
+  id, evento_id, organizacao_id, descricao, valor, fornecedor, forma_pagamento, pagador, categoria, data_gasto, registrado_em,
   origem, status, observacao, transcricao, comprovante_path, comprovante_nome,
   eventos:evento_id(nome), perfis:criado_por(nome)
 `
@@ -66,14 +70,19 @@ function nome(rel: LinhaCrua['eventos']): string | null {
 }
 
 function montar(l: LinhaCrua): Gasto {
+  const temEvento = !!l.evento_id
   return {
     id: l.id as string,
-    eventoId: l.evento_id as string,
-    eventoNome: nome(l.eventos),
+    // Sentinel, não null — quem usa (SeletorLista, o form de edição) já
+    // entende `EVENTO_INTERNO` como "sem evento", sem precisar tratar null
+    // espalhado pelos componentes de cliente.
+    eventoId: temEvento ? (l.evento_id as string) : EVENTO_INTERNO,
+    eventoNome: temEvento ? nome(l.eventos) : 'Interno — despesas da empresa',
     descricao: l.descricao as string,
     valor: Number(l.valor) || 0,
     fornecedor: (l.fornecedor as string | null) ?? null,
     formaPagamento: (l.forma_pagamento as string | null) ?? null,
+    pagador: (l.pagador as string | null) ?? null,
     categoria: l.categoria as string,
     dataGasto: l.data_gasto as string,
     registradoEm: l.registrado_em as string,
@@ -90,6 +99,7 @@ function montar(l: LinhaCrua): Gasto {
 /** Os eventos que este perfil pode registrar gasto — só os ativos vêm primeiro. */
 export async function eventosParaGastos() {
   const perfil = await getPerfil()
+  let eventos: { id: string; nome: string; ativo: boolean }[]
 
   // Produtor: só os eventos vinculados a ele em `produtor_eventos`.
   if (ehProdutor(perfil?.role)) {
@@ -97,23 +107,28 @@ export async function eventosParaGastos() {
       .from('produtor_eventos')
       .select('eventos(id, nome, ativo, data_inicio)')
       .eq('produtor_id', perfil!.id)
-    return (data ?? [])
+    eventos = (data ?? [])
       .map(r => r.eventos as unknown as { id: string; nome: string; ativo: boolean; data_inicio: string } | null)
       .filter((e): e is { id: string; nome: string; ativo: boolean; data_inicio: string } => !!e)
       .sort((a, b) => (b.data_inicio ?? '').localeCompare(a.data_inicio ?? ''))
       .map(e => ({ id: e.id, nome: e.nome, ativo: e.ativo !== false }))
-  }
-
-  // Master (dando suporte) vê todos. Os demais caem na régua de sempre —
-  // mas o item de menu já sumiu pra eles.
-  if (ehMaster(perfil?.role)) {
+  } else if (ehMaster(perfil?.role)) {
+    // Master (dando suporte) vê todos. Os demais caem na régua de sempre —
+    // mas o item de menu já sumiu pra eles.
     const { data } = await supabaseAdmin
       .from('eventos').select('id, nome, ativo').order('data_inicio', { ascending: false })
-    return (data ?? []).map(e => ({ id: e.id as string, nome: e.nome as string, ativo: e.ativo !== false }))
+    eventos = (data ?? []).map(e => ({ id: e.id as string, nome: e.nome as string, ativo: e.ativo !== false }))
+  } else {
+    const brutos = await eventosQuePossoAbrir()
+    eventos = brutos.map(e => ({ id: e.id, nome: e.nome, ativo: e.ativo }))
   }
 
-  const eventos = await eventosQuePossoAbrir()
-  return eventos.map(e => ({ id: e.id, nome: e.nome, ativo: e.ativo }))
+  /*
+   * "Interno" sempre por último, sempre disponível — nem todo gasto é de um
+   * evento (ferramenta, despesa de escritório), e diferente dos eventos de
+   * verdade ele não depende de nenhum vínculo prévio. Ver EVENTO_INTERNO.
+   */
+  return [...eventos, { id: EVENTO_INTERNO, nome: 'Interno — despesas da empresa', ativo: true }]
 }
 
 /**
@@ -123,9 +138,20 @@ export async function eventosParaGastos() {
  * tempo, e o `.limit()` do PostgREST corta em silêncio nesse teto.
  */
 export async function listarGastos(filtro: FiltroGastos = {}): Promise<Gasto[]> {
+  const apenasInterno = filtro.eventoId === EVENTO_INTERNO
+  // Sem evento pra filtrar por organização_id (join), o gasto Interno guarda
+  // a própria organização — e só enxerga a dela quem tem uma (produtor).
+  // Master, sem organizacao_id, vê o Interno de todas.
+  const organizacaoId = apenasInterno ? (await getPerfil())?.organizacao_id ?? null : null
+
   const linhas = await buscarTudo<LinhaCrua>((de, ate) => {
     let q = supabaseAdmin.from('gastos_evento').select(SELECT).order('data_gasto', { ascending: false }).order('registrado_em', { ascending: false })
-    if (filtro.eventoId) q = q.eq('evento_id', filtro.eventoId)
+    if (apenasInterno) {
+      q = q.is('evento_id', null)
+      if (organizacaoId) q = q.eq('organizacao_id', organizacaoId)
+    } else if (filtro.eventoId) {
+      q = q.eq('evento_id', filtro.eventoId)
+    }
     if (filtro.categoria) q = q.eq('categoria', filtro.categoria)
     if (filtro.fornecedor) q = q.eq('fornecedor', filtro.fornecedor)
     if (filtro.de) q = q.gte('data_gasto', filtro.de)
@@ -141,19 +167,37 @@ export async function gastoPorId(id: string): Promise<Gasto | null> {
 }
 
 /**
- * Total gasto por evento — pros eventos que a lista recebe. Uma consulta só
- * (evento_id + valor) e soma em memória.
+ * Total gasto por evento — pros eventos que a lista recebe. Uma consulta pro
+ * resto (evento_id + valor) e outra pro Interno (evento_id IS NULL), que não
+ * entra no `.in()` porque não é um id de `eventos` de verdade.
  */
 export async function totaisPorEvento(
   eventos: { id: string; nome: string }[],
 ): Promise<{ id: string; nome: string; total: number }[]> {
   if (!eventos.length) return []
-  const ids = eventos.map(e => e.id)
-  const linhas = await buscarTudo<{ evento_id: string; valor: number | null }>((de, ate) =>
-    supabaseAdmin.from('gastos_evento').select('evento_id, valor').in('evento_id', ids).range(de, ate),
-  )
+  const ids = eventos.filter(e => e.id !== EVENTO_INTERNO).map(e => e.id)
+  const temInterno = eventos.some(e => e.id === EVENTO_INTERNO)
+  const organizacaoId = temInterno ? (await getPerfil())?.organizacao_id ?? null : null
+
+  const [linhas, linhasInterno] = await Promise.all([
+    ids.length
+      ? buscarTudo<{ evento_id: string; valor: number | null }>((de, ate) =>
+          supabaseAdmin.from('gastos_evento').select('evento_id, valor').in('evento_id', ids).range(de, ate),
+        )
+      : Promise.resolve([]),
+    temInterno
+      ? buscarTudo<{ valor: number | null }>((de, ate) => {
+          let q = supabaseAdmin.from('gastos_evento').select('valor').is('evento_id', null)
+          if (organizacaoId) q = q.eq('organizacao_id', organizacaoId)
+          return q.range(de, ate)
+        })
+      : Promise.resolve([]),
+  ])
+
   const soma = new Map<string, number>()
   for (const l of linhas) soma.set(l.evento_id, (soma.get(l.evento_id) ?? 0) + (Number(l.valor) || 0))
+  if (temInterno) soma.set(EVENTO_INTERNO, linhasInterno.reduce((s, l) => s + (Number(l.valor) || 0), 0))
+
   return eventos
     .map(e => ({ id: e.id, nome: e.nome, total: soma.get(e.id) ?? 0 }))
     .sort((a, b) => b.total - a.total)

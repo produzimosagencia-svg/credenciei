@@ -48,6 +48,16 @@ export const FORMAS_PAGAMENTO = [
   'A prazo',
 ] as const
 
+/**
+ * O "evento" que não é evento nenhum — gasto que não é do evento em si
+ * (assinatura de ferramenta, despesa de escritório). Mesma ideia de
+ * `lib/financeiro-categorias.ts` `EVENTO_INTERNO`: não é uma linha em
+ * `eventos`, é `evento_id IS NULL` em `gastos_evento` (escopado por
+ * `organizacao_id`, já que aqui — ao contrário do Financeiro — quem lança
+ * pode estar preso a uma organização) — ver upgrade-gastos-interno.sql.
+ */
+export const EVENTO_INTERNO = 'interno'
+
 export type OrigemGasto = 'manual' | 'audio' | 'whatsapp'
 
 export const ROTULO_ORIGEM: Record<OrigemGasto, string> = {

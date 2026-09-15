@@ -133,16 +133,21 @@ function dataBr(iso: string) {
 
 /**
  * Igual ao BancoPendente do Backlog — diz o arquivo a rodar, não "erro
- * interno". O módulo já teve DUAS migrações (a base, e depois a do Produtor),
- * então aponta pela mensagem do Postgres qual delas falta, em vez de sempre
- * mandar pra primeira — foi o que confundiu o Juan em 11/09/2026.
+ * interno". O módulo já teve TRÊS migrações (a base, o Produtor, e o
+ * Interno/pagador), então aponta pela mensagem do Postgres qual delas falta,
+ * em vez de sempre mandar pra primeira — foi o que confundiu o Juan em
+ * 11/09/2026.
  */
 function BancoPendente({ detalhe }: { detalhe: string }) {
-  // upgrade-produtor.sql acrescentou `forma_pagamento` e `produtor_eventos` —
-  // se é uma dessas duas coisas que falta, é ele; senão, é a migração base.
-  const faltaProdutor = /forma_pagamento|produtor_eventos/i.test(detalhe)
-  const arquivo = faltaProdutor ? 'supabase/upgrade-produtor.sql' : 'supabase/upgrade-gastos.sql'
-  const oQueCria = faltaProdutor
+  // upgrade-gastos-interno.sql acrescentou `organizacao_id` e `pagador` (e
+  // soltou o NOT NULL de evento_id) — se é uma dessas coisas que falta, é ele.
+  const faltaInterno = /organizacao_id|"?pagador"?/i.test(detalhe)
+  // upgrade-produtor.sql acrescentou `forma_pagamento` e `produtor_eventos`.
+  const faltaProdutor = !faltaInterno && /forma_pagamento|produtor_eventos/i.test(detalhe)
+  const arquivo = faltaInterno ? 'supabase/upgrade-gastos-interno.sql' : faltaProdutor ? 'supabase/upgrade-produtor.sql' : 'supabase/upgrade-gastos.sql'
+  const oQueCria = faltaInterno
+    ? <>acrescenta as colunas <code className="bg-white rounded px-1 py-0.5">organizacao_id</code> e <code className="bg-white rounded px-1 py-0.5">pagador</code>, e libera gasto sem evento (Interno)</>
+    : faltaProdutor
     ? <>acrescenta a coluna <code className="bg-white rounded px-1 py-0.5">forma_pagamento</code> e a tabela <code className="bg-white rounded px-1 py-0.5">produtor_eventos</code></>
     : <>cria a tabela <code className="bg-white rounded px-1 py-0.5">gastos_evento</code> e o bucket <code className="bg-white rounded px-1 py-0.5">gastos</code></>
 

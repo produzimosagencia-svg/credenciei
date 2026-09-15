@@ -224,6 +224,8 @@ function DetalheGasto({ gasto, onFechar, onEditar }: { gasto: Gasto; onFechar: (
           <Linha rotulo="Valor" valor={brl(gasto.valor)} />
           <Linha rotulo="Evento" valor={gasto.eventoNome ?? '—'} />
           <Linha rotulo="Fornecedor" valor={gasto.fornecedor ?? '—'} />
+          {gasto.formaPagamento && <Linha rotulo="Forma de pagamento" valor={gasto.formaPagamento} />}
+          {gasto.pagador && <Linha rotulo="Pagador" valor={gasto.pagador} />}
           <Linha rotulo="Categoria" valor={gasto.categoria} />
           <Linha rotulo="Data do gasto" valor={dataBr(gasto.dataGasto)} />
           <Linha rotulo="Registrado em" valor={`${dataBr(gasto.registradoEm.slice(0, 10))} ${hora(gasto.registradoEm)}`} />

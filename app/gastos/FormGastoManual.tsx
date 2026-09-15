@@ -141,6 +141,11 @@ function Formulario({
             </Campo>
           </div>
 
+          <Campo rotulo="Pagador">
+            <input name="pagador" defaultValue={gasto?.pagador ?? ''} placeholder="Ex.: João (do próprio bolso)" className="input" />
+            <p className="text-slate-500 text-xs mt-1.5">Preencha só se alguém adiantou o dinheiro — pra saber quem reembolsar depois.</p>
+          </Campo>
+
           <Campo rotulo="Observação">
             <textarea name="observacao" rows={2} defaultValue={gasto?.observacao ?? ''} placeholder="Detalhe opcional" className="input resize-none" />
           </Campo>

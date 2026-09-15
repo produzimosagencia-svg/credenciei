@@ -4,7 +4,7 @@ import { getPerfil, supabaseAdmin } from './supabase-server'
 import { podeRegistrarGastos } from './permissions'
 import { mensagemAmigavel } from './erros'
 import { diaBRT } from './janelas'
-import { CATEGORIAS_GASTO, CATEGORIA_PADRAO } from './gastos-constantes'
+import { CATEGORIAS_GASTO, CATEGORIA_PADRAO, EVENTO_INTERNO } from './gastos-constantes'
 
 /**
  * Escrita no módulo Gastos.
@@ -85,6 +85,7 @@ function camposDoFormulario(formData: FormData) {
     data_gasto: dataGasto,
     fornecedor: limpar(formData.get('fornecedor')),
     forma_pagamento: limpar(formData.get('forma_pagamento')),
+    pagador: limpar(formData.get('pagador')),
     observacao: limpar(formData.get('observacao')),
   }
 }
@@ -100,20 +101,25 @@ export async function criarGasto(formData: FormData): Promise<ResultadoGasto> {
     if (!eventoId) return { ok: false, erro: 'Escolha o evento antes de salvar o gasto.' }
 
     // O evento tem que existir E estar no escopo deste perfil — não basta o
-    // id vir preenchido, ele é digitável na chamada direta.
+    // id vir preenchido, ele é digitável na chamada direta. `EVENTO_INTERNO`
+    // já vem nessa lista (eventosParaGastos sempre acrescenta).
     const { eventosParaGastos } = await import('./gastos')
     const permitidos = await eventosParaGastos()
     if (!permitidos.some(e => e.id === eventoId)) {
       return { ok: false, erro: 'Esse evento não está disponível pra você.' }
     }
 
+    const interno = eventoId === EVENTO_INTERNO
     const campos = camposDoFormulario(formData)
     const origem = String(formData.get('origem') ?? 'manual')
     const transcricao = origem === 'audio' ? limpar(formData.get('transcricao')) : null
 
     const { data, error } = await supabaseAdmin.from('gastos_evento').insert({
       ...campos,
-      evento_id: eventoId,
+      evento_id: interno ? null : eventoId,
+      // Sem evento, quem segura o escopo (pra um produtor só ver o Interno
+      // da própria organização) é esta coluna.
+      organizacao_id: interno ? perfil.organizacao_id : null,
       origem: origem === 'audio' ? 'audio' : 'manual',
       status: 'confirmado',
       transcricao,
@@ -154,12 +160,15 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
     const { data: atual } = await supabaseAdmin
       .from('gastos_evento').select('id, evento_id, comprovante_path').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este gasto não existe mais.' }
+    // Interno não tem evento_id — usa o mesmo sentinel pra pasta do
+    // comprovante e pra revalidar a tela certa.
+    const eventoId = (atual.evento_id as string | null) ?? EVENTO_INTERNO
 
     const campos = camposDoFormulario(formData)
 
     let novoComprovante: { path: string; nome: string } | null = null
     try {
-      novoComprovante = await subirComprovante(atual.evento_id as string, formData.get('comprovante'))
+      novoComprovante = await subirComprovante(eventoId, formData.get('comprovante'))
     } catch (e) {
       console.error('[gastos] comprovante novo não subiu', { gastoId: id, erro: e instanceof Error ? e.message : e })
     }
@@ -175,7 +184,7 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])
     }
 
-    atualizarTelas(atual.evento_id as string)
+    atualizarTelas(eventoId)
     return { ok: true }
   } catch (e) {
     return { ok: false, erro: mensagemAmigavel(e) }
@@ -200,7 +209,7 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])
     }
 
-    atualizarTelas(atual.evento_id as string)
+    atualizarTelas((atual.evento_id as string | null) ?? EVENTO_INTERNO)
     return { ok: true }
   } catch (e) {
     return { ok: false, erro: mensagemAmigavel(e) }
@@ -272,7 +281,7 @@ export async function exportarGastosXlsx(filtro: {
 
     const COLS = [
       { h: 'Data', w: 12 }, { h: 'Descrição', w: 36 }, { h: 'Categoria', w: 18 },
-      { h: 'Fornecedor', w: 22 }, { h: 'Forma de pagamento', w: 20 },
+      { h: 'Fornecedor', w: 22 }, { h: 'Forma de pagamento', w: 20 }, { h: 'Pagador', w: 18 },
       { h: 'Valor (R$)', w: 15 }, { h: 'Observação', w: 34 }, { h: 'Registrado em', w: 18 },
     ]
     ws.columns = COLS.map(c => ({ width: c.w }))
@@ -323,7 +332,7 @@ export async function exportarGastosXlsx(filtro: {
       cel.value = c.h
       cel.font = { bold: true, color: { argb: BRANCO }, size: 10 }
       cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } }
-      cel.alignment = { vertical: 'middle', horizontal: i === 5 ? 'right' : 'left', wrapText: true }
+      cel.alignment = { vertical: 'middle', horizontal: i === 6 ? 'right' : 'left', wrapText: true }
     })
     ws.getRow(LH).height = 24
     bordaTudo(LH)
@@ -336,12 +345,13 @@ export async function exportarGastosXlsx(filtro: {
       ws.getCell(linha, 3).value = g.categoria
       ws.getCell(linha, 4).value = g.fornecedor ?? ''
       ws.getCell(linha, 5).value = g.formaPagamento ?? ''
-      const v = ws.getCell(linha, 6)
+      ws.getCell(linha, 6).value = g.pagador ?? ''
+      const v = ws.getCell(linha, 7)
       v.value = g.valor
       v.numFmt = 'R$ #,##0.00'
       v.alignment = { horizontal: 'right' }
-      ws.getCell(linha, 7).value = g.observacao ?? ''
-      ws.getCell(linha, 8).value = new Date(g.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      ws.getCell(linha, 8).value = g.observacao ?? ''
+      ws.getCell(linha, 9).value = new Date(g.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
       if ((linha - LH) % 2 === 0) {
         for (let c = 1; c <= nCol; c++) {
           ws.getCell(linha, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA_CLARO } }
@@ -353,12 +363,12 @@ export async function exportarGastosXlsx(filtro: {
 
     // Linha de TOTAL
     const total = gastos.reduce((s, g) => s + g.valor, 0)
-    ws.mergeCells(linha, 1, linha, 5)
+    ws.mergeCells(linha, 1, linha, 6)
     const rot = ws.getCell(linha, 1)
     rot.value = 'TOTAL'
     rot.font = { bold: true, color: { argb: LARANJA }, size: 11 }
     rot.alignment = { horizontal: 'right', indent: 1 }
-    const tv = ws.getCell(linha, 6)
+    const tv = ws.getCell(linha, 7)
     tv.value = total
     tv.numFmt = 'R$ #,##0.00'
     tv.font = { bold: true, color: { argb: LARANJA }, size: 11 }
