@@ -46,7 +46,7 @@ export default function ListaGastos({
     router.push(`${pathname}?${novo.toString()}`)
   }
 
-  const temFiltro = ['categoria', 'fornecedor', 'de', 'ate'].some(c => params.get(c))
+  const temFiltro = ['categoria', 'fornecedor', 'pago', 'de', 'ate'].some(c => params.get(c))
 
   const confirmarExclusao = () => {
     if (!excluir) return
@@ -93,6 +93,14 @@ export default function ListaGastos({
                 />
               </div>
             )}
+            <div className="min-w-0">
+              <label className="text-slate-400 text-2xs font-semibold uppercase tracking-wide block mb-1">Situação</label>
+              <SeletorLista
+                className="w-full sm:w-36 text-sm" valor={params.get('pago') ?? ''}
+                onChange={v => trocar('pago', v)} placeholder="Todos" titulo="Situação do pagamento"
+                opcoes={[{ valor: '', rotulo: 'Todos' }, { valor: 'true', rotulo: 'Pago' }, { valor: 'false', rotulo: 'A pagar' }]}
+              />
+            </div>
             {temFiltro && (
               <button onClick={() => router.push(`${pathname}?evento=${params.get('evento') ?? ''}`)} className="btn btn-secundario btn-sm h-9">
                 <X className="w-3.5 h-3.5" /> Limpar
@@ -151,7 +159,12 @@ export default function ListaGastos({
                       {ROTULO_ORIGEM[g.origem]}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">{brl(g.valor)}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+                    {brl(g.valor)}
+                    {!g.pago && (
+                      <span className="block text-2xs font-semibold text-amber-600 tracking-wide">A pagar</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-1 justify-end">
                       <button onClick={() => setEditando(g)} className="btn-press w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-600 hover:bg-white" aria-label="Editar">
@@ -226,6 +239,7 @@ function DetalheGasto({ gasto, onFechar, onEditar }: { gasto: Gasto; onFechar: (
           <Linha rotulo="Fornecedor" valor={gasto.fornecedor ?? '—'} />
           {gasto.formaPagamento && <Linha rotulo="Forma de pagamento" valor={gasto.formaPagamento} />}
           {gasto.pagador && <Linha rotulo="Pagador" valor={gasto.pagador} />}
+          <Linha rotulo="Situação" valor={gasto.pago ? 'Pago' : 'A pagar'} destaque={!gasto.pago} />
           <Linha rotulo="Categoria" valor={gasto.categoria} />
           <Linha rotulo="Data do gasto" valor={dataBr(gasto.dataGasto)} />
           <Linha rotulo="Registrado em" valor={`${dataBr(gasto.registradoEm.slice(0, 10))} ${hora(gasto.registradoEm)}`} />
@@ -253,11 +267,11 @@ function DetalheGasto({ gasto, onFechar, onEditar }: { gasto: Gasto; onFechar: (
   )
 }
 
-function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
+function Linha({ rotulo, valor, destaque }: { rotulo: string; valor: string; destaque?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-slate-400 text-xs">{rotulo}</span>
-      <span className="text-slate-700 text-right">{valor}</span>
+      <span className={`text-right ${destaque ? 'text-amber-600 font-semibold' : 'text-slate-700'}`}>{valor}</span>
     </div>
   )
 }

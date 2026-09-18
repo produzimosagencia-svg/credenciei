@@ -86,6 +86,9 @@ function camposDoFormulario(formData: FormData) {
     fornecedor: limpar(formData.get('fornecedor')),
     forma_pagamento: limpar(formData.get('forma_pagamento')),
     pagador: limpar(formData.get('pagador')),
+    // Ausente (áudio, por exemplo) = pago. Só vira "a pagar" quando o
+    // formulário manda 'false' de propósito.
+    pago: String(formData.get('pago') ?? 'true') !== 'false',
     observacao: limpar(formData.get('observacao')),
   }
 }
@@ -254,7 +257,7 @@ const CINZA = 'FF57534E'
  * arquivo em base64. Reconsulta com o mesmo filtro — não recebe a lista.
  */
 export async function exportarGastosXlsx(filtro: {
-  eventoId: string; categoria?: string; fornecedor?: string; de?: string; ate?: string
+  eventoId: string; categoria?: string; fornecedor?: string; pago?: 'true' | 'false'; de?: string; ate?: string
 }): Promise<{ ok: true; base64: string; nome: string } | { ok: false; erro: string }> {
   try {
     const perfil = await exigirGastos()
@@ -269,6 +272,7 @@ export async function exportarGastosXlsx(filtro: {
       eventoId: filtro.eventoId,
       categoria: filtro.categoria || undefined,
       fornecedor: filtro.fornecedor || undefined,
+      pago: filtro.pago || undefined,
       de: filtro.de || undefined,
       ate: filtro.ate || undefined,
     })
@@ -282,7 +286,7 @@ export async function exportarGastosXlsx(filtro: {
     const COLS = [
       { h: 'Data', w: 12 }, { h: 'Descrição', w: 36 }, { h: 'Categoria', w: 18 },
       { h: 'Fornecedor', w: 22 }, { h: 'Forma de pagamento', w: 20 }, { h: 'Pagador', w: 18 },
-      { h: 'Valor (R$)', w: 15 }, { h: 'Observação', w: 34 }, { h: 'Registrado em', w: 18 },
+      { h: 'Valor (R$)', w: 15 }, { h: 'Status', w: 14 }, { h: 'Observação', w: 34 }, { h: 'Registrado em', w: 18 },
     ]
     ws.columns = COLS.map(c => ({ width: c.w }))
     const nCol = COLS.length
@@ -350,8 +354,9 @@ export async function exportarGastosXlsx(filtro: {
       v.value = g.valor
       v.numFmt = 'R$ #,##0.00'
       v.alignment = { horizontal: 'right' }
-      ws.getCell(linha, 8).value = g.observacao ?? ''
-      ws.getCell(linha, 9).value = new Date(g.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      ws.getCell(linha, 8).value = g.pago ? 'Pago' : 'A pagar'
+      ws.getCell(linha, 9).value = g.observacao ?? ''
+      ws.getCell(linha, 10).value = new Date(g.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
       if ((linha - LH) % 2 === 0) {
         for (let c = 1; c <= nCol; c++) {
           ws.getCell(linha, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA_CLARO } }

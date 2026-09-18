@@ -33,10 +33,12 @@ export default function ExportarGastos({ gastos, eventoId }: { gastos: Gasto[]; 
     setErro(null)
     setOcupado('xlsx')
     try {
+      const pagoParam = params.get('pago')
       const r = await exportarGastosXlsx({
         eventoId,
         categoria: params.get('categoria') || undefined,
         fornecedor: params.get('fornecedor') || undefined,
+        pago: pagoParam === 'true' || pagoParam === 'false' ? pagoParam : undefined,
         de: params.get('de') || undefined,
         ate: params.get('ate') || undefined,
       })
@@ -56,14 +58,14 @@ export default function ExportarGastos({ gastos, eventoId }: { gastos: Gasto[]; 
         const s = String(v ?? '')
         return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
       }
-      const cab = ['Evento', 'Data do gasto', 'Data do registro', 'Horário', 'Descrição', 'Fornecedor', 'Categoria', 'Forma de pagamento', 'Valor', 'Forma de registro', 'Status', 'Observação']
+      const cab = ['Evento', 'Data do gasto', 'Data do registro', 'Horário', 'Descrição', 'Fornecedor', 'Categoria', 'Forma de pagamento', 'Pagador', 'Valor', 'Forma de registro', 'Status', 'Pago?', 'Observação']
       const linhas = gastos.map(g => [
         g.eventoNome ?? '',
         dataBr(g.dataGasto),
         new Date(g.registradoEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
         new Date(g.registradoEm).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
-        g.descricao, g.fornecedor ?? '', g.categoria, g.formaPagamento ?? '',
-        String(g.valor).replace('.', ','), ROTULO_ORIGEM[g.origem], ROTULO_STATUS[g.status], g.observacao ?? '',
+        g.descricao, g.fornecedor ?? '', g.categoria, g.formaPagamento ?? '', g.pagador ?? '',
+        String(g.valor).replace('.', ','), ROTULO_ORIGEM[g.origem], ROTULO_STATUS[g.status], g.pago ? 'Pago' : 'A pagar', g.observacao ?? '',
       ].map(esc).join(';'))
       baixarBlob('﻿' + [cab.join(';'), ...linhas].join('\r\n'), 'text/csv;charset=utf-8', `gastos-${new Date().toISOString().slice(0, 10)}.csv`)
     } finally {

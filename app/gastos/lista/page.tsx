@@ -12,7 +12,7 @@ export const revalidate = 0
 export default async function ListaGastosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ evento?: string; categoria?: string; fornecedor?: string; de?: string; ate?: string }>
+  searchParams: Promise<{ evento?: string; categoria?: string; fornecedor?: string; pago?: string; de?: string; ate?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -28,6 +28,7 @@ export default async function ListaGastosPage({
     eventoId: eventoAtual.id,
     categoria: p.categoria || undefined,
     fornecedor: p.fornecedor || undefined,
+    pago: p.pago === 'true' || p.pago === 'false' ? p.pago : undefined,
     de: p.de || undefined,
     ate: p.ate || undefined,
   }

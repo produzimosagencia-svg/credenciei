@@ -33,6 +33,8 @@ export type Gasto = {
   formaPagamento: string | null
   /** Quem adiantou o dinheiro do próprio bolso — pra saber quem reembolsar. */
   pagador: string | null
+  /** Já saiu do caixa (true) ou é conta a pagar (false)? Não confundir com `status`. */
+  pago: boolean
   categoria: string
   dataGasto: string
   registradoEm: string
@@ -49,12 +51,14 @@ export type FiltroGastos = {
   eventoId?: string
   categoria?: string
   fornecedor?: string
+  /** `'true'` só pagos, `'false'` só a pagar, ausente é tudo. */
+  pago?: 'true' | 'false'
   de?: string
   ate?: string
 }
 
 const SELECT = `
-  id, evento_id, organizacao_id, descricao, valor, fornecedor, forma_pagamento, pagador, categoria, data_gasto, registrado_em,
+  id, evento_id, organizacao_id, descricao, valor, fornecedor, forma_pagamento, pagador, pago, categoria, data_gasto, registrado_em,
   origem, status, observacao, transcricao, comprovante_path, comprovante_nome,
   eventos:evento_id(nome), perfis:criado_por(nome)
 `
@@ -83,6 +87,7 @@ function montar(l: LinhaCrua): Gasto {
     fornecedor: (l.fornecedor as string | null) ?? null,
     formaPagamento: (l.forma_pagamento as string | null) ?? null,
     pagador: (l.pagador as string | null) ?? null,
+    pago: l.pago !== false,
     categoria: l.categoria as string,
     dataGasto: l.data_gasto as string,
     registradoEm: l.registrado_em as string,
@@ -154,6 +159,7 @@ export async function listarGastos(filtro: FiltroGastos = {}): Promise<Gasto[]> 
     }
     if (filtro.categoria) q = q.eq('categoria', filtro.categoria)
     if (filtro.fornecedor) q = q.eq('fornecedor', filtro.fornecedor)
+    if (filtro.pago) q = q.eq('pago', filtro.pago === 'true')
     if (filtro.de) q = q.gte('data_gasto', filtro.de)
     if (filtro.ate) q = q.lte('data_gasto', filtro.ate)
     return q.range(de, ate)

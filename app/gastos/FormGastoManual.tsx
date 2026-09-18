@@ -141,10 +141,21 @@ function Formulario({
             </Campo>
           </div>
 
-          <Campo rotulo="Pagador">
-            <input name="pagador" defaultValue={gasto?.pagador ?? ''} placeholder="Ex.: João (do próprio bolso)" className="input" />
-            <p className="text-slate-500 text-xs mt-1.5">Preencha só se alguém adiantou o dinheiro — pra saber quem reembolsar depois.</p>
-          </Campo>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Campo rotulo="Pagador">
+              <input name="pagador" defaultValue={gasto?.pagador ?? ''} placeholder="Ex.: João (do próprio bolso)" className="input" />
+              <p className="text-slate-500 text-xs mt-1.5">Só quando alguém adiantou o dinheiro — pra saber quem reembolsar.</p>
+            </Campo>
+            <Campo rotulo="Situação">
+              <SeletorLista
+                name="pago"
+                defaultValor={gasto ? String(gasto.pago) : 'true'}
+                titulo="Situação do pagamento"
+                opcoes={[{ valor: 'true', rotulo: 'Pago' }, { valor: 'false', rotulo: 'A pagar' }]}
+              />
+              <p className="text-slate-500 text-xs mt-1.5">Já saiu do caixa, ou é uma conta que ainda vai vencer?</p>
+            </Campo>
+          </div>
 
           <Campo rotulo="Observação">
             <textarea name="observacao" rows={2} defaultValue={gasto?.observacao ?? ''} placeholder="Detalhe opcional" className="input resize-none" />
