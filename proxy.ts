@@ -25,7 +25,12 @@ export async function proxy(request: NextRequest) {
     pathname === '/' ||
     // Os arquivos da marca (public/marca) servem a landing e o login, que
     // não têm sessão — sem isto o logo vira um redirect pra /login.
-    pathname.startsWith('/marca/')
+    pathname.startsWith('/marca/') ||
+    // `/wa` é o atalho rastreável pro WhatsApp comercial: é o endereço que
+    // está no link da bio do Instagram e em toda divulgação. Quem clica não
+    // tem conta. Se esta linha sair, o link da bio cai no login e o comercial
+    // para de receber conversa sem ninguém entender por quê.
+    pathname === '/wa'
   ) {
     return NextResponse.next({ request })
   }

@@ -15,8 +15,10 @@ import AnimatedScanLoader from '@/components/ui/animated-scan-loader'
  *
  * Os textos, números e o preço são os aprovados no Claude Design. Três coisas
  * ainda são PLACEHOLDER, propositalmente iguais ao desenho, pra trocar quando
- * o material chegar: os seis logos de clientes, os três depoimentos e o
- * número do WhatsApp em WHATSAPP_COMERCIAL.
+ * o material chegar: os seis logos de clientes e os três depoimentos.
+ *
+ * O caminho comercial é o WhatsApp, pelo atalho /wa (que registra a origem).
+ * Não existe formulário aqui, e não deve existir.
  *
  * Tudo em coluna única e centralizado: não há blocos à esquerda e à direita.
  */
@@ -26,7 +28,30 @@ export const metadata: Metadata = {
   description: 'Fornecedores cadastram a equipe por link, cada pessoa recebe um QR único e o check-in no portão fica registrado.',
 }
 
-const WHATSAPP_COMERCIAL = 'https://wa.me/5500000000000'
+/*
+ * A landing nunca aponta pro wa.me direto: ela passa pelo atalho /wa, que
+ * registra de onde veio o clique antes de abrir a conversa. O número mora em
+ * lib/whatsapp-comercial.ts, num lugar só.
+ *
+ * `utmDaUrl` repassa a origem de quem chegou aqui com UTM (link da bio,
+ * anúncio) pro atalho, pra o clique no botão herdar a mesma origem da visita.
+ */
+const UTMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const
+
+function atalhoWhatsApp(busca: Record<string, string | string[] | undefined>) {
+  const query = new URLSearchParams()
+  for (const chave of UTMS) {
+    const valor = busca[chave]
+    const texto = Array.isArray(valor) ? valor[0] : valor
+    if (texto) query.set(chave, texto.slice(0, 200))
+  }
+  if (!query.has('utm_source')) {
+    // Chegou na landing sem origem: o clique ainda conta, como tráfego do site.
+    query.set('utm_source', 'site')
+    query.set('utm_medium', 'landing')
+  }
+  return `/wa?${query.toString()}`
+}
 
 const PASSOS = [
   { n: '01', Icone: LinkIcon, titulo: 'Fornecedores cadastram a equipe por link', texto: 'Você cria o evento e os setores. Cada setor ganha um link de cadastro — o fornecedor manda pro time dele e a lista se preenche sozinha. Você aprova em lote.', quem: 'Produtor · antes do evento' },
@@ -48,7 +73,11 @@ const DEPOIMENTOS = [
 
 const CLIENTES = Array.from({ length: 6 }, (_, i) => `Logo cliente ${i + 1}`)
 
-export default function Landing() {
+export default async function Landing({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // Next 16: searchParams é Promise e precisa de await.
+  const busca = await searchParams
+  const WHATSAPP_COMERCIAL = atalhoWhatsApp(busca)
+
   return (
     <div className={s.pagina} id="topo">
       <Revelar />
@@ -189,7 +218,7 @@ export default function Landing() {
           <img src="/marca/iso-3d.png" alt="" className={s.ctaIso} />
           <h2>Seu próximo evento começa com a equipe certa passando pelo portão certo.</h2>
           <p>Conte quantas pessoas você credencia e a gente monta o evento com você. Resposta em horas, não em dias.</p>
-          <a href={WHATSAPP_COMERCIAL} target="_blank" rel="noopener" className={`${s.btn} ${s.btnPrimario} ${s.btnEnorme}`}><MessageCircle size={20} />Fale com o nosso time no WhatsApp</a>
+          <a href={WHATSAPP_COMERCIAL} className={`${s.btn} ${s.btnPrimario} ${s.btnEnorme}`}><MessageCircle size={20} />Fale com o nosso time no WhatsApp</a>
         </div>
       </section>
 
