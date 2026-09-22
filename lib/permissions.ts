@@ -165,6 +165,17 @@ export const podeExcluirDaEquipe = capacidade('excluir_da_equipe', role =>
 export const podeGerenciarBacklog = capacidade('gerenciar_backlog', role => role === 'master')
 
 /**
+ * Pode ver e mexer no módulo Orçamentos — propostas comerciais que vão pro
+ * cliente.
+ *
+ * Master-only, mesmo tratamento do Backlog: valores comerciais da agência,
+ * não um dado operacional de organização. `capacidade`, não `role ===
+ * 'master'` cravado, pelo mesmo motivo do Backlog — abre no dia em que
+ * alguém do comercial precisar entrar sem virar master.
+ */
+export const podeGerenciarOrcamentos = capacidade('gerenciar_orcamentos', role => role === 'master')
+
+/**
  * Pode usar o módulo Gastos.
  *
  * Gastos virou um PRODUTO à parte, com acesso próprio: o papel `produtor`.
@@ -298,6 +309,10 @@ export const CAPACIDADES: {
     descricao: 'Possíveis clientes, negociações e tarefas internas do Credenciei',
     padrao: podeGerenciarBacklog,
     peso: 'Abre o pipeline comercial da agência — quem está negociando, o que foi perdido.' },
+  { chave: 'gerenciar_orcamentos', nome: 'Gerenciar Orçamentos',
+    descricao: 'Cria, edita e gera PDF de orçamentos comerciais',
+    padrao: podeGerenciarOrcamentos,
+    peso: 'Abre valores comerciais e propostas — dado sensível da agência.' },
   { chave: 'registrar_gastos', nome: 'Registrar gastos',
     descricao: 'Lança despesa de evento por voz ou na mão, e vê o dashboard de gastos',
     padrao: podeRegistrarGastos },

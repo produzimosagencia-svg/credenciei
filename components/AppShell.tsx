@@ -7,10 +7,12 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
+  FileText,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
-  podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeRegistrarGastos, type Role,
+  podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
+  podeRegistrarGastos, type Role,
 } from '@/lib/permissions'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -175,6 +177,9 @@ function gruposPara(perfil: Perfil): Grupo[] {
    */
   if (podeGerenciarBacklog(perfil)) {
     operacional.push({ href: '/admin/backlog', label: 'Backlog', icon: KanbanSquare })
+  }
+  if (podeGerenciarOrcamentos(perfil)) {
+    operacional.push({ href: '/admin/orcamentos', label: 'Orçamentos', icon: FileText })
   }
   if (ehMaster(role)) {
     operacional.push(
