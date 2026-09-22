@@ -159,8 +159,24 @@ export async function montarPdfOrcamento(orcamento: OrcamentoComItens): Promise<
     y += texto.length * 13 + 20
   }
 
-  // ── Rodapé ───────────────────────────────────────────────────────────────
+  // ── Selo da marca, grande, canto inferior direito ───────────────────────
   const alturaPagina = doc.internal.pageSize.getHeight()
+  try {
+    const isoPath = path.join(process.cwd(), 'public/marca/iso-laranja.png')
+    const isoBase64 = `data:image/png;base64,${readFileSync(isoPath).toString('base64')}`
+    const propsIso = doc.getImageProperties(isoBase64)
+    const larguraIso = 150
+    const alturaIso = (propsIso.height / propsIso.width) * larguraIso
+    doc.addImage(
+      isoBase64, 'PNG',
+      margem + largura - larguraIso, alturaPagina - 24 - alturaIso,
+      larguraIso, alturaIso,
+    )
+  } catch (e) {
+    console.error('[orcamentos-pdf] ícone não carregou', e instanceof Error ? e.message : e)
+  }
+
+  // ── Rodapé ───────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.setTextColor(...LARANJA)
