@@ -1,16 +1,24 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Minus, AlertTriangle } from 'lucide-react'
 import { TelefoneInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { Secao } from '@/components/ui/Superficie'
-import { criarOrcamento, editarOrcamento, type ItemOrcamentoInput } from '@/lib/actions-orcamentos'
+import { criarOrcamento, editarOrcamento } from '@/lib/actions-orcamentos'
 import { ROTULO_STATUS, STATUS_ORCAMENTO, type StatusOrcamento } from '@/lib/orcamentos-constantes'
 import type { OrcamentoComItens } from '@/lib/orcamentos'
 import PreviaOrcamento from './PreviaOrcamento'
 
-type LinhaItem = ItemOrcamentoInput & { chave: string }
+/**
+ * Um item guarda o TEXTO digitado do valor, não o número — o valor final
+ * (`paraNumero`) só é calculado quando alguém precisa dele (total, prévia,
+ * submit). Formatar de volta a cada tecla (ex.: `paraTexto(paraNumero(v))`
+ * como `value` do input) trava a digitação: o campo reformata sozinho no
+ * meio da digitação e não dá pra teclar um segundo dígito. Foi exatamente
+ * esse bug que prendia "Valores adicionais" em R$ 1,00.
+ */
+type LinhaItem = { chave: string; descricao: string; valorTexto: string }
 
 function paraNumero(texto: string): number {
   const n = parseFloat(texto.replace(/\./g, '').replace(',', '.'))
@@ -31,7 +39,8 @@ const novaChave = () => `item-${Date.now()}-${contador++}`
  * Itens adicionais vivem em estado local (array), sem persistência
  * intermediária: adicionar/remover só grava de verdade quando o orçamento
  * inteiro é salvo. O total é recalculado a cada tecla (`useMemo`), nunca
- * pedido ao usuário pra somar.
+ * pedido ao usuário pra somar: (dia + funcionário + técnico) × dias + itens
+ * − desconto, sem deixar o total ficar negativo.
  */
 export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExistente?: OrcamentoComItens }) {
   const router = useRouter()
@@ -46,30 +55,34 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
   const [valorDiaTexto, setValorDiaTexto] = useState(paraTexto(orcamentoExistente?.valorDia ?? 0))
   const [valorFuncionarioTexto, setValorFuncionarioTexto] = useState(paraTexto(orcamentoExistente?.valorFuncionario ?? 0))
   const [valorTecnicoTexto, setValorTecnicoTexto] = useState(paraTexto(orcamentoExistente?.valorTecnico ?? 0))
+  const [dias, setDias] = useState(orcamentoExistente?.dias ?? 1)
+  const [descontoTexto, setDescontoTexto] = useState(paraTexto(orcamentoExistente?.desconto ?? 0))
   const [observacoes, setObservacoes] = useState(orcamentoExistente?.observacoes ?? '')
   const [status, setStatus] = useState<StatusOrcamento>(orcamentoExistente?.status ?? 'rascunho')
   const [itens, setItens] = useState<LinhaItem[]>(
-    (orcamentoExistente?.itens ?? []).map(i => ({ chave: novaChave(), descricao: i.descricao, valor: i.valor })),
+    (orcamentoExistente?.itens ?? []).map(i => ({ chave: novaChave(), descricao: i.descricao, valorTexto: paraTexto(i.valor) })),
   )
 
   const valorDia = paraNumero(valorDiaTexto)
   const valorFuncionario = paraNumero(valorFuncionarioTexto)
   const valorTecnico = paraNumero(valorTecnicoTexto)
+  const desconto = paraNumero(descontoTexto)
 
-  const total = useMemo(
-    () => valorDia + valorFuncionario + valorTecnico + itens.reduce((s, i) => s + i.valor, 0),
-    [valorDia, valorFuncionario, valorTecnico, itens],
+  const itensNumericos = useMemo(
+    () => itens.map(i => ({ descricao: i.descricao, valor: paraNumero(i.valorTexto) })),
+    [itens],
   )
 
-  const adicionarItem = () => setItens(prev => [...prev, { chave: novaChave(), descricao: '', valor: 0 }])
+  const subtotal = useMemo(
+    () => (valorDia + valorFuncionario + valorTecnico) * dias + itensNumericos.reduce((s, i) => s + i.valor, 0),
+    [valorDia, valorFuncionario, valorTecnico, dias, itensNumericos],
+  )
+  const total = Math.max(0, subtotal - desconto)
+
+  const adicionarItem = () => setItens(prev => [...prev, { chave: novaChave(), descricao: '', valorTexto: '' }])
   const removerItem = (chave: string) => setItens(prev => prev.filter(i => i.chave !== chave))
-  const mudarItem = (chave: string, campo: 'descricao' | 'valorTexto', valor: string) => {
-    setItens(prev => prev.map(i => {
-      if (i.chave !== chave) return i
-      if (campo === 'descricao') return { ...i, descricao: valor }
-      return { ...i, valor: paraNumero(valor) }
-    }))
-  }
+  const mudarItem = (chave: string, campo: 'descricao' | 'valorTexto', valor: string) =>
+    setItens(prev => prev.map(i => (i.chave === chave ? { ...i, [campo]: valor } : i)))
 
   const salvar = () => {
     setErro(null)
@@ -80,9 +93,9 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
 
     const dados = {
       nomeEvento, responsavel, telefone, dataEvento,
-      valorDia, valorFuncionario, valorTecnico,
+      valorDia, valorFuncionario, valorTecnico, dias, desconto,
       observacoes, status,
-      itens: itens.map(({ descricao, valor }) => ({ descricao, valor })),
+      itens: itensNumericos,
     }
 
     startTransition(async () => {
@@ -102,7 +115,8 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
       numero={orcamentoExistente?.numero}
       nomeEvento={nomeEvento} responsavel={responsavel} telefone={telefone} dataEvento={dataEvento}
       valorDia={valorDia} valorFuncionario={valorFuncionario} valorTecnico={valorTecnico}
-      itens={itens} observacoes={observacoes} total={total}
+      dias={dias} desconto={desconto}
+      itens={itensNumericos} observacoes={observacoes} total={total}
     />
   )
 
@@ -133,12 +147,20 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
             </div>
           </Secao>
 
-          <Secao titulo="Valores" corpoClassName="p-5 space-y-3">
+          <Secao
+            titulo="Valores" corpoClassName="p-5 space-y-3"
+            acoes={<DiasStepper dias={dias} onChange={setDias} />}
+          >
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <ValorInput rotulo="Valor do dia" valor={valorDiaTexto} onChange={setValorDiaTexto} />
               <ValorInput rotulo="Valor por funcionário" valor={valorFuncionarioTexto} onChange={setValorFuncionarioTexto} />
               <ValorInput rotulo="Valor do técnico" valor={valorTecnicoTexto} onChange={setValorTecnicoTexto} />
             </div>
+            {dias > 1 && (
+              <p className="text-slate-400 text-xs">
+                Os 3 valores acima são multiplicados por {dias} dias no total e no PDF.
+              </p>
+            )}
           </Secao>
 
           <Secao
@@ -156,7 +178,7 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
                   <input
                     className="input tabular-nums" style={{ paddingLeft: 34 }} inputMode="decimal" placeholder="0,00"
-                    value={paraTexto(item.valor)} onChange={e => mudarItem(item.chave, 'valorTexto', e.target.value.replace(/[^\d,]/g, ''))}
+                    value={item.valorTexto} onChange={e => mudarItem(item.chave, 'valorTexto', e.target.value.replace(/[^\d,]/g, ''))}
                   />
                 </div>
                 <button onClick={() => removerItem(item.chave)} aria-label="Excluir" className="btn-press w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-50 shrink-0">
@@ -164,6 +186,13 @@ export default function OrcamentoForm({ orcamentoExistente }: { orcamentoExisten
                 </button>
               </div>
             ))}
+          </Secao>
+
+          <Secao titulo="Desconto" corpoClassName="p-5 space-y-1.5">
+            <div className="max-w-xs">
+              <ValorInput rotulo="Valor do desconto" valor={descontoTexto} onChange={setDescontoTexto} />
+            </div>
+            <p className="text-slate-400 text-xs">Abatido do total. Aparece como uma linha própria no PDF.</p>
           </Secao>
 
           <Secao titulo="Observações" corpoClassName="p-5">
@@ -231,5 +260,29 @@ function ValorInput({ rotulo, valor, onChange }: { rotulo: string; valor: string
         />
       </div>
     </Campo>
+  )
+}
+
+/** O "botão do lado dos valores" — evento de mais de um dia multiplica dia/funcionário/técnico juntos. */
+function DiasStepper({ dias, onChange }: { dias: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-slate-400 text-xs font-medium hidden sm:inline">Dias do evento</span>
+      <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden">
+        <button
+          type="button" onClick={() => onChange(Math.max(1, dias - 1))} disabled={dias <= 1}
+          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <Minus className="w-3.5 h-3.5" />
+        </button>
+        <span className="w-8 text-center text-sm font-semibold tabular-nums text-slate-800">{dias}</span>
+        <button
+          type="button" onClick={() => onChange(dias + 1)}
+          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:bg-slate-50"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
   )
 }

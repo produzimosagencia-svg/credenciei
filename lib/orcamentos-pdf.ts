@@ -101,10 +101,11 @@ export async function montarPdfOrcamento(orcamento: OrcamentoComItens): Promise<
   y += 22
 
   const colValor = margem + largura
+  const diasTexto = orcamento.dias > 1 ? ` (${orcamento.dias} dias)` : ''
   const linhasInvestimento: [string, number][] = [
-    ['Valor do dia', orcamento.valorDia],
-    ['Valor por funcionário', orcamento.valorFuncionario],
-    ['Valor do técnico', orcamento.valorTecnico],
+    [`Valor do dia${diasTexto}`, orcamento.valorDia * orcamento.dias],
+    [`Valor por funcionário${diasTexto}`, orcamento.valorFuncionario * orcamento.dias],
+    [`Valor do técnico${diasTexto}`, orcamento.valorTecnico * orcamento.dias],
     ...orcamento.itens.map((i): [string, number] => [i.descricao, i.valor]),
   ]
   doc.setFont('helvetica', 'normal')
@@ -116,6 +117,13 @@ export async function montarPdfOrcamento(orcamento: OrcamentoComItens): Promise<
     doc.text(brl(valor), colValor, y, { align: 'right' })
     y += 20
     if (y > doc.internal.pageSize.getHeight() - 220) break
+  }
+
+  if (orcamento.desconto > 0) {
+    doc.setTextColor(...LARANJA)
+    doc.text('Desconto', margem, y)
+    doc.text(`− ${brl(orcamento.desconto)}`, colValor, y, { align: 'right' })
+    y += 20
   }
 
   y += 6

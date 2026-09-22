@@ -44,6 +44,10 @@ export type OrcamentoInput = {
   valorDia: number
   valorFuncionario: number
   valorTecnico: number
+  /** Multiplica valorDia/valorFuncionario/valorTecnico juntos (evento de N dias). */
+  dias: number
+  /** Abatido do subtotal. Nunca deixa o total ficar negativo (limitado ao subtotal). */
+  desconto: number
   observacoes: string | null
   status: string
   itens: ItemOrcamentoInput[]
@@ -65,16 +69,21 @@ function validar(dados: OrcamentoInput) {
   if (valorDia < 0 || valorFuncionario < 0 || valorTecnico < 0) {
     throw new Error('Os valores não podem ser negativos.')
   }
+  const dias = Math.max(1, Math.round(Number(dados.dias) || 1))
 
   const itens = dados.itens
     .map(i => ({ descricao: i.descricao.trim(), valor: Number(i.valor) || 0 }))
     .filter(i => i.descricao && i.valor > 0)
 
-  const valorTotal = valorDia + valorFuncionario + valorTecnico + itens.reduce((s, i) => s + i.valor, 0)
+  const subtotal = (valorDia + valorFuncionario + valorTecnico) * dias + itens.reduce((s, i) => s + i.valor, 0)
+  // Nunca deixa o desconto virar o total negativo — o máximo que se pode
+  // descontar é o próprio subtotal (orçamento de graça, no limite).
+  const desconto = Math.min(Math.max(0, Number(dados.desconto) || 0), subtotal)
+  const valorTotal = subtotal - desconto
 
   return {
     nomeEvento, responsavel, telefone, dataEvento,
-    valorDia, valorFuncionario, valorTecnico, valorTotal,
+    valorDia, valorFuncionario, valorTecnico, dias, desconto, valorTotal,
     observacoes: (dados.observacoes ?? '').trim() || null,
     status: statusValido(dados.status),
     itens,
@@ -105,6 +114,8 @@ export async function criarOrcamento(dados: OrcamentoInput): Promise<Resultado> 
       valor_dia: campos.valorDia,
       valor_funcionario: campos.valorFuncionario,
       valor_tecnico: campos.valorTecnico,
+      dias: campos.dias,
+      desconto: campos.desconto,
       valor_total: campos.valorTotal,
       observacoes: campos.observacoes,
       status: campos.status,
@@ -143,6 +154,8 @@ export async function editarOrcamento(id: string, dados: OrcamentoInput): Promis
       valor_dia: campos.valorDia,
       valor_funcionario: campos.valorFuncionario,
       valor_tecnico: campos.valorTecnico,
+      dias: campos.dias,
+      desconto: campos.desconto,
       valor_total: campos.valorTotal,
       observacoes: campos.observacoes,
       status: campos.status,
@@ -203,6 +216,8 @@ export async function duplicarOrcamento(id: string): Promise<Resultado> {
       valor_dia: original.valorDia,
       valor_funcionario: original.valorFuncionario,
       valor_tecnico: original.valorTecnico,
+      dias: original.dias,
+      desconto: original.desconto,
       valor_total: original.valorTotalCalculado,
       observacoes: original.observacoes,
       status: 'rascunho',

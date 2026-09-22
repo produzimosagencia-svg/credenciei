@@ -21,6 +21,10 @@ export type Orcamento = {
   valorDia: number
   valorFuncionario: number
   valorTecnico: number
+  /** Multiplica valorDia/valorFuncionario/valorTecnico juntos. Itens adicionais não entram. */
+  dias: number
+  /** Abatido do subtotal (valores × dias + itens). Nunca deixa o total ficar negativo. */
+  desconto: number
   /** Gravado no último save. Ver `orcamentoPorId` pro valor sempre correto. */
   valorTotal: number
   observacoes: string | null
@@ -31,13 +35,13 @@ export type Orcamento = {
 
 export type OrcamentoComItens = Orcamento & {
   itens: ItemOrcamento[]
-  /** Recalculado a partir dos valores brutos + itens — nunca a coluna gravada. */
+  /** Recalculado a partir dos valores brutos + itens + dias − desconto. Nunca a coluna gravada. */
   valorTotalCalculado: number
 }
 
 const SELECT = `
   id, numero, nome_evento, responsavel, telefone, data_evento,
-  valor_dia, valor_funcionario, valor_tecnico, valor_total,
+  valor_dia, valor_funcionario, valor_tecnico, dias, desconto, valor_total,
   observacoes, status, created_at, updated_at
 `
 
@@ -51,6 +55,8 @@ type LinhaOrcamento = {
   valor_dia: number | string
   valor_funcionario: number | string
   valor_tecnico: number | string
+  dias: number | string
+  desconto: number | string
   valor_total: number | string
   observacoes: string | null
   status: string
@@ -69,6 +75,8 @@ function montar(l: LinhaOrcamento): Orcamento {
     valorDia: Number(l.valor_dia) || 0,
     valorFuncionario: Number(l.valor_funcionario) || 0,
     valorTecnico: Number(l.valor_tecnico) || 0,
+    dias: Math.max(1, Number(l.dias) || 1),
+    desconto: Number(l.desconto) || 0,
     valorTotal: Number(l.valor_total) || 0,
     observacoes: l.observacoes,
     status: statusValido(l.status),
@@ -91,8 +99,8 @@ export async function listarOrcamentos(): Promise<Orcamento[]> {
  * Um orçamento com os itens, pra editar/pré-visualizar/gerar o PDF.
  *
  * `valorTotalCalculado` é sempre recalculado aqui a partir dos valores
- * brutos + itens — nunca confia na coluna `valor_total` gravada (ver o
- * cabeçalho de supabase/upgrade-orcamentos.sql).
+ * brutos + itens + dias − desconto — nunca confia na coluna `valor_total`
+ * gravada (ver o cabeçalho de supabase/upgrade-orcamentos.sql).
  */
 export async function orcamentoPorId(id: string): Promise<OrcamentoComItens | null> {
   const { data: linha, error } = await supabaseAdmin
@@ -111,9 +119,10 @@ export async function orcamentoPorId(id: string): Promise<OrcamentoComItens | nu
     .map(i => ({ id: i.id, descricao: i.descricao, valor: Number(i.valor) || 0, posicao: i.posicao }))
 
   const orcamento = montar(linha as LinhaOrcamento)
-  const valorTotalCalculado =
-    orcamento.valorDia + orcamento.valorFuncionario + orcamento.valorTecnico
+  const subtotal =
+    (orcamento.valorDia + orcamento.valorFuncionario + orcamento.valorTecnico) * orcamento.dias
     + itens.reduce((soma, i) => soma + i.valor, 0)
+  const valorTotalCalculado = Math.max(0, subtotal - orcamento.desconto)
 
   return { ...orcamento, itens, valorTotalCalculado }
 }

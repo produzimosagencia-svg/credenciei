@@ -7,7 +7,7 @@ import { brl, numeroOrcamento } from '@/lib/orcamentos-constantes'
  */
 export default function PreviaOrcamento({
   numero, nomeEvento, responsavel, telefone, dataEvento,
-  valorDia, valorFuncionario, valorTecnico, itens, observacoes, total,
+  valorDia, valorFuncionario, valorTecnico, dias, desconto, itens, observacoes, total,
 }: {
   /** Ausente enquanto o orçamento ainda não foi salvo pela primeira vez. */
   numero?: number
@@ -18,14 +18,17 @@ export default function PreviaOrcamento({
   valorDia: number
   valorFuncionario: number
   valorTecnico: number
+  dias: number
+  desconto: number
   itens: { descricao: string; valor: number }[]
   observacoes: string
   total: number
 }) {
+  const diasTexto = dias > 1 ? ` (${dias} dias)` : ''
   const linhas = [
-    { descricao: 'Valor do dia', valor: valorDia },
-    { descricao: 'Valor por funcionário', valor: valorFuncionario },
-    { descricao: 'Valor do técnico', valor: valorTecnico },
+    { descricao: `Valor do dia${diasTexto}`, valor: valorDia * dias },
+    { descricao: `Valor por funcionário${diasTexto}`, valor: valorFuncionario * dias },
+    { descricao: `Valor do técnico${diasTexto}`, valor: valorTecnico * dias },
     ...itens.filter(i => i.descricao.trim() && i.valor > 0),
   ].filter(l => l.valor > 0)
 
@@ -58,6 +61,12 @@ export default function PreviaOrcamento({
             <span className="tabular-nums font-medium text-slate-800">{brl(l.valor)}</span>
           </div>
         ))}
+        {desconto > 0 && (
+          <div className="flex items-center justify-between py-2 border-b border-slate-50">
+            <span className="text-brand-600 font-medium">Desconto</span>
+            <span className="tabular-nums font-medium text-brand-600">− {brl(desconto)}</span>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 rounded-xl bg-brand-50 px-5 py-4 flex items-center justify-between gap-3">
