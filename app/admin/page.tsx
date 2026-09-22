@@ -180,8 +180,8 @@ async function CartoesDoMestre({ eventosAtivos, totalEventos }: { eventosAtivos:
   const cartoes = [
     { label: 'Eventos ativos', value: eventosAtivos, sub: `de ${totalEventos} no total`, icon: Radio, tom: 'acento' as const },
     { label: 'Funcionários na base', value: m.funcionariosNaBase.toLocaleString('pt-BR'), sub: 'pessoas distintas, por CPF', icon: UserCheck, tom: 'sucesso' as const },
-    { label: 'Valor cobrado nos eventos', value: m.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: 'combinado com a equipe, nos eventos ativos', icon: TrendingUp, tom: 'aviso' as const, small: true },
-    { label: 'Custo de disparo (WhatsApp)', value: m.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: `últimos ${m.diasDoCusto} dias`, icon: Activity, tom: 'info' as const, small: true },
+    { label: 'Valor cobrado nos eventos', value: m.valorTotalCobrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: 'combinado com a equipe, nos eventos ativos', icon: TrendingUp, tom: 'aviso' as const, small: true, sensivel: true },
+    { label: 'Custo de disparo (WhatsApp)', value: m.custoMensagens.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), sub: `últimos ${m.diasDoCusto} dias`, icon: Activity, tom: 'info' as const, small: true, sensivel: true },
   ]
   return <>{cartoes.map(c => <StatCard key={c.label} {...c} />)}</>
 }

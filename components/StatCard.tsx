@@ -1,3 +1,4 @@
+'use client'
 /**
  * Cartão de indicador (KPI).
  *
@@ -10,9 +11,18 @@
  * é o conteúdo do cartão. A cor emoldura, não substitui.
  *
  * A aparência mora nas classes `.indicador*` do globals.css.
+ *
+ * ─── `sensivel` ──────────────────────────────────────────────────────────────
+ *
+ * Cartões de dinheiro (valor cobrado, custo de disparo) ficam visíveis em
+ * tela compartilhada/print sem querer. Com `sensivel`, um olho aparece do
+ * lado do rótulo pra tampar o valor na hora — estado por cartão, começa
+ * visível (não muda o comportamento de sempre até alguém clicar).
  */
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { Eye, EyeOff } from 'lucide-react'
 
 const TONS = {
   neutro: '',
@@ -33,6 +43,7 @@ export default function StatCard({
   tom = 'neutro',
   small,
   href,
+  sensivel,
 }: {
   label: string
   value: string | number
@@ -49,24 +60,41 @@ export default function StatCard({
    * cartão continua sendo o que sempre foi — um retângulo que não clica.
    */
   href?: string
+  /** Mostra um olho pra tampar o valor (dado sensível — dinheiro, custo). */
+  sensivel?: boolean
 }) {
+  const [revelado, setRevelado] = useState(true)
+  const oculto = !!sensivel && !revelado
+
   const conteudo = (
     <>
       <div className="flex items-center justify-between gap-3">
         <p className="indicador-rotulo truncate">{label}</p>
-        {Icon && (
-          <span className="indicador-icone" aria-hidden="true">
-            <Icon className="w-3.5 h-3.5" />
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {sensivel && (
+            <button
+              type="button"
+              onClick={e => { e.preventDefault(); e.stopPropagation(); setRevelado(r => !r) }}
+              aria-label={revelado ? 'Ocultar valor' : 'Mostrar valor'}
+              className="indicador-icone hover:opacity-70 transition-opacity"
+            >
+              {revelado ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          {Icon && (
+            <span className="indicador-icone" aria-hidden="true">
+              <Icon className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </div>
       </div>
       <p
         className="indicador-valor"
         style={small ? { fontSize: '1.625rem' } : undefined}
       >
-        {value}
+        {oculto ? '••••••' : value}
       </p>
-      {sub && <p className="indicador-sub">{sub}</p>}
+      {sub && <p className="indicador-sub">{oculto ? 'valor oculto' : sub}</p>}
     </>
   )
 
