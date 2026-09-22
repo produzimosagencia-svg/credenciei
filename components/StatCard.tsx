@@ -1,4 +1,3 @@
-'use client'
 /**
  * Cartão de indicador (KPI).
  *
@@ -12,17 +11,15 @@
  *
  * A aparência mora nas classes `.indicador*` do globals.css.
  *
- * ─── `sensivel` ──────────────────────────────────────────────────────────────
- *
- * Cartões de dinheiro (valor cobrado, custo de disparo) ficam visíveis em
- * tela compartilhada/print sem querer. Com `sensivel`, um olho aparece do
- * lado do rótulo pra tampar o valor na hora — estado por cartão, começa
- * visível (não muda o comportamento de sempre até alguém clicar).
+ * Continua Server Component de propósito — a maioria dos usos manda `icon`
+ * como referência de componente do lucide-react, e isso não pode virar prop
+ * de Client Component (quebra a serialização do RSC em produção, mesmo
+ * compilando local). Ver ValorSensivel.tsx: é o único pedaço que precisa de
+ * estado (mostrar/ocultar), e fica isolado lá.
  */
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { Eye, EyeOff } from 'lucide-react'
+import ValorSensivel from './ValorSensivel'
 
 const TONS = {
   neutro: '',
@@ -63,38 +60,29 @@ export default function StatCard({
   /** Mostra um olho pra tampar o valor (dado sensível — dinheiro, custo). */
   sensivel?: boolean
 }) {
-  const [revelado, setRevelado] = useState(true)
-  const oculto = !!sensivel && !revelado
-
   const conteudo = (
     <>
       <div className="flex items-center justify-between gap-3">
         <p className="indicador-rotulo truncate">{label}</p>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {sensivel && (
-            <button
-              type="button"
-              onClick={e => { e.preventDefault(); e.stopPropagation(); setRevelado(r => !r) }}
-              aria-label={revelado ? 'Ocultar valor' : 'Mostrar valor'}
-              className="indicador-icone hover:opacity-70 transition-opacity"
-            >
-              {revelado ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-            </button>
-          )}
-          {Icon && (
-            <span className="indicador-icone" aria-hidden="true">
-              <Icon className="w-3.5 h-3.5" />
-            </span>
-          )}
-        </div>
+        {Icon && (
+          <span className="indicador-icone" aria-hidden="true">
+            <Icon className="w-3.5 h-3.5" />
+          </span>
+        )}
       </div>
-      <p
-        className="indicador-valor"
-        style={small ? { fontSize: '1.625rem' } : undefined}
-      >
-        {oculto ? '••••••' : value}
-      </p>
-      {sub && <p className="indicador-sub">{oculto ? 'valor oculto' : sub}</p>}
+      {sensivel ? (
+        <ValorSensivel value={value} sub={sub} small={small} />
+      ) : (
+        <>
+          <p
+            className="indicador-valor"
+            style={small ? { fontSize: '1.625rem' } : undefined}
+          >
+            {value}
+          </p>
+          {sub && <p className="indicador-sub">{sub}</p>}
+        </>
+      )}
     </>
   )
 
