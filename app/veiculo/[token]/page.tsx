@@ -47,6 +47,14 @@ export default async function VeiculoPublicoPage({ params }: { params: Promise<{
           <div className="p-6 space-y-4">
             <p className="text-slate-600 text-sm text-center">{selo.texto}</p>
 
+            {veiculo.qrDataUrl && (
+              <div className="text-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={veiculo.qrDataUrl} alt="QR Code do veículo" className="mx-auto rounded-xl border border-slate-200" />
+                <p className="text-slate-400 text-xs mt-2">Mostre este QR Code no credenciamento pra entrar com o veículo.</p>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center shrink-0">
                 <Car className="w-5 h-5 text-slate-500" />
