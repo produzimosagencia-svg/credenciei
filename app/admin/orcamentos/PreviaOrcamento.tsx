@@ -64,7 +64,7 @@ export default function PreviaOrcamento({
         {desconto > 0 && (
           <div className="flex items-center justify-between py-2 border-b border-slate-50">
             <span className="text-brand-600 font-medium">Desconto</span>
-            <span className="tabular-nums font-medium text-brand-600">− {brl(desconto)}</span>
+            <span className="tabular-nums font-medium text-brand-600">- {brl(desconto)}</span>
           </div>
         )}
       </div>

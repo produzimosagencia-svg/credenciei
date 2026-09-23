@@ -122,7 +122,15 @@ export async function montarPdfOrcamento(orcamento: OrcamentoComItens): Promise<
   if (orcamento.desconto > 0) {
     doc.setTextColor(...LARANJA)
     doc.text('Desconto', margem, y)
-    doc.text(`− ${brl(orcamento.desconto)}`, colValor, y, { align: 'right' })
+    /*
+     * Hífen comum, NÃO o sinal de menos tipográfico (U+2212).
+     *
+     * As fontes padrão do jsPDF (Helvetica) não têm o glifo de U+2212, e o
+     * desconto saía como lixo no PDF que vai para o cliente — em 23/09/2026
+     * apareceu como aspas e espaçamento quebrado. O mesmo valia para a
+     * prévia na tela, onde a fonte da marca também não o tem.
+     */
+    doc.text(`- ${brl(orcamento.desconto)}`, colValor, y, { align: 'right' })
     y += 20
   }
 
