@@ -4,6 +4,8 @@ import { Truck, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarVeiculos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
+import { linksDeVeiculoDoEvento } from '@/lib/actions'
+import { statusVeiculoValido, tipoCadastroValido } from '@/lib/veiculos-constantes'
 import { PageHeader } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
 import PainelVeiculos, { type VeiculoLinha } from './PainelVeiculos'
@@ -71,12 +73,17 @@ export default async function VeiculosPage({
     notFound()
   }
 
-  const [{ data: dias }, { data: veiculos }] = await Promise.all([
+  const [{ data: dias }, { data: veiculos }, links] = await Promise.all([
     supabase.from('jornada_dias').select('data, tipo')
       .eq('evento_id', eventoParam).eq('cancelado', false).order('data'),
     supabase.from('veiculos')
-      .select('id, placa, modelo, cor, tipo, empresa, observacoes, foto_path, created_at, funcionarios(nome, cpf), veiculo_dias(data)')
+      .select(`
+        id, placa, modelo, cor, tipo, ano, empresa, setor, observacoes,
+        foto_path, foto_pessoa_path, status, tipo_cadastro, created_at,
+        condutor_nome, condutor_cpf, funcionarios(nome, cpf), veiculo_dias(data)
+      `)
       .eq('evento_id', eventoParam).order('created_at', { ascending: false }),
+    linksDeVeiculoDoEvento(eventoParam),
   ])
 
   /*
@@ -93,13 +100,18 @@ export default async function VeiculosPage({
       placa: v.placa as string,
       modelo: v.modelo as string,
       cor: (v.cor as string | null) ?? null,
+      ano: (v.ano as number | null) ?? null,
       tipo: (v.tipo as string | null) ?? null,
       empresa: (v.empresa as string | null) ?? null,
+      setor: (v.setor as string | null) ?? null,
       observacoes: (v.observacoes as string | null) ?? null,
-      condutorNome: cond?.nome ?? null,
-      condutorCpf: cond?.cpf ?? null,
+      condutorNome: (v.condutor_nome as string | null) ?? cond?.nome ?? null,
+      condutorCpf: (v.condutor_cpf as string | null) ?? cond?.cpf ?? null,
       dias: ((v.veiculo_dias as unknown as { data: string }[] | null) ?? []).map(d => d.data),
       temFoto: !!v.foto_path,
+      temFotoPessoa: !!v.foto_pessoa_path,
+      status: statusVeiculoValido(v.status as string),
+      tipoCadastro: tipoCadastroValido(v.tipo_cadastro as string),
     }
   })
 
@@ -117,6 +129,7 @@ export default async function VeiculosPage({
 
       <PainelVeiculos
         eventoId={eventoParam}
+        links={links}
         dias={(dias ?? []) as { data: string; tipo: string }[]}
         veiculos={linhas}
       />

@@ -38,11 +38,13 @@ import {
 import { chaveBusca, validarCpf, formatCpf } from './format'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
+import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { podePassar } from './limite'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria } from './auditoria'
-import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado } from './mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo } from './mensagens'
+import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
 import { urlBase } from './ia/ferramentas/base'
@@ -6003,27 +6005,46 @@ function normalizarPlaca(v: string): string {
 }
 
 /**
- * Sobe a foto do veículo e devolve o caminho salvo, ou null quando não veio
- * foto (o campo é opcional — ver upgrade-veiculo-foto.sql).
+ * Sobe uma foto ligada ao veículo (do veículo em si, ou da pessoa) e devolve
+ * o caminho salvo, ou null quando não veio arquivo.
  *
  * Mesmo bucket privado das outras fotos do sistema (`presencas`), com
- * `upsert: true` no caminho fixo do veículo: trocar a foto substitui a
- * anterior em vez de acumular arquivo órfão no storage.
+ * `upsert: true` no caminho fixo do veículo+tipo: trocar a foto substitui a
+ * anterior em vez de acumular arquivo órfão no storage. `sufixo` separa as
+ * duas fotos no mesmo bucket (`veiculos/{id}.ext` pra do veículo, sempre
+ * assim por compatibilidade com o que já existe; `veiculos/{id}-pessoa.ext`
+ * pra da pessoa).
  */
-async function subirFotoVeiculo(veiculoId: string, arquivo: FormDataEntryValue | null): Promise<string | null> {
+async function subirFotoVeiculo(
+  veiculoId: string, arquivo: FormDataEntryValue | null, sufixo: '' | '-pessoa' = '',
+): Promise<string | null> {
   if (!(arquivo instanceof File) || arquivo.size === 0) return null
   if (!TIPOS_FOTO_ACEITOS.has(arquivo.type)) {
     throw new Error('Formato de imagem não suportado. Use JPG, PNG ou WEBP.')
   }
   const ext = arquivo.type.split('/')[1] === 'jpeg' ? 'jpg' : arquivo.type.split('/')[1]
-  const path = `veiculos/${veiculoId}.${ext}`
+  const path = `veiculos/${veiculoId}${sufixo}.${ext}`
   const buffer = Buffer.from(await arquivo.arrayBuffer())
   const { error } = await supabaseAdmin.storage.from('presencas').upload(path, buffer, {
     contentType: arquivo.type,
     upsert: true,
   })
-  if (error) throw new Error('Erro ao enviar a foto do veículo. Tente novamente.')
+  if (error) throw new Error('Erro ao enviar a foto. Tente novamente.')
   return path
+}
+
+/** Token opaco do QR do veículo — o QR encode `${SITE_URL}/veiculo/{token}`. */
+function gerarQrTokenVeiculo(): string {
+  return randomBytes(24).toString('base64url')
+}
+
+const SITE_URL_VEICULO = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
+
+/** O link que o QR do veículo encode, e o PNG (data URL) pronto pra exibir/baixar. */
+async function montarQrVeiculo(qrToken: string): Promise<{ link: string; qrDataUrl: string }> {
+  const link = `${SITE_URL_VEICULO}/veiculo/${qrToken}`
+  const qrDataUrl = await QRCode.toDataURL(link, { width: 260, margin: 1 })
+  return { link, qrDataUrl }
 }
 
 /**
@@ -6071,32 +6092,55 @@ export async function atualizarFotoVeiculo(veiculoId: string, eventoId: string, 
   return { ok: true as const }
 }
 
-/** URL assinada da foto de um veículo, pra exibir na lista. Bucket é privado. */
-export async function urlFotoVeiculo(veiculoId: string, eventoId: string): Promise<string | null> {
+/** O QR (PNG) e o link de um veículo já cadastrado, pra "Ver QR" na listagem. */
+export async function qrDataUrlVeiculo(veiculoId: string, eventoId: string): Promise<{ qrDataUrl: string; link: string } | { error: string }> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+  const { data } = await supabaseAdmin
+    .from('veiculos').select('qr_token').eq('id', veiculoId).eq('evento_id', eventoId).single()
+  if (!data?.qr_token) return { error: 'Este veículo ainda não tem QR gerado.' }
+  return montarQrVeiculo(data.qr_token as string)
+}
+
+/** URL assinada da foto do veículo (ou da pessoa), pra exibir na lista. Bucket é privado. */
+export async function urlFotoVeiculo(veiculoId: string, eventoId: string, campo: 'veiculo' | 'pessoa' = 'veiculo'): Promise<string | null> {
   const acesso = await exigirAcessoAVeiculos(eventoId)
   if (acesso.error) return null
+  const coluna = campo === 'pessoa' ? 'foto_pessoa_path' : 'foto_path'
   const { data } = await supabaseAdmin
-    .from('veiculos').select('foto_path').eq('id', veiculoId).eq('evento_id', eventoId).single()
-  if (!data?.foto_path) return null
+    .from('veiculos').select(coluna).eq('id', veiculoId).eq('evento_id', eventoId).single()
+  const path = (data as Record<string, unknown> | null)?.[coluna] as string | undefined
+  if (!path) return null
   const { data: assinada } = await supabaseAdmin.storage
-    .from('presencas').createSignedUrl(data.foto_path as string, 60 * 30)
+    .from('presencas').createSignedUrl(path, 60 * 30)
   return assinada?.signedUrl ?? null
 }
 
-export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
-  const acesso = await exigirAcessoAVeiculos(eventoId)
-  if (!acesso.perfil) return { error: acesso.error }
-  const perfil = acesso.perfil
-
+/**
+ * Os campos comuns entre o cadastro manual (admin) e o público (link) — o
+ * condutor não precisa mais de `funcionario_id`: nome/CPF/telefone vêm
+ * direto do formulário. `funcionarioId` continua opcional, preenchido só
+ * quando alguém usa o atalho "buscar por CPF" (`buscarCondutorPorCpf`) e
+ * confirma que é a mesma pessoa.
+ */
+function camposDoVeiculo(formData: FormData) {
   const placa = normalizarPlaca(String(formData.get('placa') ?? ''))
   const modelo = String(formData.get('modelo') ?? '').trim()
-  const cpf = normalizarCpf(String(formData.get('cpf') ?? ''))
+  const condutorNome = String(formData.get('condutor_nome') ?? '').trim()
+  const condutorCpf = normalizarCpf(String(formData.get('condutor_cpf') ?? ''))
+  const condutorTelefone = String(formData.get('condutor_telefone') ?? '').replace(/\D/g, '')
   const empresa = String(formData.get('empresa') ?? '').trim() || null
+  const setor = String(formData.get('setor') ?? '').trim() || null
   const cor = String(formData.get('cor') ?? '').trim() || null
   const tipo = String(formData.get('tipo') ?? '').trim() || null
   const observacoes = String(formData.get('observacoes') ?? '').trim() || null
-  const dias = formData.getAll('dias').map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+  const anoBruto = String(formData.get('ano') ?? '').trim()
+  const ano = /^\d{4}$/.test(anoBruto) ? Number(anoBruto) : null
+  const funcionarioId = String(formData.get('funcionario_id') ?? '').trim() || null
 
+  if (!condutorNome || condutorNome.length < 2) throw new Error('Informe o nome completo do condutor.')
+  if (!validarCpf(condutorCpf)) throw new Error('CPF do condutor inválido. Confira os números.')
+  if (!condutorTelefone || condutorTelefone.length < 10) throw new Error('Informe o telefone/WhatsApp do condutor, com DDD.')
   /*
    * Placa brasileira: 7 caracteres nos dois formatos que convivem — o antigo
    * (ABC1234) e o Mercosul (ABC1D23). Valida o tamanho e o formato, não a
@@ -6104,23 +6148,87 @@ export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
    * Detran, que o sistema não tem (e não vale a pena pra portaria de evento).
    */
   if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) {
-    return { error: 'Placa inválida. Use o formato ABC1D23 (Mercosul) ou ABC1234.' }
+    throw new Error('Placa inválida. Use o formato ABC1D23 (Mercosul) ou ABC1234.')
   }
-  if (modelo.length < 2) return { error: 'Informe o modelo do veículo.' }
+  if (modelo.length < 2) throw new Error('Informe o modelo do veículo.')
 
-  const achado = await buscarCondutorPorCpf(eventoId, cpf)
-  if (!achado.condutor) return { error: achado.error }
-  const condutor = achado.condutor
+  return { placa, modelo, condutorNome, condutorCpf, condutorTelefone, empresa, setor, cor, tipo, observacoes, ano, funcionarioId }
+}
+
+/** Grava dias autorizados + fotos (veículo obrigatória, pessoa opcional) de um veículo recém-criado. */
+async function finalizarCadastroVeiculo(
+  veiculoId: string, formData: FormData, dias: string[],
+): Promise<{ error?: string }> {
+  if (dias.length) {
+    const { error: erroDias } = await supabaseAdmin
+      .from('veiculo_dias')
+      .insert(dias.map(data => ({ veiculo_id: veiculoId, data })))
+    if (erroDias) return { error: mensagemAmigavel(erroDias) }
+  }
+
+  /*
+   * A foto do veículo é obrigatória por regra de negócio, mas o upload
+   * ainda roda DEPOIS do insert (o caminho precisa do id) e sem derrubar o
+   * cadastro se a subida falhar por instabilidade — o veículo já está
+   * autorizado a entrar, e dá pra reenviar a foto depois por
+   * `atualizarFotoVeiculo`. A ausência do ARQUIVO em si já foi barrada
+   * antes do insert, em `camposDoVeiculo`/quem chama.
+   */
+  try {
+    const fotoPath = await subirFotoVeiculo(veiculoId, formData.get('foto'))
+    if (fotoPath) await supabaseAdmin.from('veiculos').update({ foto_path: fotoPath }).eq('id', veiculoId)
+  } catch (erroFoto) {
+    console.error('[veiculos] falha ao subir foto do veículo', { veiculoId, erro: erroFoto })
+  }
+  try {
+    const fotoPessoaPath = await subirFotoVeiculo(veiculoId, formData.get('foto_pessoa'), '-pessoa')
+    if (fotoPessoaPath) await supabaseAdmin.from('veiculos').update({ foto_pessoa_path: fotoPessoaPath }).eq('id', veiculoId)
+  } catch (erroFoto) {
+    console.error('[veiculos] falha ao subir foto da pessoa', { veiculoId, erro: erroFoto })
+  }
+
+  return {}
+}
+
+export async function cadastrarVeiculo(eventoId: string, formData: FormData): Promise<
+  { ok?: false; error: string } | { ok: true; id: string; placa: string; condutor: string; qrDataUrl: string }
+> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+  const perfil = acesso.perfil
+
+  let campos: ReturnType<typeof camposDoVeiculo>
+  try {
+    campos = camposDoVeiculo(formData)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Confira os dados do formulário.' }
+  }
+
+  const fotoVeiculo = formData.get('foto')
+  if (!(fotoVeiculo instanceof File) || fotoVeiculo.size === 0) {
+    return { error: 'A foto do veículo é obrigatória.' }
+  }
+
+  const dias = formData.getAll('dias').map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
+  const qrToken = gerarQrTokenVeiculo()
 
   const { data: novo, error } = await supabaseAdmin.from('veiculos').insert([{
     evento_id: eventoId,
-    funcionario_id: condutor.id,
-    empresa,
-    placa,
-    modelo,
-    cor,
-    tipo,
-    observacoes,
+    funcionario_id: campos.funcionarioId,
+    condutor_nome: campos.condutorNome,
+    condutor_cpf: campos.condutorCpf,
+    condutor_telefone: campos.condutorTelefone,
+    empresa: campos.empresa,
+    setor: campos.setor,
+    placa: campos.placa,
+    modelo: campos.modelo,
+    ano: campos.ano,
+    cor: campos.cor,
+    tipo: campos.tipo,
+    observacoes: campos.observacoes,
+    tipo_cadastro: 'manual',
+    status: 'ativo',
+    qr_token: qrToken,
     criado_por_perfil_id: perfil.id,
   }]).select('id').single()
 
@@ -6128,33 +6236,179 @@ export async function cadastrarVeiculo(eventoId: string, formData: FormData) {
     // O índice único (evento_id, placa) é o que barra a duplicidade; aqui só
     // se troca o erro cru do Postgres por algo que diga o que fazer.
     if (/duplicate key|unique/i.test(error.message)) {
-      return { error: `A placa ${placa} já está cadastrada neste evento.` }
+      return { error: `A placa ${campos.placa} já está cadastrada neste evento.` }
     }
     return { error: mensagemAmigavel(error) }
   }
 
-  if (dias.length) {
-    const { error: erroDias } = await supabaseAdmin
-      .from('veiculo_dias')
-      .insert(dias.map(data => ({ veiculo_id: novo.id, data })))
-    if (erroDias) return { error: mensagemAmigavel(erroDias) }
-  }
+  const { error: erroFinal } = await finalizarCadastroVeiculo(novo.id, formData, dias)
+  if (erroFinal) return { error: erroFinal }
 
-  /*
-   * Foto por último, e sem derrubar o cadastro se falhar: o caminho precisa
-   * do id que só existe depois do insert, e um erro de upload não pode
-   * desfazer um veículo que já está autorizado a entrar — a foto é opcional
-   * e pode ser adicionada depois por `atualizarFotoVeiculo`.
-   */
-  try {
-    const fotoPath = await subirFotoVeiculo(novo.id, formData.get('foto'))
-    if (fotoPath) await supabaseAdmin.from('veiculos').update({ foto_path: fotoPath }).eq('id', novo.id)
-  } catch (erroFoto) {
-    console.error('[cadastrarVeiculo] falha ao subir foto', { veiculoId: novo.id, erro: erroFoto })
-  }
+  after(() => agendarConfirmacaoVeiculo({
+    eventoId, veiculoId: novo.id, telefone: campos.condutorTelefone,
+  }).catch(console.error))
+
+  const { qrDataUrl } = await montarQrVeiculo(qrToken)
 
   revalidatePath('/admin/veiculos')
-  return { ok: true as const, placa, condutor: condutor.nome }
+  return { ok: true as const, id: novo.id as string, placa: campos.placa, condutor: campos.condutorNome, qrDataUrl }
+}
+
+// ─── Cadastro público de veículo (link, sem sessão) ──────────────────────────
+
+/**
+ * Confere se um link de cadastro de veículo está de pé — mesma checagem que
+ * `cadastrarVeiculoPublico` faz, exposta à parte pra a PÁGINA (Server
+ * Component, sem sessão) decidir o que mostrar antes mesmo de abrir o
+ * formulário.
+ */
+export async function linkVeiculoValido(token: string): Promise<
+  { ok: true; eventoId: string; eventoNome: string; tipo: string } | { ok: false }
+> {
+  const { data } = await supabaseAdmin
+    .from('veiculo_links')
+    .select('evento_id, tipo, ativo, eventos(nome)')
+    .eq('token', token)
+    .maybeSingle()
+  if (!data || data.ativo === false) return { ok: false }
+  const evento = data.eventos as unknown as { nome: string } | { nome: string }[] | null
+  const eventoNome = (Array.isArray(evento) ? evento[0]?.nome : evento?.nome) ?? ''
+  return { ok: true, eventoId: data.evento_id as string, eventoNome, tipo: tipoCadastroValido(data.tipo as string) }
+}
+
+/**
+ * Cadastro de veículo pelo LINK PÚBLICO — sem `getPerfil()`, chamado direto
+ * pelo wizard no navegador de quem nunca logou no sistema.
+ *
+ * Nasce `pendente`: diferente do cadastro manual (feito por quem já está na
+ * produção, vendo a pessoa e o veículo), aqui é a própria pessoa se
+ * cadastrando sozinha — o QR só passa a valer pra entrar depois que um
+ * master/admin/suporte aprova (`alterarStatusVeiculo`). Decisão do Juan,
+ * 23/09/2026.
+ */
+export async function cadastrarVeiculoPublico(token: string, formData: FormData): Promise<
+  { ok?: false; error: string } | { ok: true; qrToken: string }
+> {
+  const link = await linkVeiculoValido(token)
+  if (!link.ok) return { error: 'Este link não está mais disponível. Fale com quem te enviou.' }
+
+  // Chave por TOKEN, não por IP — mesmo motivo de cadastrarFuncionarioPublico:
+  // IP em serverless atrás de CDN não é confiável.
+  if (!podePassar(`veiculo-link:${token}`, 30, 60 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas por aqui. Aguarde um pouco e tente de novo.' }
+  }
+
+  let campos: ReturnType<typeof camposDoVeiculo>
+  try {
+    campos = camposDoVeiculo(formData)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Confira os dados do formulário.' }
+  }
+
+  const fotoVeiculo = formData.get('foto')
+  if (!(fotoVeiculo instanceof File) || fotoVeiculo.size === 0) {
+    return { error: 'A foto do veículo é obrigatória.' }
+  }
+
+  const qrToken = gerarQrTokenVeiculo()
+
+  const { data: novo, error } = await supabaseAdmin.from('veiculos').insert([{
+    evento_id: link.eventoId,
+    condutor_nome: campos.condutorNome,
+    condutor_cpf: campos.condutorCpf,
+    condutor_telefone: campos.condutorTelefone,
+    empresa: campos.empresa,
+    setor: campos.setor,
+    placa: campos.placa,
+    modelo: campos.modelo,
+    ano: campos.ano,
+    cor: campos.cor,
+    tipo: campos.tipo,
+    observacoes: campos.observacoes,
+    tipo_cadastro: link.tipo,
+    status: 'pendente',
+    qr_token: qrToken,
+  }]).select('id').single()
+
+  if (error) {
+    if (/duplicate key|unique/i.test(error.message)) {
+      return { error: `A placa ${campos.placa} já está cadastrada neste evento.` }
+    }
+    return { error: mensagemAmigavel(error) }
+  }
+
+  const { error: erroFinal } = await finalizarCadastroVeiculo(novo.id, formData, [])
+  if (erroFinal) return { error: erroFinal }
+
+  after(() => agendarConfirmacaoVeiculo({
+    eventoId: link.eventoId, veiculoId: novo.id, telefone: campos.condutorTelefone,
+  }).catch(console.error))
+
+  return { ok: true as const, qrToken }
+}
+
+/** Aprova (`pendente`→`ativo`), bloqueia ou cancela um veículo. */
+export async function alterarStatusVeiculo(veiculoId: string, eventoId: string, novoStatus: string): Promise<
+  { ok?: false; error: string } | { ok: true; status: StatusVeiculo }
+> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+
+  const status = statusVeiculoValido(novoStatus)
+  const { error } = await supabaseAdmin
+    .from('veiculos').update({ status }).eq('id', veiculoId).eq('evento_id', eventoId)
+  if (error) return { error: mensagemAmigavel(error) }
+
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const, status }
+}
+
+// ─── Links de cadastro de veículo (colaborador / lounge) ─────────────────────
+
+/** Cria (ou devolve) o link estável do tipo pedido, e liga/desliga com `ativo`. */
+export async function criarOuRegenerarLinkVeiculo(eventoId: string, tipo: string, regenerar = false): Promise<
+  { ok?: false; error: string } | { ok: true; token: string }
+> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+
+  const { data: existente } = await supabaseAdmin
+    .from('veiculo_links').select('id, token').eq('evento_id', eventoId).eq('tipo', tipo).maybeSingle()
+
+  const token = (!existente || regenerar) ? randomBytes(20).toString('base64url') : (existente.token as string)
+
+  const { error } = existente
+    ? await supabaseAdmin.from('veiculo_links').update({ token, ativo: true }).eq('id', existente.id)
+    : await supabaseAdmin.from('veiculo_links').insert({
+        evento_id: eventoId, tipo, token, ativo: true, criado_por_perfil_id: acesso.perfil.id,
+      })
+  if (error) return { error: mensagemAmigavel(error) }
+
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const, token }
+}
+
+export async function alternarLinkVeiculo(eventoId: string, tipo: string, ativo: boolean): Promise<
+  { ok?: false; error: string } | { ok: true }
+> {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return { error: acesso.error }
+
+  const { error } = await supabaseAdmin
+    .from('veiculo_links').update({ ativo }).eq('evento_id', eventoId).eq('tipo', tipo)
+  if (error) return { error: mensagemAmigavel(error) }
+
+  revalidatePath('/admin/veiculos')
+  return { ok: true as const }
+}
+
+/** Os links já criados pra este evento, pra tela mostrar o que já existe. */
+export async function linksDeVeiculoDoEvento(eventoId: string) {
+  const acesso = await exigirAcessoAVeiculos(eventoId)
+  if (acesso.error) return []
+  const { data } = await supabaseAdmin
+    .from('veiculo_links').select('tipo, token, ativo').eq('evento_id', eventoId)
+  return (data ?? []) as { tipo: string; token: string; ativo: boolean }[]
 }
 
 export async function excluirVeiculo(veiculoId: string, eventoId: string) {

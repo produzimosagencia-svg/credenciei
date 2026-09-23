@@ -20,6 +20,12 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/credential/') ||
     pathname.startsWith('/portaria/') ||
     pathname.startsWith('/supervisor/criar-senha/') ||
+    // Autocadastro de veículo (link público) e a página que o QR do veículo
+    // aponta — as duas são pra quem nunca logou (motorista, hóspede, pessoa
+    // do lounge). Mesmo risco do /portaria/: sem esta linha, o link vira
+    // redirect pro login e ninguém percebe até alguém escanear o QR.
+    pathname.startsWith('/veiculo-cadastro/') ||
+    pathname.startsWith('/veiculo/') ||
     pathname === '/login' ||
     // A landing é pública: é a porta de entrada de quem ainda não tem conta.
     pathname === '/' ||

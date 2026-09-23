@@ -61,6 +61,7 @@ export type TipoMensagem =
   | 'aviso_montagem'
   | 'aviso_desmontagem'
   | 'disparo_manual'
+  | 'veiculo_cadastrado'
 
 /**
  * A que horas sai o aviso do dia do evento — PADRÃO DE TODO EVENTO.
@@ -166,6 +167,10 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   aviso_desmontagem: 'aviso_desmontagem',
   // Resolvido na hora do envio: o template vem escolhido a mão pelo painel.
   disparo_manual: '',
+  // Ainda sem template aprovado na Meta (o Juan vai mandar o nome depois) —
+  // `montarEnvioTemplate` devolve `null` pra este tipo até lá, então este
+  // nome nunca chega a ser usado num envio de verdade.
+  veiculo_cadastrado: 'veiculo_cadastrado',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -762,6 +767,36 @@ export async function agendarBoasVindasFuncionario(params: {
 }
 
 /**
+ * Agenda a confirmação de cadastro de veículo — mesmo molde de
+ * `agendarBoasVindasFuncionario`, mas apontando pro veículo, não pro
+ * funcionário (o condutor pode nem ser da equipe).
+ *
+ * Sem template aprovado ainda: `montarEnvioTemplate` devolve `null` pra
+ * `veiculo_cadastrado`, então a linha fica `pendente` na fila até o Juan
+ * mandar o nome do template — nunca falha, nunca derruba o cadastro do
+ * veículo, que já terminou antes desta chamada.
+ */
+export async function agendarConfirmacaoVeiculo(params: {
+  eventoId: string
+  veiculoId: string
+  telefone: string
+}): Promise<void> {
+  const telefone = params.telefone.replace(/\D/g, '')
+  if (!telefone) return
+  if (desligado(await fluxosLigados(), 'veiculo_cadastrado')) return
+
+  const { error } = await supabase.from('mensagens_agendadas').insert([{
+    evento_id: params.eventoId,
+    veiculo_id: params.veiculoId,
+    tipo: 'veiculo_cadastrado',
+    agendado_para: new Date().toISOString(),
+    telefone,
+    mensagem: 'confirmação de veículo (montado no envio)',
+  }])
+  if (error && error.code !== '23505') throw error // 23505 = já agendado, ignora
+}
+
+/**
  * Coloca uma comunicação de supervisor na fila oficial, com retry, histórico
  * e status de entrega iguais aos demais disparos. `perfil_id` fica nulo para
  * permitir novas escalas da mesma pessoa em eventos diferentes.
@@ -906,6 +941,7 @@ type MensagemClaimada = {
   evento_id: string
   funcionario_id: string | null
   perfil_id: string | null
+  veiculo_id: string | null
   tipo: TipoMensagem
   data_ref: string
   condicao: string | null
@@ -1289,6 +1325,20 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         credencial,
       ],
     }
+  }
+
+  /*
+   * Confirmação de cadastro de veículo — SEM TEMPLATE APROVADO AINDA.
+   *
+   * O Juan vai mandar o nome e a ordem dos parâmetros do template oficial
+   * depois. Até lá, `return null` cancela o envio sem erro (mesma
+   * convenção de "sem link, sem envio" usada em `linkDaCredencial`) — a
+   * linha fica pendente na fila, o cadastro do veículo não é afetado, e
+   * quando o template chegar é só preencher este bloco com
+   * placa/modelo/condutor/link de `/veiculo/{qr_token}`.
+   */
+  if (msg.tipo === 'veiculo_cadastrado') {
+    return null
   }
 
   return null

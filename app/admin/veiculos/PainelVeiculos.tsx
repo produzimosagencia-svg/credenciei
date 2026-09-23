@@ -1,25 +1,33 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Truck, Search, Plus, X } from 'lucide-react'
+import { Truck, Search, Plus, X, Link2 } from 'lucide-react'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
-import { Secao, EmptyState } from '@/components/ui/Superficie'
+import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
+import SeletorLista from '@/components/SeletorLista'
+import { ROTULO_STATUS_VEICULO, TOM_STATUS_VEICULO, ROTULO_TIPO_CADASTRO, STATUS_VEICULO, TIPOS_CADASTRO_VEICULO, type StatusVeiculo, type TipoCadastroVeiculo } from '@/lib/veiculos-constantes'
 import FormVeiculo from './FormVeiculo'
 import AcoesVeiculo from './AcoesVeiculo'
 import FotoVeiculo from './FotoVeiculo'
+import LinkVeiculoPainel from './LinkVeiculoPainel'
 
 export type VeiculoLinha = {
   id: string
   placa: string
   modelo: string
   cor: string | null
+  ano: number | null
   tipo: string | null
   empresa: string | null
+  setor: string | null
   observacoes: string | null
   condutorNome: string | null
   condutorCpf: string | null
   dias: string[]
   temFoto: boolean
+  temFotoPessoa: boolean
+  status: StatusVeiculo
+  tipoCadastro: TipoCadastroVeiculo
 }
 
 /**
@@ -36,31 +44,37 @@ export type VeiculoLinha = {
  * do celular.
  */
 export default function PainelVeiculos({
-  eventoId, dias, veiculos,
+  eventoId, dias, veiculos, links,
 }: {
   eventoId: string
   dias: { data: string; tipo: string }[]
   veiculos: VeiculoLinha[]
+  links: { tipo: string; token: string; ativo: boolean }[]
 }) {
   const [busca, setBusca] = useState('')
+  const [filtroStatus, setFiltroStatus] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
   const [cadastrando, setCadastrando] = useState(false)
+  const [mostrarLinks, setMostrarLinks] = useState(false)
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
-    if (!termo) return veiculos
-    /*
-     * Só dígitos e letras: a pessoa digita "RFM-3G11" ou "154.321.447-94" do
-     * jeito que está escrito no documento, e a comparação crua não acharia
-     * nada. Casar os dois lados sem pontuação faz a placa e o CPF baterem
-     * com ou sem máscara.
-     */
     const cru = termo.replace(/[^a-z0-9]/g, '')
     return veiculos.filter(v => {
-      const campos = [v.placa, v.modelo, v.tipo, v.cor, v.empresa, v.condutorNome, v.condutorCpf]
+      if (filtroStatus && v.status !== filtroStatus) return false
+      if (filtroTipo && v.tipoCadastro !== filtroTipo) return false
+      if (!termo) return true
+      /*
+       * Só dígitos e letras: a pessoa digita "RFM-3G11" ou "154.321.447-94" do
+       * jeito que está escrito no documento, e a comparação crua não acharia
+       * nada. Casar os dois lados sem pontuação faz a placa e o CPF baterem
+       * com ou sem máscara.
+       */
+      const campos = [v.placa, v.modelo, v.tipo, v.cor, v.empresa, v.setor, v.condutorNome, v.condutorCpf]
         .filter(Boolean).join(' ').toLowerCase()
       return campos.includes(termo) || (!!cru && campos.replace(/[^a-z0-9]/g, '').includes(cru))
     })
-  }, [busca, veiculos])
+  }, [busca, filtroStatus, filtroTipo, veiculos])
 
   return (
     <div className="space-y-4">
@@ -70,7 +84,7 @@ export default function PainelVeiculos({
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Consultar placa, modelo, condutor, CPF ou empresa"
+            placeholder="Consultar placa, modelo, condutor, CPF, empresa ou setor"
             className="input pl-9 pr-9"
             autoComplete="off"
           />
@@ -84,10 +98,25 @@ export default function PainelVeiculos({
             </button>
           )}
         </div>
+        <SeletorLista
+          className="w-full sm:w-40" valor={filtroStatus} onChange={setFiltroStatus}
+          placeholder="Status" titulo="Status"
+          opcoes={[{ valor: '', rotulo: 'Todos os status' }, ...STATUS_VEICULO.map(s => ({ valor: s, rotulo: ROTULO_STATUS_VEICULO[s] }))]}
+        />
+        <SeletorLista
+          className="w-full sm:w-48" valor={filtroTipo} onChange={setFiltroTipo}
+          placeholder="Tipo de cadastro" titulo="Tipo de cadastro"
+          opcoes={[{ valor: '', rotulo: 'Todos os tipos' }, ...TIPOS_CADASTRO_VEICULO.map(t => ({ valor: t, rotulo: ROTULO_TIPO_CADASTRO[t] }))]}
+        />
+        <button onClick={() => setMostrarLinks(m => !m)} className="btn btn-secundario shrink-0">
+          <Link2 className="w-4 h-4" /> Enviar link
+        </button>
         <button onClick={() => setCadastrando(true)} className="btn btn-primario btn-lg shrink-0">
           <Plus className="w-4 h-4 shrink-0" /> Cadastrar veículo
         </button>
       </div>
+
+      {mostrarLinks && <LinkVeiculoPainel eventoId={eventoId} links={links} />}
 
       <Secao
         tom="acento"
@@ -102,7 +131,7 @@ export default function PainelVeiculos({
           <EmptyState
             icone={<Truck className="w-7 h-7" />}
             titulo="Nenhum veículo ainda"
-            descricao="Cadastre no botão acima, começando pelo CPF de quem vai dirigir."
+            descricao="Cadastre no botão acima, ou mande o link de autocadastro pra pessoa se cadastrar sozinha."
           />
         ) : !filtrados.length ? (
           <EmptyState
@@ -118,7 +147,9 @@ export default function PainelVeiculos({
                   <th>Placa</th>
                   <th>Veículo</th>
                   <th>Condutor</th>
-                  <th>Empresa</th>
+                  <th>Empresa/Setor</th>
+                  <th>Origem</th>
+                  <th>Status</th>
                   <th>Dias</th>
                   <th>Foto</th>
                   <th></th>
@@ -129,7 +160,7 @@ export default function PainelVeiculos({
                   <tr key={v.id}>
                     <td className="font-mono font-bold tabular-nums whitespace-nowrap">{v.placa}</td>
                     <td>
-                      <p className="text-slate-700">{v.modelo}</p>
+                      <p className="text-slate-700">{v.modelo}{v.ano ? ` (${v.ano})` : ''}</p>
                       <p className="text-slate-400 text-2xs">
                         {[v.tipo, v.cor].filter(Boolean).join(' · ') || '—'}
                       </p>
@@ -143,7 +174,11 @@ export default function PainelVeiculos({
                         <p className="text-slate-400 text-2xs tabular-nums">{formatCpf(v.condutorCpf)}</p>
                       )}
                     </td>
-                    <td className="text-slate-500">{v.empresa || '—'}</td>
+                    <td className="text-slate-500 text-2xs">
+                      {[v.empresa, v.setor].filter(Boolean).join(' · ') || '—'}
+                    </td>
+                    <td className="text-slate-500 text-2xs">{ROTULO_TIPO_CADASTRO[v.tipoCadastro]}</td>
+                    <td><Badge tom={TOM_STATUS_VEICULO[v.status]}>{ROTULO_STATUS_VEICULO[v.status]}</Badge></td>
                     <td className="text-slate-500 text-2xs">
                       {/* Sem dia marcado = autorizado em todos — é o padrão
                           do cadastro, e dizer "Todos" evita a leitura de
@@ -161,7 +196,7 @@ export default function PainelVeiculos({
                       />
                     </td>
                     <td className="text-right">
-                      <AcoesVeiculo veiculoId={v.id} eventoId={eventoId} placa={v.placa} />
+                      <AcoesVeiculo veiculoId={v.id} eventoId={eventoId} placa={v.placa} status={v.status} />
                     </td>
                   </tr>
                 ))}
