@@ -1,7 +1,8 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
-import { QrCode } from 'lucide-react'
+import { QrCode, Clock, Ban, XCircle } from 'lucide-react'
 import QRCode from 'qrcode'
+import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
 import ManterAtualizado from '@/components/ManterAtualizado'
@@ -67,13 +68,66 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, cpf, empresa, cargo, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, cpf, empresa, cargo, ativo, status_credenciamento, motivo_negacao, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
   if (!funcionario) notFound()
 
+  /*
+   * Cadastro ≠ autorização (decisão do Juan, 24/09/2026): quem se cadastra
+   * pelo link público nasce `pendente` e só vê o QR depois que um responsável
+   * aprova. A checagem é aqui, no servidor, antes de qualquer cálculo de QR
+   * — nunca no cliente, e nunca é ignorável atualizando a página (a leitura é
+   * sempre fresca, `revalidate = 0` já garante isso).
+   */
   const fornecedor = funcionario.fornecedores as any
+  const statusCred = statusCredenciamentoValido(funcionario.status_credenciamento as string)
+  if (statusCred !== 'aprovado' || funcionario.ativo === false) {
+    const selo = statusCred === 'pendente'
+      ? {
+          Icone: Clock, cor: 'bg-amber-500/15 text-amber-400',
+          titulo: 'Credenciamento recebido!',
+          texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Assim que for aprovado, seu QR Code é liberado automaticamente nesta mesma página — não precisa fazer nada, nem gerar outro cadastro.',
+        }
+      : statusCred === 'negado'
+        ? {
+            Icone: Ban, cor: 'bg-red-500/15 text-red-400',
+            titulo: 'Credenciamento não aprovado',
+            texto: (funcionario.motivo_negacao as string | null)
+              ? `Seu pedido não foi autorizado pelo responsável pelo evento. Motivo: ${funcionario.motivo_negacao}`
+              : 'Seu pedido de credenciamento não foi autorizado pelo responsável pelo evento. Caso acredite que houve engano, entre em contato com a organização.',
+          }
+        : {
+            Icone: XCircle, cor: 'bg-slate-500/15 text-slate-400',
+            titulo: 'Sem acesso no momento',
+            texto: 'Fale com o responsável do seu setor.',
+          }
+    const { Icone } = selo
+    return (
+      <>
+        <ManterAtualizado />
+        <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm">
+            <div className="bg-white rounded-3xl overflow-hidden shadow-2xl">
+              <div className={`p-6 text-center ${selo.cor}`}>
+                <Icone className="w-12 h-12 mx-auto mb-2" />
+                <p className="font-bold text-lg">{selo.titulo}</p>
+              </div>
+              <div className="p-6 space-y-3">
+                <p className="text-slate-600 text-sm text-center">{selo.texto}</p>
+                <div className="text-center pt-2 border-t border-slate-100">
+                  <p className="text-slate-800 font-semibold">{funcionario.nome}</p>
+                  <p className="text-slate-400 text-xs">{fornecedor?.nome}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   const evento = fornecedor?.eventos as (EventoJanelas & {
     id: string; nome: string; local: string | null
     checkin_autonomo: boolean | null

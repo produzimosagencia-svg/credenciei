@@ -12,6 +12,7 @@ import ImportarFuncionarios from '../../ImportarFuncionarios'
 import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
 import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
+import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import { conferenciaAberta } from '@/lib/conferencia'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
@@ -66,7 +67,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }, { data: outrosSetores }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id, data_inicio)').eq('id', fid).single(),
-    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, descredenciado_em, created_at').eq('fornecedor_id', fid).order('nome'),
+    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, status_credenciamento, motivo_negacao, descredenciado_em, created_at').eq('fornecedor_id', fid).order('nome'),
     /*
      * So HOJE e ONTEM.
      *
@@ -202,6 +203,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       // é outra data e mora na tela da pessoa (/admin/pessoas/[cpf]).
       cadastradoEm: f.created_at as string,
       ativo: f.ativo ?? true,
+      statusCredenciamento: statusCredenciamentoValido(f.status_credenciamento as string),
+      motivoNegacao: (f.motivo_negacao as string | null) ?? null,
       descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
       entrada,

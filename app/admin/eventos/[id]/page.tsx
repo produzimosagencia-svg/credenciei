@@ -4,7 +4,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { formatarBR } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, Wallet, Receipt, TrendingUp, TrendingDown } from 'lucide-react'
+import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, Wallet, Receipt, TrendingUp, TrendingDown, ClipboardCheck } from 'lucide-react'
 import { financeiroDoEvento } from '@/lib/financeiro'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
@@ -191,6 +191,7 @@ export default async function EventoPage({
     { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
+    { count: pendentesDeAprovacao },
   ] = await Promise.all([
     supabase.from('registros').select('funcionario_id, tipo')
       .eq('evento_id', id).eq('data_ref', diaEscolhido),
@@ -233,6 +234,12 @@ export default async function EventoPage({
           .select('fornecedor_id, perfis!inner(id, nome, email, cpf, telefone, ativo, role)')
           .in('fornecedor_id', fornecedorIds)
       : Promise.resolve(vazio),
+    // Só a contagem (count:exact/head:true) — não traz linha nenhuma, então
+    // não emperra no teto de 1000 do Supabase mesmo num evento grande.
+    supabase.from('funcionarios')
+      .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
+      .eq('fornecedores.evento_id', id)
+      .eq('status_credenciamento', 'pendente'),
   ])
 
   const setoresComMeio = new Set(
@@ -360,6 +367,30 @@ export default async function EventoPage({
           )}
         </div>
       </div>
+
+      {/*
+        * Credenciamentos aguardando aprovação — em destaque no topo de
+        * propósito (pedido do Juan, 24/09/2026): quem opera o evento precisa
+        * perceber isto de cara, não achar depois de procurar. Só aparece
+        * quando há pelo menos 1 pendente — evento sem ninguém esperando não
+        * precisa de um cartão a mais competindo por atenção.
+        */}
+      {!!pendentesDeAprovacao && (
+        <Link
+          href={`/admin/eventos/${id}/aprovacoes`}
+          className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 hover:bg-amber-100 transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+            <ClipboardCheck className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-amber-800 font-bold text-sm">
+              {pendentesDeAprovacao} credenciamento{pendentesDeAprovacao === 1 ? '' : 's'} aguardando aprovação
+            </p>
+            <p className="text-amber-600 text-xs">Toque para ver e decidir</p>
+          </div>
+        </Link>
+      )}
 
       {/* Stats */}
       {/* Diz em uma linha as duas regras que convivem no evento, porque é a

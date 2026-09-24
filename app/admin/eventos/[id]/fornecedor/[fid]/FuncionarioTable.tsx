@@ -10,6 +10,7 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca } from '@/lib/format'
+import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
 
@@ -46,6 +47,8 @@ type Funcionario = {
   /** Quando a pessoa se credenciou NESTE evento. */
   cadastradoEm?: string | null
   ativo: boolean
+  statusCredenciamento: StatusCredenciamento
+  motivoNegacao?: string | null
   /** Carimbo de quando saiu do evento. `null` = está na equipe. */
   descredenciadoEm?: string | null
   fotoUrl: string | null
@@ -390,6 +393,12 @@ export default function FuncionarioTable({
                   {!f.ativo && (
                     <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
                   )}
+                  {f.statusCredenciamento === 'pendente' && (
+                    <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">AGUARDANDO APROVAÇÃO</span>
+                  )}
+                  {f.statusCredenciamento === 'negado' && (
+                    <span className="text-2xs font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">NEGADO</span>
+                  )}
                   <EtapaChip label="Entrada" p={f.entrada} status={f.statusEntrada} />
                   <EtapaChip label="Meio" p={f.meio} status={f.statusMeio} />
                   <EtapaChip label="Saída" p={f.fim} status={f.statusFim} />
@@ -450,6 +459,12 @@ export default function FuncionarioTable({
                             <div className="flex items-center gap-1 min-w-0">
                               {!f.ativo && (
                                 <span className="shrink-0 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
+                              )}
+                              {f.statusCredenciamento === 'pendente' && (
+                                <span className="shrink-0 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">AGUARDANDO APROVAÇÃO</span>
+                              )}
+                              {f.statusCredenciamento === 'negado' && (
+                                <span className="shrink-0 text-2xs font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">NEGADO</span>
                               )}
                               <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                             </div>

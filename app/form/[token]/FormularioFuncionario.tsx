@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check } from 'lucide-react'
+import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
+import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 import SeletorLista from '@/components/SeletorLista'
 import { CIDADES_ES } from '@/lib/cidades'
@@ -72,6 +73,7 @@ export default function FormularioFuncionario({
   const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [qrToken, setQrToken] = useState<string | null>(null)
+  const [statusEnvio, setStatusEnvio] = useState<StatusCredenciamento>('pendente')
   const [autofill, setAutofill] = useState(false)
   const [erroCpf, setErroCpf] = useState<string | null>(null)
   const cpfBuscado = useRef<string | null>(null)
@@ -189,6 +191,7 @@ export default function FormularioFuncionario({
         router.push(`/credential/${res.qrToken}`)
         return
       }
+      setStatusEnvio(res.status ?? 'pendente')
       setQrToken(res.qrToken)
     } else {
       alert(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
@@ -197,41 +200,71 @@ export default function FormularioFuncionario({
   }
 
   if (qrToken) {
-    return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500 rounded-2xl mb-2 shadow-lg shadow-green-200">
+    /*
+     * Cadastro ≠ autorização: o normal agora é sair daqui `pendente`, sem
+     * QR nenhum — só depois que o responsável aprovar. `aprovado`/`negado`
+     * só acontecem reenviando o mesmo CPF de um cadastro já decidido (ver
+     * anti-duplicidade em `cadastrarFuncionarioPublico`).
+     */
+    const TELA_POR_STATUS: Record<StatusCredenciamento, { cor: string; sombra: string; icone: React.ReactNode; titulo: string; texto: string; botao: string }> = {
+      pendente: {
+        cor: 'bg-amber-500', sombra: 'shadow-amber-200',
+        icone: <Clock className="w-8 h-8 text-white" />,
+        titulo: 'Credenciamento recebido!',
+        texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Assim que for aprovado, seu QR Code é liberado automaticamente nesta mesma página.',
+        botao: 'Ver status do meu credenciamento →',
+      },
+      aprovado: {
+        cor: 'bg-green-500', sombra: 'shadow-green-200',
+        icone: (
           <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
+        ),
+        titulo: 'Você já está credenciado!',
+        texto: 'Salve o link abaixo. Nele está seu QR code (apresente na entrada e na saída) e o registro por foto durante o evento.',
+        botao: 'Abrir minha credencial →',
+      },
+      negado: {
+        cor: 'bg-red-500', sombra: 'shadow-red-200',
+        icone: <X className="w-8 h-8 text-white" />,
+        titulo: 'Credenciamento não autorizado',
+        texto: 'Seu pedido não foi autorizado pelo responsável pelo evento. Caso acredite que houve um engano, entre em contato com a organização.',
+        botao: 'Ver detalhes →',
+      },
+    }
+    const tela = TELA_POR_STATUS[statusEnvio]
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
+        <div className={`inline-flex items-center justify-center w-16 h-16 ${tela.cor} rounded-2xl mb-2 shadow-lg ${tela.sombra}`}>
+          {tela.icone}
         </div>
-        <h2 className="text-slate-800 font-bold text-xl">Cadastro realizado!</h2>
-        <p className="text-slate-500 text-sm">
-          Salve o link abaixo. Nele está seu QR code (apresente na entrada e na saída) e o registro por foto durante o evento.
-        </p>
+        <h2 className="text-slate-800 font-bold text-xl">{tela.titulo}</h2>
+        <p className="text-slate-500 text-sm">{tela.texto}</p>
         <a
           href={`/credential/${qrToken}`}
           className="block w-full btn btn-primario btn-lg"
         >
-          Abrir minha credencial →
+          {tela.botao}
         </a>
 
         {/*
           Convite para o app, não trava de nada.
-          A credencial acima já funciona pelo navegador — isso aqui é sobre a
-          PRÓXIMA vez: com o app, ela entra com o WhatsApp em vez de guardar
-          este link. Por isso vem depois do botão que já resolve o problema
-          de hoje, nunca antes dele.
+          Só faz sentido pra quem vai de fato usar a credencial — some se o
+          cadastro foi negado.
         */}
-        <div className="pt-2 border-t border-slate-100">
-          <p className="text-slate-500 text-xs mb-2.5">
-            Baixe o app para acessar sua credencial e seu ponto mais rápido da
-            próxima vez
-          </p>
-          <div className="flex gap-2">
-            <BotaoDeLoja rotulo="Android" link={LINK_APP_ANDROID} />
-            <BotaoDeLoja rotulo="iPhone" link={LINK_APP_IOS} />
+        {statusEnvio !== 'negado' && (
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-slate-500 text-xs mb-2.5">
+              Baixe o app para acessar sua credencial e seu ponto mais rápido da
+              próxima vez
+            </p>
+            <div className="flex gap-2">
+              <BotaoDeLoja rotulo="Android" link={LINK_APP_ANDROID} />
+              <BotaoDeLoja rotulo="iPhone" link={LINK_APP_IOS} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     )
   }

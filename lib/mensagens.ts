@@ -62,6 +62,7 @@ export type TipoMensagem =
   | 'aviso_desmontagem'
   | 'disparo_manual'
   | 'veiculo_cadastrado'
+  | 'credenciamento_negado'
 
 /**
  * A que horas sai o aviso do dia do evento — PADRÃO DE TODO EVENTO.
@@ -171,6 +172,9 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   // `montarEnvioTemplate` devolve `null` pra este tipo até lá, então este
   // nome nunca chega a ser usado num envio de verdade.
   veiculo_cadastrado: 'veiculo_cadastrado',
+  // Mesma situação: sem template aprovado ainda pra avisar negativa de
+  // credenciamento. `montarEnvioTemplate` devolve `null` até existir.
+  credenciamento_negado: 'credenciamento_negado',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -792,6 +796,31 @@ export async function agendarConfirmacaoVeiculo(params: {
 }
 
 /**
+ * Agenda o aviso de credenciamento negado — mesmo molde de
+ * `agendarConfirmacaoVeiculo`. Sem template aprovado ainda: `montarEnvioTemplate`
+ * devolve `null` pra este tipo até existir, então fica pendente na fila sem
+ * nunca falhar (a decisão em si já foi aplicada, isto é só o aviso).
+ */
+export async function agendarCredenciamentoNegado(params: {
+  eventoId: string
+  funcionarioId: string
+  telefone: string
+}): Promise<void> {
+  const telefone = params.telefone.replace(/\D/g, '')
+  if (!telefone) return
+
+  const { error } = await supabase.from('mensagens_agendadas').insert([{
+    evento_id: params.eventoId,
+    funcionario_id: params.funcionarioId,
+    tipo: 'credenciamento_negado',
+    agendado_para: new Date().toISOString(),
+    telefone,
+    mensagem: 'credenciamento negado (montado no envio)',
+  }])
+  if (error && error.code !== '23505') throw error // 23505 = já agendado, ignora
+}
+
+/**
  * Coloca uma comunicação de supervisor na fila oficial, com retry, histórico
  * e status de entrega iguais aos demais disparos. `perfil_id` fica nulo para
  * permitir novas escalas da mesma pessoa em eventos diferentes.
@@ -1356,6 +1385,20 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       params: [condutorNome, evento.nome, link],
       botaoParam: token,
     }
+  }
+
+  /*
+   * Credenciamento negado — SEM TEMPLATE APROVADO AINDA.
+   *
+   * `return null` cancela o envio sem erro (mesma convenção de
+   * `veiculo_cadastrado` antes de ser ligado): a negativa em si já foi
+   * aplicada por `negarCredenciamento`, isto é só o aviso por WhatsApp. Fica
+   * pronto pra preencher assim que o nome do template aprovado chegar —
+   * mesmo padrão: nome + evento no corpo, sem link nenhum (não há mais QR
+   * pra mostrar).
+   */
+  if (msg.tipo === 'credenciamento_negado') {
+    return null
   }
 
   return null

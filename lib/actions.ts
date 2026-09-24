@@ -39,11 +39,12 @@ import { chaveBusca, validarCpf, formatCpf } from './format'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
+import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
 import { podePassar } from './limite'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria } from './auditoria'
-import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo } from './mensagens'
+import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
@@ -2793,6 +2794,114 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
+/**
+ * Guarda de acesso pra aprovar/negar um credenciamento — cópia literal do
+ * guard de `alternarAtivacao` (mesmos papéis, mesma ordem): supervisor só do
+ * seu próprio setor, senão admin/master da organização, senão suporte com
+ * escopo + motivo obrigatório. Sem `Role` novo — "gestor de credenciamento"
+ * do pedido já é o que `admin` cobre hoje.
+ */
+async function exigirAcessoAAprovacao(fornecedorId: string, eventoId: string, motivo?: string) {
+  const perfil = await getPerfil()
+  if (!perfil) throw new Error('Sem permissão')
+
+  if (perfil.role === 'supervisor') {
+    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+  } else {
+    const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
+    if (!evento) throw new Error('Evento não encontrado')
+    const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+    if (!podeSempre) {
+      if (perfil.role !== 'suporte') throw new Error('Sem permissão')
+      if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da decisão.')
+      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+        throw new Error('Este evento não está no seu escopo de atendimento.')
+      }
+    }
+  }
+  return perfil
+}
+
+/**
+ * Aprova um credenciamento pendente: libera o QR (via `status_credenciamento`)
+ * e só AGORA agenda a mensagem de boas-vindas com o link da credencial — no
+ * cadastro público ela fica represada de propósito (ver `cadastrarFuncionarioPublico`).
+ *
+ * Só age em cima de `pendente` — REGRA 10 do pedido (negado não volta a
+ * aprovado num clique do mesmo botão; reabrir uma decisão é fora de escopo).
+ */
+export async function aprovarCredenciamento(funcionarioId: string, fornecedorId: string, eventoId: string): Promise<
+  { ok?: false; error: string } | { ok: true }
+> {
+  try {
+    const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId)
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('status_credenciamento, telefone, qr_token').eq('id', funcionarioId).single()
+    if (!func) return { error: 'Funcionário não encontrado.' }
+    if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'pendente') {
+      return { error: 'Este credenciamento já foi decidido.' }
+    }
+
+    const { error } = await supabaseAdmin.from('funcionarios').update({
+      status_credenciamento: 'aprovado', decidido_por: perfil.id, decidido_em: new Date().toISOString(),
+    }).eq('id', funcionarioId)
+    if (error) return { error: mensagemAmigavel(error) }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'APROVACAO_CREDENCIAMENTO', campoAlterado: 'Credenciamento',
+      valorAnterior: 'Aguardando aprovação', valorNovo: 'Aprovado', funcionarioId, eventoId,
+    }))
+    after(() => agendarBoasVindasFuncionario({
+      eventoId, funcionarioId, telefone: func.telefone as string,
+    }).catch(console.error))
+
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/eventos/${eventoId}/aprovacoes`)
+    revalidatePath(`/credential/${func.qr_token}`)
+    return { ok: true as const }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/** Nega um credenciamento pendente. Mesmas regras de `aprovarCredenciamento`. */
+export async function negarCredenciamento(funcionarioId: string, fornecedorId: string, eventoId: string, motivo?: string): Promise<
+  { ok?: false; error: string } | { ok: true }
+> {
+  try {
+    const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId, motivo)
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('status_credenciamento, telefone, qr_token').eq('id', funcionarioId).single()
+    if (!func) return { error: 'Funcionário não encontrado.' }
+    if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'pendente') {
+      return { error: 'Este credenciamento já foi decidido.' }
+    }
+
+    const { error } = await supabaseAdmin.from('funcionarios').update({
+      status_credenciamento: 'negado', decidido_por: perfil.id, decidido_em: new Date().toISOString(),
+      motivo_negacao: (motivo ?? '').trim() || null,
+    }).eq('id', funcionarioId)
+    if (error) return { error: mensagemAmigavel(error) }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'NEGACAO_CREDENCIAMENTO', campoAlterado: 'Credenciamento',
+      valorAnterior: 'Aguardando aprovação', valorNovo: 'Negado', motivo: motivo ?? null, funcionarioId, eventoId,
+    }))
+    after(() => agendarCredenciamentoNegado({
+      eventoId, funcionarioId, telefone: func.telefone as string,
+    }).catch(console.error))
+
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/eventos/${eventoId}/aprovacoes`)
+    revalidatePath(`/credential/${func.qr_token}`)
+    return { ok: true as const }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
 async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
@@ -3904,7 +4013,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cpf, cargo, telefone, ativo, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
+    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
     .eq('qr_token', token)
     .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
@@ -3912,6 +4021,13 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
   const funcInfo = { nome: func.nome, cargo: func.cargo ?? null }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
+  }
+  const statusCred = statusCredenciamentoValido(func.status_credenciamento as string)
+  if (statusCred === 'pendente') {
+    return { success: false, message: 'Credenciamento ainda aguardando aprovação.', funcionario: funcInfo }
+  }
+  if (statusCred === 'negado') {
+    return { success: false, message: 'Credenciamento não autorizado.', funcionario: funcInfo }
   }
   if (func.ativo === false) {
     return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do setor antes de registrar.', funcionario: funcInfo }
@@ -4115,10 +4231,13 @@ export async function registrarPresencaFoto(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, ativo, fornecedores(evento_id, eventos(id, ${JANELA_SELECT}))`)
+    .select(`id, ativo, status_credenciamento, fornecedores(evento_id, eventos(id, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
+  if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') {
+    return { error: 'Seu credenciamento ainda não foi aprovado pelo organizador.' }
+  }
   if (func.ativo === false) return { error: 'Seu cadastro ainda não foi ativado pelo organizador. Fale com o seu supervisor.' }
 
   const fornecedor = func.fornecedores as any
@@ -4257,10 +4376,13 @@ export async function registrarPresencaLivre(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, telefone, ativo, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
+    .select(`id, telefone, ativo, status_credenciamento, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
+  if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') {
+    return { error: 'Seu credenciamento ainda não foi aprovado pelo organizador.' }
+  }
   if (func.ativo === false) return { error: 'Seu cadastro ainda não foi ativado pelo organizador. Fale com o seu supervisor.' }
 
   const fornecedor = func.fornecedores as any
@@ -4357,7 +4479,7 @@ export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
   dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string; origem?: string },
   autorizacaoIndividual?: string,
-): Promise<{ qrToken?: string; error?: string }> {
+): Promise<{ qrToken?: string; status?: StatusCredenciamento; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
     .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso)')
@@ -4457,14 +4579,14 @@ export async function cadastrarFuncionarioPublico(
   // onde vai trabalhar.
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedor_id, fornecedores!inner(evento_id, nome)')
+    .select('qr_token, fornecedor_id, status_credenciamento, fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
     .limit(1)
   if (existentes && existentes.length) {
     const existente = existentes[0] as any
     if (existente.fornecedor_id === fornecedorId) {
-      return { qrToken: existente.qr_token }
+      return { qrToken: existente.qr_token, status: statusCredenciamentoValido(existente.status_credenciamento) }
     }
     const setorExistente = existente.fornecedores?.nome ?? 'outro setor'
     return { error: `Este CPF já está credenciado neste evento pelo setor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
@@ -4481,6 +4603,15 @@ export async function cadastrarFuncionarioPublico(
     consentimento_base: true,
     consentimento_em: new Date().toISOString(),
     ativo: true,
+    /*
+     * Cadastro público (link ou cartaz da portaria) nasce PENDENTE — só um
+     * responsável aprovando libera o QR de verdade (ver `aprovarCredenciamento`).
+     * Decidido com o Juan 24/09/2026: muita gente clicava no link achando
+     * que era ingresso do evento. Cadastro feito por alguém já confiável do
+     * sistema (supervisor, atribuição de colaborador, importação por
+     * planilha) não passa por aqui — continua nascendo aprovado, sem mudança.
+     */
+    status_credenciamento: 'pendente',
     /*
      * De onde este cadastro veio.
      *
@@ -4511,12 +4642,10 @@ export async function cadastrarFuncionarioPublico(
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
-  after(() => agendarBoasVindasFuncionario({
-    eventoId: fornecedor.evento_id,
-    funcionarioId: data.id,
-    telefone: dados.telefone,
-  }).catch(console.error))
-  return { qrToken: data.qr_token }
+  // A mensagem de boas-vindas (com o link/QR) só dispara na APROVAÇÃO agora —
+  // ver `aprovarCredenciamento`. Represada de propósito: mandar o link antes
+  // de alguém aprovar entregaria uma credencial que ainda não vale.
+  return { qrToken: data.qr_token, status: 'pendente' as const }
 }
 
 /**
@@ -5099,7 +5228,7 @@ export async function registrarPresencaAssistida(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, telefone, ativo, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
+    .select('id, nome, telefone, ativo, status_credenciamento, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
     .eq('id', funcionarioId)
     .single()
   if (!func) return { error: 'Funcionário não encontrado.' }
@@ -5117,6 +5246,10 @@ export async function registrarPresencaAssistida(
   }
 
   if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
+  const statusCredAssistida = statusCredenciamentoValido(func.status_credenciamento as string)
+  if (statusCredAssistida !== 'aprovado') {
+    return { error: statusCredAssistida === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }
+  }
   if (func.ativo === false) return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de registrar.' }
 
   /*
@@ -5240,7 +5373,7 @@ export async function lancarPontoManual(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, telefone, ativo, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
+    .select('id, nome, telefone, ativo, status_credenciamento, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
     .eq('id', funcionarioId)
     .single()
   if (!func) return { error: 'Funcionário não encontrado.' }
@@ -5261,6 +5394,10 @@ export async function lancarPontoManual(
     return { error: 'Esta pessoa é de outra organização.' }
   }
 
+  const statusCredManual = statusCredenciamentoValido(func.status_credenciamento as string)
+  if (statusCredManual !== 'aprovado') {
+    return { error: statusCredManual === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }
+  }
   if (func.ativo === false) {
     return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de lançar o ponto.' }
   }

@@ -15,6 +15,9 @@ export default function ConfirmModal({
   mensagem,
   isPending,
   zIndexClassName = 'z-50',
+  labelConfirmar = 'Excluir',
+  labelConfirmando = 'Excluindo...',
+  children,
 }: {
   open: boolean
   onClose: () => void
@@ -23,6 +26,11 @@ export default function ConfirmModal({
   mensagem: string
   isPending?: boolean
   zIndexClassName?: string
+  /** Texto do botão de ação — default mantém o comportamento de sempre (exclusão). */
+  labelConfirmar?: string
+  labelConfirmando?: string
+  /** Conteúdo extra entre a mensagem e os botões — ex.: campo de motivo. */
+  children?: React.ReactNode
 }) {
   /*
    * Renderiza num portal, fora da árvore de quem chamou.
@@ -55,6 +63,7 @@ export default function ConfirmModal({
             <p className="text-slate-500 text-sm mt-1 whitespace-pre-line">{mensagem}</p>
           </div>
         </div>
+        {children && <div className="mb-5">{children}</div>}
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
@@ -70,7 +79,7 @@ export default function ConfirmModal({
             disabled={isPending}
             className="btn-press min-h-9 px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:active:scale-100 text-white text-sm font-semibold rounded-xl shadow-sm shadow-red-500/20"
           >
-            {isPending ? 'Excluindo...' : 'Excluir'}
+            {isPending ? labelConfirmando : labelConfirmar}
           </button>
         </div>
       </div>
