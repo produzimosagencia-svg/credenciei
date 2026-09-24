@@ -34,6 +34,7 @@
 // está sendo lido, e quem credencia confere com a pessoa à sua frente.
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { ed25519 } from '@noble/curves/ed25519'
 import type { FaseDoDia } from './janelas'
 
 /*
@@ -41,10 +42,40 @@ import type { FaseDoDia } from './janelas'
  *
  *   c1 — token cru, sem assinatura. Nunca mais aceito.
  *   c2 — assinatura cobrindo O DIA. Ainda aceito (ver `lerCodigoQR`).
- *   c3 — assinatura cobrindo a ETAPA. O formato atual.
+ *   c3 — assinatura cobrindo a ETAPA (HMAC, chave simétrica). O formato atual.
+ *   c4 — assinatura Ed25519 (chave assimétrica) cobrindo ETAPA + JANELA DE
+ *        TEMPO — ainda não gerado por este sistema, só aceito. Ver ADR 009
+ *        do credenciei-app (`docs/decisoes/009-qr-offline-ed25519.md`), que
+ *        vale pros dois sistemas: os dois geram E leem QR hoje.
  */
 const PREFIXO = 'c3'
 const PREFIXO_LEGADO = 'c2'
+const PREFIXO_ED25519 = 'c4'
+
+/** Mesma duração de janela do credenciei-app — os dois lados têm que concordar. */
+const JANELA_MS = 2 * 60_000
+
+function janelaDoInstante(instanteMs: number): number {
+  return Math.floor(instanteMs / JANELA_MS)
+}
+
+/** A atual e a anterior — ~4 min de folga. Ver ADR 009. */
+function janelasAceitas(agora: Date): number[] {
+  const atual = janelaDoInstante(agora.getTime())
+  return [atual, atual - 1]
+}
+
+/**
+ * A chave PÚBLICA Ed25519 do QR novo — `null` enquanto o par não existir ou
+ * a aceitação de `c4` ainda não estiver ligada (ver ADR 009, fases 1-2). A
+ * privada correspondente não entra neste arquivo — só é necessária para
+ * GERAR, que ainda não acontece (fase 3).
+ */
+function chavePublicaEd25519(): Uint8Array | null {
+  const hex = process.env.CHAVE_PUBLICA_QR_ED25519
+  if (!hex || !/^[0-9a-fA-F]{64}$/.test(hex)) return null
+  return new Uint8Array(Buffer.from(hex, 'hex'))
+}
 
 /** A etapa, abreviada dentro do código. */
 const SIGLA: Record<FaseDoDia, string> = {
@@ -84,12 +115,43 @@ function assinarLegado(token: string, dia: string): string {
     .slice(0, 16)
 }
 
+/** Assina com a chave PRIVADA Ed25519 — a mesma usada pelo credenciei-app. */
+function assinarComEd25519(chavePrivada: Uint8Array, ...partes: string[]): string {
+  const assinatura = ed25519.sign(Buffer.from([PREFIXO_ED25519, ...partes].join('.')), chavePrivada)
+  return Buffer.from(assinatura).toString('base64url')
+}
+
+/** Confere com a chave PÚBLICA Ed25519. */
+function conferirComEd25519(chavePublica: Uint8Array, assinaturaB64: string, ...partes: string[]): boolean {
+  try {
+    const assinatura = Buffer.from(assinaturaB64, 'base64url')
+    return ed25519.verify(assinatura, Buffer.from([PREFIXO_ED25519, ...partes].join('.')), chavePublica)
+  } catch {
+    return false
+  }
+}
+
 export type CodigoQR = { codigo: string; fase: FaseDoDia }
 
 /** O código daquela credencial NAQUELA ETAPA do evento. */
 export function gerarCodigoQR(token: string, fase: FaseDoDia): CodigoQR {
   const sigla = SIGLA[fase]
   return { codigo: `${PREFIXO}.${token}.${sigla}.${assinar(token, sigla)}`, fase }
+}
+
+/**
+ * O código no formato novo (`c4`) — ainda não é o que este sistema gera por
+ * padrão (ver ADR 009, fase 3). Existe desde já para os dois sistemas
+ * ficarem prontos a ACEITAR antes de qualquer um GERAR — nunca o contrário,
+ * senão um sistema recusaria crachá que o outro já estivesse emitindo.
+ */
+export function gerarCodigoQREd25519(
+  chavePrivada: Uint8Array, token: string, fase: FaseDoDia, agora: Date = new Date(),
+): CodigoQR {
+  const sigla = SIGLA[fase]
+  const janela = String(janelaDoInstante(agora.getTime()))
+  const assinatura = assinarComEd25519(chavePrivada, token, sigla, janela)
+  return { codigo: `${PREFIXO_ED25519}.${token}.${sigla}.${janela}.${assinatura}`, fase }
 }
 
 export type LeituraQR =
@@ -112,15 +174,40 @@ function iguais(a: string, b: string): boolean {
  * `fase: null` significa código no formato antigo (c2), que era amarrado ao dia
  * e não à etapa. Ver a nota sobre compatibilidade abaixo.
  */
-export function lerCodigoQR(bruto: string, diaDeHoje: string): LeituraQR {
+export function lerCodigoQR(bruto: string, diaDeHoje: string, agora: Date = new Date()): LeituraQR {
   const partes = (bruto ?? '').trim().split('.')
 
-  if (partes.length !== 4) {
+  if (partes.length !== 4 && !(partes.length === 5 && partes[0] === PREFIXO_ED25519)) {
     return { ok: false, erro: 'QR Code fora do padrão. Peça para a pessoa abrir a credencial de novo e mostrar o código.' }
   }
 
-  const [versao, token, meio, sig] = partes
+  const [versao, token] = partes
   if (!token) return { ok: false, erro: 'QR Code ilegível. Peça para a pessoa recarregar a credencial.' }
+
+  // ── Formato novo: Ed25519 + janela de tempo ─────────────────────────────
+  if (versao === PREFIXO_ED25519) {
+    const [, , meioNovo, janelaTxt, sigNova] = partes
+    if (!POR_SIGLA[meioNovo]) {
+      return { ok: false, erro: 'QR Code ilegível. Peça para a pessoa recarregar a credencial.' }
+    }
+    const chavePublica = chavePublicaEd25519()
+    if (!chavePublica) {
+      return { ok: false, erro: 'QR Code fora do padrão. Peça para a pessoa abrir a credencial de novo e mostrar o código.' }
+    }
+    const janela = Number(janelaTxt)
+    if (!Number.isInteger(janela) || !janelasAceitas(agora).includes(janela)) {
+      return {
+        ok: false,
+        erro: 'Este QR Code expirou. Peça para a pessoa abrir a credencial de novo — o código troca sozinho de tempos em tempos.',
+      }
+    }
+    if (!conferirComEd25519(chavePublica, sigNova, token, meioNovo, janelaTxt)) {
+      return { ok: false, erro: 'QR Code inválido. Este código não foi emitido por este sistema.' }
+    }
+    return { ok: true, token, fase: POR_SIGLA[meioNovo] }
+  }
+
+  const [, , meio, sig] = partes
 
   // ── Formato atual: a etapa ────────────────────────────────────────────────
   if (versao === PREFIXO) {
