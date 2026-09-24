@@ -15,6 +15,7 @@ import {
   podeVerPerformance, podeRegistrarGastos, type Role,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
+import BadgeAprovacoesPendentes from '@/components/BadgeAprovacoesPendentes'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
 import { BotaoTema } from '@/components/Tema'
@@ -41,7 +42,7 @@ const supabase = createBrowserClient(
 
 import MeusSetores, { type SetorDoSupervisor } from './MeusSetores'
 
-type NavItem = { href: string; label: string; icon: React.ElementType }
+type NavItem = { href: string; label: string; icon: React.ElementType; badge?: React.ReactNode }
 type Grupo = { titulo?: string; itens: NavItem[] }
 
 /**
@@ -84,6 +85,19 @@ function gruposPara(perfil: Perfil): Grupo[] {
   // evento inteiro, é decisão de quem administra, não de quem apoia.
   if (podeGerenciarEventos(perfil) || role === 'suporte') {
     doEvento.push({ href: '/admin/editar-colaborador', label: 'Editar colaborador', icon: UserCog })
+  }
+  /*
+   * "Aguardando aprovação" — quem decide credenciamento pendente: supervisor
+   * do próprio setor, admin/master, suporte com escopo (mesma régua de
+   * `exigirAcessoAAprovacao` em lib/actions.ts). Numerozinho ao lado avisa
+   * sem precisar entrar pra saber se tem alguém esperando (pedido do Juan,
+   * 24/09/2026).
+   */
+  if (podeGerenciarUsuarios(perfil) || role === 'supervisor' || role === 'suporte') {
+    doEvento.push({
+      href: '/admin/aprovacoes', label: 'Aguardando aprovação', icon: ClipboardCheck,
+      badge: <BadgeAprovacoesPendentes />,
+    })
   }
   /*
    * "Criar porteiro" é o acesso que o sistema chama de operador de portão —
@@ -375,6 +389,7 @@ function NavLinks({ grupos, pathname, onNavigate, setores, setorAtualId }: {
                     >
                       <item.icon className="w-4 h-4 shrink-0" />
                       {item.label}
+                      {item.badge}
                     </Link>
                   )
                 })}

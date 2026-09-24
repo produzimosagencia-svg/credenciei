@@ -3117,6 +3117,87 @@ export async function negarCredenciamento(funcionarioId: string, fornecedorId: s
   }
 }
 
+/**
+ * Os setores (`fornecedor_id`) onde ESTE usuário pode aprovar/negar
+ * credenciamento — mesmo escopo de `exigirAcessoAAprovacao`, mas pra ler em
+ * vez de agir. `null` = todos (master). Usado pelo badge do menu e pela
+ * tela de destino do item "Aguardando aprovação".
+ */
+async function setoresComAcessoAAprovacao(perfil: Awaited<ReturnType<typeof getPerfil>>): Promise<string[] | null> {
+  if (!perfil) return []
+  if (ehMaster(perfil.role)) return null
+
+  if (perfil.role === 'supervisor') {
+    const meus = await meusSetores(perfil)
+    return meus.map(s => s.id)
+  }
+
+  if (podeGerenciarEventos(perfil) && perfil.organizacao_id) {
+    const { data } = await supabaseAdmin
+      .from('fornecedores').select('id, eventos!inner(organizacao_id)').eq('eventos.organizacao_id', perfil.organizacao_id)
+    return (data ?? []).map(f => f.id as string)
+  }
+
+  if (perfil.role === 'suporte') {
+    const { data: escopos } = await supabaseAdmin.from('suporte_escopo').select('evento_id, organizacao_id').eq('perfil_id', perfil.id)
+    const eventoIds = (escopos ?? []).map(e => e.evento_id as string | null).filter((v): v is string => !!v)
+    const orgIds = (escopos ?? []).map(e => e.organizacao_id as string | null).filter((v): v is string => !!v)
+    if (!eventoIds.length && !orgIds.length) return []
+    const query = supabaseAdmin.from('fornecedores').select('id, evento_id, eventos!inner(organizacao_id)')
+    const condicoes: string[] = []
+    if (eventoIds.length) condicoes.push(`evento_id.in.(${eventoIds.join(',')})`)
+    if (orgIds.length) condicoes.push(`eventos.organizacao_id.in.(${orgIds.join(',')})`)
+    const { data } = await query.or(condicoes.join(','))
+    return (data ?? []).map(f => f.id as string)
+  }
+
+  return []
+}
+
+/** Quantos credenciamentos pendentes este usuário pode decidir — pro numerozinho do menu. */
+export async function contarPendentesDeAprovacao(): Promise<number> {
+  const perfil = await getPerfil()
+  if (!perfil) return 0
+  const setorIds = await setoresComAcessoAAprovacao(perfil)
+  if (setorIds && !setorIds.length) return 0
+
+  let query = supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true }).eq('status_credenciamento', 'pendente')
+  if (setorIds) query = query.in('fornecedor_id', setorIds)
+  const { count } = await query
+  return count ?? 0
+}
+
+/**
+ * Os eventos (com o total de pendentes de cada um) que este usuário pode
+ * decidir — alimenta a tela ponte `/admin/aprovacoes`, que existe porque o
+ * menu é da plataforma inteira e a tela de decisão é de UM evento.
+ */
+export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; nome: string; pendentes: number }[]> {
+  const perfil = await getPerfil()
+  if (!perfil) return []
+  const setorIds = await setoresComAcessoAAprovacao(perfil)
+  if (setorIds && !setorIds.length) return []
+
+  let query = supabaseAdmin
+    .from('funcionarios')
+    .select('fornecedor_id, fornecedores!inner(evento_id, eventos!inner(nome))')
+    .eq('status_credenciamento', 'pendente')
+  if (setorIds) query = query.in('fornecedor_id', setorIds)
+  const { data } = await query
+
+  const porEvento = new Map<string, { nome: string; pendentes: number }>()
+  for (const f of data ?? []) {
+    const fornecedor = f.fornecedores as unknown as { evento_id: string; eventos: { nome: string } } | null
+    if (!fornecedor) continue
+    const atual = porEvento.get(fornecedor.evento_id) ?? { nome: fornecedor.eventos.nome, pendentes: 0 }
+    atual.pendentes++
+    porEvento.set(fornecedor.evento_id, atual)
+  }
+  return [...porEvento.entries()]
+    .map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => b.pendentes - a.pendentes)
+}
+
 async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
