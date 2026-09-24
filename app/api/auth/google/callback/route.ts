@@ -2,8 +2,30 @@ import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import fs from 'fs'
 import path from 'path'
+import { getPerfil } from '@/lib/supabase-server'
+import { ehMaster } from '@/lib/permissions'
 
+/*
+ * Volta do consentimento do Google — SÓ O MASTER.
+ *
+ * Mesma razão da rota de authorize (auditoria de LGPD, 20/09/2026): sem sessão
+ * aqui, qualquer pessoa completava o fluxo e gravava o refresh token DELA em
+ * `GOOGLE_REFRESH_TOKEN`, passando a receber no próprio Drive as planilhas com
+ * nome, CPF, telefone e chave PIX das equipes.
+ *
+ * O consentimento do Google volta no MESMO navegador que começou o fluxo, com
+ * os mesmos cookies — quem estava logado como master para abrir o authorize
+ * continua logado aqui. A checagem não atrapalha o setup.
+ *
+ * Continua sendo ferramenta local: na Vercel o filesystem é somente leitura e
+ * o `writeFileSync` abaixo falha. Lá o token entra pelo painel de variáveis.
+ */
 export async function GET(request: NextRequest) {
+  const perfil = await getPerfil()
+  if (!perfil || !ehMaster(perfil.role)) {
+    return NextResponse.json({ error: 'Não autorizado' }, { status: 403 })
+  }
+
   const code = request.nextUrl.searchParams.get('code')
   if (!code) return NextResponse.json({ error: 'No code' }, { status: 400 })
 
