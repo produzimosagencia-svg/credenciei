@@ -28,6 +28,7 @@ export const ACAO_LABELS: Record<string, string> = {
   ALTERACAO_SUPERVISOR: 'Alteração de supervisor',
   ALTERACAO_PERMISSAO: 'Permissão alterada',
   REABERTURA_TURNO: 'Voltou a trabalhar (turno reaberto)',
+  ENTRADA_VEICULO_LIBERADA: 'Entrada de veículo liberada',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */

@@ -2,6 +2,10 @@ import { notFound } from 'next/navigation'
 import { CheckCircle2, Clock, Ban, XCircle, Car } from 'lucide-react'
 import { veiculoPorQrToken } from '@/lib/veiculos-publico'
 import { ROTULO_TIPO_CADASTRO, type StatusVeiculo } from '@/lib/veiculos-constantes'
+import { formatarBR } from '@/lib/tz'
+import ManterAtualizado from '@/components/ManterAtualizado'
+
+export const revalidate = 0
 
 const SELO: Record<StatusVeiculo, { icone: typeof CheckCircle2; cor: string; titulo: string; texto: string }> = {
   ativo: {
@@ -38,11 +42,17 @@ export default async function VeiculoPublicoPage({ params }: { params: Promise<{
 
   return (
     <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
+      <ManterAtualizado />
       <div className="w-full max-w-md">
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
           <div className={`p-6 text-center ${selo.cor}`}>
             <Icone className="w-12 h-12 mx-auto mb-2" />
             <p className="font-bold text-lg">{selo.titulo}</p>
+            {veiculo.ultimaEntradaEm && (
+              <p className="text-xs opacity-80 mt-1">
+                Entrada liberada às {formatarBR(veiculo.ultimaEntradaEm, 'curto')}
+              </p>
+            )}
           </div>
           <div className="p-6 space-y-4">
             <p className="text-slate-600 text-sm text-center">{selo.texto}</p>

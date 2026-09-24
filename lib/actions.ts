@@ -3744,7 +3744,7 @@ export type ResultadoScan = {
   message: string
   funcionario?: { nome: string; cargo: string | null }
   /** Preenchido quando o QR lido é de VEÍCULO, não de funcionário — mesmo scanner, os dois tipos. */
-  veiculo?: { placa: string; modelo: string; condutorNome: string }
+  veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   momento?: MomentoPresenca
   /** Já havia registro desta etapa no dia — nada foi gravado agora. */
   jaRegistrado?: boolean
@@ -6453,7 +6453,7 @@ export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Pr
 
   const { data } = await supabaseAdmin
     .from('veiculos')
-    .select('placa, modelo, condutor_nome, status, evento_id, funcionarios(nome)')
+    .select('id, placa, modelo, condutor_nome, status, evento_id, funcionario_id, funcionarios(nome), eventos(organizacao_id)')
     .eq('qr_token', token)
     .maybeSingle()
   if (!data) return { success: false, message: 'Veículo não encontrado.' }
@@ -6474,7 +6474,25 @@ export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Pr
       : 'Cadastro cancelado'
     return { success: false, message: motivo, veiculo }
   }
-  return { success: true, message: 'Pode entrar', veiculo }
+
+  const agora = new Date().toISOString()
+  await supabaseAdmin.from('veiculo_entradas').insert([{
+    veiculo_id: data.id as string, evento_id: eventoId, liberado_por_perfil_id: perfil.id,
+  }])
+
+  const eventoRel = data.eventos as unknown as { organizacao_id: string | null } | { organizacao_id: string | null }[] | null
+  const organizacaoId = (Array.isArray(eventoRel) ? eventoRel[0]?.organizacao_id : eventoRel?.organizacao_id) ?? undefined
+  after(() => registrarAuditoria({
+    perfil, acao: 'ENTRADA_VEICULO_LIBERADA', eventoId, organizacaoId,
+    funcionarioId: (data.funcionario_id as string | null) ?? undefined,
+    campoAlterado: 'Entrada de veículo liberada',
+    valorNovo: `${veiculo.placa} — ${veiculo.condutorNome} às ${formatarBR(agora, 'hora')}`,
+  }))
+
+  revalidatePath(`/veiculo/${token}`)
+  revalidatePath('/admin/veiculos')
+
+  return { success: true, message: 'Pode entrar', veiculo: { ...veiculo, entradaLiberadaEm: agora } }
 }
 
 // ─── Permissões por organização (tela de Configurações) ──────────────────────

@@ -28,6 +28,8 @@ export type VeiculoLinha = {
   temFotoPessoa: boolean
   status: StatusVeiculo
   tipoCadastro: TipoCadastroVeiculo
+  /** Horário da liberação mais recente pelo scanner da portaria, ou null se nunca foi liberado. */
+  ultimaEntradaEm: string | null
 }
 
 /**
@@ -150,6 +152,7 @@ export default function PainelVeiculos({
                   <th>Empresa/Setor</th>
                   <th>Origem</th>
                   <th>Status</th>
+                  <th>Entrada</th>
                   <th>Dias</th>
                   <th>Foto</th>
                   <th></th>
@@ -179,6 +182,9 @@ export default function PainelVeiculos({
                     </td>
                     <td className="text-slate-500 text-2xs">{ROTULO_TIPO_CADASTRO[v.tipoCadastro]}</td>
                     <td><Badge tom={TOM_STATUS_VEICULO[v.status]}>{ROTULO_STATUS_VEICULO[v.status]}</Badge></td>
+                    <td className="text-slate-500 text-2xs whitespace-nowrap">
+                      {v.ultimaEntradaEm ? formatarBR(v.ultimaEntradaEm, 'curto') : '—'}
+                    </td>
                     <td className="text-slate-500 text-2xs">
                       {/* Sem dia marcado = autorizado em todos — é o padrão
                           do cadastro, e dizer "Todos" evita a leitura de

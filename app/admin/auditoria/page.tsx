@@ -66,6 +66,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
   CORRECAO_PONTO: 'atencao',
   RESET_SENHA: 'atencao',
   REABERTURA_TURNO: 'atencao',
+  ENTRADA_VEICULO_LIBERADA: 'positivo',
 }
 
 export default async function AuditoriaPage({

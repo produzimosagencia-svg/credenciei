@@ -19,9 +19,10 @@ export const revalidate = 0
  * DE um evento (o condutor precisa estar credenciado nele, e os dias vêm da
  * jornada dele).
  *
- * SÓ CADASTRO E CONSULTA, por decisão: o veículo não bate ponto, não tem QR
- * e não passa pelo scanner — a portaria consulta a placa aqui e confere. Ver
- * supabase/upgrade-veiculos.sql.
+ * O veículo não bate ponto (sem entrada/saída, sem janela) — mas desde
+ * 24/09/2026 o scanner da portaria confere o QR e libera a entrada, com
+ * horário (ver `conferirVeiculoPorQR` em lib/actions.ts e
+ * supabase/upgrade-veiculo-entrada.sql).
  */
 export default async function VeiculosPage({
   searchParams,
@@ -73,7 +74,7 @@ export default async function VeiculosPage({
     notFound()
   }
 
-  const [{ data: dias }, { data: veiculos }, links] = await Promise.all([
+  const [{ data: dias }, { data: veiculos }, { data: entradas }, links] = await Promise.all([
     supabase.from('jornada_dias').select('data, tipo')
       .eq('evento_id', eventoParam).eq('cancelado', false).order('data'),
     supabase.from('veiculos')
@@ -83,8 +84,18 @@ export default async function VeiculosPage({
         condutor_nome, condutor_cpf, funcionarios(nome, cpf), veiculo_dias(data)
       `)
       .eq('evento_id', eventoParam).order('created_at', { ascending: false }),
+    // Mais recente primeiro: o reduce abaixo guarda só a 1ª ocorrência de cada veículo.
+    supabase.from('veiculo_entradas').select('veiculo_id, liberado_em')
+      .eq('evento_id', eventoParam).order('liberado_em', { ascending: false }),
     linksDeVeiculoDoEvento(eventoParam),
   ])
+
+  const ultimaEntradaPorVeiculo = new Map<string, string>()
+  for (const e of entradas ?? []) {
+    if (!ultimaEntradaPorVeiculo.has(e.veiculo_id as string)) {
+      ultimaEntradaPorVeiculo.set(e.veiculo_id as string, e.liberado_em as string)
+    }
+  }
 
   /*
    * O caminho da foto NAO desce pra tela — só "tem ou não tem".
@@ -112,6 +123,7 @@ export default async function VeiculosPage({
       temFotoPessoa: !!v.foto_pessoa_path,
       status: statusVeiculoValido(v.status as string),
       tipoCadastro: tipoCadastroValido(v.tipo_cadastro as string),
+      ultimaEntradaEm: ultimaEntradaPorVeiculo.get(v.id as string) ?? null,
     }
   })
 

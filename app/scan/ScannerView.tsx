@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { registrarPresencaQR, conferirVeiculoPorQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
+import { formatarBR } from '@/lib/tz'
 import { ScanLine, CameraOff, Copy, CheckCheck } from 'lucide-react'
 
 type Evento = { id: string; nome: string }
@@ -11,7 +12,7 @@ type ScanResult = {
   message: string
   funcionario?: { nome: string; cargo: string | null }
   /** QR de veículo, não de funcionário — mesmo scanner, os dois tipos (24/09/2026). */
-  veiculo?: { placa: string; modelo: string; condutorNome: string }
+  veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   faseErrada?: { doQR: string; deHoje: string }
   momento?: 'entrada' | 'meio' | 'fim'
 }
@@ -259,6 +260,11 @@ export default function ScannerView({
                 <p className="text-base opacity-70 mt-1">
                   {result.veiculo.modelo} • {result.veiculo.condutorNome}
                 </p>
+                {result.veiculo.entradaLiberadaEm && (
+                  <p className="text-sm opacity-60 mt-1">
+                    Entrada liberada às {formatarBR(result.veiculo.entradaLiberadaEm, 'hora')}
+                  </p>
+                )}
               </>
             )}
 

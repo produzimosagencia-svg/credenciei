@@ -30,6 +30,8 @@ export type VeiculoPublico = {
    * ainda vai ser recusado, e essa mesma página já explica que está pendente).
    */
   qrDataUrl: string | null
+  /** Horário da liberação mais recente pelo scanner da portaria, ou null se nunca foi liberado. */
+  ultimaEntradaEm: string | null
 }
 
 export async function veiculoPorQrToken(qrToken: string): Promise<VeiculoPublico | null> {
@@ -37,10 +39,18 @@ export async function veiculoPorQrToken(qrToken: string): Promise<VeiculoPublico
 
   const { data } = await supabaseAdmin
     .from('veiculos')
-    .select('placa, modelo, cor, ano, condutor_nome, status, tipo_cadastro, funcionarios(nome), eventos(nome)')
+    .select('id, placa, modelo, cor, ano, condutor_nome, status, tipo_cadastro, funcionarios(nome), eventos(nome)')
     .eq('qr_token', qrToken)
     .maybeSingle()
   if (!data) return null
+
+  const { data: ultimaEntrada } = await supabaseAdmin
+    .from('veiculo_entradas')
+    .select('liberado_em')
+    .eq('veiculo_id', data.id as string)
+    .order('liberado_em', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   const funcionario = data.funcionarios as unknown as { nome: string } | { nome: string }[] | null
   const evento = data.eventos as unknown as { nome: string } | { nome: string }[] | null
@@ -69,5 +79,6 @@ export async function veiculoPorQrToken(qrToken: string): Promise<VeiculoPublico
     tipoCadastro: tipoCadastroValido(data.tipo_cadastro as string),
     eventoNome: (Array.isArray(evento) ? evento[0]?.nome : evento?.nome) ?? '',
     qrDataUrl,
+    ultimaEntradaEm: (ultimaEntrada?.liberado_em as string | null) ?? null,
   }
 }
