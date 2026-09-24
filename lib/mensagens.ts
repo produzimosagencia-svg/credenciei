@@ -63,6 +63,7 @@ export type TipoMensagem =
   | 'disparo_manual'
   | 'veiculo_cadastrado'
   | 'credenciamento_negado'
+  | 'alerta_supervisor_credenciamento'
 
 /**
  * A que horas sai o aviso do dia do evento — PADRÃO DE TODO EVENTO.
@@ -175,6 +176,11 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   // Mesma situação: sem template aprovado ainda pra avisar negativa de
   // credenciamento. `montarEnvioTemplate` devolve `null` até existir.
   credenciamento_negado: 'credenciamento_negado',
+  // Reservado em 24/09/2026: aviso ao supervisor de que há credenciamento(s)
+  // pendente(s) no setor dele. Template e gatilho de disparo (recorrência,
+  // digest por setor) ainda a definir com o Juan — só o nome está travado
+  // por enquanto, pra ele já poder cadastrar o template na Meta.
+  alerta_supervisor_credenciamento: 'alerta_supervisor_credenciamento',
 }
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app'
@@ -1398,6 +1404,18 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
    * pra mostrar).
    */
   if (msg.tipo === 'credenciamento_negado') {
+    return null
+  }
+
+  /*
+   * Aviso ao supervisor: há credenciamento(s) pendente(s) no setor dele.
+   * SEM TEMPLATE APROVADO AINDA e SEM GATILHO DE DISPARO AINDA — reservado
+   * em 24/09/2026, a pedido do Juan, só pra travar o nome (ele cadastra o
+   * template amanhã). Falta decidir com ele: dispara na hora de cada
+   * cadastro pendente, ou em digest periódico por setor? Nada chama este
+   * tipo ainda, então `return null` aqui nunca é exercitado na prática.
+   */
+  if (msg.tipo === 'alerta_supervisor_credenciamento') {
     return null
   }
 
