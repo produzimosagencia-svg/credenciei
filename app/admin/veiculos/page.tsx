@@ -81,20 +81,20 @@ export default async function VeiculosPage({
       .select(`
         id, placa, modelo, cor, tipo, ano, empresa, setor, observacoes,
         foto_path, foto_pessoa_path, status, tipo_cadastro, created_at,
-        condutor_nome, condutor_cpf, funcionarios(nome, cpf), veiculo_dias(data)
+        condutor_nome, condutor_cpf, condutor_telefone, funcionarios(nome, cpf, telefone), veiculo_dias(data)
       `)
       .eq('evento_id', eventoParam).order('created_at', { ascending: false }),
-    // Mais recente primeiro: o reduce abaixo guarda só a 1ª ocorrência de cada veículo.
+    // Mais recente primeiro: cada veículo guarda a lista inteira, não só a última.
     supabase.from('veiculo_entradas').select('veiculo_id, liberado_em')
       .eq('evento_id', eventoParam).order('liberado_em', { ascending: false }),
     linksDeVeiculoDoEvento(eventoParam),
   ])
 
-  const ultimaEntradaPorVeiculo = new Map<string, string>()
+  const entradasPorVeiculo = new Map<string, string[]>()
   for (const e of entradas ?? []) {
-    if (!ultimaEntradaPorVeiculo.has(e.veiculo_id as string)) {
-      ultimaEntradaPorVeiculo.set(e.veiculo_id as string, e.liberado_em as string)
-    }
+    const lista = entradasPorVeiculo.get(e.veiculo_id as string) ?? []
+    lista.push(e.liberado_em as string)
+    entradasPorVeiculo.set(e.veiculo_id as string, lista)
   }
 
   /*
@@ -105,7 +105,8 @@ export default async function VeiculosPage({
    * graça a localização de todas as fotos do bucket a quem abrisse a página.
    */
   const linhas: VeiculoLinha[] = (veiculos ?? []).map(v => {
-    const cond = v.funcionarios as unknown as { nome: string; cpf: string } | null
+    const cond = v.funcionarios as unknown as { nome: string; cpf: string; telefone: string } | null
+    const entradasDoVeiculo = entradasPorVeiculo.get(v.id as string) ?? []
     return {
       id: v.id as string,
       placa: v.placa as string,
@@ -118,12 +119,14 @@ export default async function VeiculosPage({
       observacoes: (v.observacoes as string | null) ?? null,
       condutorNome: (v.condutor_nome as string | null) ?? cond?.nome ?? null,
       condutorCpf: (v.condutor_cpf as string | null) ?? cond?.cpf ?? null,
+      condutorTelefone: (v.condutor_telefone as string | null) ?? cond?.telefone ?? null,
       dias: ((v.veiculo_dias as unknown as { data: string }[] | null) ?? []).map(d => d.data),
       temFoto: !!v.foto_path,
       temFotoPessoa: !!v.foto_pessoa_path,
       status: statusVeiculoValido(v.status as string),
       tipoCadastro: tipoCadastroValido(v.tipo_cadastro as string),
-      ultimaEntradaEm: ultimaEntradaPorVeiculo.get(v.id as string) ?? null,
+      ultimaEntradaEm: entradasDoVeiculo[0] ?? null,
+      entradas: entradasDoVeiculo,
     }
   })
 

@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Truck, Search, Plus, X, Link2 } from 'lucide-react'
-import { formatCpf } from '@/lib/format'
+import { formatCpf, formatTelefone } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
 import SeletorLista from '@/components/SeletorLista'
@@ -10,6 +10,7 @@ import FormVeiculo from './FormVeiculo'
 import AcoesVeiculo from './AcoesVeiculo'
 import FotoVeiculo from './FotoVeiculo'
 import LinkVeiculoPainel from './LinkVeiculoPainel'
+import DetalhesVeiculoModal from './DetalhesVeiculoModal'
 
 export type VeiculoLinha = {
   id: string
@@ -23,6 +24,7 @@ export type VeiculoLinha = {
   observacoes: string | null
   condutorNome: string | null
   condutorCpf: string | null
+  condutorTelefone: string | null
   dias: string[]
   temFoto: boolean
   temFotoPessoa: boolean
@@ -30,6 +32,8 @@ export type VeiculoLinha = {
   tipoCadastro: TipoCadastroVeiculo
   /** Horário da liberação mais recente pelo scanner da portaria, ou null se nunca foi liberado. */
   ultimaEntradaEm: string | null
+  /** Todas as liberações pelo scanner, mais recente primeiro — histórico completo pro modal de detalhes. */
+  entradas: string[]
 }
 
 /**
@@ -58,6 +62,7 @@ export default function PainelVeiculos({
   const [filtroTipo, setFiltroTipo] = useState('')
   const [cadastrando, setCadastrando] = useState(false)
   const [mostrarLinks, setMostrarLinks] = useState(false)
+  const [detalhando, setDetalhando] = useState<VeiculoLinha | null>(null)
 
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase()
@@ -160,7 +165,11 @@ export default function PainelVeiculos({
               </thead>
               <tbody>
                 {filtrados.map(v => (
-                  <tr key={v.id}>
+                  <tr
+                    key={v.id}
+                    onClick={() => setDetalhando(v)}
+                    className="cursor-pointer hover:bg-slate-50"
+                  >
                     <td className="font-mono font-bold tabular-nums whitespace-nowrap">{v.placa}</td>
                     <td>
                       <p className="text-slate-700">{v.modelo}{v.ano ? ` (${v.ano})` : ''}</p>
@@ -175,6 +184,9 @@ export default function PainelVeiculos({
                       <p className="text-slate-700">{v.condutorNome ?? '—'}</p>
                       {v.condutorCpf && (
                         <p className="text-slate-400 text-2xs tabular-nums">{formatCpf(v.condutorCpf)}</p>
+                      )}
+                      {v.condutorTelefone && (
+                        <p className="text-slate-400 text-2xs tabular-nums">{formatTelefone(v.condutorTelefone)}</p>
                       )}
                     </td>
                     <td className="text-slate-500 text-2xs">
@@ -193,7 +205,7 @@ export default function PainelVeiculos({
                         ? v.dias.map(d => formatarBR(`${d}T12:00:00-03:00`, 'data').slice(0, 5)).join(', ')
                         : 'Todos'}
                     </td>
-                    <td>
+                    <td onClick={e => e.stopPropagation()}>
                       <FotoVeiculo
                         veiculoId={v.id}
                         eventoId={eventoId}
@@ -201,7 +213,7 @@ export default function PainelVeiculos({
                         temFoto={v.temFoto}
                       />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" onClick={e => e.stopPropagation()}>
                       <AcoesVeiculo veiculoId={v.id} eventoId={eventoId} placa={v.placa} status={v.status} />
                     </td>
                   </tr>
@@ -239,6 +251,10 @@ export default function PainelVeiculos({
             <FormVeiculo eventoId={eventoId} dias={dias} />
           </div>
         </div>
+      )}
+
+      {detalhando && (
+        <DetalhesVeiculoModal veiculo={detalhando} onClose={() => setDetalhando(null)} />
       )}
     </div>
   )
