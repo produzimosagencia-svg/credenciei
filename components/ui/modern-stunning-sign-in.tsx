@@ -16,8 +16,7 @@ import { LogoLoading } from '@/components/LogoLoading'
  * falar com /api/auth/login.
  */
 
-/** Trocar quando o número for definido. */
-const WHATSAPP_SUPORTE = 'https://wa.me/5500000000000?text=Esqueci%20minha%20senha%20do%20Credenciei'
+const WHATSAPP_SUPORTE = 'https://wa.me/5527988146143?text=Esqueci%20minha%20senha%20do%20Credenciei'
 
 const CAMPO =
   'w-full px-5 py-3.5 rounded-xl bg-white/[.06] border border-white/10 text-white placeholder-white/35 text-sm outline-none ' +
