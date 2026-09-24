@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { FileDown, X, AlertCircle } from 'lucide-react'
+import { FileDown, X, AlertCircle, Search } from 'lucide-react'
 import { obterAuditoria, type LinhaAuditoria } from '@/lib/actions'
 import { ACAO_LABELS } from '@/lib/auditoria-rotulos'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
@@ -50,7 +50,13 @@ export default function FiltrosAuditoria({
   const autor = params.get('autor') ?? ''
   const setor = params.get('setor') ?? ''
   const acao = params.get('acao') ?? ''
-  const temFiltro = !!(evento || autor || setor || acao)
+  const nomeUrl = params.get('nome') ?? ''
+  const temFiltro = !!(evento || autor || setor || acao || nomeUrl)
+
+  // Campo de texto livre — nome ou CPF da pessoa. `nomeCampo` é só o que
+  // aparece no input; a busca (URL) só muda quando a pessoa para de digitar.
+  const [nomeCampo, setNomeCampo] = useState(nomeUrl)
+  const timerBusca = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /*
    * Setor em cascata: com evento escolhido, só os setores DAQUELE evento
@@ -73,10 +79,24 @@ export default function FiltrosAuditoria({
   }
 
   const limpar = () => {
+    if (timerBusca.current) clearTimeout(timerBusca.current)
+    setNomeCampo('')
     const novo = new URLSearchParams()
     const dias = params.get('dias')
     if (dias) novo.set('dias', dias)
     router.push(novo.toString() ? `${pathname}?${novo.toString()}` : pathname)
+  }
+
+  /*
+   * Nome digitado: atualiza o campo na hora (sem travar a UI), mas só manda
+   * pro banco depois de 400ms sem a pessoa digitar de novo — a busca é no
+   * servidor, não local como as outras telas, então filtrar a cada tecla
+   * seria uma ida ao banco por letra.
+   */
+  const digitarNome = (valor: string) => {
+    setNomeCampo(valor)
+    if (timerBusca.current) clearTimeout(timerBusca.current)
+    timerBusca.current = setTimeout(() => trocar('nome', valor.trim()), 400)
   }
 
   const exportar = async () => {
@@ -94,12 +114,13 @@ export default function FiltrosAuditoria({
         autorId: autor || undefined,
         acao: acao || undefined,
         setor: setor || undefined,
+        nome: nomeUrl || undefined,
       })
       if (!linhas.length) {
         setErro('Nada para exportar neste recorte.')
         return
       }
-      await baixarPlanilha(linhas, nomeDoArquivo({ evento, autor, setor, acao, periodoDias, opcoes }))
+      await baixarPlanilha(linhas, nomeDoArquivo({ evento, autor, setor, acao, periodoDias, opcoes, nome: nomeUrl }))
     } catch (e) {
       setErro(mensagemAmigavel(e))
     } finally {
@@ -115,6 +136,26 @@ export default function FiltrosAuditoria({
         * (pedido do Juan, 09/09/2026: "Evento > Setor > Fez o que").
         */}
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+          <input
+            value={nomeCampo}
+            onChange={e => digitarNome(e.target.value)}
+            placeholder="Buscar pessoa por nome ou CPF"
+            className="input pl-8 pr-7 text-sm w-full"
+            autoComplete="off"
+          />
+          {nomeCampo && (
+            <button
+              onClick={() => digitarNome('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              aria-label="Limpar busca"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
         <SeletorLista
           className="w-auto text-sm"
           valor={evento}
@@ -198,9 +239,9 @@ export default function FiltrosAuditoria({
 
 /** O nome diz o recorte — três arquivos na pasta de Downloads não se confundem. */
 function nomeDoArquivo({
-  evento, autor, setor, acao, periodoDias, opcoes,
+  evento, autor, setor, acao, periodoDias, opcoes, nome,
 }: {
-  evento: string; autor: string; setor: string; acao: string; periodoDias: number; opcoes: OpcoesFiltro
+  evento: string; autor: string; setor: string; acao: string; periodoDias: number; opcoes: OpcoesFiltro; nome?: string
 }): string {
   const partes = ['Auditoria']
   const doEvento = opcoes.eventos.find(e => e.id === evento)
@@ -209,6 +250,7 @@ function nomeDoArquivo({
   if (quem) partes.push(quem.nome)
   if (setor) partes.push(setor)
   if (acao) partes.push(ACAO_LABELS[acao] ?? acao)
+  if (nome) partes.push(nome)
   partes.push(periodoDias === 0 ? 'tudo' : `${periodoDias}d`)
   return partes.join(' - ').replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
 }
@@ -232,6 +274,7 @@ async function baixarPlanilha(linhas: LinhaAuditoria[], nomeArquivo: string) {
     'Tipo de acesso': l.autorRole ? (ROLE_LABELS[l.autorRole as Role] ?? l.autorRole) : '',
     'Setor de quem fez': l.autorSetor ?? '',
     'Evento': l.eventoNome ?? '',
+    'Entrou no evento em': l.primeiraEntradaEm ? formatarBR(l.primeiraEntradaEm, 'completo') : (l.acao === 'CADASTRO_FUNCIONARIO' ? 'Ainda não' : ''),
     'IP': l.ip ?? '',
   }))
 
@@ -239,7 +282,7 @@ async function baixarPlanilha(linhas: LinhaAuditoria[], nomeArquivo: string) {
   ws['!cols'] = [
     { wch: 18 }, { wch: 22 }, { wch: 26 }, { wch: 28 }, { wch: 16 }, { wch: 18 },
     { wch: 28 }, { wch: 28 }, { wch: 24 }, { wch: 24 }, { wch: 18 }, { wch: 18 },
-    { wch: 28 }, { wch: 16 },
+    { wch: 28 }, { wch: 20 }, { wch: 16 },
   ]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Auditoria')

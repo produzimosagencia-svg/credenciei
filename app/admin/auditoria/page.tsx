@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ClipboardList, ArrowRight, User, MapPin } from 'lucide-react'
+import { ClipboardList, ArrowRight, User, MapPin, Clock } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarUsuarios, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { obterAuditoria, opcoesDaAuditoria } from '@/lib/actions'
@@ -53,6 +53,7 @@ const LIMITE = 200
  * neutro — nunca fica sem cor.
  */
 const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'> = {
+  CADASTRO_FUNCIONARIO: 'neutro',
   EXCLUSAO_FUNCIONARIO: 'negativo',
   EXCLUSAO_PONTO: 'negativo',
   DESCREDENCIAMENTO: 'negativo',
@@ -74,7 +75,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
 export default async function AuditoriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string; evento?: string }>
+  searchParams: Promise<{ dias?: string; autor?: string; setor?: string; acao?: string; evento?: string; nome?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil || !(podeGerenciarUsuarios(perfil) || perfil.role === 'suporte')) redirect('/admin')
@@ -85,15 +86,20 @@ export default async function AuditoriaPage({
    * A tela existe pra responder "quem mexeu nisso?" — uma pergunta que
    * quase sempre é sobre esta semana. Abrindo com o histórico inteiro, o
    * que aconteceu hoje some no meio de meses de registro.
+   *
+   * Exceção: busca por NOME. Quem digita o nome de alguém está procurando a
+   * PESSOA, não "o que aconteceu esta semana" — se ela se cadastrou há 20
+   * dias, "7 dias" (o padrão) escondia o próprio resultado que a busca
+   * pediu. Nome preenchido troca o padrão pra "tudo".
    */
-  const { dias: diasParam, autor, setor, acao, evento } = await searchParams
-  const escolhido = PERIODOS.find(p => String(p.dias) === diasParam) ?? PERIODOS[1]
+  const { dias: diasParam, autor, setor, acao, evento, nome } = await searchParams
+  const escolhido = PERIODOS.find(p => String(p.dias) === diasParam) ?? (nome ? PERIODOS[3] : PERIODOS[1])
 
   const [linhas, opcoes] = await Promise.all([
     obterAuditoria({
       limite: LIMITE, dias: escolhido.dias,
       autorId: autor || undefined, acao: acao || undefined, setor: setor || undefined,
-      eventoId: evento || undefined,
+      eventoId: evento || undefined, nome: nome || undefined,
     }),
     opcoesDaAuditoria(),
   ])
@@ -117,6 +123,7 @@ export default async function AuditoriaPage({
           if (autor) q.set('autor', autor)
           if (setor) q.set('setor', setor)
           if (acao) q.set('acao', acao)
+          if (nome) q.set('nome', nome)
           return (
             <Link
               key={p.dias}
@@ -143,10 +150,10 @@ export default async function AuditoriaPage({
         {!linhas.length ? (
           <EmptyState
             icone={<ClipboardList className="w-7 h-7" />}
-            titulo={evento || autor || setor || acao
+            titulo={evento || autor || setor || acao || nome
               ? 'Nada encontrado com esses filtros'
               : escolhido.dias === 0 ? 'Nenhuma alteração registrada ainda' : 'Nenhuma alteração neste período'}
-            descricao={evento || autor || setor || acao
+            descricao={evento || autor || setor || acao || nome
               ? 'Tente limpar um filtro ou aumentar o período.'
               : escolhido.dias === 0 ? undefined : 'Escolha um período maior aí em cima.'}
           />
@@ -192,6 +199,21 @@ export default async function AuditoriaPage({
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="w-3 h-3 shrink-0" /> {l.funcionarioSetor}
                         </span>
+                      )}
+                    </p>
+                  )}
+
+                  {/* Só em CADASTRO_FUNCIONARIO: "ela chegou a aparecer no
+                      evento depois de se cadastrar?" — pedido do Juan. */}
+                  {l.acao === 'CADASTRO_FUNCIONARIO' && (
+                    <p className="flex items-center gap-1 text-xs">
+                      <Clock className="w-3 h-3 shrink-0 text-slate-400" />
+                      {l.primeiraEntradaEm ? (
+                        <span className="text-slate-500">
+                          Entrou no evento às <span className="text-slate-700 font-medium tabular-nums">{formatarBR(l.primeiraEntradaEm, 'completo')}</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-600">Ainda não entrou no evento</span>
                       )}
                     </p>
                   )}

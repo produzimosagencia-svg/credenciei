@@ -43,7 +43,7 @@ import { statusCredenciamentoValido, type StatusCredenciamento } from './credenc
 import { podePassar } from './limite'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
-import { registrarAuditoria } from './auditoria'
+import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -1279,9 +1279,12 @@ export type LinhaAuditoria = {
   autorId: string | null
   /** De onde o autor é: os setores dele, em texto. Vazio pra quem não tem setor. */
   autorSetor: string | null
+  funcionarioId: string | null
   funcionarioCpf: string | null
   funcionarioSetor: string | null
   ip: string | null
+  /** Só em linhas de CADASTRO_FUNCIONARIO: quando essa pessoa bateu a primeira entrada. `null` = ainda não apareceu no evento. */
+  primeiraEntradaEm: string | null
 }
 
 /**
@@ -1304,10 +1307,15 @@ export async function obterAuditoria(
      * pergunta que se faz sobre exclusão.
      */
     setor?: string
+    /** Nome (ou CPF) da PESSOA AFETADA — "o que aconteceu com o Fulano". */
+    nome?: string
   } = {},
 ): Promise<LinhaAuditoria[]> {
   const perfil = await getPerfil()
   if (!perfil) return []
+
+  const termoNome = (opcoes.nome ?? '').trim()
+  const digitosNome = termoNome.replace(/\D/g, '')
 
   let query = supabaseAdmin
     .from('alteracoes_cadastro')
@@ -1316,14 +1324,24 @@ export async function obterAuditoria(
      * não respondia o que se pergunta na frente dela: "quem é esse nome?" e
      * "de qual setor era a pessoa?". São dois joins por chave estrangeira que
      * já existem — nenhuma coluna nova, nada que dependa de migração.
+     *
+     * `funcionarios!inner` só quando há busca por nome: precisa virar INNER
+     * pra o `.or()` de baixo filtrar no banco (embutido em LEFT JOIN o
+     * Postgres não filtra a linha pai) — sem busca, continua LEFT (a
+     * maioria das ações nem tem pessoa afetada, ex. RESET_SENHA de supervisor).
      */
-    .select('id, acao, usuario_responsavel, usuario_responsavel_id, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, eventos(nome), perfis(role), funcionarios(nome, cpf, fornecedores(nome))')
+    .select(`id, acao, usuario_responsavel, usuario_responsavel_id, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, funcionario_id, eventos(nome), perfis(role), funcionarios${termoNome ? '!inner' : ''}(nome, cpf, fornecedores(nome))`)
     .order('created_at', { ascending: false })
     .limit(opcoes.limite ?? 100)
 
   if (opcoes.eventoId) query = query.eq('evento_id', opcoes.eventoId)
   if (opcoes.autorId) query = query.eq('usuario_responsavel_id', opcoes.autorId)
   if (opcoes.acao) query = query.eq('acao', opcoes.acao)
+  if (termoNome) {
+    const condicoes = [`nome.ilike.%${termoNome}%`]
+    if (digitosNome) condicoes.push(`cpf.ilike.%${digitosNome}%`)
+    query = query.or(condicoes.join(','), { foreignTable: 'funcionarios' })
+  }
 
   /*
    * O corte é por DIA, e o dia é o de Brasília.
@@ -1369,9 +1387,36 @@ export async function obterAuditoria(
     }
   }
 
+  /*
+   * Primeira entrada de cada pessoa — só pra quem tem linha de CADASTRO na
+   * tela: é a resposta de "ela chegou a aparecer no evento depois de se
+   * cadastrar?". Uma consulta só, batendo todos os `funcionario_id` da
+   * página de uma vez (nunca um SELECT por linha).
+   */
+  const idsCadastro = [...new Set(
+    (data ?? [])
+      .filter(a => a.acao === 'CADASTRO_FUNCIONARIO')
+      .map(a => a.funcionario_id as string | null)
+      .filter((v): v is string => !!v)
+  )]
+  const primeiraEntradaPorFuncionario = new Map<string, string>()
+  if (idsCadastro.length) {
+    const { data: entradas } = await supabaseAdmin
+      .from('registros')
+      .select('funcionario_id, created_at')
+      .in('funcionario_id', idsCadastro)
+      .eq('tipo', 'entrada')
+      .order('created_at', { ascending: true })
+    for (const e of entradas ?? []) {
+      const fid = e.funcionario_id as string
+      if (!primeiraEntradaPorFuncionario.has(fid)) primeiraEntradaPorFuncionario.set(fid, e.created_at as string)
+    }
+  }
+
   return (data ?? []).map(a => {
     const autorId = (a.usuario_responsavel_id as string | null) ?? null
     const setoresDoAutor = autorId ? setoresPorAutor.get(autorId) ?? [] : []
+    const funcionarioId = (a.funcionario_id as string | null) ?? null
     return {
       id: a.id as string,
       acao: a.acao as string,
@@ -1381,6 +1426,7 @@ export async function obterAuditoria(
       valorNovo: (a.valor_novo as string | null) ?? null,
       motivo: (a.motivo as string | null) ?? null,
       eventoNome: (a.eventos as unknown as { nome: string } | null)?.nome ?? null,
+      funcionarioId,
       funcionarioNome: (a.funcionarios as unknown as { nome: string } | null)?.nome ?? null,
       funcionarioCpf: (a.funcionarios as unknown as { cpf: string } | null)?.cpf ?? null,
       funcionarioSetor: (a.funcionarios as unknown as { fornecedores: { nome: string } | null } | null)?.fornecedores?.nome ?? null,
@@ -1389,6 +1435,9 @@ export async function obterAuditoria(
       autorSetor: setoresDoAutor.length ? [...new Set(setoresDoAutor)].join(', ') : null,
       ip: (a.ip as string | null) ?? null,
       criadoEm: a.created_at as string,
+      primeiraEntradaEm: (a.acao === 'CADASTRO_FUNCIONARIO' && funcionarioId)
+        ? primeiraEntradaPorFuncionario.get(funcionarioId) ?? null
+        : null,
     }
   }).filter(l => {
     if (!opcoes.setor) return true
@@ -4648,7 +4697,7 @@ export async function cadastrarFuncionarioPublico(
 ): Promise<{ qrToken?: string; status?: StatusCredenciamento; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso)')
+    .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso, organizacao_id)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
@@ -4808,6 +4857,20 @@ export async function cadastrarFuncionarioPublico(
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
+  /*
+   * Vai pra auditoria mesmo sem ninguém logado — quem "fez" foi a própria
+   * pessoa, se cadastrando (pedido do Juan, 24/09/2026: "quem se cadastrou,
+   * que horas, por meio de que"). `registrarAuditoria` exige um perfil
+   * autenticado; aqui não existe um, então grava direto — mesmo cuidado de
+   * nunca travar o cadastro por causa do log (best-effort, erro só no console).
+   */
+  after(() => registrarCadastroFuncionario({
+    funcionarioId: data.id as string,
+    nome: dados.nome.trim(),
+    eventoId: fornecedor.evento_id,
+    organizacaoId: (fornecedor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null,
+    origem: dados.origem === 'portaria' ? 'portaria' : 'formulario',
+  }))
   // A mensagem de boas-vindas (com o link/QR) só dispara na APROVAÇÃO agora —
   // ver `aprovarCredenciamento`. Represada de propósito: mandar o link antes
   // de alguém aprovar entregaria uma credencial que ainda não vale.

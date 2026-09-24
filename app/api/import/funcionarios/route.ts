@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const res = await importarFuncionarios(
-      { role: perfil.role, organizacao_id: perfil.organizacao_id ?? null },
+      { id: perfil.id, nome: perfil.nome, role: perfil.role, organizacao_id: perfil.organizacao_id ?? null },
       fornecedorId,
       funcionarios
     )

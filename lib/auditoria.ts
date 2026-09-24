@@ -50,3 +50,77 @@ export async function registrarAuditoria(args: {
     console.error('[auditoria] falha inesperada', e)
   }
 }
+
+/** Como a origem do cadastro aparece na auditoria. Chave = `funcionarios.origem`. */
+export const ROTULO_ORIGEM_CADASTRO: Record<string, string> = {
+  formulario: 'Cadastro pelo link',
+  portaria: 'Cadastro pela portaria (cartaz)',
+  planilha: 'Importado por planilha',
+}
+
+/**
+ * Registra na auditoria que ALGUÉM SE CADASTROU — pedido do Juan
+ * (24/09/2026): "quem se cadastrou, que horas, por meio de que (link ou
+ * planilha)". Separado de `registrarAuditoria` porque o cadastro público
+ * não tem perfil autenticado (é a própria pessoa preenchendo o formulário,
+ * sem sessão) — não existe um "responsável" no sentido de admin agindo.
+ */
+export async function registrarCadastroFuncionario(args: {
+  funcionarioId: string
+  nome: string
+  eventoId: string
+  organizacaoId?: string | null
+  origem: 'formulario' | 'portaria' | 'planilha'
+}): Promise<void> {
+  try {
+    const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    const { error } = await supabaseAdmin.from('alteracoes_cadastro').insert([{
+      usuario_responsavel: `${args.nome} (cadastro próprio)`,
+      usuario_responsavel_id: null,
+      organizacao_id: args.organizacaoId ?? null,
+      evento_id: args.eventoId,
+      funcionario_id: args.funcionarioId,
+      acao: 'CADASTRO_FUNCIONARIO',
+      campo_alterado: 'Cadastro',
+      valor_novo: ROTULO_ORIGEM_CADASTRO[args.origem] ?? args.origem,
+      ip,
+    }])
+    if (error) console.error('[auditoria] cadastro não gravado', error.message)
+  } catch (e) {
+    console.error('[auditoria] falha inesperada (cadastro)', e)
+  }
+}
+
+/**
+ * Mesma coisa, em lote — pra importação por planilha (dezenas/centenas de
+ * pessoas de uma vez). Um INSERT só, não um por pessoa: gravar um por um
+ * seria centenas de idas ao banco só de log numa importação grande.
+ * `usuarioResponsavel` aqui é quem RODOU a importação (admin/supervisor),
+ * não a pessoa importada — ela nem sabe que a planilha existe.
+ */
+export async function registrarCadastrosEmLote(args: {
+  eventoId: string
+  organizacaoId?: string | null
+  usuarioResponsavel: { id: string; nome: string }
+  itens: { funcionarioId: string }[]
+}): Promise<void> {
+  if (!args.itens.length) return
+  try {
+    const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    const linhas = args.itens.map(item => ({
+      usuario_responsavel: args.usuarioResponsavel.nome,
+      usuario_responsavel_id: args.usuarioResponsavel.id,
+      organizacao_id: args.organizacaoId ?? null,
+      evento_id: args.eventoId,
+      funcionario_id: item.funcionarioId,
+      acao: 'CADASTRO_FUNCIONARIO',
+      campo_alterado: 'Cadastro',
+      valor_novo: ROTULO_ORIGEM_CADASTRO.planilha,
+      ip,
+    }))
+    const { error } = await supabaseAdmin.from('alteracoes_cadastro').insert(linhas)
+    if (error) console.error('[auditoria] cadastro em lote não gravado', error.message)
+  } catch (e) {
+    console.error('[auditoria] falha inesperada (cadastro em lote)', e)
+  }
+}

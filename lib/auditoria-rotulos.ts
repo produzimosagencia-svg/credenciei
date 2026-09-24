@@ -9,6 +9,7 @@
 
 /** Rótulos das ações gravadas em `alteracoes_cadastro` — usados na tela de auditoria. */
 export const ACAO_LABELS: Record<string, string> = {
+  CADASTRO_FUNCIONARIO: 'Cadastro',
   ALTERACAO_CPF: 'Correção de CPF',
   ALTERACAO_NOME: 'Correção de nome',
   ALTERACAO_TELEFONE: 'Correção de telefone',

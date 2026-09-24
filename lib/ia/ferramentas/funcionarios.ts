@@ -350,7 +350,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         }
 
         const res = await importarFuncionarios(
-          { role: perfil.role, organizacao_id: perfil.organizacao_id },
+          { id: perfil.id, nome: perfil.nome, role: perfil.role, organizacao_id: perfil.organizacao_id },
           fornecedor_id,
           linhas
         )

@@ -5,6 +5,7 @@ import { ehMaster, type Role } from '@/lib/permissions'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
 import { mensagemAmigavel } from '@/lib/erros'
+import { registrarCadastrosEmLote } from '@/lib/auditoria'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
@@ -28,7 +29,7 @@ export type ResultadoImportacao =
   | { ok: true; total: number; invalidos: number; duplicados: number; reaproveitados: number; ignorados: LinhaIgnorada[] }
   | { ok: false; error: string; status: number; ignorados?: LinhaIgnorada[] }
 
-type PerfilImportador = { role: Role; organizacao_id: string | null }
+type PerfilImportador = { id: string; nome: string; role: Role; organizacao_id: string | null }
 
 export async function importarFuncionarios(
   perfil: PerfilImportador,
@@ -196,6 +197,18 @@ export async function importarFuncionarios(
 
   if (error) {
     return { ok: false, status: 500, error: mensagemAmigavel(error) }
+  }
+
+  // Auditoria: "quem se cadastrou, que horas, por meio de que" (pedido do
+  // Juan, 24/09/2026) também vale pra quem entrou pela planilha, não só
+  // pelo link. Um lote só — nunca um insert de log por pessoa importada.
+  if (evento?.id && inseridos?.length) {
+    after(() => registrarCadastrosEmLote({
+      eventoId: evento.id,
+      organizacaoId: evento.organizacao_id,
+      usuarioResponsavel: { id: perfil.id, nome: perfil.nome },
+      itens: inseridos.map(f => ({ funcionarioId: f.id as string })),
+    }))
   }
 
   // Google Sheets sincroniza DEPOIS da resposta (after → waitUntil): com
