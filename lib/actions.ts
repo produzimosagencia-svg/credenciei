@@ -511,6 +511,24 @@ async function jaSupervisionaNesteEvento(perfilId: string, eventoId: string): Pr
 }
 
 /**
+ * A pessoa está de fato ativa em algum evento hoje, como supervisora?
+ *
+ * Usado só pra decidir se dá pra reatribuir o CPF dela pra outra organização
+ * sem exigir master (ver `criarSupervisorOuLanca`) — evento já encerrado não
+ * conta como "ativa". Erro de consulta devolve `true` (assume que está
+ * ativa): na dúvida sobre segurança entre organizações, o mais seguro é
+ * continuar exigindo master, não liberar a troca sozinha.
+ */
+async function temEventoAtivoComoSupervisor(perfilId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('supervisor_setores')
+    .select('fornecedores!inner(eventos!inner(ativo))')
+    .eq('perfil_id', perfilId)
+  if (error) return true
+  return (data ?? []).some(r => (r.fornecedores as unknown as { eventos: { ativo: boolean } })?.eventos?.ativo === true)
+}
+
+/**
  * O CPF já tem outro tipo de acesso, antes de a pessoa preencher o resto?
  *
  * "Tornar supervisor" descobria isso só depois do telefone preenchido e do
@@ -616,15 +634,33 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
    */
   const { data: existente } = await admin
     .from('perfis')
-    .select('id, nome, role, organizacao_id')
+    .select('id, nome, role, organizacao_id, ativo')
     .eq('cpf', cpf)
     .maybeSingle()
   if (existente) {
     if (existente.role !== 'supervisor') {
       throw new Error('Este CPF já pertence a outro tipo de acesso no sistema.')
     }
-    if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
-      throw new Error('Este CPF já está cadastrado em outra organização.')
+    /*
+     * Cruzou de organização — normal pra freelancer que supervisiona
+     * eventos de agências diferentes ao longo do tempo (achado real,
+     * 24/09/2026: cliente tentou credenciar alguém que já tinha sido
+     * supervisor de outra organização, evento já encerrado, e ficou
+     * bloqueado até um master resolver manualmente).
+     *
+     * Some direto (sem exigir master) SE a pessoa está inativa ou nenhum
+     * evento em que ela supervisiona hoje está ativo — ela não está no
+     * meio de um trabalho de verdade em lugar nenhum, então mudar a
+     * organização dela não tira acesso de ninguém que precise agora.
+     * Continua exigindo master só quando isso não é garantido (ela está
+     * ativa e ligada a pelo menos um evento em andamento noutra organização
+     * — aí é uma decisão de negócio, não uma reatribuição óbvia).
+     */
+    if (existente.organizacao_id !== organizacaoId && !ehMaster(perfil!.role)) {
+      const podeReatribuir = existente.ativo === false || !(await temEventoAtivoComoSupervisor(existente.id))
+      if (!podeReatribuir) {
+        throw new Error('Este CPF já está cadastrado em outra organização, com evento ativo lá. Peça para um master transferir.')
+      }
     }
 
     const { error: erroAtualizacao } = await admin.from('perfis').update({
