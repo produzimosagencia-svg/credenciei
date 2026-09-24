@@ -211,7 +211,7 @@ export default function FormularioFuncionario({
         cor: 'bg-amber-500', sombra: 'shadow-amber-200',
         icone: <Clock className="w-8 h-8 text-white" />,
         titulo: 'Credenciamento recebido!',
-        texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Assim que for aprovado, seu QR Code é liberado automaticamente nesta mesma página.',
+        texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Avise seu supervisor que você já se cadastrou e peça para ele liberar — assim que for aprovado, seu QR Code aparece automaticamente nesta mesma página.',
         botao: 'Ver status do meu credenciamento →',
       },
       aprovado: {

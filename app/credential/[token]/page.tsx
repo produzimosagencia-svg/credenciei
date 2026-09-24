@@ -88,7 +88,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       ? {
           Icone: Clock, cor: 'bg-amber-500/15 text-amber-400',
           titulo: 'Credenciamento recebido!',
-          texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Assim que for aprovado, seu QR Code é liberado automaticamente nesta mesma página — não precisa fazer nada, nem gerar outro cadastro.',
+          texto: 'Seus dados foram enviados com sucesso e estão aguardando a confirmação do responsável pelo evento. Avise seu supervisor que você já se cadastrou e peça para ele liberar — assim que for aprovado, seu QR Code aparece automaticamente nesta mesma página, sem precisar fazer nada nem gerar outro cadastro.',
         }
       : statusCred === 'negado'
         ? {
