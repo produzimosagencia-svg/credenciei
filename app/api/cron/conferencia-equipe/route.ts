@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { planilhaEquipeCsv } from '@/lib/conferencia'
 import { enviarEmail, molduraEmail } from '@/lib/email'
+import { registrarExecucaoConferenciaEquipe } from '@/lib/performance-checks'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -103,6 +104,11 @@ export async function GET(request: NextRequest) {
       }
     }
   }
+
+  // Sinal de vida pro Painel de Performance — mesmo padrão do WhatsApp em
+  // lib/saude.ts: sem isto, ninguém sabe distinguir "não tinha nada pra fazer
+  // hoje" de "o cron parou de rodar".
+  await registrarExecucaoConferenciaEquipe()
 
   return NextResponse.json({
     eventos: eventos?.length ?? 0,

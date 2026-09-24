@@ -7,13 +7,14 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText,
+  FileText, Gauge,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
   podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
-  podeRegistrarGastos, type Role,
+  podeVerPerformance, podeRegistrarGastos, type Role,
 } from '@/lib/permissions'
+import SinoAlertas from '@/components/performance/SinoAlertas'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
 import { BotaoTema } from '@/components/Tema'
@@ -180,6 +181,9 @@ function gruposPara(perfil: Perfil): Grupo[] {
   }
   if (podeGerenciarOrcamentos(perfil)) {
     operacional.push({ href: '/admin/orcamentos', label: 'Orçamentos', icon: FileText })
+  }
+  if (podeVerPerformance(perfil)) {
+    operacional.push({ href: '/admin/performance', label: 'Performance', icon: Gauge })
   }
   if (ehMaster(role)) {
     operacional.push(
@@ -558,6 +562,7 @@ export default function AppShell({
                 {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
               </span>
             )}
+            {podeVerPerformance(perfil) && <SinoAlertas />}
             <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />
           </div>
         </div>

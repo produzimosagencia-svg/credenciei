@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/conferencia-equipe",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/performance-check",
+      "schedule": "* * * * *"
     }
   ]
 }

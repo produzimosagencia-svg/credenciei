@@ -176,6 +176,25 @@ export const podeGerenciarBacklog = capacidade('gerenciar_backlog', role => role
 export const podeGerenciarOrcamentos = capacidade('gerenciar_orcamentos', role => role === 'master')
 
 /**
+ * Pode VER o Painel de Performance — saúde da API, banco, integrações,
+ * incidentes.
+ *
+ * Master-only: é infraestrutura da plataforma inteira, não de uma
+ * organização — um admin não tem o que fazer sabendo se o Gemini está
+ * degradado. `capacidade`, mesmo motivo dos outros módulos internos.
+ */
+export const podeVerPerformance = capacidade('ver_performance', role => role === 'master')
+
+/**
+ * Pode MEXER na configuração do Painel de Performance — thresholds,
+ * habilitar/desabilitar serviço, adicionar serviço novo. Separado de
+ * `podeVerPerformance` seguindo o mesmo padrão de `gerenciar_veiculos`
+ * (ver/gerenciar não são sempre a mesma coisa), mesmo que hoje os dois
+ * apontem pro mesmo `role === 'master'`.
+ */
+export const podeGerenciarPerformance = capacidade('gerenciar_performance', role => role === 'master')
+
+/**
  * Pode usar o módulo Gastos.
  *
  * Gastos virou um PRODUTO à parte, com acesso próprio: o papel `produtor`.
@@ -313,6 +332,12 @@ export const CAPACIDADES: {
     descricao: 'Cria, edita e gera PDF de orçamentos comerciais',
     padrao: podeGerenciarOrcamentos,
     peso: 'Abre valores comerciais e propostas — dado sensível da agência.' },
+  { chave: 'ver_performance', nome: 'Ver Painel de Performance',
+    descricao: 'Saúde da API, banco, integrações e incidentes da plataforma',
+    padrao: podeVerPerformance },
+  { chave: 'gerenciar_performance', nome: 'Gerenciar Painel de Performance',
+    descricao: 'Configura thresholds e serviços monitorados',
+    padrao: podeGerenciarPerformance },
   { chave: 'registrar_gastos', nome: 'Registrar gastos',
     descricao: 'Lança despesa de evento por voz ou na mão, e vê o dashboard de gastos',
     padrao: podeRegistrarGastos },

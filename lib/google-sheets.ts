@@ -1,7 +1,7 @@
 import { google } from 'googleapis'
 import { chaveBusca } from './format'
 
-function getAuth() {
+export function getAuth() {
   // Usa OAuth2 com refresh token do usuário se disponível
   if (process.env.GOOGLE_REFRESH_TOKEN) {
     const oauth2Client = new google.auth.OAuth2(
