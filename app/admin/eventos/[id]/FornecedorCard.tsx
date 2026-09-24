@@ -87,6 +87,7 @@ export default function FornecedorCard({
     })
   }
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const count = f.funcionarios?.[0]?.count ?? 0
@@ -110,16 +111,14 @@ export default function FornecedorCard({
   }
 
   const confirmarExclusao = () => {
+    setErroExclusao(null)
     startTransition(async () => {
-      try {
-        await deletarFornecedor(f.id, eventoId)
-        router.refresh()
+      const r = await deletarFornecedor(f.id, eventoId)
+      // Sucesso navega sozinho (redirect na action) — só chega aqui de volta
+      // quando `r` veio preenchido, ou seja, quando falhou.
+      if (r?.error) {
         setConfirmOpen(false)
-      } catch (e: unknown) {
-        // A action recusa excluir setor com supervisor vinculado, e a mensagem
-        // dela explica o porquê — repassar "Erro ao excluir" perderia isso.
-        setConfirmOpen(false)
-        alert(e instanceof Error ? e.message : 'Erro ao excluir setor')
+        setErroExclusao(r.error)
       }
     })
   }
@@ -233,6 +232,12 @@ export default function FornecedorCard({
       {erroLink && (
         <div className="px-4 py-2 bg-red-50 border-t border-red-200">
           <p className="text-red-600 text-2xs">{erroLink}</p>
+        </div>
+      )}
+
+      {erroExclusao && (
+        <div className="px-4 py-2 bg-red-50 border-t border-red-200">
+          <p className="text-red-600 text-2xs">{erroExclusao}</p>
         </div>
       )}
 

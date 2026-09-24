@@ -1483,7 +1483,19 @@ export async function gerarLinkDeAcesso(perfilId: string) {
 }
 
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
-export async function editarSupervisor(id: string, formData: FormData) {
+export async function editarSupervisor(id: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    await editarSupervisorOuLanca(id, formData)
+    return {}
+  } catch (e) {
+    // Mesmo cuidado de `criarSupervisor`: sem isto, o Next mascara a
+    // mensagem em produção e o formulário mostra "página desatualizada" em
+    // vez do motivo de verdade — achado real em produção (24/09/2026).
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<void> {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
 
@@ -2216,25 +2228,39 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
 
-export async function deletarFornecedor(id: string, eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
-  // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
-  // checagem é a que vale: esconder o botão não impede a chamada direta.
-  const perfilExclusao = await getPerfil()
-  if (!podeExcluir(perfilExclusao)) {
-    throw new Error('Apenas o master pode excluir. Você pode desativar, que é reversível.')
-  }
-  const db = supabaseAdmin
+/**
+ * `redirect()` fica FORA do try/catch de propósito: ele funciona lançando
+ * uma exceção especial (`NEXT_REDIRECT`) que o próprio Next intercepta — se
+ * estivesse dentro do try, o catch abaixo confundiria isso com um erro de
+ * verdade e devolveria `{error}` em vez de navegar. Mesmo cuidado do resto
+ * desta rodada de correções: em produção o Next mascara toda mensagem de
+ * exceção que sai de uma Server Action, então motivos específicos como
+ * "tem supervisor vinculado" viravam "página desatualizada" — achado real
+ * em produção (24/09/2026).
+ */
+export async function deletarFornecedor(id: string, eventoId: string): Promise<{ error?: string } | void> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    // Exclusão é só do master (ver `podeExcluir` em lib/permissions). Esta
+    // checagem é a que vale: esconder o botão não impede a chamada direta.
+    const perfilExclusao = await getPerfil()
+    if (!podeExcluir(perfilExclusao)) {
+      return { error: 'Apenas o master pode excluir. Você pode desativar, que é reversível.' }
+    }
+    const db = supabaseAdmin
 
-  // Setor com supervisores vinculados não pode ser excluído (teriam que ser
-  // realocados ou removidos primeiro)
-  const { data: supervisores } = await db.from('perfis').select('id').eq('fornecedor_id', id).limit(1)
-  if (supervisores && supervisores.length) {
-    throw new Error('Este setor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o setor.')
-  }
+    // Setor com supervisores vinculados não pode ser excluído (teriam que ser
+    // realocados ou removidos primeiro)
+    const { data: supervisores } = await db.from('perfis').select('id').eq('fornecedor_id', id).limit(1)
+    if (supervisores && supervisores.length) {
+      return { error: 'Este setor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o setor.' }
+    }
 
-  await db.from('fornecedores').delete().eq('id', id)
-  revalidatePath(`/admin/eventos/${eventoId}`)
+    await db.from('fornecedores').delete().eq('id', id)
+    revalidatePath(`/admin/eventos/${eventoId}`)
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
   redirect(`/admin/eventos/${eventoId}`)
 }
 

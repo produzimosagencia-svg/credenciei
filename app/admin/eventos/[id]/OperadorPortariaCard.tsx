@@ -177,7 +177,8 @@ function ModalOperador({
     startTransition(async () => {
       try {
         if (editando) {
-          await editarSupervisor(operador!.id, formData)
+          const r = await editarSupervisor(operador!.id, formData)
+          if (r?.error) { setErro(r.error); return }
           router.refresh()
           onFechar()
         } else {
