@@ -1517,6 +1517,36 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   const email = cpfParaEmail(cpf)
 
   /*
+   * O CPF digitado já é de OUTRO perfil (não deste que está sendo editado)?
+   *
+   * Achado real (24/09/2026): o Juan tentou editar o supervisor de um setor
+   * pro próprio CPF — ele é master, ajuda pessoalmente em alguns eventos —
+   * e a tentativa de trocar o e-mail no Auth falhava com erro técnico
+   * genérico, porque aquele e-mail (derivado do CPF) já era da conta master
+   * dele. Master/admin não precisa de um SEGUNDO login pra ajudar num
+   * setor: em vez de tentar duplicar/roubar a conta, só vira mais um
+   * vínculo de supervisão em cima da conta que já existe — a conta em si
+   * (role, e-mail, senha) não muda nada.
+   */
+  const { data: outroComEsteCpf } = await admin
+    .from('perfis').select('id, nome, role').eq('cpf', cpf).neq('id', id).maybeSingle()
+  if (outroComEsteCpf) {
+    if (outroComEsteCpf.role === 'master' || outroComEsteCpf.role === 'admin') {
+      if (alvo.fornecedor_id) {
+        await admin.from('supervisor_setores')
+          .upsert({ perfil_id: outroComEsteCpf.id, fornecedor_id: alvo.fornecedor_id }, { onConflict: 'perfil_id,fornecedor_id', ignoreDuplicates: true })
+      }
+      revalidatePath('/admin/usuarios')
+      if (alvo.fornecedor_id) {
+        const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
+        if (fornecedor) revalidatePath(`/admin/eventos/${fornecedor.evento_id}`)
+      }
+      return
+    }
+    throw new Error(`Este CPF já pertence a ${outroComEsteCpf.nome} (${ROLE_LABELS[outroComEsteCpf.role as Role] ?? outroComEsteCpf.role}). Para reatribuir um supervisor já existente, use "Adicionar supervisor" no card do setor em vez de editar aqui.`)
+  }
+
+  /*
    * NÃO MEXER NO E-MAIL QUANDO ELE NÃO MUDOU.
    *
    * Isto reescrevia o e-mail no Auth em TODA edição — mesmo salvando só o
