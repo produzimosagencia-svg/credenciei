@@ -248,8 +248,9 @@ export default async function EventoPage({
   const supervisoresPorFornecedor: Record<string, SupervisorDoCard[]> = {}
   for (const linha of supervisoresRows ?? []) {
     const p = (linha as unknown as { fornecedor_id: string; perfis: SupervisorDoCard & { role?: string } }).perfis
-    // O vínculo sobrevive à mudança de papel; o card é de supervisor.
-    if (!p || (p.role && p.role !== 'supervisor')) continue
+    // Qualquer papel entra: desde 24/09/2026 master/admin/operador podem
+    // supervisionar um setor sem virar outra conta (ver criarSupervisorOuLanca).
+    if (!p) continue
     const lista = (supervisoresPorFornecedor[linha.fornecedor_id as string] ??= [])
     if (!lista.some(s => s.id === p.id)) lista.push(p)
   }

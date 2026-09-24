@@ -476,6 +476,17 @@ async function nomeDosSetores(perfilId: string, fornecedorIdNovo: string): Promi
   return 'vários setores'
 }
 
+/** Esta pessoa cobre algum setor de um evento desta organização? */
+async function supervisionaSetorDaOrganizacao(perfilId: string, organizacaoId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('supervisor_setores')
+    .select('fornecedor_id, fornecedores!inner(eventos!inner(organizacao_id))')
+    .eq('perfil_id', perfilId)
+    .eq('fornecedores.eventos.organizacao_id', organizacaoId)
+    .limit(1)
+  return !!data?.length
+}
+
 async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string) {
   const { error } = await supabaseAdmin
     .from('supervisor_setores')
@@ -620,23 +631,39 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     .eq('cpf', cpf)
     .maybeSingle()
   if (existente) {
-    if (existente.role !== 'supervisor') {
-      throw new Error('Este CPF já pertence a outro tipo de acesso no sistema.')
-    }
     /*
-     * Supervisor de OUTRA organização NÃO bloqueia — regra do Juan
-     * (24/09/2026, três casos reais no mesmo dia): a mesma pessoa trabalha
-     * em eventos de organizações diferentes, inclusive ao mesmo tempo.
-     * O acesso de supervisor é por SETOR (`supervisor_setores` + o seletor
-     * "Meus setores"), não por organização — então somar o setor novo não
-     * tira dela os setores que já tinha na outra organização.
+     * CPF que já é OUTRO tipo de acesso (master, admin, operador de portão,
+     * suporte...) não bloqueia — regra do Juan (24/09/2026): a mesma pessoa
+     * pode supervisionar um setor sem perder o acesso que já tem. Ganha só
+     * o vínculo com o setor; a conta dela (papel, organização, e-mail,
+     * senha, nome) não é tocada — ela entra com o login que já usa.
      */
+    if (existente.role !== 'supervisor') {
+      await vincularSupervisorAoSetor(existente.id, fornecedorId)
+      after(() => registrarAuditoria({
+        perfil, acao: 'ALTERACAO_SUPERVISOR',
+        campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
+        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou este setor)`,
+        eventoId, organizacaoId: organizacaoId ?? undefined,
+      }))
+      revalidatePath('/admin/usuarios')
+      revalidatePath(`/admin/eventos/${eventoId}`)
+      return { ok: true as const, novo: false as const, usuario: cpf, avisado: false as const }
+    }
 
+    /*
+     * Supervisor de OUTRA organização também não bloqueia: a mesma pessoa
+     * trabalha em eventos de organizações diferentes, inclusive ao mesmo
+     * tempo. O acesso de supervisor é por SETOR (`supervisor_setores` + o
+     * seletor "Meus setores"), então somar o setor novo não tira os que ela
+     * já tinha. E a organização da conta NÃO é trocada — trocar tirava da
+     * organização anterior o poder de editar essa pessoa.
+     */
     const { error: erroAtualizacao } = await admin.from('perfis').update({
       nome,
       telefone,
       ativo,
-      organizacao_id: organizacaoId,
+      organizacao_id: existente.organizacao_id ?? organizacaoId,
       fornecedor_id: fornecedorId,
     }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
@@ -1469,10 +1496,19 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email').eq('id', id).single()
+  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email, role').eq('id', id).single()
   if (!alvo) throw new Error('Supervisor não encontrado')
   if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
-    throw new Error('Sem permissão sobre este supervisor')
+    /*
+     * Supervisor de outra organização que TAMBÉM cobre um setor desta: a
+     * organização da conta dele não muda mais ao ser escalado aqui (ver
+     * `criarSupervisorOuLanca`), então sem isto a organização que o
+     * escalou não conseguiria editá-lo. Só vale pra papel `supervisor` —
+     * conta master/admin/operador de fora continua fora do alcance.
+     */
+    const podeViaSetor = alvo.role === 'supervisor' && !!perfil!.organizacao_id
+      && await supervisionaSetorDaOrganizacao(id, perfil!.organizacao_id)
+    if (!podeViaSetor) throw new Error('Sem permissão sobre este supervisor')
   }
 
   const nome = ((formData.get('nome') as string) ?? '').trim()
