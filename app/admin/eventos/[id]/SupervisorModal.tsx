@@ -78,7 +78,8 @@ export default function SupervisorModal(props: Props) {
         if (isEditar) {
           await editarSupervisor(props.supervisor.id, formData)
         } else {
-          await criarSupervisor(props.fornecedorId, props.eventoId, formData)
+          const r = await criarSupervisor(props.fornecedorId, props.eventoId, formData)
+          if ('error' in r && r.error) { setErro(r.error); return }
         }
         setOpen(false)
         router.refresh()

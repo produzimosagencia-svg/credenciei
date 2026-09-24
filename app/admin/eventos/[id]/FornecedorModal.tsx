@@ -41,7 +41,8 @@ export default function FornecedorModal(props: Props) {
         if (isEditar) {
           await editarFornecedor((props as any).fornecedorId, props.eventoId, formData)
         } else {
-          await criarFornecedor(props.eventoId, formData)
+          const r = await criarFornecedor(props.eventoId, formData)
+          if (r?.error) { setErro(r.error); return }
         }
         setOpen(false)
         router.refresh()

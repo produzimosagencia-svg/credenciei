@@ -312,6 +312,7 @@ export default function FuncionarioDetalheModal({
     startTransitionSupervisor(async () => {
       try {
         const r = await criarSupervisor(fornecedorId, eventoId, dados)
+        if ('error' in r) { setErroSupervisor(r.error); return }
         setConfirmandoSupervisor(false)
         setOkSupervisor(
           r.novo

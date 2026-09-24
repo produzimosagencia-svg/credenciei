@@ -541,6 +541,21 @@ export async function situacaoDoAcesso(cpf: string): Promise<{ role: string | nu
  * existente).
  */
 export async function criarSupervisor(fornecedorId: string, eventoId: string, formData: FormData) {
+  try {
+    return await criarSupervisorOuLanca(fornecedorId, eventoId, formData)
+  } catch (e) {
+    // Nunca deixa escapar cru: em produção o Next mascara a mensagem de toda
+    // exceção que sai de uma Server Action (RSC error masking), e quem
+    // chama via formulário via um "página desatualizada" genérico em vez do
+    // motivo de verdade ("CPF já pertence a outro tipo de acesso", etc.) —
+    // foi o que aconteceu de verdade em produção em 24/09/2026. Os `throw`
+    // internos continuam existindo (é o jeito mais curto de sair cedo no
+    // meio da função), só não atravessam mais o limite da action.
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
   if (!perfil) throw new Error('Sem permissão para criar supervisores')
 
@@ -2049,7 +2064,19 @@ function parseValor(v: FormDataEntryValue | null): number | null {
  * primeiro CPF digitado errado deixaria na tela exatamente o que esta
  * mudança existe pra impedir: um setor sem ninguém respondendo por ele.
  */
-export async function criarFornecedor(eventoId: string, formData: FormData) {
+export async function criarFornecedor(eventoId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    await criarFornecedorOuLanca(eventoId, formData)
+    return {}
+  } catch (e) {
+    // Mesmo cuidado de `criarSupervisor`: sem isto, o Next mascara a
+    // mensagem em produção e o formulário mostra "página desatualizada" em
+    // vez do motivo de verdade — foi o que aconteceu de verdade (24/09/2026).
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Promise<void> {
   const perfilCriador = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
   const nomeFornecedor = formData.get('nome') as string
@@ -2104,7 +2131,7 @@ export async function criarFornecedor(eventoId: string, formData: FormData) {
     dadosSupervisor.set('cpf', supCpf)
     dadosSupervisor.set('telefone', supTelefone)
     try {
-      await criarSupervisor(novo.id, eventoId, dadosSupervisor)
+      await criarSupervisorOuLanca(novo.id, eventoId, dadosSupervisor)
     } catch (e) {
       // Desfaz o setor: melhor não existir do que existir sem responsável.
       await db.from('fornecedores').delete().eq('id', novo.id)

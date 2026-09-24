@@ -132,6 +132,7 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         form.set('telefone', fone)
         form.set('ativo', 'true')
         const resultado = await criarSupervisor(fornecedor_id, r.setor.evento_id, form)
+        if ('error' in resultado) return JSON.stringify({ ok: false, erro: resultado.error })
         const { data: supervisor } = await supabaseAdmin.from('perfis').select('id').eq('cpf', cpfLimpo).single()
 
         await registrarAuditoriaIA(perfil, 'criar_supervisor', {
