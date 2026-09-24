@@ -495,7 +495,7 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
 }
 
 /**
- * Esta pessoa JÁ supervisiona algum setor deste evento?
+ * Esta pessoa JÁ RECEBEU o aviso de escala deste evento?
  *
  * Serve para não repetir o WhatsApp. Escalar a mesma pessoa em três setores
  * do mesmo evento disparava três vezes as DUAS mensagens (aviso de escala +
@@ -507,18 +507,32 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
  * troca de setor dentro do próprio acesso (ver `trocarSetorAtivo` e o menu
  * "Meus setores").
  *
+ * Olha a MENSAGEM na fila, não o vínculo com o setor. Era o vínculo, e isso
+ * deixou o Erivelton sem link nenhum (24/09/2026): uma tentativa falhou no
+ * meio depois de gravar o vínculo e antes de agendar a mensagem, e a
+ * tentativa seguinte achou "já é deste evento" e pulou o aviso. Mensagem
+ * cancelada ou falhada não conta — aí ninguém foi avisado de verdade.
+ *
  * Erro de consulta devolve `false` — ou seja, avisa. Na dúvida, a mensagem a
  * mais incomoda; a de menos deixa alguém sem saber que foi escalado.
  */
-async function jaSupervisionaNesteEvento(perfilId: string, eventoId: string): Promise<boolean> {
+async function jaFoiAvisadoNesteEvento(telefone: string, eventoId: string): Promise<boolean> {
+  const digitos = telefone.replace(/\D/g, '')
+  if (!digitos) return false
   const { data, error } = await supabaseAdmin
-    .from('supervisor_setores')
-    .select('fornecedor_id, fornecedores!inner(evento_id)')
-    .eq('perfil_id', perfilId)
-    .eq('fornecedores.evento_id', eventoId)
-    .limit(1)
+    .from('mensagens_agendadas')
+    .select('mensagem')
+    .eq('evento_id', eventoId)
+    .eq('tipo', 'disparo_manual')
+    .in('telefone', [digitos, `55${digitos}`])
+    .in('status', ['pendente', 'enviado'])
   if (error) return false
-  return !!data?.length
+  // Qualquer uma das duas conta: supervisor novo recebe só o link de senha,
+  // quem já tinha conta recebe o aviso de escala.
+  return (data ?? []).some(m => {
+    const texto = String(m.mensagem ?? '')
+    return texto.includes('"supervisor_escalado_evento"') || texto.includes('"cadastro_supervisor_cpf_link"')
+  })
 }
 
 /**
@@ -639,6 +653,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
      * senha, nome) não é tocada — ela entra com o login que já usa.
      */
     if (existente.role !== 'supervisor') {
+      const jaAvisado = await jaFoiAvisadoNesteEvento(telefone, eventoId)
       await vincularSupervisorAoSetor(existente.id, fornecedorId)
       after(() => registrarAuditoria({
         perfil, acao: 'ALTERACAO_SUPERVISOR',
@@ -646,9 +661,33 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
         valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou este setor)`,
         eventoId, organizacaoId: organizacaoId ?? undefined,
       }))
+      /*
+       * Ninguém fica sem aviso — regra do Juan: supervisor sem o link do
+       * formulário da equipe trava a operação inteira do setor. Só o aviso
+       * de escala (que leva o link); o de senha não, porque ela já tem
+       * login e trocaria a senha de uma conta que não é de supervisor.
+       */
+      if (!jaAvisado) {
+        const setoresNaMensagem = await nomeDosSetores(existente.id, fornecedorId)
+        const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
+        await agendarTemplateSupervisor({
+          eventoId,
+          telefone,
+          template: 'supervisor_escalado_evento',
+          parametros: [
+            nome,
+            eventoDoFornecedor?.nome ?? 'Evento',
+            setoresNaMensagem,
+            eventoDoFornecedor?.data_inicio ? formatarBR(eventoDoFornecedor.data_inicio, 'completo') : 'a confirmar',
+            eventoDoFornecedor?.local?.trim() || 'a confirmar',
+            `${site}/login`,
+            `${site}/form/${fornecedor.token_formulario}`,
+          ],
+        })
+      }
       revalidatePath('/admin/usuarios')
       revalidatePath(`/admin/eventos/${eventoId}`)
-      return { ok: true as const, novo: false as const, usuario: cpf, avisado: false as const }
+      return { ok: true as const, novo: false as const, usuario: cpf, avisado: !jaAvisado }
     }
 
     /*
@@ -668,13 +707,9 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
 
-    /*
-     * ANTES de vincular: ela já cobria algum setor DESTE evento?
-     *
-     * Depois de `vincularSupervisorAoSetor` a resposta seria sempre "sim", e
-     * o aviso nunca mais sairia. A ordem aqui não é arbitrária.
-     */
-    const jaEraDesteEvento = await jaSupervisionaNesteEvento(existente.id, eventoId)
+    // Pela MENSAGEM de fato agendada/enviada, não pelo vínculo — ver o
+    // comentário de `jaFoiAvisadoNesteEvento` (caso do Erivelton).
+    const jaEraDesteEvento = await jaFoiAvisadoNesteEvento(telefone, eventoId)
 
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
     after(() => registrarAuditoria({
