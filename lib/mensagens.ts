@@ -827,6 +827,119 @@ export async function agendarCredenciamentoNegado(params: {
 }
 
 /**
+ * Contagem regressiva do aviso ao supervisor: dispara quando faltam
+ * exatamente estes números de dias para `eventos.data_inicio` — não é aviso
+ * diário. Template aprovado pelo Juan/sócio (24/09/2026) já escreve o corpo
+ * como "Faltam {{2}} para o evento", com exemplo "5 dias"/"1 dia" — os dois
+ * pontos abaixo batem com esse texto. Mudar a cadência é só editar este array.
+ */
+const DIAS_ANTES_ALERTA_SUPERVISOR_CREDENCIAMENTO = [5, 1] as const
+
+/**
+ * Horário do disparo no dia certo. PLACEHOLDER — nem o Juan nem o sócio
+ * definiram hora ainda, só a contagem de dias. Mesmo padrão de
+ * `HORA_AVISO_DIA_EVENTO`: uma constante só, fácil de trocar depois.
+ */
+const HORA_ALERTA_SUPERVISOR_CREDENCIAMENTO = '09:00'
+
+const prazoPorExtenso = (dias: number) => dias === 1 ? '1 dia' : `${dias} dias`
+const quantidadePorExtenso = (n: number) => n === 1 ? '1 pessoa' : `${n} pessoas`
+
+/**
+ * Agenda o aviso ao supervisor quando o evento dele entra num dos pontos de
+ * contagem regressiva (`DIAS_ANTES_ALERTA_SUPERVISOR_CREDENCIAMENTO`) E o
+ * setor dele ainda tem credenciamento pendente.
+ *
+ * Diferente dos outros `agendarX` deste arquivo (chamados no momento de um
+ * evento específico — cadastro, aprovação, negativa), este roda em VARREDURA
+ * PERIÓDICA: chamado a cada execução do cron de mensagens (ver
+ * app/api/cron/enviar-mensagens/route.ts). Chamar isto todo minuto não
+ * duplica nada — dedupe pelo índice único `(perfil_id, tipo, data_ref)` que
+ * os alertas de supervisor já usam (`sincronizarAgendamentos`): como cada
+ * ponto de contagem cai num dia calendário diferente, cada um vira sua
+ * própria linha, e reprocessar o mesmo dia várias vezes não duplica.
+ *
+ * Sem template aprovado ainda quando isto foi escrito: `montarEnvioTemplate`
+ * pode devolver `null` até a confirmação final — a linha fica agendada e
+ * nunca sai até lá, sem erro, sem reenvio malfeito.
+ */
+export async function agendarAlertasSupervisorCredenciamento(): Promise<void> {
+  if (desligado(await fluxosLigados(), 'alerta_supervisor_credenciamento')) return
+
+  const hoje = diaBRT()
+  const pontosDeContagem = DIAS_ANTES_ALERTA_SUPERVISOR_CREDENCIAMENTO.map(dias => {
+    const alvo = new Date(`${hoje}T00:00:00-03:00`)
+    alvo.setDate(alvo.getDate() + dias)
+    return { dias, dataAlvo: diaBRT(alvo) }
+  })
+
+  // Todo evento ativo que ainda não começou — filtra em memória pelo dia
+  // exato (diaBRT), não por comparação SQL direta: data_inicio é timestamptz,
+  // e é o mesmo helper usado em todo o resto do código pra normalizar fuso.
+  const { data: eventos } = await supabase
+    .from('eventos').select('id, nome, data_inicio').eq('ativo', true).gte('data_inicio', hoje)
+  if (!eventos?.length) return
+
+  const eventoPorContagem = new Map<string, { eventoId: string; eventoNome: string; dias: number }>()
+  for (const evento of eventos) {
+    const diaDoEvento = diaBRT(evento.data_inicio as string)
+    const ponto = pontosDeContagem.find(p => p.dataAlvo === diaDoEvento)
+    if (ponto) eventoPorContagem.set(evento.id as string, { eventoId: evento.id as string, eventoNome: evento.nome as string, dias: ponto.dias })
+  }
+  if (!eventoPorContagem.size) return
+
+  const eventoIds = [...eventoPorContagem.keys()]
+  const { data: pendentes } = await supabase
+    .from('funcionarios')
+    .select('fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('status_credenciamento', 'pendente')
+    .in('fornecedores.evento_id', eventoIds)
+  if (!pendentes?.length) return
+
+  const fornecedorIds = [...new Set(pendentes.map(p => p.fornecedor_id as string))]
+  const { data: supervisores } = await supabase
+    .from('perfis')
+    .select('id, telefone, fornecedor_id')
+    .eq('role', 'supervisor').eq('ativo', true)
+    .in('fornecedor_id', fornecedorIds)
+  // Mais de um supervisor ativo no mesmo setor: o alerta vai só pro primeiro,
+  // mesma limitação já aceita em `sincronizarAgendamentos` (a chave de
+  // dedupe é por perfil, notificar vários pediria redesenhá-la).
+  const supervisorPorFornecedor = new Map<string, { perfilId: string; telefone: string | null }>()
+  for (const s of supervisores ?? []) {
+    if (!supervisorPorFornecedor.has(s.fornecedor_id as string)) {
+      supervisorPorFornecedor.set(s.fornecedor_id as string, { perfilId: s.id, telefone: s.telefone })
+    }
+  }
+
+  const linhas = fornecedorIds
+    .map(fornecedorId => {
+      const funcionario = pendentes.find(p => p.fornecedor_id === fornecedorId)
+      const eventoId = (funcionario?.fornecedores as unknown as { evento_id: string } | null)?.evento_id
+      const contagem = eventoId ? eventoPorContagem.get(eventoId) : null
+      const supervisor = supervisorPorFornecedor.get(fornecedorId)
+      if (!contagem || !supervisor?.telefone) return null
+
+      const dataRef = diaBRT()
+      const agendadoPara = new Date(`${dataRef}T${HORA_ALERTA_SUPERVISOR_CREDENCIAMENTO}:00-03:00`)
+      // Cron já passou da hora hoje? Manda na hora mesmo, atrasado, em vez de
+      // pular o único dia em que esse ponto de contagem existe.
+      return {
+        evento_id: contagem.eventoId, perfil_id: supervisor.perfilId,
+        tipo: 'alerta_supervisor_credenciamento', data_ref: dataRef,
+        agendado_para: agendadoPara.toISOString(), telefone: supervisor.telefone,
+        mensagem: 'alerta de credenciamento pendente (montado no envio)',
+      }
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null)
+  if (!linhas.length) return
+
+  const { error } = await supabase.from('mensagens_agendadas')
+    .upsert(linhas, { onConflict: 'perfil_id,tipo,data_ref', ignoreDuplicates: true })
+  if (error) console.error('[mensagens] alerta_supervisor_credenciamento não agendou:', error.message)
+}
+
+/**
  * Coloca uma comunicação de supervisor na fila oficial, com retry, histórico
  * e status de entrega iguais aos demais disparos. `perfil_id` fica nulo para
  * permitir novas escalas da mesma pessoa em eventos diferentes.
@@ -1408,15 +1521,70 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   }
 
   /*
-   * Aviso ao supervisor: há credenciamento(s) pendente(s) no setor dele.
-   * SEM TEMPLATE APROVADO AINDA e SEM GATILHO DE DISPARO AINDA — reservado
-   * em 24/09/2026, a pedido do Juan, só pra travar o nome (ele cadastra o
-   * template amanhã). Falta decidir com ele: dispara na hora de cada
-   * cadastro pendente, ou em digest periódico por setor? Nada chama este
-   * tipo ainda, então `return null` aqui nunca é exercitado na prática.
+   * Contagem regressiva ao supervisor: "Faltam {{2}} para o evento {{3}}...
+   * pendente para: {{4}}" — corpo e variáveis definidos pelo sócio do Juan
+   * (24/09/2026). Botão de URL dinâmica pro painel de aprovações, com o id
+   * do evento como parâmetro do botão (numeração própria, separada do
+   * corpo) — ver `botaoParam` em lib/whatsapp-meta.ts.
+   *
+   * `{{2}}` (prazo) e `{{4}}` (quantidade) são recalculados aqui, não
+   * guardados no agendamento: `msg.data_ref` é o dia exato em que
+   * `agendarAlertasSupervisorCredenciamento` bateu um dos pontos de
+   * `DIAS_ANTES_ALERTA_SUPERVISOR_CREDENCIAMENTO`, e a diferença pra
+   * `eventos.data_inicio` reconstrói qual ponto foi sem precisar de coluna
+   * nova. A quantidade é sempre a contagem ATUAL de pendentes, não a de
+   * quando foi agendado (pode ter mudado entre a manhã e o envio).
+   *
+   * O GATILHO já roda de verdade (chamado a cada execução do cron — ver
+   * app/api/cron/enviar-mensagens/route.ts). Falta só a CONFIRMAÇÃO final de
+   * que o template foi aprovado na Meta — até lá, `return null` represa sem
+   * nunca tentar enviar contra um template que ainda não existe (mesmo
+   * cuidado de `veiculo_cadastrado` antes de ser ligado). Confirmado, a
+   * mudança é só apagar a linha `return null` logo abaixo.
    */
   if (msg.tipo === 'alerta_supervisor_credenciamento') {
     return null
+
+    if (!msg.perfil_id) return null
+    const [{ data: supervisor }, { data: evento }] = await Promise.all([
+      supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single(),
+      supabase.from('eventos').select('nome, data_inicio').eq('id', msg.evento_id).single(),
+    ])
+    const fornecedorId = supervisor?.fornecedor_id as string | undefined
+    if (!supervisor || !fornecedorId || !evento) return null
+
+    const { count } = await supabase
+      .from('funcionarios').select('id', { count: 'exact', head: true })
+      .eq('fornecedor_id', fornecedorId).eq('status_credenciamento', 'pendente')
+    const pendentes = count ?? 0
+    // Zero agora: resolveu sozinho entre o agendamento (de manhã) e o envio
+    // (na hora certa) — nada a avisar, não manda mensagem vazia.
+    if (!pendentes) return null
+
+    // `!` em vez de narrowing normal: este bloco é INTENCIONALMENTE morto
+    // (return null lá em cima) até a Meta aprovar, e o TS não propaga
+    // narrowing de control-flow dentro de código inalcançável — já validado
+    // pelo `if` acima, que roda de verdade assim que a linha for apagada.
+    const diasParaOEvento = Math.round(
+      (new Date(`${diaBRT(evento!.data_inicio as string)}T00:00:00-03:00`).getTime()
+        - new Date(`${msg.data_ref}T00:00:00-03:00`).getTime()) / (24 * 60 * 60 * 1000)
+    )
+
+    return {
+      template,
+      // Os 4 primeiros vão no corpo de verdade (ver QTD_VARIAVEIS_BODY em
+      // lib/whatsapp-meta.ts); o link só existe pra `renderizarMensagem`
+      // montar o texto livre da Evolution/log — no corpo da Meta quem leva o
+      // link é o BOTÃO, via `botaoParam`.
+      params: [
+        supervisor!.nome as string,
+        prazoPorExtenso(Math.max(diasParaOEvento, 0)),
+        evento!.nome as string,
+        quantidadePorExtenso(pendentes),
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/aprovacoes`,
+      ],
+      botaoParam: msg.evento_id,
+    }
   }
 
   return null

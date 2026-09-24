@@ -196,6 +196,21 @@ ${link}
 Vale conferir antes de encerrar a etapa. 🙏`,
 
   /*
+   * Mesmo texto do template aprovado na Meta (`alerta_supervisor_credenciamento`,
+   * definido pelo sócio do Juan) — só o botão de URL vira link inline, texto
+   * livre não tem botão. `link` é o 5º item de `params`; os 4 primeiros
+   * (nome, prazo, evento, quantidade) são os que também vão no corpo de
+   * verdade na Cloud API — ver `QTD_VARIAVEIS_BODY` em lib/whatsapp-meta.ts.
+   */
+  alerta_supervisor_credenciamento: ([nome, prazo, evento, quantidade, link]) =>
+`Olá, ${nome}! ⏰
+
+Faltam ${prazo} para o evento ${evento}. Na sua equipe, o credenciamento ainda está pendente para: ${quantidade}.
+
+Quanto antes for concluído, mais tranquila fica a entrada no dia. Veja quem falta:
+${link}`,
+
+  /*
    * O supervisor recebe NOME DE USUÁRIO, não e-mail: é assim que ele entra.
    * O endereço interno do banco de autenticação nunca aparece pra ele.
    */

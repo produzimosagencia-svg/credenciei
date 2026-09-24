@@ -42,6 +42,7 @@ const TEMPLATES_AUTENTICACAO = new Set([
  */
 const QTD_VARIAVEIS_BODY: Record<string, number> = {
   veiculo_cadastrado: 2,
+  alerta_supervisor_credenciamento: 4,
 }
 
 export type ResultadoEnvio = {
