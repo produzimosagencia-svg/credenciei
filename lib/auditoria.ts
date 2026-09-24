@@ -56,6 +56,7 @@ export const ROTULO_ORIGEM_CADASTRO: Record<string, string> = {
   formulario: 'Cadastro pelo link',
   portaria: 'Cadastro pela portaria (cartaz)',
   planilha: 'Importado por planilha',
+  supervisor: 'Crachá gerado automaticamente (Meu Crachá)',
 }
 
 /**
@@ -70,7 +71,7 @@ export async function registrarCadastroFuncionario(args: {
   nome: string
   eventoId: string
   organizacaoId?: string | null
-  origem: 'formulario' | 'portaria' | 'planilha'
+  origem: 'formulario' | 'portaria' | 'planilha' | 'supervisor'
 }): Promise<void> {
   try {
     const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? null

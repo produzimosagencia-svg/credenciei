@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge,
+  FileText, Gauge, IdCard,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -98,6 +98,18 @@ function gruposPara(perfil: Perfil): Grupo[] {
       href: '/admin/aprovacoes', label: 'Aguardando aprovação', icon: ClipboardCheck,
       badge: <BadgeAprovacoesPendentes />,
     })
+  }
+  /*
+   * "Meu Crachá" — pedido do Juan, 24/09/2026: quem trabalha o evento
+   * também se credencia nele, mesmo QR e mesma `/credential/[token]` de
+   * todo mundo. Supervisor vai direto (já tem setor fixo); admin escolhe
+   * evento e setor antes (`garantirMeuCracha`), por isso o rótulo muda —
+   * "Crachá Admin" pra deixar claro que é ele mesmo escolhendo onde entra.
+   */
+  if (role === 'supervisor') {
+    doEvento.push({ href: '/admin/meu-cracha', label: 'Meu Crachá', icon: IdCard })
+  } else if (role === 'admin') {
+    doEvento.push({ href: '/admin/meu-cracha', label: 'Crachá Admin', icon: IdCard })
   }
   /*
    * "Criar porteiro" é o acesso que o sistema chama de operador de portão —

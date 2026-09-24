@@ -3198,6 +3198,85 @@ export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; no
     .sort((a, b) => b.pendentes - a.pendentes)
 }
 
+/**
+ * "Meu Crachá" — pedido do Juan, 24/09/2026: o supervisor também precisa se
+ * credenciar no evento que supervisiona, pra passar pela portaria como
+ * qualquer outra pessoa da equipe. Sem template de WhatsApp novo, sem
+ * disparo novo, sem fluxo de aprovação novo, sem modelo de QR novo — é a
+ * mesma linha em `funcionarios`, o mesmo QR, a mesma `/credential/[token]`
+ * já usados por todo mundo.
+ *
+ * Ampliado em 24/09/2026 pro admin também: ele não tem um `fornecedor_id`
+ * fixo (cobre o evento inteiro, não um setor), então quem chama por ele
+ * escolhe o setor antes (tela `/admin/meu-cracha`) e manda o `fornecedorId`.
+ * O supervisor continua sem escolher nada — usa o setor onde já está.
+ *
+ * Sob demanda: só cria o crachá quando a pessoa pedir pra ver o dela. Se já
+ * existir um (mesmo CPF, mesmo evento — inclusive se ela já tinha virado
+ * colaborador de outro setor antes), reaproveita em vez de duplicar, mesma
+ * regra anti-duplicidade de `cadastrarFuncionarioPublico`.
+ */
+export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToken: string } | { error: string }> {
+  const perfil = await getPerfil()
+  if (!perfil) return { error: 'Sem permissão.' }
+  if (!perfil.cpf) return { error: 'Seu cadastro não tem CPF. Fale com o suporte.' }
+
+  let alvoFornecedorId: string
+  if (perfil.role === 'supervisor') {
+    if (!perfil.fornecedor_id) return { error: 'Você ainda não está vinculado a um setor.' }
+    alvoFornecedorId = perfil.fornecedor_id
+  } else if (perfil.role === 'admin' || ehMaster(perfil.role)) {
+    if (!fornecedorId) return { error: 'Escolha o setor.' }
+    alvoFornecedorId = fornecedorId
+  } else {
+    return { error: 'Sem permissão.' }
+  }
+
+  const { data: fornecedor } = await supabaseAdmin
+    .from('fornecedores')
+    .select('id, evento_id, eventos!inner(organizacao_id)')
+    .eq('id', alvoFornecedorId)
+    .single()
+  if (!fornecedor) return { error: 'Setor não encontrado.' }
+
+  // Admin só num setor de evento da própria organização — o master, de qualquer uma.
+  if (perfil.role === 'admin') {
+    const orgDoEvento = (fornecedor.eventos as unknown as { organizacao_id: string }).organizacao_id
+    if (orgDoEvento !== perfil.organizacao_id) return { error: 'Sem permissão sobre este setor.' }
+  }
+
+  const { data: existentes } = await supabaseAdmin
+    .from('funcionarios')
+    .select('qr_token, fornecedores!inner(evento_id)')
+    .eq('cpf', perfil.cpf)
+    .eq('fornecedores.evento_id', fornecedor.evento_id)
+    .limit(1)
+  if (existentes && existentes.length) return { qrToken: existentes[0].qr_token as string }
+
+  const { data: novo, error } = await supabaseAdmin.from('funcionarios').insert([{
+    fornecedor_id: alvoFornecedorId,
+    nome: perfil.nome,
+    cpf: perfil.cpf,
+    telefone: perfil.telefone ?? '',
+    cargo: perfil.role === 'supervisor' ? 'Supervisor' : 'Administração',
+    ativo: true,
+    consentimento_base: true,
+    consentimento_em: new Date().toISOString(),
+    origem: 'supervisor',
+  }]).select('id, qr_token').single()
+  if (error || !novo) return { error: mensagemAmigavel(error) }
+
+  after(() => registrarCadastroFuncionario({
+    funcionarioId: novo.id,
+    nome: perfil.nome,
+    eventoId: fornecedor.evento_id,
+    organizacaoId: perfil.organizacao_id,
+    origem: 'supervisor',
+  }))
+
+  return { qrToken: novo.qr_token }
+}
+
 async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
