@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { registrarPresencaQR } from '@/lib/actions'
+import { registrarPresencaQR, conferirVeiculoPorQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import { ScanLine, CameraOff, Copy, CheckCheck } from 'lucide-react'
@@ -10,9 +10,14 @@ type ScanResult = {
   success: boolean
   message: string
   funcionario?: { nome: string; cargo: string | null }
+  /** QR de veículo, não de funcionário — mesmo scanner, os dois tipos (24/09/2026). */
+  veiculo?: { placa: string; modelo: string; condutorNome: string }
   faseErrada?: { doQR: string; deHoje: string }
   momento?: 'entrada' | 'meio' | 'fim'
 }
+
+/** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
+const ehQrDeVeiculo = (texto: string) => /\/veiculo\/[A-Za-z0-9_-]{10,}/.test(texto)
 
 export default function ScannerView({
   eventos,
@@ -50,7 +55,9 @@ export default function ScannerView({
      */
     let resultado: ScanResult | null = null
     try {
-      resultado = await registrarPresencaQR(eventoIdRef.current, data)
+      resultado = ehQrDeVeiculo(data)
+        ? await conferirVeiculoPorQR(eventoIdRef.current, data)
+        : await registrarPresencaQR(eventoIdRef.current, data)
     } catch {
       resultado = { success: false, message: 'Erro ao processar QR Code' }
     }
@@ -134,7 +141,7 @@ export default function ScannerView({
 
   const overlayColor = !result?.success
     ? 'bg-red-600'
-    : result?.momento === 'entrada'
+    : result?.veiculo || result?.momento === 'entrada'
     ? 'bg-green-600'
     : 'bg-brand-500'
 
@@ -225,7 +232,7 @@ export default function ScannerView({
       {!erroCamera && (
         <p className="text-slate-500 text-sm flex items-center gap-2">
           <ScanLine className="w-4 h-4" />
-          Aponte a câmera para o QR Code da credencial
+          Aponte a câmera para o QR da credencial ou do veículo
         </p>
       )}
 
@@ -236,7 +243,7 @@ export default function ScannerView({
         >
           <div className="text-white text-center px-8">
             <div className="text-8xl mb-6">
-              {result.success ? (result.momento === 'entrada' ? '✓' : '↩') : '✕'}
+              {result.success ? (result.veiculo || result.momento === 'entrada' ? '✓' : '↩') : '✕'}
             </div>
             <p className="text-3xl font-bold mb-2">{result.message}</p>
             {result.funcionario && (
@@ -244,6 +251,14 @@ export default function ScannerView({
                 <p className="text-xl font-semibold mt-4 opacity-90">{result.funcionario.nome}</p>
                 <p className="text-base opacity-70 mt-1">
                   {result.funcionario.cargo ? `${result.funcionario.cargo} • ` : ''}                </p>
+              </>
+            )}
+            {result.veiculo && (
+              <>
+                <p className="text-xl font-semibold mt-4 opacity-90 font-mono">{result.veiculo.placa}</p>
+                <p className="text-base opacity-70 mt-1">
+                  {result.veiculo.modelo} • {result.veiculo.condutorNome}
+                </p>
               </>
             )}
 

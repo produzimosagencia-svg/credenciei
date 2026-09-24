@@ -3743,6 +3743,8 @@ export type ResultadoScan = {
   success: boolean
   message: string
   funcionario?: { nome: string; cargo: string | null }
+  /** Preenchido quando o QR lido é de VEÍCULO, não de funcionário — mesmo scanner, os dois tipos. */
+  veiculo?: { placa: string; modelo: string; condutorNome: string }
   momento?: MomentoPresenca
   /** Já havia registro desta etapa no dia — nada foi gravado agora. */
   jaRegistrado?: boolean
@@ -6418,6 +6420,61 @@ export async function excluirVeiculo(veiculoId: string, eventoId: string) {
   if (error) return { error: mensagemAmigavel(error) }
   revalidatePath('/admin/veiculos')
   return { ok: true as const }
+}
+
+/**
+ * O QR do veículo não é um crachá — não é `c2/c3/c4` assinado, é um link
+ * opaco (`/veiculo/{token}`, ver `lib/actions.ts::montarQrVeiculo`). Não passa
+ * por `lerCodigoQR`; a leitura é achar o `qr_token` na URL escaneada.
+ */
+function extrairQrTokenDeVeiculo(bruto: string): string | null {
+  const m = (bruto ?? '').match(/\/veiculo\/([A-Za-z0-9_-]{10,})/)
+  return m?.[1] ?? null
+}
+
+/**
+ * Confere um veículo pelo mesmo scanner que lê o crachá do funcionário
+ * (`app/scan/ScannerView.tsx`) — pedido do Juan (24/09/2026): quem está no
+ * portão não pode precisar de uma tela separada pra cada tipo de QR.
+ *
+ * Usa `podeEscanear`, a MESMA guarda de `registrarPresencaQR` — não
+ * `exigirAcessoAVeiculos` (essa é pra CADASTRAR/gerenciar veículo, mais
+ * restrita; conferir na portaria é operação de quem já escaneia crachá).
+ *
+ * Não registra nada (veículo não bate ponto, ver upgrade-veiculos.sql) — só
+ * diz se pode entrar, igual a página pública `/veiculo/[token]`.
+ */
+export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
+
+  const token = extrairQrTokenDeVeiculo(qrData)
+  if (!token) return { success: false, message: 'QR Code fora do padrão.' }
+
+  const { data } = await supabaseAdmin
+    .from('veiculos')
+    .select('placa, modelo, condutor_nome, status, evento_id, funcionarios(nome)')
+    .eq('qr_token', token)
+    .maybeSingle()
+  if (!data) return { success: false, message: 'Veículo não encontrado.' }
+  // Mesmo cuidado de exigirAcessoAVeiculos: o QR é de OUTRO evento não vale aqui.
+  if (data.evento_id !== eventoId) return { success: false, message: 'Este veículo não é deste evento.' }
+
+  const condutor = data.funcionarios as unknown as { nome: string } | { nome: string }[] | null
+  const condutorNome =
+    (data.condutor_nome as string | null)
+    ?? (Array.isArray(condutor) ? condutor[0]?.nome : condutor?.nome)
+    ?? 'Não informado'
+  const veiculo = { placa: data.placa as string, modelo: data.modelo as string, condutorNome }
+  const status = statusVeiculoValido(data.status as string)
+
+  if (status !== 'ativo') {
+    const motivo = status === 'pendente' ? 'Cadastro pendente de aprovação'
+      : status === 'bloqueado' ? 'Veículo bloqueado'
+      : 'Cadastro cancelado'
+    return { success: false, message: motivo, veiculo }
+  }
+  return { success: true, message: 'Pode entrar', veiculo }
 }
 
 // ─── Permissões por organização (tela de Configurações) ──────────────────────
