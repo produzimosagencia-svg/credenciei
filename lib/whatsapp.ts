@@ -64,9 +64,11 @@ export async function enviarMensagem(params: {
   parametros: string[]
   texto: string
   phoneNumberId?: string
+  /** Parâmetro do botão de URL dinâmica, quando o template tem um — separado do corpo. */
+  botaoParam?: string
 }): Promise<ResultadoEnvio> {
   return provedor() === 'meta'
-    ? enviarTemplate(params.numero, params.template, params.parametros, params.phoneNumberId)
+    ? enviarTemplate(params.numero, params.template, params.parametros, params.phoneNumberId, params.botaoParam)
     : enviarTextoEvolution(params.numero, params.texto)
 }
 

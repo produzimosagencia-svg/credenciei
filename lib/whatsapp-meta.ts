@@ -31,6 +31,19 @@ const TEMPLATES_AUTENTICACAO = new Set([
   'credenciais_supervisor_auth',
 ])
 
+/**
+ * Templates cujo `params` (vindo de `montarEnvioTemplate`) tem MAIS itens do
+ * que o corpo aprovado na Meta realmente usa — o resto existe só pra
+ * `renderizarMensagem` montar o texto livre da Evolution/log (ex.: o link
+ * completo, que no corpo da Meta não existe porque é o BOTÃO que carrega o
+ * link, com seu próprio parâmetro — ver `botaoParam` em `enviarTemplate`).
+ * Sem entrada aqui, usa `params.length` inteiro no corpo (comportamento de
+ * sempre).
+ */
+const QTD_VARIAVEIS_BODY: Record<string, number> = {
+  veiculo_cadastrado: 2,
+}
+
 export type ResultadoEnvio = {
   ok: boolean
   statusHttp: number
@@ -105,17 +118,22 @@ export async function enviarTemplate(
   template: string,
   params: string[],
   phoneNumberId?: string,
+  botaoParam?: string,
 ): Promise<ResultadoEnvio> {
-  const parametrosBody = params.map(p => ({ type: 'text', text: String(p ?? '') }))
-  const componentes = params.length
+  const qtdBody = QTD_VARIAVEIS_BODY[template] ?? params.length
+  const parametrosBody = params.slice(0, qtdBody).map(p => ({ type: 'text', text: String(p ?? '') }))
+  // `botaoParam` explícito manda; sem ele, templates de autenticação repetem
+  // o código do corpo no botão (comportamento de sempre, preservado).
+  const paramBotao = botaoParam ?? (TEMPLATES_AUTENTICACAO.has(template) ? params[0] : undefined)
+  const componentes = parametrosBody.length || paramBotao
     ? [
-        { type: 'body', parameters: parametrosBody },
-        ...(TEMPLATES_AUTENTICACAO.has(template) && params[0]
+        ...(parametrosBody.length ? [{ type: 'body', parameters: parametrosBody }] : []),
+        ...(paramBotao
           ? [{
               type: 'button',
               sub_type: 'url',
               index: '0',
-              parameters: [{ type: 'text', text: String(params[0]) }],
+              parameters: [{ type: 'text', text: String(paramBotao) }],
             }]
           : []),
       ]

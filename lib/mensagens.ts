@@ -188,13 +188,13 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.
  * para `http://localhost:3000` numa configuração real, e nesse dia todo mundo
  * teria recebido um endereço que não abre fora da máquina do desenvolvedor.
  */
-function linkDaCredencial(qrToken: unknown, contexto: string): string | null {
+function linkDaCredencial(qrToken: unknown, contexto: string, segmento: 'credential' | 'veiculo' = 'credential'): string | null {
   const token = typeof qrToken === 'string' ? qrToken.trim() : ''
   if (!token) {
-    console.error(`[mensagens] ${contexto}: funcionário sem qr_token — envio cancelado`)
+    console.error(`[mensagens] ${contexto}: sem qr_token — envio cancelado`)
     return null
   }
-  const url = `${SITE_URL}/credential/${token}`
+  const url = `${SITE_URL}/${segmento}/${token}`
   if (!url.startsWith('https://')) {
     console.error(`[mensagens] ${contexto}: NEXT_PUBLIC_SITE_URL não é https (${SITE_URL}) — envio cancelado`)
     return null
@@ -770,11 +770,6 @@ export async function agendarBoasVindasFuncionario(params: {
  * Agenda a confirmação de cadastro de veículo — mesmo molde de
  * `agendarBoasVindasFuncionario`, mas apontando pro veículo, não pro
  * funcionário (o condutor pode nem ser da equipe).
- *
- * Sem template aprovado ainda: `montarEnvioTemplate` devolve `null` pra
- * `veiculo_cadastrado`, então a linha fica `pendente` na fila até o Juan
- * mandar o nome do template — nunca falha, nunca derruba o cadastro do
- * veículo, que já terminou antes desta chamada.
  */
 export async function agendarConfirmacaoVeiculo(params: {
   eventoId: string
@@ -1065,7 +1060,7 @@ async function limiteDaEtapa(
  * pré-computado no agendamento. Retorna null quando a mensagem deve ser
  * cancelada (ex.: alerta ao supervisor sem ninguém pendente).
  */
-async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[]; phoneNumberId?: string } | null> {
+async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[]; phoneNumberId?: string; botaoParam?: string } | null> {
   const template = TEMPLATE_POR_TIPO[msg.tipo]
 
   /*
@@ -1328,17 +1323,39 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   }
 
   /*
-   * Confirmação de cadastro de veículo — SEM TEMPLATE APROVADO AINDA.
+   * Confirmação de cadastro de veículo — template `veiculo_cadastrado`
+   * aprovado na Meta (24/09/2026): corpo com nome do condutor + evento,
+   * botão "Ver instruções de acesso" com URL dinâmica pro QR do veículo.
    *
-   * O Juan vai mandar o nome e a ordem dos parâmetros do template oficial
-   * depois. Até lá, `return null` cancela o envio sem erro (mesma
-   * convenção de "sem link, sem envio" usada em `linkDaCredencial`) — a
-   * linha fica pendente na fila, o cadastro do veículo não é afetado, e
-   * quando o template chegar é só preencher este bloco com
-   * placa/modelo/condutor/link de `/veiculo/{qr_token}`.
+   * `params` carrega os 2 do corpo (nessa ordem) MAIS o link completo, pra
+   * `renderizarMensagem` montar o texto livre da Evolution/log — mas só os
+   * 2 primeiros vão no corpo de verdade quando sai pela Cloud API (ver
+   * `QTD_VARIAVEIS_BODY` em lib/whatsapp-meta.ts). `botaoParam` é o token
+   * cru, separado do link: é o que a Meta espera no componente do botão.
    */
   if (msg.tipo === 'veiculo_cadastrado') {
-    return null
+    if (!msg.veiculo_id) return null
+    const [{ data: veiculo }, { data: evento }] = await Promise.all([
+      supabase.from('veiculos').select('condutor_nome, qr_token, funcionarios(nome)').eq('id', msg.veiculo_id).single(),
+      supabase.from('eventos').select('nome').eq('id', msg.evento_id).single(),
+    ])
+    if (!veiculo || !evento) return null
+
+    const condutor = veiculo.funcionarios as unknown as { nome: string } | { nome: string }[] | null
+    const condutorNome =
+      (veiculo.condutor_nome as string | null)
+      ?? (Array.isArray(condutor) ? condutor[0]?.nome : condutor?.nome)
+      ?? 'Não informado'
+
+    const token = typeof veiculo.qr_token === 'string' ? veiculo.qr_token.trim() : ''
+    const link = linkDaCredencial(token, 'veiculo_cadastrado', 'veiculo')
+    if (!link) return null
+
+    return {
+      template,
+      params: [condutorNome, evento.nome, link],
+      botaoParam: token,
+    }
   }
 
   return null
@@ -1432,6 +1449,7 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
           parametros: envio.params,
           texto,
           phoneNumberId: envio.phoneNumberId,
+          botaoParam: envio.botaoParam,
         })
 
   await supabase.from('mensagens_log').insert({

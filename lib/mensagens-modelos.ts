@@ -231,6 +231,22 @@ ${link}
 
 Este endereço é pessoal. Se você não reconhece esta confirmação, ignore a mensagem.`,
 
+  /*
+   * Mesmo texto aprovado na Meta (template `veiculo_cadastrado`) — só o
+   * botão de URL não existe em texto livre, então vira link inline. `link`
+   * é o 3º item de `params`; os 2 primeiros (nome, evento) são os únicos que
+   * também vão no corpo de verdade quando sai pela Cloud API — ver
+   * `QTD_VARIAVEIS_BODY` em lib/whatsapp-meta.ts.
+   */
+  veiculo_cadastrado: ([nome, evento, link]) =>
+`Olá, ${nome}! Tudo bem? 👋
+
+Aqui é a equipe do Credenciei. O cadastro do seu veículo 🚗 para o evento ${evento} foi concluído ✅
+
+Toque no link abaixo para ver as instruções de acesso. Guarde esta mensagem: você vai precisar delas no dia do evento.
+
+${link}`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 
