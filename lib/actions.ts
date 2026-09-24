@@ -1519,31 +1519,38 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   /*
    * O CPF digitado já é de OUTRO perfil (não deste que está sendo editado)?
    *
-   * Achado real (24/09/2026): o Juan tentou editar o supervisor de um setor
-   * pro próprio CPF — ele é master, ajuda pessoalmente em alguns eventos —
-   * e a tentativa de trocar o e-mail no Auth falhava com erro técnico
-   * genérico, porque aquele e-mail (derivado do CPF) já era da conta master
-   * dele. Master/admin não precisa de um SEGUNDO login pra ajudar num
-   * setor: em vez de tentar duplicar/roubar a conta, só vira mais um
-   * vínculo de supervisão em cima da conta que já existe — a conta em si
-   * (role, e-mail, senha) não muda nada.
+   * Achado real (24/09/2026, dois turnos seguidos): a mesma pessoa já pode
+   * ter outro tipo de acesso no sistema (master, admin, operador de portão,
+   * suporte...) e AINDA assim precisar ajudar como supervisora de um setor
+   * — o Juan mesmo é o exemplo (é master, e também precisa aparecer como
+   * supervisor quando vai pessoalmente a um evento). Ninguém deveria
+   * precisar de um SEGUNDO login pra isso: a regra é geral, não só pra
+   * master/admin — QUALQUER acesso existente ganha só mais um vínculo de
+   * supervisão (`supervisor_setores`) em cima da conta que já tem. Role,
+   * e-mail e senha da conta original nunca mudam.
+   *
+   * A ÚNICA exceção é quando o CPF já É de outro supervisor: aí existe um
+   * fluxo dedicado e mais completo pra isso (`criarSupervisorOuLanca`,
+   * atrás do botão "Adicionar supervisor"), que já trata organização
+   * diferente, mensagem de escala etc. — editar aqui não deveria duplicar
+   * essa lógica.
    */
   const { data: outroComEsteCpf } = await admin
     .from('perfis').select('id, nome, role').eq('cpf', cpf).neq('id', id).maybeSingle()
   if (outroComEsteCpf) {
-    if (outroComEsteCpf.role === 'master' || outroComEsteCpf.role === 'admin') {
-      if (alvo.fornecedor_id) {
-        await admin.from('supervisor_setores')
-          .upsert({ perfil_id: outroComEsteCpf.id, fornecedor_id: alvo.fornecedor_id }, { onConflict: 'perfil_id,fornecedor_id', ignoreDuplicates: true })
-      }
-      revalidatePath('/admin/usuarios')
-      if (alvo.fornecedor_id) {
-        const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
-        if (fornecedor) revalidatePath(`/admin/eventos/${fornecedor.evento_id}`)
-      }
-      return
+    if (outroComEsteCpf.role === 'supervisor') {
+      throw new Error(`Este CPF já pertence a ${outroComEsteCpf.nome}, supervisor(a). Para reatribuir um supervisor já existente, use "Adicionar supervisor" no card do setor em vez de editar aqui.`)
     }
-    throw new Error(`Este CPF já pertence a ${outroComEsteCpf.nome} (${ROLE_LABELS[outroComEsteCpf.role as Role] ?? outroComEsteCpf.role}). Para reatribuir um supervisor já existente, use "Adicionar supervisor" no card do setor em vez de editar aqui.`)
+    if (alvo.fornecedor_id) {
+      await admin.from('supervisor_setores')
+        .upsert({ perfil_id: outroComEsteCpf.id, fornecedor_id: alvo.fornecedor_id }, { onConflict: 'perfil_id,fornecedor_id', ignoreDuplicates: true })
+    }
+    revalidatePath('/admin/usuarios')
+    if (alvo.fornecedor_id) {
+      const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
+      if (fornecedor) revalidatePath(`/admin/eventos/${fornecedor.evento_id}`)
+    }
+    return
   }
 
   /*
