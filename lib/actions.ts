@@ -217,6 +217,38 @@ function janelasDoForm(formData: FormData) {
   }
 }
 
+/**
+ * Os dias principais EXTRAS do formulário de criação — "o evento tem mais
+ * de uma noite?" (`DiasPrincipaisExtrasNovo.tsx`). Cada campo usa o MESMO
+ * `name` em todos os blocos; `getAll` devolve um por bloco, na ordem do DOM.
+ * Blocos totalmente vazios (usuário clicou "adicionar" e não preencheu nada)
+ * são ignorados — só vira erro se preencheu PARTE de um bloco.
+ */
+function diasPrincipaisExtrasDoForm(formData: FormData): DiaPrincipalExtra[] {
+  const entradaInicio = formData.getAll('extra_entrada_inicio') as string[]
+  const entradaFim = formData.getAll('extra_entrada_fim') as string[]
+  const saidaInicio = formData.getAll('extra_saida_inicio') as string[]
+  const saidaFim = formData.getAll('extra_saida_fim') as string[]
+
+  const dias: DiaPrincipalExtra[] = []
+  for (let i = 0; i < entradaInicio.length; i++) {
+    const linha = {
+      entradaInicio: entradaInicio[i]?.trim() ?? '',
+      entradaFim: entradaFim[i]?.trim() ?? '',
+      saidaInicio: saidaInicio[i]?.trim() ?? '',
+      saidaFim: saidaFim[i]?.trim() ?? '',
+    }
+    if (!linha.entradaInicio && !linha.entradaFim && !linha.saidaInicio && !linha.saidaFim) continue
+    dias.push({
+      entradaInicio: linha.entradaInicio,
+      entradaFim: linha.entradaFim || undefined,
+      saidaInicio: linha.saidaInicio,
+      saidaFim: linha.saidaFim || undefined,
+    })
+  }
+  return dias
+}
+
 /** Campos da mensagem pré-evento (confirmação de escala via WhatsApp). */
 function preEventoDoForm(formData: FormData) {
   return {
@@ -1958,6 +1990,10 @@ export async function criarEvento(formData: FormData) {
   // nasce inutilizável — ninguém consegue bater ponto nele.
   await garantirDiaPrincipal(novo.id, data.data_inicio, data.data_fim)
 
+  // O evento tem mais de uma noite principal? (festival de 2+ dias)
+  const diasExtras = diasPrincipaisExtrasDoForm(formData)
+  if (diasExtras.length) await salvarDiasPrincipaisExtras(novo.id, diasExtras)
+
   // Cria planilha na pasta da organização no Drive
   try {
     const spreadsheetId = await criarPlanilhaEvento(nome, driveFolder)
@@ -3376,6 +3412,11 @@ export type DiaDoEvento = {
   cancelado: boolean
   /** Já tem batida registrada — não pode ser desmarcado sem perder a prova. */
   temBatidas: boolean
+  /** Só em dia principal EXTRA (o automático usa os campos únicos do evento). */
+  entradaInicio: string | null
+  entradaFim: string | null
+  saidaInicio: string | null
+  saidaFim: string | null
 }
 
 /**
@@ -3387,7 +3428,7 @@ export type DiaDoEvento = {
 export async function diasDoEvento(eventoId: string): Promise<DiaDoEvento[]> {
   const { data: dias } = await supabaseAdmin
     .from('jornada_dias')
-    .select('id, data, tipo, cancelado')
+    .select('id, data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
     .eq('evento_id', eventoId)
     .order('data')
 
@@ -3406,6 +3447,10 @@ export async function diasDoEvento(eventoId: string): Promise<DiaDoEvento[]> {
     tipo: (d.tipo as 'principal' | 'preparacao') ?? 'preparacao',
     cancelado: d.cancelado === true,
     temBatidas: batidos.has(d.data as string),
+    entradaInicio: (d.entrada_inicio as string | null) ?? null,
+    entradaFim: (d.entrada_fim as string | null) ?? null,
+    saidaInicio: (d.saida_inicio as string | null) ?? null,
+    saidaFim: (d.saida_fim as string | null) ?? null,
   }))
 }
 

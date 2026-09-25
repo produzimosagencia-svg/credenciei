@@ -4,12 +4,13 @@ import { editarEvento, diasDoEvento, obterConfiguracaoDoMeio } from '@/lib/actio
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
+import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, CalendarRange, MapPin, LogIn, LogOut, Save } from 'lucide-react'
+import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -224,6 +225,30 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               de custo mais cara do sistema: duas mensagens cobradas por
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
+        </div>
+
+        {/*
+          DIAS PRINCIPAIS EXTRAS — a segunda (ou terceira) noite de um
+          festival, cada uma com sua própria janela. Pedido do Juan,
+          25/09/2026, no meio do Pontal Weekend (evento real de duas noites).
+          Mini-formulário à parte (mesmo padrão de DiasDeTrabalho), porque
+          grava em `jornada_dias`, não nos campos únicos do evento acima.
+        */}
+        <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-dias-principais-extras">
+          <SectionTitle
+            title="Dias principais extras"
+            subtitle="O evento tem mais de uma noite? Configure a janela de cada uma"
+            icon={CalendarPlus}
+          />
+          <DiasPrincipaisExtras
+            eventoId={id}
+            iniciais={dias
+              .filter(d => d.tipo === 'principal' && d.data !== diaPrincipal)
+              .map(d => ({
+                data: d.data, entradaInicio: d.entradaInicio, entradaFim: d.entradaFim,
+                saidaInicio: d.saidaInicio, saidaFim: d.saidaFim, temBatidas: d.temBatidas,
+              }))}
+          />
         </div>
 
         {/*

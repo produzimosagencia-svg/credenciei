@@ -11,6 +11,7 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
+import DiasPrincipaisExtrasNovo from './DiasPrincipaisExtrasNovo'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-novo',
@@ -120,6 +121,8 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
       </Field>
 
       <JanelasHorario defaults={defaults} />
+
+      <DiasPrincipaisExtrasNovo />
 
       {/* Logo acima do botão: é onde o olho vai antes de salvar. */}
       <ConferenciaDeHorarios />

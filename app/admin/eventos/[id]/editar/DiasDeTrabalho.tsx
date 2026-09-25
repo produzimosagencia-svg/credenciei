@@ -49,6 +49,18 @@ export default function DiasDeTrabalho({
   diaPrincipal: string
   iniciais: DiaDoEvento[]
 }) {
+  /*
+   * Dias principais EXTRAS (a segunda noite de um festival, configurados em
+   * `DiasPrincipaisExtras.tsx`) também ficam travados aqui, com o mesmo
+   * visual do dia principal automático — nunca clicáveis pra virar
+   * preparação. É defesa em profundidade: o servidor (`salvarDiasDeTrabalho`)
+   * já recusa essa mudança sozinho, mas deixar o botão clicável aqui daria a
+   * impressão de que "desmarcar" faz algo, quando na prática seria ignorado.
+   */
+  const diasPrincipaisExtras = useMemo(
+    () => new Set(iniciais.filter(d => d.tipo === 'principal' && d.data !== diaPrincipal).map(d => d.data)),
+    [iniciais, diaPrincipal],
+  )
   const travados = useMemo(
     () => new Set(iniciais.filter(d => d.temBatidas && d.tipo !== 'principal').map(d => d.data)),
     [iniciais],
@@ -71,7 +83,7 @@ export default function DiasDeTrabalho({
   }, [diaPrincipal])
 
   const alternar = (dia: string) => {
-    if (dia === diaPrincipal || travados.has(dia)) return
+    if (dia === diaPrincipal || diasPrincipaisExtras.has(dia) || travados.has(dia)) return
     setFeito(null)
     setMarcados(atual => {
       const proximo = new Set(atual)
@@ -114,6 +126,7 @@ export default function DiasDeTrabalho({
         {grade.map(dia => {
           const { semana, curto } = rotulo(dia)
           const ehPrincipal = dia === diaPrincipal
+          const ehExtra = diasPrincipaisExtras.has(dia)
           const marcado = marcados.has(dia)
           const travado = travados.has(dia)
           // Montagem antes, desmontagem depois. Cada uma tem o seu QR Code, e
@@ -125,16 +138,18 @@ export default function DiasDeTrabalho({
               key={dia}
               type="button"
               onClick={() => alternar(dia)}
-              disabled={ehPrincipal || travado}
+              disabled={ehPrincipal || ehExtra || travado}
               title={
                 ehPrincipal
                   ? 'Dia principal do evento — definido pela data acima'
-                  : travado
-                    ? 'Já tem batidas registradas neste dia, por isso não pode ser desmarcado'
-                    : undefined
+                  : ehExtra
+                    ? 'Dia principal extra — configurado em "Dias principais extras", abaixo'
+                    : travado
+                      ? 'Já tem batidas registradas neste dia, por isso não pode ser desmarcado'
+                      : undefined
               }
               className={`w-[68px] py-2 rounded-xl border text-center transition-colors ${
-                ehPrincipal
+                ehPrincipal || ehExtra
                   ? 'bg-brand-500 border-brand-500 text-white cursor-default'
                   : marcado
                     ? desmonte
@@ -146,7 +161,7 @@ export default function DiasDeTrabalho({
               <span className="block text-2xs uppercase tracking-wide opacity-70">{semana}</span>
               <span className="block text-sm font-semibold tabular-nums">{curto}</span>
               <span className="block h-3.5 mt-0.5">
-                {ehPrincipal ? <Check className="w-3.5 h-3.5 mx-auto" />
+                {ehPrincipal || ehExtra ? <Check className="w-3.5 h-3.5 mx-auto" />
                   : travado ? <Lock className="w-3 h-3 mx-auto" />
                   : marcado ? <Check className="w-3.5 h-3.5 mx-auto" /> : null}
               </span>
