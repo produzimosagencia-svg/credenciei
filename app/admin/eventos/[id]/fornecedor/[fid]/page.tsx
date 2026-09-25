@@ -325,7 +325,11 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
                 credenciamento. Mostrar o botão para ele levaria a uma tela que
                 o expulsa — pior que não ter botão. */}
             {podeEscanear(perfil) && (
-              <Link href={`/scan?evento=${id}`} data-tutorial="setor-scan" className="btn btn-primario">
+              <Link
+                href={perfil?.role === 'operador_portao' ? `/scan?evento=${id}` : `/admin/scanner?evento=${id}`}
+                data-tutorial="setor-scan"
+                className="btn btn-primario"
+              >
                 <ScanLine className="w-3.5 h-3.5 shrink-0" /> Escanear QR
               </Link>
             )}

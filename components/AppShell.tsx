@@ -65,10 +65,14 @@ function gruposPara(perfil: Perfil): Grupo[] {
   // Na ordem do trabalho de um dia de evento: abre o painel, escaneia,
   // ajusta o evento, regulariza quem perdeu a batida, confere as atividades.
   const doEvento: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
-  // O scanner fica só com quem credencia. O supervisor cuida da equipe, não
-  // do portão — mesma separação que as mensagens já dizem à equipe.
+  /*
+   * O scanner fica com quem credencia. O supervisor só tem se for ligado em
+   * Configurações (e aí escaneia só a própria equipe). Abre DENTRO do painel,
+   * com o menu do lado (pedido do Juan, 25/09/2026) — menos pro operador de
+   * portão, cujo posto de trabalho é a tela cheia de `/scan` no celular.
+   */
   if (podeEscanear(perfil)) {
-    doEvento.push({ href: '/scan', label: 'Scanner', icon: ScanLine })
+    doEvento.push({ href: role === 'operador_portao' ? '/scan' : '/admin/scanner', label: 'Scanner', icon: ScanLine })
   }
   /*
    * Editar evento e Editar colaborador pedem o evento antes — mesmo padrão de

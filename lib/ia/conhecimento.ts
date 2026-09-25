@@ -224,9 +224,12 @@ Quem tem acesso ao sistema. Não confunde com a equipe do evento: quem só
 trabalha no dia aparece dentro do setor, não aqui. Ao criar um supervisor, ele
 recebe login e senha por WhatsApp e fica preso a um único setor.
 
-## Escanear QR (/scan)
-Leitor de QR. O botão Entrada/Saída decide o que é gravado — esquecer de trocar
-grava na etapa errada.
+## Escanear QR (menu "Scanner": /admin/scanner no painel; /scan em tela cheia pro operador de portão)
+Leitor de QR. Não tem botão Entrada/Saída: o sistema decide sozinho pelo que a
+pessoa já registrou hoje (primeira leitura = entrada, segunda = saída). Só abre
+eventos acontecendo hoje. O supervisor só tem o scanner se for ligado em
+Configurações ("Escanear QR" × Supervisor), e aí só registra a própria equipe —
+veículo continua com o credenciamento do evento.
 
 ## Localizar funcionário (/admin/localizar)
 Registro assistido. Busca por CPF **ou por nome** — nome costuma achar várias

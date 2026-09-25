@@ -4666,8 +4666,9 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
 
   const setor = (f.fornecedores as unknown as { nome: string } | null)?.nome ?? null
 
-  // Supervisor confere só a própria equipe, igual ao resto do sistema.
-  if (perfil.role === 'supervisor' && perfil.fornecedor_id && f.fornecedor_id !== perfil.fornecedor_id) {
+  // Supervisor confere só a própria equipe, igual ao resto do sistema —
+  // qualquer um dos setores dele, não só o que está aberto no painel.
+  if (perfil.role === 'supervisor' && !(await meusSetores(perfil)).some(s => s.id === f.fornecedor_id)) {
     return { credenciado: false, erro: `Esta pessoa é do setor ${setor ?? 'outro'}, fora do seu. Chame o credenciamento do evento.` }
   }
 
@@ -4806,9 +4807,10 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
     }
   }
 
-  // Supervisor de setor só escaneia funcionários do próprio setor (fornecedor)
-  if (perfil.role === 'supervisor' && perfil.fornecedor_id && func.fornecedor_id !== perfil.fornecedor_id) {
-    return { success: false, message: 'Funcionário não pertence ao seu setor', funcionario: funcInfo }
+  // Supervisor só escaneia a própria equipe (qualquer um dos setores dele).
+  // Sem setor nenhum, não escaneia ninguém.
+  if (perfil.role === 'supervisor' && !(await meusSetores(perfil)).some(s => s.id === func.fornecedor_id)) {
+    return { success: false, message: 'Esta pessoa não é da sua equipe. Ela precisa passar pelo credenciamento do evento.', funcionario: funcInfo }
   }
 
   const agora = new Date()
@@ -7371,6 +7373,11 @@ function extrairQrTokenDeVeiculo(bruto: string): string | null {
 export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
+  // O supervisor escaneia a própria equipe; veículo é do evento inteiro e
+  // continua com o credenciamento (quem cadastra veículo também não é ele).
+  if (perfil.role === 'supervisor') {
+    return { success: false, message: 'Veículo é liberado pelo credenciamento do evento, não pelo supervisor.' }
+  }
 
   const token = extrairQrTokenDeVeiculo(qrData)
   if (!token) return { success: false, message: 'QR Code fora do padrão.' }

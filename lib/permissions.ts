@@ -243,10 +243,15 @@ export const podeGerenciarVeiculos = capacidade('gerenciar_veiculos', role =>
 /**
  * Pode LER o QR e registrar presença pelo scanner.
  *
- * O supervisor ficou de fora a pedido. Quem credencia é o posto de
+ * O supervisor fica de fora por padrão. Quem credencia é o posto de
  * credenciamento — o supervisor cuida da equipe, não do portão. É a mesma
  * separação que as mensagens já dizem à equipe ("vá ao credenciamento", e não
  * "procure seu supervisor"), agora valendo também no sistema.
+ *
+ * Mas é LIGÁVEL pro supervisor em Configurações (pedido do Juan, 25/09/2026):
+ * ligado, ele escaneia SÓ a própria equipe — `registrarPresencaQR` e
+ * `conferirCredenciamentoPorCpf` recusam quem é de outro setor, e veículo
+ * continua com o credenciamento do evento (`conferirVeiculoPorQR`).
  *
  * `operador_portao` existe exatamente para ser o posto de credenciamento:
  * escaneia, mas não gerencia nada — ver `podeGerenciarEventos`, que ele NÃO
@@ -362,8 +367,8 @@ export const PAPEIS_CONFIGURAVEIS: Role[] = ['admin', 'supervisor', 'operador_po
  * não teria". Conservador de propósito; cresce sob demanda.
  */
 const PODEM_GANHAR: Partial<Record<Role, string[]>> = {
-  // O scanner saiu do supervisor (ver `podeEscanear`), mas há operação em que
-  // o supervisor credencia a própria equipe — liberável caso a caso.
+  // O scanner não é do supervisor por padrão (ver `podeEscanear`), mas há
+  // operação em que ele credencia a própria equipe — liberável caso a caso.
   supervisor: ['escanear'],
 }
 

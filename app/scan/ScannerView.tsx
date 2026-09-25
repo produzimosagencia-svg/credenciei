@@ -50,9 +50,13 @@ function mensagemDoErroDeCamera(e: unknown): string {
 export default function ScannerView({
   eventos,
   initialEventoId,
+  noPainel = false,
 }: {
   eventos: Evento[]
   initialEventoId?: string
+  /** Dentro do painel (/admin/scanner), que tem tema claro e escuro — o
+   *  seletor usa o estilo do painel em vez do fixo da tela preta do portão. */
+  noPainel?: boolean
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const [result, setResult] = useState<ScanResult | null>(null)
@@ -204,7 +208,9 @@ export default function ScannerView({
           <select
             value={eventoId}
             onChange={e => setEventoId(e.target.value)}
-            className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
+            className={noPainel
+              ? 'input w-full'
+              : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
           >
             {eventos.map(e => (
               <option key={e.id} value={e.id}>{e.nome}</option>
