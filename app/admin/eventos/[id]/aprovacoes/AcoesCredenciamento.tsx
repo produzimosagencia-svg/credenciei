@@ -20,23 +20,34 @@ export default function AcoesCredenciamento({
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  // Falha de rede de verdade (não um {error} do servidor) não pode passar em
+  // branco: sem isto os botões só voltavam a ficar clicáveis, sem explicar
+  // por quê — bem no meio da fila de aprovação, na porta do evento.
   const aprovar = () => {
     setErro(null)
     startTransition(async () => {
-      const r = await aprovarCredenciamento(funcionarioId, fornecedorId, eventoId)
-      if (!r.ok) { setErro(r.error); return }
-      router.refresh()
+      try {
+        const r = await aprovarCredenciamento(funcionarioId, fornecedorId, eventoId)
+        if (!r.ok) { setErro(r.error); return }
+        router.refresh()
+      } catch {
+        setErro('Não consegui aprovar — confira a internet e tente de novo.')
+      }
     })
   }
 
   const negar = () => {
     setErro(null)
     startTransition(async () => {
-      const r = await negarCredenciamento(funcionarioId, fornecedorId, eventoId, motivo)
-      if (!r.ok) { setErro(r.error); return }
-      setNegando(false)
-      setMotivo('')
-      router.refresh()
+      try {
+        const r = await negarCredenciamento(funcionarioId, fornecedorId, eventoId, motivo)
+        if (!r.ok) { setErro(r.error); return }
+        setNegando(false)
+        setMotivo('')
+        router.refresh()
+      } catch {
+        setErro('Não consegui negar — confira a internet e tente de novo.')
+      }
     })
   }
 

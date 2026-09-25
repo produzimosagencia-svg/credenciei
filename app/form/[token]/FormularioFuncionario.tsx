@@ -76,6 +76,7 @@ export default function FormularioFuncionario({
   const [statusEnvio, setStatusEnvio] = useState<StatusCredenciamento>('pendente')
   const [autofill, setAutofill] = useState(false)
   const [erroCpf, setErroCpf] = useState<string | null>(null)
+  const [erroEnvio, setErroEnvio] = useState<string | null>(null)
   const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   /*
@@ -167,36 +168,49 @@ export default function FormularioFuncionario({
       return
     }
     setLoading(true)
-    const res = await cadastrarFuncionarioPublico(fornecedorId, {
-      origem,
-      nome: form.nome,
-      cpf: form.cpf,
-      telefone: form.telefone,
-      cargo: form.cargo,
-      cidade: form.cidade,
-      consentimento,
-      chavePix: form.chavePix,
-      fotoBase64: foto ?? undefined,
-    }, autorizacaoIndividual)
+    setErroEnvio(null)
+    /*
+     * Rede cai, aba minimizada no meio do envio, WebView reiniciando —
+     * qualquer um lança exceção aqui em vez de devolver um `{error}` tratado.
+     * Sem o try/catch, a pessoa ficava com o botão travado em "Enviando..."
+     * pra sempre, sem saber que precisava recarregar — na porta do evento,
+     * com fila atrás, é o pior momento pra isso acontecer sem aviso nenhum.
+     */
+    try {
+      const res = await cadastrarFuncionarioPublico(fornecedorId, {
+        origem,
+        nome: form.nome,
+        cpf: form.cpf,
+        telefone: form.telefone,
+        cargo: form.cargo,
+        cidade: form.cidade,
+        consentimento,
+        chavePix: form.chavePix,
+        fotoBase64: foto ?? undefined,
+      }, autorizacaoIndividual)
 
-    if (res.qrToken) {
-      /*
-       * Veio da portaria: direto pro check-in, sem tela intermediária.
-       *
-       * Fora da portaria a pessoa pode preferir salvar o link e voltar depois
-       * — por isso só aqui o redirecionamento é automático. Quem chegou pelo
-       * cartaz está com fila atrás e precisa registrar a entrada agora.
-       */
-      if (origem === 'portaria') {
-        router.push(`/credential/${res.qrToken}`)
-        return
+      if (res.qrToken) {
+        /*
+         * Veio da portaria: direto pro check-in, sem tela intermediária.
+         *
+         * Fora da portaria a pessoa pode preferir salvar o link e voltar depois
+         * — por isso só aqui o redirecionamento é automático. Quem chegou pelo
+         * cartaz está com fila atrás e precisa registrar a entrada agora.
+         */
+        if (origem === 'portaria') {
+          router.push(`/credential/${res.qrToken}`)
+          return
+        }
+        setStatusEnvio(res.status ?? 'pendente')
+        setQrToken(res.qrToken)
+      } else {
+        setErroEnvio(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
       }
-      setStatusEnvio(res.status ?? 'pendente')
-      setQrToken(res.qrToken)
-    } else {
-      alert(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
+    } catch {
+      setErroEnvio('Não consegui enviar — confira sua internet e tente de novo.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (qrToken) {
@@ -414,6 +428,10 @@ export default function FormularioFuncionario({
           </p>
         </details>
       </div>
+
+      {erroEnvio && (
+        <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-xl p-3">{erroEnvio}</p>
+      )}
 
       <button
         type="submit"
