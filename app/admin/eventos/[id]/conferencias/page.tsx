@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { CheckCircle2, CircleDashed, UserX } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
-import { conferenciasDoEvento } from '@/lib/conferencia'
+import { conferenciasDoEvento, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
 import { formatarBR } from '@/lib/tz'
 
@@ -22,6 +22,9 @@ export default async function ConferenciasDoEventoPage({ params }: { params: Pro
   const { data: evento } = await supabase.from('eventos').select('id, nome, organizacao_id').eq('id', id).maybeSingle()
   if (!evento) notFound()
   if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+
+  // Desligada (lib/conferencia.ts): a aprovação de credenciamento substituiu.
+  if (!CONFERENCIA_EQUIPE_ATIVA) redirect(`/admin/eventos/${id}`)
 
   const linhas = (await conferenciasDoEvento(id)).filter(l => l.temSupervisor)
   const feitas = linhas.filter(l => l.status === 'confirmada').length

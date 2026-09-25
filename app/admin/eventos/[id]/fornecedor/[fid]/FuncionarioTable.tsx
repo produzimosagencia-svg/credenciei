@@ -339,14 +339,30 @@ export default function FuncionarioTable({
                     }
                   />
                   <div className="shrink-0 flex items-center gap-1 -mr-1">
-                    <button
-                      onClick={() => handleAtivacao(f)}
-                      disabled={isPending}
-                      className={`btn-press w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-50 disabled:active:scale-100 ${f.ativo ? 'text-green-500 hover:text-amber-600 hover:bg-amber-50' : 'text-amber-500 hover:text-green-600 hover:bg-green-50'}`}
-                      aria-label={f.ativo ? 'Ativado — toque para desativar' : 'Não ativado — toque para ativar'}
-                    >
-                      {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
-                    </button>
+                    {/*
+                      * Só "ATIVAR", e só pra quem já está desativado.
+                      *
+                      * O botão de desativar saiu (pedido do Juan, 25/09/2026):
+                      * ativo, ele era um bonequinho VERDE com check — com a
+                      * pessoa aguardando aprovação, parecia "aprovar", e um
+                      * admin desativou alguém dois minutos antes de aprová-lo
+                      * (Pontal Weekend), deixando o QR bloqueado sem ninguém
+                      * entender por quê. Tirar alguém que desistiu é o "Tirar
+                      * da equipe" ao lado (reversível); decidir quem entra é a
+                      * aprovação. O botão de ativar fica pra corrigir quem já
+                      * está desativado.
+                      */}
+                    {!f.ativo && (
+                      <button
+                        onClick={() => handleAtivacao(f)}
+                        disabled={isPending}
+                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-amber-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-50 disabled:active:scale-100"
+                        aria-label="Não ativado — toque para ativar"
+                        title="Não ativado — toque para ativar"
+                      >
+                        <UserX className="w-4 h-4" />
+                      </button>
+                    )}
                     {/*
                       * Tirar da equipe (descredenciar) — a ação que o
                       * supervisor tem. Reversível: descredenciado, o mesmo
@@ -503,14 +519,17 @@ export default function FuncionarioTable({
                   <CelulaPresenca p={f.fim} status={f.statusFim} />
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleAtivacao(f)}
-                        disabled={isPending}
-                        className={`btn-press w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-50 disabled:active:scale-100 ${f.ativo ? 'text-green-500 hover:text-amber-600 hover:bg-amber-50' : 'text-amber-500 hover:text-green-600 hover:bg-green-50'}`}
-                        title={f.ativo ? 'Ativado — clique para desativar' : 'Não ativado — clique para ativar'}
-                      >
-                        {f.ativo ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
-                      </button>
+                      {/* Só "ativar", pra quem já está desativado — ver a nota no card mobile. */}
+                      {!f.ativo && (
+                        <button
+                          onClick={() => handleAtivacao(f)}
+                          disabled={isPending}
+                          className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-amber-500 hover:text-green-600 hover:bg-green-50 disabled:opacity-50 disabled:active:scale-100"
+                          title="Não ativado — clique para ativar"
+                        >
+                          <UserX className="w-4 h-4" />
+                        </button>
+                      )}
                       {podeExcluir && (
                         <button
                           onClick={() => handleDelete(f)}

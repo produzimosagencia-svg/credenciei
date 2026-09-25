@@ -14,6 +14,17 @@ import { supabaseAdmin } from './supabase-server'
  * fecha — melhor confirmar tarde do que não confirmar).
  */
 
+/**
+ * A conferência de equipe está DESLIGADA (pedido do Juan, 25/09/2026).
+ *
+ * Com a aprovação de credenciamento, ninguém entra no evento sem que alguém
+ * autorize — conferir a equipe de novo um dia antes virou uma segunda
+ * conferência da mesma coisa. Desligada por esta chave única, sem apagar
+ * nada: o cron para de abrir conferência e mandar e-mail, o card do evento e
+ * o aviso do supervisor somem, e as telas redirecionam. Religar = `true`.
+ */
+export const CONFERENCIA_EQUIPE_ATIVA = false
+
 export const ANTECEDENCIA_MS = 24 * 60 * 60 * 1000
 
 export function abreEm(dataInicioIso: string): Date {

@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meusSetores, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
-import { estadoConferencia } from '@/lib/conferencia'
+import { estadoConferencia, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
 import { PageHeader } from '@/components/ui/Superficie'
 import ConferenciaEquipe from './ConferenciaEquipe'
 
@@ -37,6 +37,10 @@ export default async function ConferenciaPage({ params }: { params: Promise<{ fi
     permitido = await suporteTemEscopo(perfil.id, { eventoId: setor.evento_id as string, organizacaoId: orgId ?? undefined })
   }
   if (!permitido) notFound()
+
+  // Desligada (lib/conferencia.ts) — quem chega pelo link do e-mail já
+  // enviado cai na equipe do setor, onde a aprovação resolve o mesmo.
+  if (!CONFERENCIA_EQUIPE_ATIVA) redirect(`/admin/eventos/${setor.evento_id}/fornecedor/${fid}`)
 
   const estado = await estadoConferencia(fid)
   if (!estado) notFound()

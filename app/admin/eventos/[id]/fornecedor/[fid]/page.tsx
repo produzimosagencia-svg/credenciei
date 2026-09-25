@@ -13,7 +13,7 @@ import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
 import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
-import { conferenciaAberta } from '@/lib/conferencia'
+import { conferenciaAberta, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
 import AutoRefresh from './AutoRefresh'
 import { ProgressoEtapas, COR_ETAPA } from '@/components/charts'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -270,7 +270,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
    * trava. Ver supabase/upgrade-conferencia-equipe.sql.
    */
   let conferenciaPendente = false
-  if (perfil.role === 'supervisor') {
+  // Desligada: a aprovação de credenciamento já é a conferência (lib/conferencia.ts).
+  if (CONFERENCIA_EQUIPE_ATIVA && perfil.role === 'supervisor') {
     const dataInicio = (fornecedor.eventos as any)?.data_inicio as string | undefined
     if (dataInicio && conferenciaAberta(dataInicio)) {
       const { data: conf, error: erroConf } = await supabase

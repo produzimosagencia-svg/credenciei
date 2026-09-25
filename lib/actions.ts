@@ -3126,6 +3126,10 @@ export async function aprovarCredenciamento(funcionarioId: string, fornecedorId:
 
     const { error } = await supabaseAdmin.from('funcionarios').update({
       status_credenciamento: 'aprovado', decidido_por: perfil.id, decidido_em: new Date().toISOString(),
+      // Aprovar é dizer "entra": a pessoa sai daqui ATIVA, sempre. Evita o
+      // estado "aprovado mas desativado" (QR bloqueado sem ninguém entender),
+      // que aconteceu no Pontal Weekend com um clique errado na desativação.
+      ativo: true,
     }).eq('id', funcionarioId)
     if (error) return { error: mensagemAmigavel(error) }
 

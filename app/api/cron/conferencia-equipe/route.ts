@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
-import { planilhaEquipeCsv } from '@/lib/conferencia'
+import { planilhaEquipeCsv, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
 import { enviarEmail, molduraEmail } from '@/lib/email'
 import { registrarExecucaoConferenciaEquipe } from '@/lib/performance-checks'
 
@@ -25,6 +25,17 @@ export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization')
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  }
+
+  /*
+   * Desligada (ver `CONFERENCIA_EQUIPE_ATIVA`): não abre conferência nem
+   * manda e-mail. O sinal de vida continua sendo gravado — o cron está
+   * rodando, só não tem o que fazer; sem isso o Painel de Performance
+   * acusaria "parou de rodar" por uma coisa desligada de propósito.
+   */
+  if (!CONFERENCIA_EQUIPE_ATIVA) {
+    await registrarExecucaoConferenciaEquipe()
+    return NextResponse.json({ desligada: true })
   }
 
   const agora = new Date()
