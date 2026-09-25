@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
@@ -5758,9 +5758,22 @@ export async function localizarFuncionario(
     return consulta
   }, { tetoTotal: 10_000 })
   const termoNome = chaveBusca(busca)
-  const achados = pareceCpf
+  const achadosTodos = pareceCpf
     ? achadosBrutos
     : achadosBrutos.filter(f => chaveBusca(f.nome).includes(termoNome))
+
+  /*
+   * Só quem é de evento ACONTECENDO HOJE (pedido do Juan, 25/09/2026). Esta
+   * busca é a do portão — registrar ponto de alguém de outro evento não faz
+   * sentido, e mostrar a pessoa fazia o operador achar que ela estava
+   * credenciada. "Ativo" não bastava: um evento com datas erradas continua
+   * ativo sem estar acontecendo.
+   */
+  const acontecendoHoje = await eventosAcontecendoHoje(
+    achadosTodos.map(f => comEvento(f.fornecedores)?.eventos?.id ?? ''),
+  )
+  const doEventoDeHoje = (f: LinhaLocalizada) => acontecendoHoje.has(comEvento(f.fornecedores)?.eventos?.id ?? '')
+  const achados = achadosTodos.filter(doEventoDeHoje)
 
   // Escopo do suporte é async (consulta `suporte_escopo`) — resolvido ANTES
   // do filtro síncrono abaixo, uma vez só, não por candidato.
@@ -5800,14 +5813,16 @@ export async function localizarFuncionario(
         .range(de, ate),
     { tetoTotal: 10_000 })
 
-    visiveis = possiveis
-      .filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
+    const proximos = possiveis.filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
+    const hojeProximos = await eventosAcontecendoHoje(proximos.map(f => comEvento(f.fornecedores)?.eventos?.id ?? ''))
+    visiveis = proximos
+      .filter(f => hojeProximos.has(comEvento(f.fornecedores)?.eventos?.id ?? ''))
       .filter(dentroDoEscopo)
     buscaAproximada = visiveis.length > 0
   }
 
   if (!visiveis.length) {
-    const onde = perfil.role === 'supervisor' ? 'no seu setor' : 'nos eventos ativos'
+    const onde = perfil.role === 'supervisor' ? 'no seu setor, no evento de hoje' : 'nos eventos acontecendo hoje'
     return {
       error: pareceCpf
         ? `Nenhuma pessoa com este CPF ${onde}. Confira o número ou tente pelo nome.`
@@ -6012,6 +6027,12 @@ export async function registrarPresencaAssistida(
   }
 
   if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
+  // Registro do portão só pra quem é de evento acontecendo HOJE — mesma régua
+  // da busca (`localizarFuncionario`), repetida aqui porque a trava de verdade
+  // é o servidor, não a lista.
+  if (!(await eventosAcontecendoHoje([evento.id])).has(evento.id)) {
+    return { error: 'Esta pessoa é de um evento que não está acontecendo hoje. No portão só dá pra registrar quem é do evento de hoje.' }
+  }
   const statusCredAssistida = statusCredenciamentoValido(func.status_credenciamento as string)
   if (statusCredAssistida !== 'aprovado') {
     return { error: statusCredAssistida === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }

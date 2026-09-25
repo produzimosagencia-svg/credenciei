@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { ehMaster, podeGerenciarEventos, podeEscanear, podeAcompanhar } from './permissions'
+import { diaBRT, periodoDoEvento } from './janelas'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -221,7 +222,14 @@ export async function meusSetores(perfil: any): Promise<{ id: string; nome: stri
 }
 
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
-export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nome: string }[]> {
+/** Os eventos que este usuário pode operar no portão — só os acontecendo hoje. */
+export async function eventosEscaneaveis(perfil: Parameters<typeof eventosEscaneaveisSemData>[0]): Promise<{ id: string; nome: string }[]> {
+  const candidatos = await eventosEscaneaveisSemData(perfil)
+  const hoje = await eventosAcontecendoHoje(candidatos.map(e => e.id))
+  return candidatos.filter(e => hoje.has(e.id))
+}
+
+async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: string; nome: string }[]> {
   if (!perfil || !podeAcompanhar(perfil)) return []
 
   if (ehMaster(perfil.role)) {
@@ -252,8 +260,40 @@ export async function eventosEscaneaveis(perfil: any): Promise<{ id: string; nom
 }
 
 /** Este usuário pode escanear ESTE evento? (checa o setor do supervisor / org do admin) */
+/**
+ * Destes eventos, quais estão ACONTECENDO HOJE (Brasília): ativos e com hoje
+ * dentro do período (`data_inicio`..`data_fim`) ou marcado como dia de
+ * trabalho (montagem/desmontagem, em `jornada_dias`).
+ *
+ * É a régua do PORTÃO (pedido do Juan, 25/09/2026): quem opera a entrada do
+ * Pontal Weekend buscou um CPF e achou a pessoa num evento "ativo" de datas
+ * erradas — e a tela tratou como alguém credenciado. O operador de portão não
+ * é amarrado a um evento (só à organização); o que diz em qual evento ele
+ * está trabalhando é o evento que está acontecendo.
+ */
+export async function eventosAcontecendoHoje(eventoIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(eventoIds.filter(Boolean))]
+  if (!ids.length) return new Set()
+  const hoje = diaBRT()
+  const [{ data: eventos }, { data: diasHoje }] = await Promise.all([
+    admin.from('eventos').select('id, ativo, data_inicio, data_fim').in('id', ids),
+    admin.from('jornada_dias').select('evento_id').in('evento_id', ids).eq('data', hoje).eq('cancelado', false),
+  ])
+  const comDiaHoje = new Set((diasHoje ?? []).map(d => d.evento_id as string))
+  const acontecendo = new Set<string>()
+  for (const e of eventos ?? []) {
+    if (e.ativo === false) continue
+    const periodo = periodoDoEvento(e as { data_inicio: string | null; data_fim: string | null })
+    const noPeriodo = !!periodo && hoje >= periodo.primeiro && hoje <= periodo.ultimo
+    if (noPeriodo || comDiaHoje.has(e.id as string)) acontecendo.add(e.id as string)
+  }
+  return acontecendo
+}
+
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {
   if (!perfil || !podeEscanear(perfil)) return false
+  // Portão só opera evento que está acontecendo hoje — vale até pro master.
+  if (!(await eventosAcontecendoHoje([eventoId])).has(eventoId)) return false
   if (ehMaster(perfil.role)) return true
 
   if (perfil.role === 'supervisor') {
