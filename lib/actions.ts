@@ -32,7 +32,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento,
+  diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
@@ -76,18 +76,29 @@ function formatarCpfExibicao(cpf: string): string {
  * Chamada também ao EDITAR: mudar a data do evento move o dia principal junto,
  * senão o sistema seguiria cobrando ponto num dia que não existe mais.
  */
-async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | null) {
+async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | null, dataFimISO?: string | null) {
   if (!dataInicioISO) return
   const dia = diaBRT(dataInicioISO)
+  const periodo = periodoDoEvento({ data_inicio: dataInicioISO, data_fim: dataFimISO ?? null })!
 
-  // A data mudou? O dia antigo vira preparação em vez de sumir: se houve
-  // batida nele, ela precisa continuar tendo um dia ao qual pertencer.
+  /*
+   * A data mudou? O dia antigo vira preparação em vez de sumir: se houve
+   * batida nele, ela precisa continuar tendo um dia ao qual pertencer.
+   *
+   * MAS: um dia principal EXTRA de verdade (a segunda noite de um festival,
+   * ver `salvarDiasPrincipaisExtras`) nunca pode ser rebaixado aqui — ele
+   * está DENTRO do período do evento e sempre tem horário próprio
+   * (`entrada_inicio`). Só rebaixa quem está fora do período OU sem
+   * horário próprio — sinal de que é sobra de uma data antiga, não um dia
+   * principal extra deliberado.
+   */
   await supabaseAdmin
     .from('jornada_dias')
     .update({ tipo: 'preparacao' })
     .eq('evento_id', eventoId)
     .eq('tipo', 'principal')
     .neq('data', dia)
+    .or(`entrada_inicio.is.null,data.lt.${periodo.primeiro},data.gt.${periodo.ultimo}`)
 
   const { error } = await supabaseAdmin.from('jornada_dias').upsert(
     [{ evento_id: eventoId, jornada_id: null, data: dia, turno: 0, tipo: 'principal', cancelado: false }],
@@ -1945,7 +1956,7 @@ export async function criarEvento(formData: FormData) {
 
   // Antes da planilha e de qualquer outra coisa: sem o dia principal, o evento
   // nasce inutilizável — ninguém consegue bater ponto nele.
-  await garantirDiaPrincipal(novo.id, data.data_inicio)
+  await garantirDiaPrincipal(novo.id, data.data_inicio, data.data_fim)
 
   // Cria planilha na pasta da organização no Drive
   try {
@@ -1974,7 +1985,7 @@ export async function editarEvento(id: string, formData: FormData) {
   exigirHorariosCoerentes(data)
 
   await db.from('eventos').update(data).eq('id', id)
-  await garantirDiaPrincipal(id, data.data_inicio)
+  await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
   after(() => sincronizarAgendamentos(id).catch(console.error))
   revalidatePath(`/admin/eventos/${id}`)
   redirect(`/admin/eventos/${id}`)
@@ -3414,20 +3425,36 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
   await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
-    .from('eventos').select('id, data_inicio').eq('id', eventoId).single()
+    .from('eventos').select('id, data_inicio, data_fim').eq('id', eventoId).single()
   if (!evento?.data_inicio) throw new Error('Este evento ainda não tem data definida.')
 
   const principal = diaBRT(evento.data_inicio as string)
+  const periodo = periodoDoEvento(evento as EventoJanelas)!
+
+  // ── O dia principal automático, sempre na data do evento ─────────────────
+  const { data: principaisAtuais } = await supabaseAdmin
+    .from('jornada_dias').select('id, data, entrada_inicio').eq('evento_id', eventoId).eq('tipo', 'principal')
+
+  /*
+   * Dias principais EXTRAS de verdade (a segunda noite de um festival, ver
+   * `salvarDiasPrincipaisExtras`): estão dentro do período do evento E têm
+   * horário próprio — mesmo critério de `garantirDiaPrincipal`. Protegidos
+   * dos dois jeitos que esta função poderia destruí-los: no laço de
+   * rebaixamento abaixo, E no filtro de `escolhidos` (que sem isto só
+   * excluía a data do dia principal automático).
+   */
+  const protegidos = new Set(
+    (principaisAtuais ?? [])
+      .filter(a => a.data !== principal && a.entrada_inicio != null && (a.data as string) >= periodo.primeiro && (a.data as string) <= periodo.ultimo)
+      .map(a => a.data as string),
+  )
+
   const escolhidos = [...new Set((datas ?? []).map(d => String(d).slice(0, 10)))]
-    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== principal)
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== principal && !protegidos.has(d))
     .sort()
 
-  // ── O dia principal, sempre exatamente um e na data do evento ────────────
-  const { data: principaisAtuais } = await supabaseAdmin
-    .from('jornada_dias').select('id, data').eq('evento_id', eventoId).eq('tipo', 'principal')
-
   for (const antigo of principaisAtuais ?? []) {
-    if (antigo.data === principal) continue
+    if (antigo.data === principal || protegidos.has(antigo.data as string)) continue
     // A data do evento mudou. Vira dia de preparação em vez de sumir: se
     // houve batida naquele dia, ela precisa continuar tendo um dia ao qual
     // pertencer.
@@ -3477,6 +3504,110 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
   // Só os dias de preparação: o dia principal não é escolha do produtor, ele
   // é a data do evento, e contá-lo aqui faria o número divergir da tela.
   return { ok: true as const, dias: escolhidos.length, preservados }
+}
+
+export type DiaPrincipalExtra = {
+  entradaInicio: string
+  entradaFim?: string | null
+  saidaInicio: string
+  saidaFim?: string | null
+}
+
+/**
+ * Dias principais EXTRAS de um evento — a segunda (ou terceira) noite de um
+ * festival, cada uma com sua PRÓPRIA janela de entrada/saída (ver
+ * lib/janelas.ts, que já prefere o horário do dia quando existir).
+ *
+ * Diferente de `salvarDiasDeTrabalho`: aqui os dois INÍCIOS (entrada e
+ * saída) são sempre obrigatórios — são eles que impedem a "saída" de um dia
+ * cair sem querer no horário configurado de OUTRO dia (o evento ou o dia
+ * automático), misturando duas noites sem avisar ninguém. Os dois FINS são
+ * opcionais: um dia principal pode ser aberto de propósito (sem hora pra
+ * fechar), exatamente como o dia principal automático já permite hoje —
+ * fim em aberto cai pro campo do evento, que também está em aberto, então
+ * não há mistura nenhuma.
+ */
+export async function salvarDiasPrincipaisExtras(eventoId: string, dias: DiaPrincipalExtra[]) {
+  await exigirEventoDaOrg(eventoId)
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, data_inicio, data_fim').eq('id', eventoId).single()
+  if (!evento?.data_inicio) throw new Error('Este evento ainda não tem data definida.')
+
+  const diaAutomatico = diaBRT(evento.data_inicio as string)
+  const periodo = periodoDoEvento(evento as EventoJanelas)!
+
+  const normalizados = (dias ?? []).map(d => ({
+    entradaInicio: inputParaISO(d.entradaInicio),
+    entradaFim: d.entradaFim ? inputParaISO(d.entradaFim) : null,
+    saidaInicio: inputParaISO(d.saidaInicio),
+    saidaFim: d.saidaFim ? inputParaISO(d.saidaFim) : null,
+  }))
+
+  for (const d of normalizados) {
+    if (!d.entradaInicio || !d.saidaInicio) {
+      throw new Error('Preencha ao menos o início de entrada e o início de saída de cada dia principal extra.')
+    }
+    // Mesma checagem do dia principal automático (o erro do Kleber Andrade
+    // pode acontecer em qualquer dia principal, não só no primeiro).
+    exigirHorariosCoerentes({
+      data_inicio: d.entradaInicio,
+      data_fim: d.saidaFim ?? d.saidaInicio,
+      janela_entrada_inicio: d.entradaInicio,
+      janela_entrada_fim: d.entradaFim,
+      janela_fim_inicio: d.saidaInicio,
+      janela_fim_fim: d.saidaFim,
+    })
+  }
+
+  const linhas = normalizados.map(d => ({ ...d, data: diaBRT(d.entradaInicio!) }))
+
+  for (const l of linhas) {
+    if (l.data === diaAutomatico) {
+      throw new Error('Esta data já é o dia principal automático do evento (definido pela Data de início).')
+    }
+    if (l.data < periodo.primeiro || l.data > periodo.ultimo) {
+      throw new Error(`${l.data} está fora do período do evento (${periodo.primeiro} a ${periodo.ultimo}).`)
+    }
+  }
+  const datasComMesmoDia = new Set(linhas.map(l => l.data))
+  if (datasComMesmoDia.size !== linhas.length) {
+    throw new Error('Duas entradas caíram no mesmo dia — confira os horários (cada dia principal extra precisa cair numa data diferente).')
+  }
+
+  const { data: existentes } = await supabaseAdmin
+    .from('jornada_dias').select('id, data').eq('evento_id', eventoId).eq('tipo', 'principal').neq('data', diaAutomatico)
+
+  const { data: comBatida } = await supabaseAdmin
+    .from('registros').select('data_ref').eq('evento_id', eventoId)
+    .in('data_ref', (existentes ?? []).map(e => e.data as string))
+  const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+
+  // Sai da lista + sem batida = volta a ser preparação. Com batida, preserva
+  // (mesma régua de `salvarDiasDeTrabalho`).
+  let preservados = 0
+  for (const antigo of existentes ?? []) {
+    if (datasComMesmoDia.has(antigo.data as string)) continue
+    if (batidos.has(antigo.data as string)) { preservados++; continue }
+    await supabaseAdmin.from('jornada_dias').update({ tipo: 'preparacao' }).eq('id', antigo.id)
+  }
+
+  if (linhas.length) {
+    const { error } = await supabaseAdmin.from('jornada_dias').upsert(
+      linhas.map(l => ({
+        evento_id: eventoId, jornada_id: null, data: l.data, turno: 0, tipo: 'principal' as const, cancelado: false,
+        entrada_inicio: l.entradaInicio, entrada_fim: l.entradaFim,
+        saida_inicio: l.saidaInicio, saida_fim: l.saidaFim,
+      })),
+      { onConflict: 'evento_id,data,turno' },
+    )
+    if (error) throw new Error(mensagemAmigavel(error))
+  }
+
+  after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+  revalidatePath(`/admin/eventos/${eventoId}`)
+  revalidatePath(`/admin/eventos/${eventoId}/editar`)
+  return { ok: true as const, dias: linhas.length, preservados }
 }
 
 // ─── Presença: QR (entrada/saída) + foto (meio) ───────────────────────────────
@@ -3704,11 +3835,11 @@ async function diaDeTrabalho(eventoId: string, data: string): Promise<DiaDeTraba
    * é o que impede bater ponto num dia que ninguém marcou.
    */
   const { data: ev } = await supabaseAdmin
-    .from('eventos').select('data_inicio').eq('id', eventoId).single()
+    .from('eventos').select('data_inicio, data_fim').eq('id', eventoId).single()
   if (!ev?.data_inicio || diaBRT(ev.data_inicio) !== data) return null
 
   console.warn(`[jornada] evento ${eventoId} estava sem o dia principal ${data}; criando agora`)
-  await garantirDiaPrincipal(eventoId, ev.data_inicio)
+  await garantirDiaPrincipal(eventoId, ev.data_inicio, ev.data_fim)
   const { data: novo } = await supabaseAdmin
     .from('jornada_dias')
     .select('id, data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
@@ -3724,8 +3855,35 @@ type Resolucao =
       jornadaDiaId: string | null
       /** Dia principal do evento — é o que dispara o descredenciamento na saída. */
       diaPrincipal: boolean
+      /**
+       * É o ÚLTIMO dia principal do evento (não existe outro depois dele)?
+       * Um festival de mais de uma noite pode ter vários dias principais —
+       * só a saída do último de fato encerra o ciclo da pessoa no evento.
+       * Sem isto, a saída de sexta descredenciaria todo mundo antes da
+       * segunda noite nem começar.
+       */
+      ultimoDiaPrincipal: boolean
       jaEm: string | null
     }
+
+/**
+ * Existe outro dia principal (tipo='principal', não cancelado) depois de
+ * `dataRef`, neste evento?
+ *
+ * Pra um evento de um dia só (o caso de sempre) isto é sempre `false` — a
+ * consulta não acha nada depois do único dia principal que existe.
+ */
+async function haMaisDiasPrincipaisDepois(eventoId: string, dataRef: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('jornada_dias')
+    .select('id')
+    .eq('evento_id', eventoId)
+    .eq('tipo', 'principal')
+    .eq('cancelado', false)
+    .gt('data', dataRef)
+    .limit(1)
+  return !!data?.length
+}
 
 /**
  * Onde o registro vai cair e se ele pode ser feito agora.
@@ -3820,11 +3978,15 @@ async function resolverRegistro(
     .eq('data_ref', dataRef)
     .limit(1)
 
+  const diaPrincipal = dia?.tipo === 'principal'
+  const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasPrincipaisDepois(evento.id, dataRef)) : false
+
   return {
     ok: true,
     dataRef,
     jornadaDiaId: dia?.id ?? null,
-    diaPrincipal: dia?.tipo === 'principal',
+    diaPrincipal,
+    ultimoDiaPrincipal,
     jaEm: (jaExiste?.[0]?.created_at as string | undefined) ?? null,
   }
 }
@@ -3916,7 +4078,9 @@ async function diaDeReferencia(
   }
 
   const dia = await diaDeTrabalho(evento.id, dataRef)
-  return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal: dia?.tipo === 'principal' }
+  const diaPrincipal = dia?.tipo === 'principal'
+  const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasPrincipaisDepois(evento.id, dataRef)) : false
+  return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal, ultimoDiaPrincipal }
 }
 const JUSTIFICATIVA_SEM_MEIO = 'Saída registrada sem registro de meio.'
 
@@ -4538,13 +4702,16 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
   }
 
   /*
-   * Saída no DIA PRINCIPAL fecha o ciclo da pessoa no evento.
+   * Saída no ÚLTIMO DIA PRINCIPAL fecha o ciclo da pessoa no evento.
    *
    * Só no dia principal: nos dias de preparação a pessoa sai e volta no dia
    * seguinte, e descredenciar ali a impediria de bater o ponto na montagem do
-   * dia seguinte.
+   * dia seguinte. E só no ÚLTIMO: um festival de mais de uma noite (cada
+   * noite marcada como principal) não pode descredenciar na saída da
+   * primeira noite — a pessoa ainda volta amanhã, e descredenciada ela seria
+   * recusada na entrada da segunda noite.
    */
-  const encerrou = momento === 'fim' && resolucao.diaPrincipal
+  const encerrou = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal
   if (encerrou) await descredenciar(func.id, perfil.id)
 
   return {
@@ -5695,8 +5862,8 @@ export async function registrarPresencaAssistida(
       }).catch(console.error)
     )
   }
-  // Mesma regra do scanner: a saída do dia principal fecha o vínculo.
-  if (momento === 'fim' && refAssistido.diaPrincipal) {
+  // Mesma regra do scanner: a saída do ÚLTIMO dia principal fecha o vínculo.
+  if (momento === 'fim' && refAssistido.diaPrincipal && refAssistido.ultimoDiaPrincipal) {
     await descredenciar(func.id, perfil.id)
   }
 

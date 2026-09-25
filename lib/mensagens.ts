@@ -403,23 +403,31 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     if (evento.msg_pre_evento_envio) {
       agendarFunc(func.id, func.telefone, 'confirmacao_escala', diaPrincipal, evento.msg_pre_evento_envio as string)
     }
-    /*
-     * Continua exigindo a janela de entrada configurada: o texto da mensagem é
-     * feito dos horários dela. Sem isso a equipe receberia "ENTRADA — das a
-     * definir às a definir", que é pior do que não receber nada.
-     */
-    if (evento.janela_entrada_inicio && !desligado(fluxos, 'aviso_dia_evento')) {
-      agendarFunc(
-        func.id, func.telefone, 'aviso_dia_evento', diaPrincipal,
-        quandoAvisarDoDia(
-          diaPrincipal,
-          evento.janela_entrada_inicio as string,
-          (evento.janela_entrada_fim as string | null) ?? null,
-        ),
-      )
-    }
 
     for (const dia of dias) {
+      /*
+       * O aviso do dia do evento, PARA CADA dia principal.
+       *
+       * Um festival de mais de uma noite tem um dia principal por noite, cada
+       * um com sua própria janela (`dia.jornadaDia.entrada_inicio` etc.,
+       * quando configurada — ver lib/janelas.ts) — sem isso a mensagem de
+       * sábado usaria os horários de sexta, ou não sairia nenhuma.
+       *
+       * Continua exigindo uma janela de entrada configurada (do dia, ou do
+       * evento): o texto da mensagem é feito dela. Sem isso a equipe
+       * receberia "ENTRADA — das a definir às a definir", pior que nada.
+       */
+      if (dia.jornadaDia?.tipo === 'principal' && !desligado(fluxos, 'aviso_dia_evento')) {
+        const entradaInicio = dia.jornadaDia.entrada_inicio ?? evento.janela_entrada_inicio
+        const entradaFim = dia.jornadaDia.entrada_fim ?? evento.janela_entrada_fim
+        if (entradaInicio) {
+          agendarFunc(
+            func.id, func.telefone, 'aviso_dia_evento', dia.data,
+            quandoAvisarDoDia(dia.data, entradaInicio as string, (entradaFim as string | null) ?? null),
+          )
+        }
+      }
+
       /*
        * O aviso do dia, em cada dia de preparação.
        *
@@ -489,7 +497,9 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        * O aviso do dia continua: ele informa, não cobra.
        */
       const livre = (evento as EventoJanelas).batida_livre === true
-      const ehPrincipal = dia.data === diaPrincipal
+      // `jornada_dias.tipo`, não a string única — um festival de mais de uma
+      // noite tem mais de um dia com trava real (ver lib/janelas.ts).
+      const ehPrincipal = dia.jornadaDia?.tipo === 'principal'
       /*
        * SÓ o dia principal, e só sem batida livre — nunca `temHorarioReal`.
        * Ver o comentário da função: aquele fallback de jornada configurada
@@ -542,7 +552,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
      * demais dias, a tela de pendências continua mostrando tudo — a
      * informação não sumiu, só parou de virar mensagem paga.
      */
-    const ehDiaPrincipal = dia.data === diaPrincipal
+    const ehDiaPrincipal = dia.jornadaDia?.tipo === 'principal'
     const temHorario = temHorarioReal(ehDiaPrincipal, dia.jornadaDia)
     const gatilhos: [TipoMensagem, string][] = ehDiaPrincipal
       ? [
