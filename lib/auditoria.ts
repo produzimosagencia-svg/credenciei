@@ -56,7 +56,7 @@ export const ROTULO_ORIGEM_CADASTRO: Record<string, string> = {
   formulario: 'Cadastro pelo link',
   portaria: 'Cadastro pela portaria (cartaz)',
   planilha: 'Importado por planilha',
-  supervisor: 'Crachá gerado automaticamente (Meu Crachá)',
+  supervisor: 'Crachá do supervisor (gerado automaticamente)',
 }
 
 /**

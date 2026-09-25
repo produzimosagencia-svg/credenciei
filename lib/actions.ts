@@ -535,6 +535,8 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
     .from('supervisor_setores')
     .upsert([{ perfil_id: perfilId, fornecedor_id: fornecedorId }], { onConflict: 'perfil_id,fornecedor_id' })
   if (error) console.error('[supervisor_setores] vínculo não gravado (migração pendente?)', error.message)
+  // O supervisor também é funcionário ativo do setor: QR + lista da equipe.
+  await garantirCrachaDoSupervisorNoSetor(perfilId, fornecedorId)
 }
 
 /**
@@ -3372,20 +3374,61 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
     if (orgDoEvento !== perfil.organizacao_id) return { error: 'Sem permissão sobre este setor.' }
   }
 
-  const { data: existentes } = await supabaseAdmin
-    .from('funcionarios')
-    .select('qr_token, fornecedores!inner(evento_id)')
-    .eq('cpf', perfil.cpf)
-    .eq('fornecedores.evento_id', fornecedor.evento_id)
-    .limit(1)
-  if (existentes && existentes.length) return { qrToken: existentes[0].qr_token as string }
-
-  const { data: novo, error } = await supabaseAdmin.from('funcionarios').insert([{
-    fornecedor_id: alvoFornecedorId,
+  return crachaNoEvento({
+    fornecedorId: alvoFornecedorId,
+    eventoId: fornecedor.evento_id as string,
+    organizacaoId: (fornecedor.eventos as unknown as { organizacao_id: string | null }).organizacao_id ?? perfil.organizacao_id,
     nome: perfil.nome,
     cpf: perfil.cpf,
     telefone: perfil.telefone ?? '',
     cargo: perfil.role === 'supervisor' ? 'Supervisor' : 'Administração',
+  })
+}
+
+/**
+ * Acha ou cria o crachá (linha em `funcionarios`) desta pessoa NESTE evento.
+ *
+ * Um crachá por CPF por evento — mesma regra anti-duplicidade do cadastro
+ * público: se a pessoa já estava na equipe de outro setor do mesmo evento
+ * (virou supervisora depois), reaproveita o que existe. Um cadastro dela
+ * ainda PENDENTE é aprovado aqui: quem virou supervisor já é gente de
+ * confiança da operação, e ficar preso aguardando aprovação do próprio setor
+ * não faz sentido. Um desativado de propósito continua desativado.
+ *
+ * Sem boas-vindas no WhatsApp: o supervisor já recebe o convite dele, e o
+ * crachá é pra passar no portão, não pra virar mais uma mensagem.
+ */
+async function crachaNoEvento(p: {
+  fornecedorId: string
+  eventoId: string
+  organizacaoId: string | null
+  nome: string
+  cpf: string
+  telefone: string
+  cargo: string
+}): Promise<{ qrToken: string; criado: boolean } | { error: string }> {
+  const { data: existentes } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, qr_token, status_credenciamento, fornecedores!inner(evento_id)')
+    .eq('cpf', p.cpf)
+    .eq('fornecedores.evento_id', p.eventoId)
+    .limit(1)
+  const existente = existentes?.[0]
+  if (existente) {
+    if (existente.status_credenciamento === 'pendente') {
+      await supabaseAdmin.from('funcionarios')
+        .update({ status_credenciamento: 'aprovado', decidido_em: new Date().toISOString() })
+        .eq('id', existente.id)
+    }
+    return { qrToken: existente.qr_token as string, criado: false }
+  }
+
+  const { data: novo, error } = await supabaseAdmin.from('funcionarios').insert([{
+    fornecedor_id: p.fornecedorId,
+    nome: p.nome,
+    cpf: p.cpf,
+    telefone: p.telefone,
+    cargo: p.cargo,
     ativo: true,
     consentimento_base: true,
     consentimento_em: new Date().toISOString(),
@@ -3395,13 +3438,46 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
 
   after(() => registrarCadastroFuncionario({
     funcionarioId: novo.id,
-    nome: perfil.nome,
-    eventoId: fornecedor.evento_id,
-    organizacaoId: perfil.organizacao_id,
+    nome: p.nome,
+    eventoId: p.eventoId,
+    organizacaoId: p.organizacaoId,
     origem: 'supervisor',
   }))
 
-  return { qrToken: novo.qr_token }
+  return { qrToken: novo.qr_token, criado: true }
+}
+
+/**
+ * Todo supervisor é também um funcionário ATIVO do setor que ele cobre — com
+ * QR e na lista da equipe (pedido do Juan, 25/09/2026). Antes o crachá só
+ * nascia quando ele abria "Meu Crachá"; quem nunca abriu passava no portão
+ * sem credencial e não aparecia na equipe.
+ *
+ * Chamada em `vincularSupervisorAoSetor`, o ponto por onde TODO vínculo de
+ * supervisor passa (criar novo, reaproveitar conta existente, outra função).
+ * Nunca lança: falhar o crachá não pode desfazer o cadastro do supervisor —
+ * "Meu Crachá" continua cobrindo o que escapar daqui.
+ */
+async function garantirCrachaDoSupervisorNoSetor(perfilId: string, fornecedorId: string): Promise<void> {
+  try {
+    const [{ data: perfil }, { data: fornecedor }] = await Promise.all([
+      supabaseAdmin.from('perfis').select('nome, cpf, telefone').eq('id', perfilId).single(),
+      supabaseAdmin.from('fornecedores').select('evento_id, eventos!inner(organizacao_id)').eq('id', fornecedorId).single(),
+    ])
+    if (!perfil?.cpf || !fornecedor) return
+    const r = await crachaNoEvento({
+      fornecedorId,
+      eventoId: fornecedor.evento_id as string,
+      organizacaoId: (fornecedor.eventos as unknown as { organizacao_id: string | null }).organizacao_id,
+      nome: perfil.nome as string,
+      cpf: perfil.cpf as string,
+      telefone: (perfil.telefone as string | null) ?? '',
+      cargo: 'Supervisor',
+    })
+    if ('error' in r) console.error('[supervisor] crachá não criado:', r.error)
+  } catch (e) {
+    console.error('[supervisor] falha inesperada ao criar o crachá', e)
+  }
 }
 
 async function sincronizarValorNaPlanilha(funcionarioId: string, valor: number) {

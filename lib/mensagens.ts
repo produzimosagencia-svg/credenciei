@@ -343,6 +343,14 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     .eq('ativo', true)
     // Quem ja foi descredenciado cumpriu o evento: nao recebe mais lembrete.
     .is('descredenciado_em', null)
+    /*
+     * O crachá do supervisor (origem 'supervisor', criado junto com o vínculo
+     * dele ao setor) não entra na fila de funcionário: o supervisor já tem as
+     * mensagens próprias dele, e o crachá existe pra passar no portão — pedido
+     * explícito do Juan: nenhum WhatsApp novo por causa do QR do supervisor.
+     * `origem is null` precisa entrar à parte: `neq` sozinho descarta os nulos.
+     */
+    .or('origem.is.null,origem.neq.supervisor')
   if (!funcionarios?.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
@@ -776,6 +784,11 @@ export async function agendarMeioAposEntrada(params: {
   if (!telefone) return
   const fluxos = await fluxosLigados()
   if (desligado(fluxos, 'lembrete') && desligado(fluxos, 'reforco')) return
+
+  // Crachá do supervisor não recebe lembrete de funcionário (mesma regra de
+  // `sincronizarAgendamentos`).
+  const { data: quem } = await supabase.from('funcionarios').select('origem').eq('id', params.funcionarioId).maybeSingle()
+  if (quem?.origem === 'supervisor') return
 
   /*
    * Setor que não pede o meio — ou DIA que não pede — não gera mensagem.
