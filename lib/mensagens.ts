@@ -550,7 +550,14 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       const prazoEntradaReal = dia.jornadaDia?.entrada_fim ?? (evento as EventoJanelas).janela_entrada_fim ?? null
       const prazoSaidaReal = dia.jornadaDia?.saida_fim ?? (evento as EventoJanelas).janela_fim_fim ?? null
 
-      if (diaComTrava && !desligado(fluxos, 'lembrete')) {
+      /*
+       * O LEMBRETE também precisa de prazo real — o texto aprovado na Meta
+       * imprime "Prazo para conclusão: {{4}}". Sem fim configurado, {{4}}
+       * virava o 12:00 genérico: no Pontal Weekend (25/09/2026) 110 pessoas
+       * receberam às 17h "registro pendente, prazo 12:00". Janela aberta,
+       * sem fim, não tem lembrete de prazo — nem reforço.
+       */
+      if (diaComTrava && prazoEntradaReal && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
       }
       if (diaComTrava && esperado.entrada && prazoEntradaReal && !desligado(fluxos, 'reforco')) {
@@ -559,7 +566,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
           'sem_registro')
       }
 
-      if (diaComTrava && !desligado(fluxos, 'lembrete')) {
+      if (diaComTrava && prazoSaidaReal && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
       }
       if (diaComTrava && esperado.fim && prazoSaidaReal && !desligado(fluxos, 'reforco')) {
@@ -1330,10 +1337,11 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       const diaComTrava = ehPrincipal && !livre
       if (!diaComTrava) return null
 
-      // Reforço sem prazo de verdade (janela aberta, sem fim) não sai — ver o
-      // mesmo filtro em `sincronizarAgendamentos`. Reconferido aqui porque a
-      // linha pode ter sido agendada antes desse filtro existir.
-      if (msg.tipo.startsWith('reforco_')) {
+      // Lembrete e reforço de entrada/saída sem prazo de verdade (janela
+      // aberta, sem fim) não saem: o texto imprimiria o 12:00/23:59 genérico
+      // como prazo. Ver o mesmo filtro em `sincronizarAgendamentos`;
+      // reconferido aqui pra linha agendada antes dele existir.
+      {
         const ev = evento as EventoJanelas
         const prazo = momento === 'entrada'
           ? ((dia?.[0]?.entrada_fim as string | null) ?? ev.janela_entrada_fim ?? null)
