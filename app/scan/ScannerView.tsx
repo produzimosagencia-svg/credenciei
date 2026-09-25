@@ -20,6 +20,33 @@ type ScanResult = {
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
 const ehQrDeVeiculo = (texto: string) => /\/veiculo\/[A-Za-z0-9_-]{10,}/.test(texto)
 
+// O html5-qrcode rejeita às vezes com Error, às vezes com string
+// ("Error getting userMedia, error = NotReadableError: ...") — lê os dois.
+const textoDoErro = (e: unknown): string => {
+  const x = e as { name?: string; message?: string } | null
+  return `${x?.name ?? ''} ${x?.message ?? ''} ${typeof e === 'string' ? e : ''}`.trim()
+}
+const ehPermissaoNegada = (e: unknown) => /NotAllowed|Permission ?denied|PermissionDenied|SecurityError/i.test(textoDoErro(e))
+const ehTraseira = (rotulo: string) => /back|rear|traseira|environment|trás/i.test(rotulo ?? '')
+const codigoDoErro = (e: unknown): string =>
+  textoDoErro(e).match(/(NotAllowed|NotReadable|NotFound|Overconstrained|Abort|Security|TrackStart)\w*/)?.[0]
+  ?? (textoDoErro(e).slice(0, 60) || 'desconhecido')
+
+/** O que fazer, pela CAUSA do erro — antes era sempre "permita a câmera". */
+function mensagemDoErroDeCamera(e: unknown): string {
+  const t = textoDoErro(e)
+  if (ehPermissaoNegada(e)) {
+    return 'A câmera está bloqueada. Toque no cadeado ao lado do endereço e permita a câmera. Se já estiver permitida, confira no Android: Configurações → Apps → Chrome → Permissões → Câmera → Permitir. Depois recarregue a página.'
+  }
+  if (/NotReadable|Could not start|TrackStart|Abort|in use|Concurrent/i.test(t)) {
+    return 'A câmera está sendo usada por outro aplicativo ou outra aba. Feche as outras abas do navegador (principalmente outras do Credenciei) e apps de câmera, vídeo ou chamada, e toque em "Tentar de novo".'
+  }
+  if (/NotFound|DevicesNotFound|Overconstrained|no camera/i.test(t)) {
+    return 'Não encontramos uma câmera disponível neste aparelho. Feche outros apps que usem a câmera e toque em "Tentar de novo" — ou use outro celular.'
+  }
+  return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
+}
+
 export default function ScannerView({
   eventos,
   initialEventoId,
@@ -34,6 +61,9 @@ export default function ScannerView({
   // A câmera não abriu. Sem isto, quem opera o portão fica olhando um quadrado
   // preto sem saber o motivo — ver o comentário no `catch` do `start`.
   const [erroCamera, setErroCamera] = useState<string | null>(null)
+  // O nome técnico do erro, pequeno na tela — é o que permite diagnosticar
+  // por um print do celular do portão.
+  const [codigoErroCamera, setCodigoErroCamera] = useState<string | null>(null)
   const [linkCopiado, setLinkCopiado] = useState(false)
   const scanningRef = useRef(false)
   const scannerRef = useRef<any>(null)
@@ -101,43 +131,63 @@ export default function ScannerView({
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    let desmontou = false
 
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      const html5QrCode = new Html5Qrcode('qr-reader')
-      scannerRef.current = html5QrCode
-      html5QrCode.start(
-        { facingMode: 'environment' },
-        { fps: 15, qrbox: { width: 280, height: 280 } },
-        (decodedText: string) => processQR(decodedText),
-        () => {}
-      ).catch((e: unknown) => {
-        /*
-         * A câmera falhando NÃO pode ser silenciosa.
-         *
-         * Antes isto era `.catch(console.error)`: quando a câmera não abria,
-         * quem estava no portão via um quadrado preto e nenhuma explicação —
-         * e ficava tentando, com fila na frente, sem saber que o problema era
-         * permissão. Aconteceu de verdade no primeiro dia de operação.
-         *
-         * A causa quase sempre é uma das duas: o link foi aberto dentro do
-         * WhatsApp (WebView não repassa a permissão de câmera, mesmo problema
-         * que já corrigimos no registro por foto), ou a permissão foi negada
-         * ao navegador. As duas têm a mesma saída — abrir num navegador de
-         * verdade e permitir —, então o aviso diz isso em vez do erro técnico.
-         */
-        console.error(e)
-        setErroCamera(emNavegadorEmbutido()
-          ? 'Você abriu por dentro de outro aplicativo (WhatsApp, Instagram), e por ali a câmera não funciona. Toque em "Copiar link", abra o Chrome ou o Safari e cole lá.'
-          : 'Não conseguimos abrir a câmera. Toque no cadeado ao lado do endereço, permita a câmera para este site e recarregue a página.')
-      })
+    import('html5-qrcode').then(async ({ Html5Qrcode }) => {
+      if (desmontou) return
+      const config = { fps: 15, qrbox: { width: 280, height: 280 } }
+
+      // Uma instância nova por tentativa: depois de um `start` que falhou, a
+      // mesma instância nem sempre aceita começar de novo.
+      const tentar = async (camera: string | MediaTrackConstraints) => {
+        const leitor = new Html5Qrcode('qr-reader')
+        scannerRef.current = leitor
+        try {
+          await leitor.start(camera, config, (texto: string) => processQR(texto), () => {})
+        } catch (e) {
+          try { leitor.clear() } catch { /* nada pra limpar */ }
+          throw e
+        }
+      }
+
+      /*
+       * Primeiro a câmera traseira; se não abrir, CADA câmera do aparelho.
+       *
+       * Portão do Pontal Weekend (25/09/2026): câmera permitida e mesmo assim
+       * "a câmera não abriu" — e a tela só sabia dizer "permita a câmera",
+       * então ninguém sabia o que fazer e a entrada virou lançamento manual.
+       * O pedido genérico de câmera traseira falha em alguns Android (outra
+       * lente, câmera ocupada por outra aba); pedir pelo id de cada câmera
+       * costuma resolver sozinho. Permissão negada não adianta insistir.
+       */
+      let ultimoErro: unknown = null
+      try { await tentar({ facingMode: 'environment' }); return } catch (e) { ultimoErro = e }
+
+      if (!ehPermissaoNegada(ultimoErro)) {
+        try {
+          const cameras = await Html5Qrcode.getCameras()
+          const traseiraPrimeiro = [...cameras].sort((a, b) => Number(ehTraseira(b.label)) - Number(ehTraseira(a.label)))
+          for (const c of traseiraPrimeiro) {
+            if (desmontou) return
+            try { await tentar(c.id); return } catch (e) { ultimoErro = e }
+          }
+        } catch (e) { ultimoErro = e }
+      }
+
+      if (desmontou) return
+      console.error(ultimoErro)
+      setErroCamera(emNavegadorEmbutido()
+        ? 'Você abriu por dentro de outro aplicativo (WhatsApp, Instagram), e por ali a câmera não funciona. Toque em "Copiar link", abra o Chrome ou o Safari e cole lá.'
+        : mensagemDoErroDeCamera(ultimoErro))
+      setCodigoErroCamera(codigoDoErro(ultimoErro))
     })
 
     return () => {
+      desmontou = true
       if (scannerRef.current?.isScanning) {
         scannerRef.current.stop().catch(() => {})
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const overlayColor = !result?.success
@@ -186,6 +236,7 @@ export default function ScannerView({
           <CameraOff className="w-8 h-8 text-red-400 mx-auto" />
           <p className="text-red-200 font-semibold text-sm mt-2">A câmera não abriu</p>
           <p className="text-red-300/90 text-xs mt-1.5 leading-relaxed">{erroCamera}</p>
+          {codigoErroCamera && <p className="text-red-400/60 text-2xs mt-1.5 font-mono">Código: {codigoErroCamera}</p>}
           <div className="flex flex-col gap-2 mt-3">
             <button
               onClick={async () => {
@@ -203,7 +254,7 @@ export default function ScannerView({
               onClick={() => window.location.reload()}
               className="text-red-300 text-xs font-semibold hover:text-white transition-colors"
             >
-              Já permiti — tentar de novo
+              Tentar de novo
             </button>
           </div>
           {/*
