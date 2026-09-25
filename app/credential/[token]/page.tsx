@@ -221,7 +221,29 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const periodo = evento ? periodoDoEvento(evento) : null
   const dentroDoPeriodoBase = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
-  const diaPrincipal = !!evento && ehDiaPrincipal(evento, dataRef)
+
+  /*
+   * Uma consulta só a `jornada_dias`, cobrindo as DUAS datas que importam
+   * nesta página — `dataRef` (o dia ao qual a batida em aberto pertence,
+   * pode ser ontem) e `hoje` (o dia real, agora — o QR assina pra ele). São
+   * perguntas diferentes: janela de entrada/saída usa `dataRef`; a fase que
+   * assina o QR usa `hoje`. Num evento de uma noite só as duas quase sempre
+   * coincidem; num festival de mais de uma noite, podem não coincidir.
+   *
+   * Também substitui a antiga consulta de só-existência: `tipo` já responde
+   * "isto é dia de trabalho?" (linha existe) E "é dia principal?" (tipo).
+   */
+  const datasRelevantes = [...new Set([dataRef, hoje])]
+  const { data: diasJornada } = evento
+    ? await supabase
+        .from('jornada_dias')
+        .select('data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+        .eq('evento_id', evento.id)
+        .in('data', datasRelevantes)
+    : { data: null }
+  const porData = new Map((diasJornada ?? []).map(d => [d.data as string, d]))
+  const diaDaRef = porData.get(dataRef) ?? null
+  const diaDeHoje = porData.get(hoje) ?? null
 
   /*
    * "Dentro do período" NÃO PODE olhar só `data_inicio`/`data_fim`.
@@ -238,18 +260,17 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * credencial — não tem QR físico equivalente. Um setor com o meio ligado
    * durante a montagem nunca conseguiu deixar ninguém bater sozinho.
    */
-  let dentroDoPeriodo = dentroDoPeriodoBase
-  if (!dentroDoPeriodo && evento) {
-    const { data: diaDaJornada } = await supabase
-      .from('jornada_dias')
-      .select('id')
-      .eq('evento_id', evento.id)
-      .eq('data', dataRef)
-      .eq('cancelado', false)
-      .limit(1)
-      .maybeSingle()
-    dentroDoPeriodo = !!diaDaJornada
-  }
+  const dentroDoPeriodo = dentroDoPeriodoBase || (!!diaDaRef && diaDaRef.cancelado !== true)
+
+  /*
+   * Dia principal EFETIVO: a linha de `jornada_dias` manda quando existir
+   * (é o que permite uma segunda noite de festival, marcada `tipo:
+   * 'principal'`, contar como tal mesmo não sendo a data de início do
+   * evento); sem linha (evento sem jornada materializada), cai pra
+   * `ehDiaPrincipal` — a data de início continua sendo a única resposta
+   * possível.
+   */
+  const diaPrincipal = diaDaRef ? diaDaRef.tipo === 'principal' : (!!evento && ehDiaPrincipal(evento, dataRef))
 
   /*
    * Setor de pacote fechado não pede o meio — o cartão some da credencial.
@@ -330,8 +351,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     }
 
     // ── Entrada e saída: livres, menos no dia principal ─────────────────────
-    const inicio = evento[`janela_${momento}_inicio`] ?? null
-    const fim = evento[`janela_${momento}_fim`] ?? null
+    // O dia pode ter horário PRÓPRIO (segunda noite de um festival); sem um,
+    // cai pro campo único do evento — mesmo padrão de `avaliarEntradaSaida`.
+    const campoDia = momento === 'entrada' ? 'entrada' : 'saida'
+    const inicio = diaDaRef?.[`${campoDia}_inicio`] ?? evento[`janela_${momento}_inicio`] ?? null
+    const fim = diaDaRef?.[`${campoDia}_fim`] ?? evento[`janela_${momento}_fim`] ?? null
 
     if (!diaPrincipal || !inicio || !fim) {
       return { ...base, inicio: null, fim: null, status: 'disponivel' as const, janelaTexto: 'Livre hoje, a qualquer hora' }
@@ -356,7 +380,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * madrugada o registro pertence a ontem e o QR do evento continua válido
    * até o término configurado, que é o mesmo critério usado pelo scanner.
    */
-  const faseHoje = faseAtualDoQR(agora, evento?.data_inicio, evento?.data_fim)
+  const ehPrincipalHoje = diaDeHoje ? diaDeHoje.tipo === 'principal' : (!!evento && ehDiaPrincipal(evento, hoje))
+  const faseHoje = faseAtualDoQR(agora, evento?.data_inicio, evento?.data_fim, ehPrincipalHoje)
   const { codigo } = gerarCodigoQR(token, faseHoje)
   const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
 

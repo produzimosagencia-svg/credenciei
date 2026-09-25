@@ -148,15 +148,17 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
   const metaPorData = new Map((diasBrutos ?? []).map(d => [d.data as string, d as DiaDaJornada]))
 
   /*
-   * O dia do evento — a régua que separa montagem de desmontagem.
+   * O(s) dia(s) do evento — a régua que separa montagem de desmontagem.
    *
-   * Vem da linha marcada como principal em `jornada_dias`, com a data do evento
-   * como reserva: se a data do evento mudou e a jornada ainda não acompanhou, a
+   * Vem das linhas marcadas como principal em `jornada_dias` (pode ser mais
+   * de uma, num festival de várias noites), com a data do evento como
+   * reserva: se a data do evento mudou e a jornada ainda não acompanhou, a
    * linha marcada é a que a operação de fato usou.
    */
-  const diaPrincipal =
-    (diasBrutos ?? []).find(d => d.tipo === 'principal')?.data as string | undefined
-    ?? (evento.data_inicio ? diaBRT(evento.data_inicio) : '')
+  const diasPrincipais = (diasBrutos ?? [])
+    .filter(d => d.tipo === 'principal')
+    .map(d => d.data as string)
+  if (!diasPrincipais.length && evento.data_inicio) diasPrincipais.push(diaBRT(evento.data_inicio))
 
   const dias: DiaDoHistorico[] = [...datas].sort().map(data => {
     const meta = metaPorData.get(data) ?? null
@@ -169,7 +171,7 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     return {
       data,
       tipo: (meta?.tipo as TipoDia) ?? 'preparacao',
-      fase: faseDoDia(data, diaPrincipal),
+      fase: faseDoDia(data, diasPrincipais),
       cancelado: meta?.cancelado === true,
       entrada, meio, fim,
       meioEsperadoEm: janela?.inicio ?? null,

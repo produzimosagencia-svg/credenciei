@@ -230,12 +230,18 @@ export function avaliarEntradaSaida(
    */
   if (evento.batida_livre === true) return { ok: true }
 
-  return dentroDaJanela(
-    evento[`janela_${momento}_inicio`],
-    evento[`janela_${momento}_fim`],
-    agora,
-    etapa
-  )
+  /*
+   * Um dia principal pode ter horário PRÓPRIO (jornada_dias.entrada_inicio
+   * etc.) — é o que permite um festival de duas noites ter uma janela por
+   * noite, em vez de uma só pro evento inteiro. Sem horário próprio (o caso
+   * de todo evento de um dia só, hoje), cai no campo único do evento —
+   * mesmo padrão que `horariosEsperados` já usa.
+   */
+  const campo = momento === 'entrada' ? 'entrada' : 'saida'
+  const inicio = dia[`${campo}_inicio`] ?? evento[`janela_${momento}_inicio`]
+  const fim = dia[`${campo}_fim`] ?? evento[`janela_${momento}_fim`]
+
+  return dentroDaJanela(inicio, fim, agora, etapa)
 }
 
 // ─── Horário ESPERADO de cada etapa ──────────────────────────────────────────
@@ -368,10 +374,28 @@ export function horariosEsperados(
  */
 export type FaseDoDia = 'montagem' | 'evento' | 'desmontagem'
 
-export function faseDoDia(dia: string, diaPrincipal: string): FaseDoDia {
-  if (!diaPrincipal) return 'montagem'
-  if (dia === diaPrincipal) return 'evento'
-  return dia < diaPrincipal ? 'montagem' : 'desmontagem'
+/**
+ * `diasPrincipais` é uma LISTA porque um festival pode ter mais de uma noite
+ * principal (cada uma com sua própria janela — ver `jornada_dias.tipo`),
+ * não só a data de início do evento. Um dia que caia ENTRE dois principais
+ * sem ser ele mesmo um (folga no meio de um festival de dias não seguidos)
+ * vira desmontagem do anterior ou montagem do próximo, o que estiver mais
+ * perto — caso raro, mas não pode ficar sem resposta.
+ */
+export function faseDoDia(dia: string, diasPrincipais: string[]): FaseDoDia {
+  const principais = [...new Set((diasPrincipais ?? []).filter(Boolean))].sort()
+  if (!principais.length) return 'montagem'
+  if (principais.includes(dia)) return 'evento'
+
+  const primeiro = principais[0]
+  const ultimo = principais[principais.length - 1]
+  if (dia < primeiro) return 'montagem'
+  if (dia > ultimo) return 'desmontagem'
+
+  const anterior = [...principais].reverse().find(p => p < dia)!
+  const proximo = principais.find(p => p > dia)!
+  const emDias = (a: string, b: string) => new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()
+  return emDias(dia, proximo) <= emDias(anterior, dia) ? 'montagem' : 'desmontagem'
 }
 
 /**
@@ -386,7 +410,16 @@ export function faseAtualDoQR(
   agora: Date,
   dataInicio: string | null | undefined,
   dataFim: string | null | undefined,
+  /**
+   * Hoje é (também) um dia principal, segundo `jornada_dias` — não só a data
+   * de início do evento. Quem chama sabe disso (uma consulta a `jornada_dias`
+   * para a data de hoje); esta função não tem acesso a banco. Só importa
+   * quando `true` — permite a SEGUNDA noite de um festival assinar 'evento'
+   * mesmo estando depois de `data_inicio`, sem mudar nada do resto da regra.
+   */
+  ehPrincipalHoje?: boolean,
 ): FaseDoDia {
+  if (ehPrincipalHoje) return 'evento'
   if (!dataInicio) return 'montagem'
 
   const hoje = diaBRT(agora)
@@ -447,11 +480,15 @@ export function liberacaoDoQR(
    */
   if (principal && evento.batida_livre === true) return { liberado: true, liberaEm: null }
 
-  // No dia principal manda a janela configurada; nos dias de preparação, a
-  // expectativa da jornada, quando existir.
+  /*
+   * No dia principal manda o horário PRÓPRIO do dia quando existir (mesmo
+   * padrão de `avaliarEntradaSaida` — permite uma noite de festival ter sua
+   * janela sem depender da do evento inteiro), caindo pro campo único do
+   * evento quando não; nos dias de preparação, a expectativa da jornada.
+   */
   const janelas: [string | null | undefined, string | null | undefined][] = principal
-    ? [[evento.janela_entrada_inicio, evento.janela_entrada_fim],
-       [evento.janela_fim_inicio, evento.janela_fim_fim]]
+    ? [[dia.entrada_inicio ?? evento.janela_entrada_inicio, dia.entrada_fim ?? evento.janela_entrada_fim],
+       [dia.saida_inicio ?? evento.janela_fim_inicio, dia.saida_fim ?? evento.janela_fim_fim]]
     : [[dia.entrada_inicio, dia.entrada_fim], [dia.saida_inicio, dia.saida_fim]]
 
   const validas = janelas.filter(([i]) => !!i) as [string, string | null | undefined][]

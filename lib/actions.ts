@@ -4363,7 +4363,11 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
    * no dia do evento.
    */
   const dadosDoEvento = evento as { data_inicio?: string | null; data_fim?: string | null }
-  const faseDeHoje = faseAtualDoQR(new Date(), dadosDoEvento.data_inicio, dadosDoEvento.data_fim)
+  // Hoje pode ser um segundo (ou terceiro) dia principal de um festival de
+  // várias noites, não só a data de início — `diaDeTrabalho` já sabe ler
+  // `jornada_dias` pela data certa.
+  const diaDeHojeQR = await diaDeTrabalho(eventoId, diaBRT())
+  const faseDeHoje = faseAtualDoQR(new Date(), dadosDoEvento.data_inicio, dadosDoEvento.data_fim, diaDeHojeQR?.tipo === 'principal')
   const etapa = faseConfere(leitura.fase, faseDeHoje)
   if (!etapa.ok) {
     /*
@@ -5318,15 +5322,16 @@ export async function obterQRDoFuncionario(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedores!inner(eventos!inner(data_inicio, data_fim))')
+    .select('qr_token, fornecedores!inner(eventos!inner(id, data_inicio, data_fim))')
     .eq('id', funcionarioId)
     .single()
   if (!func?.qr_token) return { error: 'Funcionário não encontrado.' }
 
   const evento = (func.fornecedores as unknown as {
-    eventos: { data_inicio: string | null; data_fim: string | null }
+    eventos: { id: string; data_inicio: string | null; data_fim: string | null }
   })?.eventos
-  const fase = faseAtualDoQR(new Date(), evento?.data_inicio, evento?.data_fim)
+  const diaDeHojeQR = evento ? await diaDeTrabalho(evento.id, diaBRT()) : null
+  const fase = faseAtualDoQR(new Date(), evento?.data_inicio, evento?.data_fim, diaDeHojeQR?.tipo === 'principal')
   const { codigo } = gerarCodigoQR(func.qr_token as string, fase)
 
   const QRCode = (await import('qrcode')).default

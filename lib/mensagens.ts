@@ -361,6 +361,17 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const fluxos = await fluxosLigados()
   const dias = await diasDaOperacao(evento as EventoJanelas & { id: string })
   const diaPrincipal = diaBRT(evento.data_inicio as string)
+  /*
+   * Quase sempre só `diaPrincipal` mesmo (o único dia principal de hoje) —
+   * mas um festival de mais de uma noite pode ter outras linhas
+   * `jornada_dias.tipo === 'principal'`, e `dias` já carrega esse dado.
+   * `faseDoDia` precisa da lista inteira pra não classificar a segunda
+   * noite como "desmontagem" da primeira.
+   */
+  const diasPrincipaisEvento = [...new Set([
+    diaPrincipal,
+    ...dias.filter(d => d.jornadaDia?.tipo === 'principal').map(d => d.data),
+  ])]
 
   type LinhaFunc = {
     evento_id: string; funcionario_id: string; tipo: TipoMensagem; data_ref: string
@@ -419,7 +430,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        * O texto muda com a FASE porque o que a pessoa precisa saber muda:
        * montar não é desmontar, e nenhum dos dois é o dia do evento.
        */
-      const fase = faseDoDia(dia.data, diaPrincipal)
+      const fase = faseDoDia(dia.data, diasPrincipaisEvento)
       const chaveFase = fase === 'montagem' ? 'aviso_montagem' : 'aviso_desmontagem'
       if (fase !== 'evento' && !desligado(fluxos, chaveFase)) {
         agendarFunc(
