@@ -3262,6 +3262,69 @@ export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; no
     .sort((a, b) => b.pendentes - a.pendentes)
 }
 
+export type CredenciamentoNegado = {
+  id: string
+  nome: string
+  cpf: string
+  telefone: string
+  cargo: string | null
+  eventoId: string
+  eventoNome: string
+  setorNome: string
+  motivo: string | null
+  negadoEm: string | null
+  negadoPor: string | null
+}
+
+/**
+ * Histórico dos credenciamentos NEGADOS que este usuário pode ver — e por
+ * quem (pedido do Juan, 25/09/2026). Mesmo escopo de
+ * `setoresComAcessoAAprovacao`: supervisor os próprios setores, admin a
+ * organização, master tudo.
+ *
+ * O nome de quem negou vem numa consulta à parte (`decidido_por` →
+ * `perfis`), em vez de um join embutido: não depende do nome da constraint
+ * no banco pra funcionar.
+ */
+export async function historicoDeNegados(): Promise<CredenciamentoNegado[]> {
+  const perfil = await getPerfil()
+  if (!perfil) return []
+  const setorIds = await setoresComAcessoAAprovacao(perfil)
+  if (setorIds && !setorIds.length) return []
+
+  let query = supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, telefone, cargo, motivo_negacao, decidido_em, decidido_por, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(nome))')
+    .eq('status_credenciamento', 'negado')
+    .order('decidido_em', { ascending: false })
+    .limit(500)
+  if (setorIds) query = query.in('fornecedor_id', setorIds)
+  const { data } = await query
+
+  const decisores = [...new Set((data ?? []).map(f => f.decidido_por as string | null).filter((v): v is string => !!v))]
+  const { data: perfis } = decisores.length
+    ? await supabaseAdmin.from('perfis').select('id, nome').in('id', decisores)
+    : { data: [] as { id: string; nome: string }[] }
+  const nomePorId = new Map((perfis ?? []).map(p => [p.id as string, p.nome as string]))
+
+  return (data ?? []).map(f => {
+    const fornecedor = f.fornecedores as unknown as { nome: string; evento_id: string; eventos: { nome: string } }
+    return {
+      id: f.id as string,
+      nome: f.nome as string,
+      cpf: f.cpf as string,
+      telefone: f.telefone as string,
+      cargo: (f.cargo as string | null) ?? null,
+      eventoId: fornecedor.evento_id,
+      eventoNome: fornecedor.eventos.nome,
+      setorNome: fornecedor.nome,
+      motivo: (f.motivo_negacao as string | null) ?? null,
+      negadoEm: (f.decidido_em as string | null) ?? null,
+      negadoPor: f.decidido_por ? (nomePorId.get(f.decidido_por as string) ?? null) : null,
+    }
+  })
+}
+
 /**
  * "Meu Crachá" — pedido do Juan, 24/09/2026: o supervisor também precisa se
  * credenciar no evento que supervisiona, pra passar pela portaria como

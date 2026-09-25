@@ -1,4 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
+import Link from 'next/link'
+import { Ban } from 'lucide-react'
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { ehMaster, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
@@ -39,11 +41,18 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
 
   let query = supabase
     .from('funcionarios')
-    .select('id, nome, cpf, telefone, empresa, cargo, origem, status_credenciamento, motivo_negacao, decidido_em, created_at, fornecedor_id, fornecedores!inner(nome, evento_id)')
+    .select('id, nome, cpf, telefone, empresa, cargo, origem, status_credenciamento, motivo_negacao, decidido_em, decidido_por, created_at, fornecedor_id, fornecedores!inner(nome, evento_id)')
     .eq('fornecedores.evento_id', eventoId)
     .order('created_at', { ascending: false })
   if (fornecedorIdsPermitidos) query = query.in('fornecedor_id', fornecedorIdsPermitidos)
   const { data: funcionarios } = await query
+
+  // Quem decidiu — consulta à parte, sem depender do nome da constraint.
+  const decisores = [...new Set((funcionarios ?? []).map(f => f.decidido_por as string | null).filter((v): v is string => !!v))]
+  const { data: perfisDecisores } = decisores.length
+    ? await supabase.from('perfis').select('id, nome').in('id', decisores)
+    : { data: [] as { id: string; nome: string }[] }
+  const nomeDecisor = new Map((perfisDecisores ?? []).map(p => [p.id as string, p.nome as string]))
 
   const linhas: CredenciamentoLinha[] = (funcionarios ?? []).map(f => ({
     id: f.id as string,
@@ -58,6 +67,8 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
     status: statusCredenciamentoValido(f.status_credenciamento as string),
     motivoNegacao: (f.motivo_negacao as string | null) ?? null,
     criadoEm: f.created_at as string,
+    decididoEm: (f.decidido_em as string | null) ?? null,
+    decididoPor: f.decidido_por ? (nomeDecisor.get(f.decidido_por as string) ?? null) : null,
   }))
 
   return (
@@ -65,6 +76,11 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
       <PageHeader
         titulo="Aprovações"
         descricao={`${evento.nome} — credenciamentos aguardando decisão`}
+        acoes={
+          <Link href="/admin/aprovacoes?aba=negados" className="btn btn-secundario">
+            <Ban className="w-3.5 h-3.5 shrink-0" /> Histórico de negados
+          </Link>
+        }
       />
       <PainelAprovacoes eventoId={eventoId} linhas={linhas} />
     </div>

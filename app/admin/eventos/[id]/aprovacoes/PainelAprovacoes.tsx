@@ -25,6 +25,9 @@ export type CredenciamentoLinha = {
   status: StatusCredenciamento
   motivoNegacao: string | null
   criadoEm: string
+  /** Quando e por quem foi aprovado/negado — nulo enquanto pendente. */
+  decididoEm: string | null
+  decididoPor: string | null
 }
 
 const ROTULO_ORIGEM: Record<string, string> = {
@@ -169,7 +172,13 @@ export default function PainelAprovacoes({
                       {l.status === 'pendente' ? (
                         <AcoesCredenciamento funcionarioId={l.id} fornecedorId={l.setorId} eventoId={eventoId} nome={l.nome} />
                       ) : (
-                        <span className="text-slate-300 text-2xs">Decidido</span>
+                        <div className="text-2xs whitespace-nowrap">
+                          <p className="text-slate-600">
+                            {l.status === 'negado' ? 'Negado' : 'Aprovado'} por{' '}
+                            <strong className="text-slate-800">{l.decididoPor ?? '—'}</strong>
+                          </p>
+                          {l.decididoEm && <p className="text-slate-400">{formatarBR(l.decididoEm, 'curto')}</p>}
+                        </div>
                       )}
                     </td>
                   </tr>
