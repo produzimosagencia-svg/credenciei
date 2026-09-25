@@ -529,10 +529,23 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
        */
       const diaComTrava = ehPrincipal && !livre
 
+      /*
+       * O reforço só existe se o PRAZO existe de verdade.
+       *
+       * `entradaLimite`/`fimLimite` nunca vêm vazios: sem fim configurado, caem
+       * no padrão genérico (12:00 / 23:59). No Pontal Weekend (entrada a partir
+       * das 17h, sem hora de fechar) isso agendou "sua entrada ainda não foi
+       * registrada, prazo 12:00" pras 11h58 — cinco horas antes do portão abrir
+       * — e o mesmo com a saída às 23h57, que só abre às 3h. Janela aberta, sem
+       * fim, não tem prazo pra cobrar.
+       */
+      const prazoEntradaReal = dia.jornadaDia?.entrada_fim ?? (evento as EventoJanelas).janela_entrada_fim ?? null
+      const prazoSaidaReal = dia.jornadaDia?.saida_fim ?? (evento as EventoJanelas).janela_fim_fim ?? null
+
       if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
       }
-      if (diaComTrava && esperado.entrada && !desligado(fluxos, 'reforco')) {
+      if (diaComTrava && esperado.entrada && prazoEntradaReal && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
           new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
@@ -541,7 +554,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       if (diaComTrava && !desligado(fluxos, 'lembrete')) {
         agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
       }
-      if (diaComTrava && esperado.fim && !desligado(fluxos, 'reforco')) {
+      if (diaComTrava && esperado.fim && prazoSaidaReal && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
           new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
@@ -576,10 +589,14 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
      */
     const ehDiaPrincipal = dia.jornadaDia?.tipo === 'principal'
     const temHorario = temHorarioReal(ehDiaPrincipal, dia.jornadaDia)
+    // Mesmo motivo do reforço ao funcionário: sem fim de saída configurado,
+    // `fimLimite` é o 23:59 genérico — alertar "não saíram" às 23h59 de um
+    // show cuja saída só abre às 3h é alarme falso.
+    const prazoSaidaReal = dia.jornadaDia?.saida_fim ?? (evento as EventoJanelas).janela_fim_fim ?? null
     const gatilhos: [TipoMensagem, string][] = ehDiaPrincipal
       ? [
           ['alerta_supervisor_meio', esperado.meioAlerta],
-          ...(temHorario ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
+          ...(temHorario && prazoSaidaReal ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
         ]
       : []
 
@@ -1299,6 +1316,17 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       // Mesma régua do agendamento: só o dia principal, sem batida livre.
       const diaComTrava = ehPrincipal && !livre
       if (!diaComTrava) return null
+
+      // Reforço sem prazo de verdade (janela aberta, sem fim) não sai — ver o
+      // mesmo filtro em `sincronizarAgendamentos`. Reconferido aqui porque a
+      // linha pode ter sido agendada antes desse filtro existir.
+      if (msg.tipo.startsWith('reforco_')) {
+        const ev = evento as EventoJanelas
+        const prazo = momento === 'entrada'
+          ? ((dia?.[0]?.entrada_fim as string | null) ?? ev.janela_entrada_fim ?? null)
+          : ((dia?.[0]?.saida_fim as string | null) ?? ev.janela_fim_fim ?? null)
+        if (!prazo) return null
+      }
     }
 
     const horarioLimiteISO = await limiteDaEtapa(msg, momento, evento as EventoJanelas)
