@@ -1511,14 +1511,34 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   // Aviso do dia do evento: o texto completo, com as três etapas e horários.
   if (msg.tipo === 'aviso_dia_evento') {
     if (!msg.funcionario_id) return null
-    const [{ data: func }, { data: evento }] = await Promise.all([
+    const [{ data: func }, { data: evento }, { data: diaDaJornada }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
       supabase.from('eventos')
-        .select('nome, local, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_fim_inicio, janela_fim_fim')
+        .select('nome, local, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_fim_inicio, janela_fim_fim')
         .eq('id', msg.evento_id).single(),
+      // O dia da mensagem pode ter horário próprio (2ª noite de um festival).
+      supabase.from('jornada_dias')
+        .select('entrada_inicio, entrada_fim, saida_inicio, saida_fim')
+        .eq('evento_id', msg.evento_id).eq('data', msg.data_ref).order('turno').limit(1).maybeSingle(),
     ])
     if (!func || !evento) return null
-    const h = (v: unknown) => (v ? formatarBR(v as string, 'hora') : 'a definir')
+    const hora = (v: unknown) => formatarBR(v as string, 'hora')
+
+    /*
+     * Nunca "a definir" (Pontal Weekend, 25/09/2026: saiu "ENTRADA — das 17:00
+     * às a definir" e "MEIO — às a definir" pra equipe inteira).
+     *
+     *   - Sem FIM configurado não há prazo antes do evento acabar (regra do
+     *     Juan: só início = "a partir de") — o fim mostrado é o do EVENTO
+     *     (`data_fim`), o único que de fato foi configurado.
+     *   - O MEIO não tem horário configurável desde a janela individual: é
+     *     sempre 4h depois da entrada de cada pessoa.
+     */
+    const entradaInicio = diaDaJornada?.entrada_inicio ?? evento.janela_entrada_inicio
+    const entradaFim = diaDaJornada?.entrada_fim ?? evento.janela_entrada_fim ?? evento.data_fim
+    const saidaInicio = diaDaJornada?.saida_inicio ?? evento.janela_fim_inicio
+    const saidaFim = diaDaJornada?.saida_fim ?? evento.janela_fim_fim ?? evento.data_fim
+    if (!entradaInicio) return null
 
     const credencial = linkDaCredencial(func.qr_token, 'aviso_dia_evento')
     if (!credencial) return null
@@ -1529,11 +1549,11 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         func.nome,
         evento.nome,
         evento.local?.trim() || 'a confirmar',
-        h(evento.janela_entrada_inicio),
-        h(evento.janela_entrada_fim),
-        h(evento.janela_meio_inicio),
-        h(evento.janela_fim_inicio),
-        h(evento.janela_fim_fim),
+        hora(entradaInicio),
+        entradaFim ? hora(entradaFim) : 'o fim do evento',
+        '4h após a sua entrada',
+        saidaInicio ? hora(saidaInicio) : 'o fim do turno',
+        saidaFim ? hora(saidaFim) : 'o fim do evento',
         credencial,
       ],
     }
