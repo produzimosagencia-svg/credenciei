@@ -329,12 +329,33 @@ export function horariosEsperados(
 
   const entrada = jornadaDia?.entrada_inicio ?? doEvento('janela_entrada_inicio')
   const fim = jornadaDia?.saida_inicio ?? doEvento('janela_fim_inicio')
+  const entradaFimReal = jornadaDia?.entrada_fim ?? doEvento('janela_entrada_fim')
+  const saidaFimReal = jornadaDia?.saida_fim ?? doEvento('janela_fim_fim')
+
+  /*
+   * SÓ INÍCIO, SEM FIM = "A PARTIR DE", SEM PRAZO (regra do Juan, 25/09/2026).
+   *
+   * Antes, sem fim configurado, o limite caía no padrão genérico (12:00 /
+   * 23:59) mesmo com início configurado — no Pontal Weekend (entrada a partir
+   * das 17h) todo mundo virava "pendente de entrada" ao meio-dia, cinco horas
+   * antes do portão abrir, e o 12:00 foi parar como "prazo" num WhatsApp pra
+   * 110 pessoas. Agora:
+   *   - entrada só com início → ninguém é pendente antes do início; depois
+   *     dele, quem não entrou aparece como "ainda não entrou" (sem prazo);
+   *   - saída só com início → só vira pendência depois que o EVENTO acaba
+   *     (`data_fim`), o único fim que de fato foi configurado.
+   * Os padrões 12:00/23:59 ficam só pro dia sem horário nenhum (montagem).
+   */
+  const fimDoEvento = evento.data_fim ?? null
+  const saidaLimiteSemFim = fim
+    ? (fimDoEvento && new Date(fimDoEvento).getTime() > new Date(fim).getTime() ? fimDoEvento : fim)
+    : instanteBRT(dia, LIMITE_PADRAO_SAIDA)
 
   return {
     entrada,
-    entradaLimite: jornadaDia?.entrada_fim ?? doEvento('janela_entrada_fim') ?? instanteBRT(dia, LIMITE_PADRAO_ENTRADA),
+    entradaLimite: entradaFimReal ?? entrada ?? instanteBRT(dia, LIMITE_PADRAO_ENTRADA),
     fim,
-    fimLimite: jornadaDia?.saida_fim ?? doEvento('janela_fim_fim') ?? instanteBRT(dia, LIMITE_PADRAO_SAIDA),
+    fimLimite: saidaFimReal ?? saidaLimiteSemFim,
     /*
      * No dia principal o meio tem horário próprio, então cobrar é simples:
      * logo depois de a janela configurada fechar. Nos dias de preparação a
