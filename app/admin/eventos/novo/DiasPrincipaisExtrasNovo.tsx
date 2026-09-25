@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { CalendarPlus, X } from 'lucide-react'
+import { CalendarPlus, X, LogIn, LogOut } from 'lucide-react'
 import DateTimePicker from '@/components/DateTimePicker'
 
 /**
@@ -38,19 +38,39 @@ export default function DiasPrincipaisExtrasNovo() {
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Entrada — início *">
-              <DateTimePicker name="extra_entrada_inicio" />
-            </Field>
-            <Field label="Entrada — fim">
-              <DateTimePicker name="extra_entrada_fim" />
-            </Field>
-            <Field label="Saída — início *">
-              <DateTimePicker name="extra_saida_inicio" />
-            </Field>
-            <Field label="Saída — fim">
-              <DateTimePicker name="extra_saida_fim" />
-            </Field>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-green-100 bg-green-50/40 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center shrink-0">
+                  <LogIn className="w-3.5 h-3.5 text-green-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">Entrada</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Início *">
+                  <DateTimePicker name="extra_entrada_inicio" />
+                </Field>
+                <Field label="Fim">
+                  <DateTimePicker name="extra_entrada_fim" />
+                </Field>
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                  <LogOut className="w-3.5 h-3.5 text-brand-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">Saída</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Início *">
+                  <DateTimePicker name="extra_saida_inicio" />
+                </Field>
+                <Field label="Fim">
+                  <DateTimePicker name="extra_saida_fim" />
+                </Field>
+              </div>
+            </div>
           </div>
           <p className="text-slate-400 text-2xs">Deixe &ldquo;fim&rdquo; em branco se não houver horário de fechamento.</p>
         </div>

@@ -220,35 +220,39 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             ))}
           </div>
 
+          {/*
+            DIAS PRINCIPAIS EXTRAS — a segunda (ou terceira) noite de um
+            festival, cada uma com sua própria janela. Pedido do Juan,
+            25/09/2026, no meio do Pontal Weekend (evento real de duas
+            noites). Fica AQUI, logo depois da janela do dia principal
+            automático e ANTES da configuração do meio: é a mesma família de
+            informação (horário de entrada/saída), então entra na mesma
+            leitura de cima a baixo, antes de mudar de assunto pro meio.
+            Mini-formulário à parte (mesmo padrão de DiasDeTrabalho), porque
+            grava em `jornada_dias`, não nos campos únicos do evento acima.
+          */}
+          <div className="border-t border-slate-200 pt-4 space-y-3" data-tutorial="edt-dias-principais-extras">
+            <SectionTitle
+              title="Dias principais extras"
+              subtitle="O evento tem mais de uma noite? Configure a janela de cada uma"
+              icon={CalendarPlus}
+            />
+            <DiasPrincipaisExtras
+              eventoId={id}
+              iniciais={dias
+                .filter(d => d.tipo === 'principal' && d.data !== diaPrincipal)
+                .map(d => ({
+                  data: d.data, entradaInicio: d.entradaInicio, entradaFim: d.entradaFim,
+                  saidaInicio: d.saidaInicio, saidaFim: d.saidaFim, temBatidas: d.temBatidas,
+                }))}
+            />
+          </div>
+
           {/* O meio não tem HORÁRIO para configurar (ele é a entrada real de
               cada pessoa + 4h), mas tem PÚBLICO e DIAS — e essa é a decisão
               de custo mais cara do sistema: duas mensagens cobradas por
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
-        </div>
-
-        {/*
-          DIAS PRINCIPAIS EXTRAS — a segunda (ou terceira) noite de um
-          festival, cada uma com sua própria janela. Pedido do Juan,
-          25/09/2026, no meio do Pontal Weekend (evento real de duas noites).
-          Mini-formulário à parte (mesmo padrão de DiasDeTrabalho), porque
-          grava em `jornada_dias`, não nos campos únicos do evento acima.
-        */}
-        <div className="bg-slate-50 border-t border-slate-100 p-6 sm:p-8 space-y-4" data-tutorial="edt-dias-principais-extras">
-          <SectionTitle
-            title="Dias principais extras"
-            subtitle="O evento tem mais de uma noite? Configure a janela de cada uma"
-            icon={CalendarPlus}
-          />
-          <DiasPrincipaisExtras
-            eventoId={id}
-            iniciais={dias
-              .filter(d => d.tipo === 'principal' && d.data !== diaPrincipal)
-              .map(d => ({
-                data: d.data, entradaInicio: d.entradaInicio, entradaFim: d.entradaFim,
-                saidaInicio: d.saidaInicio, saidaFim: d.saidaFim, temBatidas: d.temBatidas,
-              }))}
-          />
         </div>
 
         {/*

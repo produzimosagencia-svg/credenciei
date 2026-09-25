@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarPlus, X, Save, AlertCircle, Check, Lock } from 'lucide-react'
+import { CalendarPlus, X, Save, AlertCircle, Check, Lock, LogIn, LogOut } from 'lucide-react'
 import DateTimePicker from '@/components/DateTimePicker'
 import { salvarDiasPrincipaisExtras } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
@@ -108,19 +108,39 @@ export default function DiasPrincipaisExtras({
               {bloco.temBatidas ? <Lock className="w-3.5 h-3.5" /> : <X className="w-4 h-4" />}
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Entrada — início *">
-              <DateTimePicker value={bloco.entradaInicio} onChange={v => set(bloco.id, 'entradaInicio', v)} />
-            </Field>
-            <Field label="Entrada — fim">
-              <DateTimePicker value={bloco.entradaFim} onChange={v => set(bloco.id, 'entradaFim', v)} />
-            </Field>
-            <Field label="Saída — início *">
-              <DateTimePicker value={bloco.saidaInicio} onChange={v => set(bloco.id, 'saidaInicio', v)} />
-            </Field>
-            <Field label="Saída — fim">
-              <DateTimePicker value={bloco.saidaFim} onChange={v => set(bloco.id, 'saidaFim', v)} />
-            </Field>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-green-100 bg-green-50/40 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center shrink-0">
+                  <LogIn className="w-3.5 h-3.5 text-green-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">Entrada</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Início *">
+                  <DateTimePicker value={bloco.entradaInicio} onChange={v => set(bloco.id, 'entradaInicio', v)} />
+                </Field>
+                <Field label="Fim">
+                  <DateTimePicker value={bloco.entradaFim} onChange={v => set(bloco.id, 'entradaFim', v)} />
+                </Field>
+              </div>
+            </div>
+            <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                  <LogOut className="w-3.5 h-3.5 text-brand-600" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700">Saída</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Início *">
+                  <DateTimePicker value={bloco.saidaInicio} onChange={v => set(bloco.id, 'saidaInicio', v)} />
+                </Field>
+                <Field label="Fim">
+                  <DateTimePicker value={bloco.saidaFim} onChange={v => set(bloco.id, 'saidaFim', v)} />
+                </Field>
+              </div>
+            </div>
           </div>
           <p className="text-slate-400 text-2xs">
             Deixe &ldquo;fim&rdquo; em branco se não houver horário de fechamento, igual ao dia principal automático.
