@@ -2021,6 +2021,23 @@ export async function editarEvento(id: string, formData: FormData) {
   exigirHorariosCoerentes(data)
 
   await db.from('eventos').update(data).eq('id', id)
+
+  /*
+   * Horário do aviso do dia (WhatsApp) — coluna nova
+   * (supabase/upgrade-hora-aviso-dia-evento.sql). Update à parte e
+   * tolerante, mesmo padrão de `exige_meio` em criarFornecedor: sem a
+   * migração, o resto do evento salva normal e só este campo fica de fora.
+   * Antes do `sincronizarAgendamentos` abaixo, pra fila já nascer no
+   * horário novo.
+   */
+  if (formData.has('hora_aviso_dia_evento')) {
+    const hora = ((formData.get('hora_aviso_dia_evento') as string) || '').trim()
+    const { error: erroHora } = await db.from('eventos')
+      .update({ hora_aviso_dia_evento: /^\d{2}:\d{2}$/.test(hora) ? hora : null })
+      .eq('id', id)
+    if (erroHora) console.error('[editarEvento] hora_aviso_dia_evento não gravado (migração pendente?)', erroHora.message)
+  }
+
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
   after(() => sincronizarAgendamentos(id).catch(console.error))
   revalidatePath(`/admin/eventos/${id}`)

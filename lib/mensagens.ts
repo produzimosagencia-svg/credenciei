@@ -111,8 +111,9 @@ function quandoAvisarDoDia(
   diaPrincipal: string,
   entradaAbreEm: string,
   entradaFechaEm: string | null,
+  hora: string = HORA_AVISO_DIA_EVENTO,
 ): string {
-  const horaPadrao = new Date(`${diaPrincipal}T${HORA_AVISO_DIA_EVENTO}:00-03:00`)
+  const horaPadrao = new Date(`${diaPrincipal}T${hora}:00-03:00`)
 
   // A janela ainda estará aberta no horário padrão? Então ele vale, e ponto.
   if (!entradaFechaEm || horaPadrao.getTime() < new Date(entradaFechaEm).getTime()) {
@@ -123,6 +124,26 @@ function quandoAvisarDoDia(
   return new Date(
     new Date(entradaAbreEm).getTime() - ANTECEDENCIA_AVISO_DIA_HORAS * 60 * 60_000,
   ).toISOString()
+}
+
+/**
+ * O horário do aviso do dia DESTE evento — `eventos.hora_aviso_dia_evento`,
+ * ou o padrão de sempre (07:00) quando não configurado.
+ *
+ * Existe porque o horário acertado à mão não sobrevive: no Pontal Weekend
+ * (25/09/2026) o Juan pediu 10h, e a primeira ressincronização da fila
+ * (toda edição de equipe dispara uma) recalculou pro padrão fixo e mandou
+ * às 7h. Guardado no evento, qualquer ressincronização recalcula o MESMO
+ * horário — não há mais o que sobrescrever.
+ *
+ * Consulta à parte e tolerante: sem a coluna (migração pendente), cai no
+ * padrão, em vez de derrubar o agendamento do evento inteiro.
+ */
+async function horaDoAvisoDoDia(eventoId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('eventos').select('hora_aviso_dia_evento').eq('id', eventoId).maybeSingle()
+  const hora = error ? null : ((data?.hora_aviso_dia_evento as string | null) ?? null)
+  return hora && /^\d{2}:\d{2}$/.test(hora) ? hora : HORA_AVISO_DIA_EVENTO
 }
 
 type MomentoRegistro = 'entrada' | 'meio' | 'fim'
@@ -361,6 +382,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const fluxos = await fluxosLigados()
   const dias = await diasDaOperacao(evento as EventoJanelas & { id: string })
   const diaPrincipal = diaBRT(evento.data_inicio as string)
+  const horaAvisoDia = await horaDoAvisoDoDia(eventoId)
   /*
    * Quase sempre só `diaPrincipal` mesmo (o único dia principal de hoje) —
    * mas um festival de mais de uma noite pode ter outras linhas
@@ -423,7 +445,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
         if (entradaInicio) {
           agendarFunc(
             func.id, func.telefone, 'aviso_dia_evento', dia.data,
-            quandoAvisarDoDia(dia.data, entradaInicio as string, (entradaFim as string | null) ?? null),
+            quandoAvisarDoDia(dia.data, entradaInicio as string, (entradaFim as string | null) ?? null, horaAvisoDia),
           )
         }
       }

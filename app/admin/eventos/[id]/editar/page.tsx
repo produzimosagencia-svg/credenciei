@@ -10,7 +10,7 @@ import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save } from 'lucide-react'
+import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save, MessageCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -218,6 +218,35 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
                 </div>
               </div>
             ))}
+          </div>
+
+          {/*
+            Horário do aviso do dia (WhatsApp) — por evento. Antes era fixo
+            em 07:00 no código, e um horário acertado à mão na fila era
+            sobrescrito na primeira ressincronização (Pontal Weekend,
+            25/09/2026: pedido 10h, saiu 7h). Vale pra TODOS os dias
+            principais do evento, inclusive os extras abaixo.
+          */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-700">Aviso do dia no WhatsApp</p>
+                <p className="text-xs text-slate-400">
+                  Que horas a equipe recebe &ldquo;hoje é dia de evento&rdquo;, em cada dia principal. Em branco = 07:00.
+                </p>
+              </div>
+            </div>
+            <div className="sm:max-w-xs">
+              <DateTimePicker
+                modo="hora"
+                name="hora_aviso_dia_evento"
+                defaultValue={(evento.hora_aviso_dia_evento as string | null) ?? ''}
+                placeholder="07:00 (padrão)"
+              />
+            </div>
           </div>
 
           {/*
