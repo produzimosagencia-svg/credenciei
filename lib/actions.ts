@@ -4018,6 +4018,30 @@ async function inferirMomentoQR(
     }
     return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string } }
   }
+
+  /*
+   * Entrou HOJE (no dia do turno) e ainda não saiu: é a SAÍDA — mesmo que a
+   * entrada já tenha passado de TETO_TURNO_H.
+   *
+   * Pontal Weekend, 26/09/2026: gente chegou às 11h pra uma noite que acaba
+   * às 08:00 do dia seguinte — 20h de turno. Passadas as 18h, `entradaDoTurno`
+   * não achava mais a entrada, e a leitura da despedida virava "entrada" →
+   * "Entrada já registrada", sem gravar a saída. Aqui o dia do turno é o
+   * certo (`diaDoTurno`), então não há risco de pegar a entrada de outro dia.
+   */
+  if (entradaHoje && !saidaHoje) {
+    const desdeEntradaMs = agora.getTime() - new Date(entradaHoje.created_at as string).getTime()
+    const carenciaMs = CARENCIA_SAIDA_MIN * 60 * 1000
+    if (desdeEntradaMs < carenciaMs) {
+      const faltam = Math.max(1, Math.ceil((carenciaMs - desdeEntradaMs) / 60_000))
+      return {
+        erro: `Esta pessoa acabou de registrar a ENTRADA (às ${formatarBR(entradaHoje.created_at as string, 'hora')}). `
+          + `Se for saída mesmo, aguarde ${faltam} min e leia de novo.`,
+        recente: true,
+      }
+    }
+    return { momento: 'fim' }
+  }
   return { momento: 'entrada' }
 }
 
@@ -4082,8 +4106,29 @@ type Resolucao =
        * segunda noite nem começar.
        */
       ultimoDiaPrincipal: boolean
+      /** A saída de agora já é no horário de saída do dia — ver `ehSaidaFinal`. */
+      saidaFinal: boolean
       jaEm: string | null
     }
+
+/**
+ * Esta saída é a de FIM de turno, e não uma pausa no meio dele?
+ *
+ * Pontal Weekend, 26/09/2026: quem entrou à tarde podia sair e voltar à
+ * noite. Só que o dia era o último principal, e a saída do último dia
+ * descredencia — quem saísse às 18h voltava às 21h e o QR respondia "já
+ * descredenciado". A saída só encerra o vínculo a partir do horário de saída
+ * configurado (ali, 03:00); antes disso é pausa. Sem horário de saída
+ * configurado, vale a regra de sempre: qualquer saída encerra.
+ */
+function ehSaidaFinal(
+  evento: { janela_fim_inicio?: string | null },
+  dia: { saida_inicio?: string | null } | null,
+  agora: Date,
+): boolean {
+  const inicio = dia?.saida_inicio ?? evento.janela_fim_inicio ?? null
+  return !inicio || agora.getTime() >= new Date(inicio).getTime()
+}
 
 /**
  * Existe outro dia principal (tipo='principal', não cancelado) depois de
@@ -4219,6 +4264,7 @@ async function resolverRegistro(
     jornadaDiaId: dia?.id ?? null,
     diaPrincipal,
     ultimoDiaPrincipal,
+    saidaFinal: ehSaidaFinal(evento, dia, agora),
     jaEm: (jaExiste?.[0]?.created_at as string | undefined) ?? null,
   }
 }
@@ -4313,7 +4359,10 @@ async function diaDeReferencia(
   const dia = await diaDeTrabalho(evento.id, dataRef)
   const diaPrincipal = dia?.tipo === 'principal'
   const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasPrincipaisDepois(evento.id, dataRef)) : false
-  return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal, ultimoDiaPrincipal }
+  // Sem o horário de saída do evento em mãos, usa o do dia (a noite do
+  // festival tem o próprio) — ver `ehSaidaFinal`.
+  const saidaFinal = ehSaidaFinal(evento as { janela_fim_inicio?: string | null }, dia, agora)
+  return { dataRef, jornadaDiaId: dia?.id ?? null, diaPrincipal, ultimoDiaPrincipal, saidaFinal }
 }
 const JUSTIFICATIVA_SEM_MEIO = 'Saída registrada sem registro de meio.'
 
@@ -5059,7 +5108,7 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
    * primeira noite — a pessoa ainda volta amanhã, e descredenciada ela seria
    * recusada na entrada da segunda noite.
    */
-  const encerrou = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal
+  const encerrou = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal && resolucao.saidaFinal
   if (encerrou) await descredenciar(func.id, perfil.id)
 
   return {
@@ -6236,7 +6285,7 @@ export async function registrarPresencaAssistida(
     )
   }
   // Mesma regra do scanner: a saída do ÚLTIMO dia principal fecha o vínculo.
-  if (momento === 'fim' && refAssistido.diaPrincipal && refAssistido.ultimoDiaPrincipal) {
+  if (momento === 'fim' && refAssistido.diaPrincipal && refAssistido.ultimoDiaPrincipal && refAssistido.saidaFinal) {
     await descredenciar(func.id, perfil.id)
   }
 
