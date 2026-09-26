@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { supabaseAdmin as supabase, diaDoTurno } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import { QrCode, Clock, Ban, XCircle } from 'lucide-react'
 import QRCode from 'qrcode'
@@ -195,7 +195,13 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     : { data: null }
 
   const turnoAberto = !!entrada && !fimDoTurno?.length
-  const dataRef = turnoAberto ? entrada.dataRef : hoje
+  /*
+   * Sem turno aberto, o dia do TURNO (`diaDoTurno`), não o do calendário: às
+   * 05:30 do dia 26, quem já bateu a saída da noite de 25 vê a noite de 25
+   * fechada — e não os cartões zerados de 26, que faziam a pessoa voltar ao
+   * portão pra "entrar de novo".
+   */
+  const dataRef = turnoAberto ? entrada.dataRef : await diaDoTurno(evento?.id ?? '', agora)
 
   // Só os registros DESTE dia. Olhar o evento inteiro faria os cartões
   // aparecerem verdes já no segundo dia de uma operação de vários dias.
@@ -383,7 +389,13 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const ehPrincipalHoje = diaDeHoje ? diaDeHoje.tipo === 'principal' : (!!evento && ehDiaPrincipal(evento, hoje))
   const faseHoje = faseAtualDoQR(agora, evento?.data_inicio, evento?.data_fim, ehPrincipalHoje)
   const { codigo } = gerarCodigoQR(token, faseHoje)
-  const qrDataUrl = await QRCode.toDataURL(codigo, { width: 260, margin: 1 })
+  /*
+   * Mais fácil de a câmera do portão achar (26/09/2026, reclamação de demora
+   * na saída): margem branca de 3 módulos (era 1 — os leitores precisam desse
+   * respiro em volta pra localizar o QR) e imagem grande o bastante pra ficar
+   * nítida quando a tela mostra o QR maior. O conteúdo é o mesmo.
+   */
+  const qrDataUrl = await QRCode.toDataURL(codigo, { width: 480, margin: 3, errorCorrectionLevel: 'M' })
 
   const avisos = evento
     ? await avisosPendentesFuncionario({

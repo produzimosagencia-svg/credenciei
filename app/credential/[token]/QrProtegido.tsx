@@ -68,7 +68,7 @@ export default function QrProtegido(
   return (
     <div className="text-center" data-tutorial="cred-qr">
       <div
-        className="relative mx-auto w-[200px] h-[200px] rounded-xl border border-slate-100 overflow-hidden select-none"
+        className="relative mx-auto w-[240px] h-[240px] max-w-full rounded-xl border border-slate-100 bg-white overflow-hidden select-none"
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         onContextMenu={e => e.preventDefault()}
       >
@@ -76,13 +76,15 @@ export default function QrProtegido(
         <img
           src={dataUrl}
           alt="QR code da credencial"
-          width={200}
-          height={200}
+          width={240}
+          height={240}
           draggable={false}
           onDragStart={e => e.preventDefault()}
           // print:hidden — o QR não sai em impressão nem em "salvar como PDF".
           className={`w-full h-full print:hidden transition-all ${oculto ? 'blur-xl scale-110' : ''}`}
-          style={{ pointerEvents: 'none' }}
+          // `pixelated`: módulos com borda seca, sem o cinza da suavização —
+          // a câmera do portão acha o QR mais rápido (26/09/2026).
+          style={{ pointerEvents: 'none', imageRendering: 'pixelated' }}
         />
 
         {oculto && (

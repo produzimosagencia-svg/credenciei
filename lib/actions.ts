@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje, diaDoTurno } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
@@ -3919,8 +3919,14 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
  */
 async function inferirMomentoQR(
   funcionarioId: string, eventoId: string, agora: Date,
-): Promise<{ momento: 'entrada' | 'fim' } | { reabrir: { id: string; em: string } } | { erro: string }> {
-  const entrada = await entradaDoTurno(funcionarioId, eventoId, agora)
+  /**
+   * O que quem chama JÁ buscou — o scanner busca os dois em paralelo com o
+   * resto da leitura, em vez de pagar mais duas idas ao banco em série aqui.
+   * Omitido, é buscado aqui mesmo (mesmo resultado).
+   */
+  pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
+): Promise<{ momento: 'entrada' | 'fim' } | { reabrir: { id: string; em: string } } | { erro: string; recente?: boolean }> {
+  const entrada = pre && 'entrada' in pre ? pre.entrada ?? null : await entradaDoTurno(funcionarioId, eventoId, agora)
 
   if (entrada) {
     /*
@@ -3963,6 +3969,7 @@ async function inferirMomentoQR(
         return {
           erro: `Esta pessoa acabou de registrar a ENTRADA (às ${formatarBR(entrada.em, 'hora')}). `
             + `Se for saída mesmo, aguarde ${faltam} min e leia de novo.`,
+          recente: true,
         }
       }
       return { momento: 'fim' }
@@ -3973,8 +3980,13 @@ async function inferirMomentoQR(
    * Nenhum turno aberto. Só recusa se o par entrada+saída for DE HOJE —
    * turno fechado de ontem não bloqueia o dia de hoje (era exatamente o
    * bug acima).
+   *
+   * "Hoje" é o dia do TURNO, não o do calendário (`diaDoTurno`): às 05:15 do
+   * dia 26 a noite de 25 ainda está acontecendo. Com o calendário, a leitura
+   * dupla na despedida (saída 05:15, QR lido de novo 05:15) virava ENTRADA
+   * do dia 26 — Pontal Weekend, 26/09/2026.
    */
-  const hoje = diaBRT(agora)
+  const hoje = pre?.diaTurno ?? await diaDoTurno(eventoId, agora)
   const { data: deHoje } = await supabaseAdmin
     .from('registros')
     .select('id, tipo, created_at')
@@ -4001,6 +4013,7 @@ async function inferirMomentoQR(
       return {
         erro: `Esta pessoa acabou de registrar a SAÍDA (às ${formatarBR(saidaHoje.created_at as string, 'hora')}). `
           + `Se ela está voltando a trabalhar, aguarde ${faltam} min e leia de novo.`,
+        recente: true,
       }
     }
     return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string } }
@@ -4109,10 +4122,13 @@ async function resolverRegistro(
   evento: EventoJanelas & { id: string },
   funcionarioId: string,
   momento: MomentoPresenca,
-  agora = new Date()
+  agora = new Date(),
+  /** Já buscados por quem chama (o scanner) — ver `inferirMomentoQR`. */
+  pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
 ): Promise<Resolucao> {
-  const hoje = diaBRT(agora)
-  let dataRef = hoje
+  // O dia do TURNO: quem chega à 01:00 na noite que vira a madrugada entra
+  // na noite de ontem, não num dia novo (ver `diaDoTurno`).
+  let dataRef = pre?.diaTurno ?? await diaDoTurno(evento.id, agora)
 
   /*
    * A entrada em aberto define o DIA de tudo que vem depois dela.
@@ -4121,10 +4137,29 @@ async function resolverRegistro(
    * dia 5 e sai 04:00 do dia 6 fecha o dia 5, em vez de abrir um dia novo às
    * quatro da manhã.
    */
-  const entrada = momento === 'entrada' ? null : await entradaDoTurno(funcionarioId, evento.id, agora)
+  const entrada = momento === 'entrada'
+    ? null
+    : pre && 'entrada' in pre ? pre.entrada ?? null : await entradaDoTurno(funcionarioId, evento.id, agora)
   if (entrada) dataRef = entrada.dataRef
 
-  const dia = await diaDeTrabalho(evento.id, dataRef)
+  /*
+   * As três consultas que dependem só do dia saem juntas — em série eram
+   * três idas ao banco a mais em cada leitura do portão. As checagens abaixo
+   * continuam na mesma ordem de sempre; `haMaisDiasPrincipaisDepois` só é
+   * usado quando o dia é principal, mas buscar à toa custa menos que esperar.
+   */
+  const [dia, { data: jaExiste }, haMaisDepois] = await Promise.all([
+    diaDeTrabalho(evento.id, dataRef),
+    supabaseAdmin
+      .from('registros')
+      .select('created_at')
+      .eq('funcionario_id', funcionarioId)
+      .eq('evento_id', evento.id)
+      .eq('tipo', momento)
+      .eq('data_ref', dataRef)
+      .limit(1),
+    haMaisDiasPrincipaisDepois(evento.id, dataRef),
+  ])
 
   if (momento === 'meio') {
     const janela = janelaDoMeio(evento, dia, entrada?.em ?? null)
@@ -4175,17 +4210,8 @@ async function resolverRegistro(
      */
   }
 
-  const { data: jaExiste } = await supabaseAdmin
-    .from('registros')
-    .select('created_at')
-    .eq('funcionario_id', funcionarioId)
-    .eq('evento_id', evento.id)
-    .eq('tipo', momento)
-    .eq('data_ref', dataRef)
-    .limit(1)
-
   const diaPrincipal = dia?.tipo === 'principal'
-  const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasPrincipaisDepois(evento.id, dataRef)) : false
+  const ultimoDiaPrincipal = diaPrincipal ? !haMaisDepois : false
 
   return {
     ok: true,
@@ -4267,7 +4293,8 @@ async function diaDeReferencia(
     ? null
     : await entradaDoTurno(funcionarioId, evento.id, agora)
 
-  let dataRef = diaBRT(agora)
+  // O dia do TURNO, não o do calendário — ver `diaDoTurno`.
+  let dataRef = await diaDoTurno(evento.id, agora)
   if (entrada) {
     // `.gt(created_at, entrada.em)`: só a saída POSTERIOR fecha o turno —
     // quem dobra o turno tem a saída da manhã no mesmo dia da entrada da
@@ -4600,8 +4627,14 @@ export type ResultadoScan = {
   /** Preenchido quando o QR lido é de VEÍCULO, não de funcionário — mesmo scanner, os dois tipos. */
   veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   momento?: MomentoPresenca
-  /** Já havia registro desta etapa no dia — nada foi gravado agora. */
+  /**
+   * Leitura repetida — já havia registro desta etapa no dia, ou a pessoa
+   * ACABOU de registrar (a leitura dupla no portão). Nada foi gravado agora;
+   * a tela mostra "já validado", não "acesso negado".
+   */
   jaRegistrado?: boolean
+  /** O código lido não é uma credencial válida deste sistema (formato/assinatura). */
+  qrInvalido?: boolean
   /**
    * O crachá é de OUTRA etapa do evento.
    *
@@ -4678,7 +4711,7 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
     .select('tipo')
     .eq('funcionario_id', f.id)
     .eq('evento_id', eventoId)
-    .eq('data_ref', diaBRT())
+    .eq('data_ref', await diaDoTurno(eventoId))
 
   return {
     credenciado: true,
@@ -4712,14 +4745,39 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
   // madrugada o registro pertence a ontem, mas o crachá na mão da pessoa é o
   // de hoje. Comparar com data_ref recusaria quem está saindo às 4 da manhã.
   const leitura = lerCodigoQR((qrData ?? '').split('|')[0]?.trim() ?? '', diaBRT())
-  if (!leitura.ok) return { success: false, message: leitura.erro }
+  if (!leitura.ok) return { success: false, message: leitura.erro, qrInvalido: true }
   const token = leitura.token
+  const agora = new Date()
 
-  const { data: evento } = await supabaseAdmin
-    .from('eventos')
-    .select(`id, organizacao_id, ${JANELA_SELECT}`)
-    .eq('id', eventoId)
-    .single()
+  /*
+   * TUDO QUE NÃO DEPENDE UMA COISA DA OUTRA SAI JUNTO (portão do Pontal
+   * Weekend, 26/09/2026).
+   *
+   * Esta leitura fazia ~20 idas ao banco UMA DEPOIS DA OUTRA, cada uma
+   * atravessando da função (EUA) até o banco (São Paulo) — segundos com a
+   * tela do operador parada, que era o "primeiro scan não mostra nada". As
+   * checagens abaixo continuam EXATAMENTE na mesma ordem e com as mesmas
+   * mensagens; o que mudou é só que os dados já chegam juntos. Nada é
+   * devolvido antes de `podeEscanearEvento` aprovar.
+   */
+  const [{ data: evento }, diaDeHojeQR, podeEsteEvento, { data: func }, diaTurno] = await Promise.all([
+    supabaseAdmin
+      .from('eventos')
+      .select(`id, organizacao_id, ${JANELA_SELECT}`)
+      .eq('id', eventoId)
+      .single(),
+    // Hoje pode ser um segundo (ou terceiro) dia principal de um festival de
+    // várias noites, não só a data de início — `diaDeTrabalho` já sabe ler
+    // `jornada_dias` pela data certa.
+    diaDeTrabalho(eventoId, diaBRT(agora)),
+    podeEscanearEvento(perfil, eventoId),
+    supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
+      .eq('qr_token', token)
+      .single(),
+    diaDoTurno(eventoId, agora),
+  ])
   if (!evento) return { success: false, message: 'Evento não encontrado' }
 
   /*
@@ -4734,11 +4792,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
    * no dia do evento.
    */
   const dadosDoEvento = evento as { data_inicio?: string | null; data_fim?: string | null }
-  // Hoje pode ser um segundo (ou terceiro) dia principal de um festival de
-  // várias noites, não só a data de início — `diaDeTrabalho` já sabe ler
-  // `jornada_dias` pela data certa.
-  const diaDeHojeQR = await diaDeTrabalho(eventoId, diaBRT())
-  const faseDeHoje = faseAtualDoQR(new Date(), dadosDoEvento.data_inicio, dadosDoEvento.data_fim, diaDeHojeQR?.tipo === 'principal')
+  const faseDeHoje = faseAtualDoQR(agora, dadosDoEvento.data_inicio, dadosDoEvento.data_fim, diaDeHojeQR?.tipo === 'principal')
   const etapa = faseConfere(leitura.fase, faseDeHoje)
   if (!etapa.ok) {
     /*
@@ -4757,15 +4811,10 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
     }
   }
   // Isolamento: master → qualquer evento; admin → só da org; supervisor → só vinculado
-  if (!(await podeEscanearEvento(perfil, eventoId))) {
+  if (!podeEsteEvento) {
     return { success: false, message: 'Sem acesso a este evento' }
   }
 
-  const { data: func } = await supabaseAdmin
-    .from('funcionarios')
-    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
-    .eq('qr_token', token)
-    .single()
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
   const funcInfo = { nome: func.nome, cargo: func.cargo ?? null }
@@ -4800,7 +4849,15 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
    * fecha a porta de vez. Aqui a mensagem é pro OPERADOR, não pra ela: ele
    * está com a pessoa na frente e precisa saber o que fazer.
    */
-  if (func.cpf && await cpfEstaBloqueado(eventoId, func.cpf as string, func.fornecedor_id as string)) {
+  // Mesma ideia da primeira leva: bloqueio, setor do supervisor e o turno em
+  // aberto chegam juntos; as checagens seguem na ordem de sempre.
+  const [bloqueado, setoresDoSupervisor, entradaAberta] = await Promise.all([
+    func.cpf ? cpfEstaBloqueado(eventoId, func.cpf as string, func.fornecedor_id as string) : Promise.resolve(false),
+    perfil.role === 'supervisor' ? meusSetores(perfil) : Promise.resolve(null),
+    entradaDoTurno(func.id, eventoId, agora),
+  ])
+
+  if (bloqueado) {
     return {
       success: false,
       message: 'Esta pessoa está bloqueada neste setor. Não libere a entrada — procure o supervisor do setor.',
@@ -4810,13 +4867,17 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
 
   // Supervisor só escaneia a própria equipe (qualquer um dos setores dele).
   // Sem setor nenhum, não escaneia ninguém.
-  if (perfil.role === 'supervisor' && !(await meusSetores(perfil)).some(s => s.id === func.fornecedor_id)) {
+  if (setoresDoSupervisor && !setoresDoSupervisor.some(s => s.id === func.fornecedor_id)) {
     return { success: false, message: 'Esta pessoa não é da sua equipe. Ela precisa passar pelo credenciamento do evento.', funcionario: funcInfo }
   }
 
-  const agora = new Date()
-  const decidido = await inferirMomentoQR(func.id, eventoId, agora)
-  if ('erro' in decidido) return { success: false, message: decidido.erro, funcionario: funcInfo }
+  const jaBuscado = { entrada: entradaAberta, diaTurno }
+  const decidido = await inferirMomentoQR(func.id, eventoId, agora, jaBuscado)
+  // "Acabou de registrar" é uma leitura REPETIDA, não uma recusa: a tela
+  // mostra como "já validado" (âmbar), não como acesso negado (vermelho).
+  if ('erro' in decidido) {
+    return { success: false, message: decidido.erro, funcionario: funcInfo, jaRegistrado: decidido.recente === true }
+  }
 
   /*
    * A VOLTA DE QUEM JÁ TINHA IDO EMBORA HOJE.
@@ -4856,7 +4917,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
 
   const momento = decidido.momento
 
-  const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento, agora)
+  const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento, agora, jaBuscado)
   if (!resolucao.ok) return { success: false, message: resolucao.erro, funcionario: funcInfo }
 
   /*
@@ -7385,7 +7446,7 @@ export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Pr
   }
 
   const token = extrairQrTokenDeVeiculo(qrData)
-  if (!token) return { success: false, message: 'QR Code fora do padrão.' }
+  if (!token) return { success: false, message: 'QR Code fora do padrão.', qrInvalido: true }
 
   const { data } = await supabaseAdmin
     .from('veiculos')

@@ -4,7 +4,7 @@ import { registrarPresencaQR, conferirVeiculoPorQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import { formatarBR } from '@/lib/tz'
-import { ScanLine, CameraOff, Copy, CheckCheck } from 'lucide-react'
+import { ScanLine, CameraOff, Copy, CheckCheck, Loader2 } from 'lucide-react'
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -15,10 +15,48 @@ type ScanResult = {
   veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   faseErrada?: { doQR: string; deHoje: string }
   momento?: 'entrada' | 'meio' | 'fim'
+  /** Leitura repetida: já estava registrado, nada foi gravado agora. */
+  jaRegistrado?: boolean
+  qrInvalido?: boolean
+  /** Só da tela: a resposta não chegou no tempo — ver `TEMPO_SEM_RESPOSTA_MS`. */
+  semResposta?: boolean
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
 const ehQrDeVeiculo = (texto: string) => /\/veiculo\/[A-Za-z0-9_-]{10,}/.test(texto)
+
+/*
+ * ─── O QUE ACONTECIA NO PORTÃO (Pontal Weekend, 25-26/09/2026) ─────────────
+ *
+ * 1. Entre ler o QR e a resposta chegar passavam segundos (a validação ia e
+ *    voltava ~20 vezes entre a função e o banco) e a tela não mostrava NADA
+ *    nesse meio-tempo. O operador achava que não tinha lido.
+ * 2. Quando o resultado sumia (2,5 s), o scanner voltava a ler — e o mesmo QR
+ *    continuava na frente da câmera. Segunda validação, 6 a 12 s depois da
+ *    primeira, com outro resultado ("acabou de registrar", ou pior: uma
+ *    entrada nova logo depois da saída). Está nos registros daquela noite.
+ * 3. A câmera seguia decodificando quadros enquanto esperava o servidor e
+ *    enquanto o resultado estava na tela — a noite toda.
+ *
+ * Agora: a leitura PAUSA a câmera e mostra "Validando acesso..." na hora; a
+ * resposta vira uma tela clara (liberado / já validado / negado / inválido);
+ * sem resposta em `TEMPO_SEM_RESPOSTA_MS`, a tela DIZ isso; e o mesmo QR lido
+ * de novo logo em seguida não vai mais ao servidor — só um aviso discreto.
+ */
+
+/** Sem resposta até aqui, a tela avisa — em vez de ficar parada. */
+const TEMPO_SEM_RESPOSTA_MS = 10_000
+
+/**
+ * O mesmo QR, dentro deste tempo depois do resultado, não é validado de novo:
+ * é o QR que continuou na frente da câmera. O servidor já recusa a saída nos
+ * 5 min seguintes à entrada (`CARENCIA_SAIDA_MIN`), então 15 s aqui não tira
+ * nenhuma leitura legítima.
+ */
+const REPETIDO_MS = 15_000
+
+/** Quanto tempo cada tipo de resultado fica na tela (ou até tocar). */
+const DURACAO_MS = { sucesso: 3000, jaValidado: 4000, erro: 5000 } as const
 
 // O html5-qrcode rejeita às vezes com Error, às vezes com string
 // ("Error getting userMedia, error = NotReadableError: ...") — lê os dois.
@@ -47,6 +85,62 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'invalido' | 'semResposta'
+
+function categoriaDo(r: ScanResult): Categoria {
+  if (r.semResposta) return 'semResposta'
+  if (r.jaRegistrado) return 'jaValidado'
+  if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
+  return r.qrInvalido ? 'invalido' : 'negado'
+}
+
+const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }> = {
+  liberado:    { fundo: 'bg-green-600', icone: '✓', titulo: 'ACESSO LIBERADO' },
+  saida:       { fundo: 'bg-brand-500', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
+  jaValidado:  { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
+  negado:      { fundo: 'bg-red-600',   icone: '✕', titulo: 'ACESSO NEGADO' },
+  invalido:    { fundo: 'bg-red-600',   icone: '✕', titulo: 'QR CODE INVÁLIDO' },
+  semResposta: { fundo: 'bg-amber-600', icone: '⏳', titulo: 'SEM RESPOSTA AINDA' },
+}
+
+/*
+ * Retorno que o operador SENTE, não só vê: vibração e um bipe curto. Quem está
+ * no portão olha para a pessoa, não para a tela. O navegador só libera som e
+ * vibração depois do primeiro toque na página — até lá, fica só o visual.
+ */
+let audio: AudioContext | null = null
+function prepararSom() {
+  if (typeof window === 'undefined' || audio) return
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (Ctx) audio = new Ctx()
+  } catch { /* sem áudio neste aparelho */ }
+}
+function bipe(frequencias: number[], duracaoS = 0.12) {
+  try {
+    if (!audio) return
+    if (audio.state === 'suspended') void audio.resume()
+    frequencias.forEach((f, i) => {
+      const osc = audio!.createOscillator()
+      const vol = audio!.createGain()
+      osc.frequency.value = f
+      vol.gain.value = 0.15
+      osc.connect(vol).connect(audio!.destination)
+      const t = audio!.currentTime + i * (duracaoS + 0.04)
+      osc.start(t)
+      osc.stop(t + duracaoS)
+    })
+  } catch { /* som é bônus */ }
+}
+function vibrar(padrao: number | number[]) {
+  try { navigator.vibrate?.(padrao) } catch { /* nem todo aparelho vibra */ }
+}
+function sinalizar(c: Categoria) {
+  if (c === 'liberado' || c === 'saida') { vibrar(80); bipe([880]) }
+  else if (c === 'jaValidado' || c === 'semResposta') { vibrar([60, 60, 60]); bipe([660, 660]) }
+  else { vibrar([200, 80, 200]); bipe([220], 0.35) }
+}
+
 export default function ScannerView({
   eventos,
   initialEventoId,
@@ -60,8 +154,10 @@ export default function ScannerView({
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const [result, setResult] = useState<ScanResult | null>(null)
-  const [show, setShow] = useState(false)
+  const [validando, setValidando] = useState(false)
   const [conferindo, setConferindo] = useState(false)
+  // Aviso discreto abaixo da câmera: o mesmo QR lido de novo logo em seguida.
+  const [repetido, setRepetido] = useState<string | null>(null)
   // A câmera não abriu. Sem isto, quem opera o portão fica olhando um quadrado
   // preto sem saber o motivo — ver o comentário no `catch` do `start`.
   const [erroCamera, setErroCamera] = useState<string | null>(null)
@@ -69,89 +165,183 @@ export default function ScannerView({
   // por um print do celular do portão.
   const [codigoErroCamera, setCodigoErroCamera] = useState<string | null>(null)
   const [linkCopiado, setLinkCopiado] = useState(false)
-  const scanningRef = useRef(false)
-  const scannerRef = useRef<any>(null)
+
+  /** Uma validação por vez: enquanto houver uma em curso ou um resultado na tela, nada novo entra. */
+  const ocupadoRef = useRef(false)
+  /** Identifica a leitura da vez — uma resposta atrasada de uma leitura antiga não sobrescreve a atual. */
+  const leituraRef = useRef(0)
+  /** O último QR com resultado, pra não validar de novo o mesmo QR parado na frente da câmera. */
+  const ultimoRef = useRef<{ codigo: string; em: number; resumo: string } | null>(null)
+  const temporizadorRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const repetidoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scannerRef = useRef<import('html5-qrcode').Html5Qrcode | null>(null)
   // Ref para o callback do scanner (que captura o estado do primeiro render).
   // Atualizada num efeito, não durante o render — o linter do React passou a
   // recusar escrever em `.current` no corpo do componente.
   const eventoIdRef = useRef(eventoId)
-  useEffect(() => { eventoIdRef.current = eventoId }, [eventoId])
+  useEffect(() => {
+    eventoIdRef.current = eventoId
+    ultimoRef.current = null // outro evento: o mesmo QR pode ter outro resultado
+  }, [eventoId])
 
-  const processQR = async (data: string) => {
-    if (scanningRef.current) return
-    scanningRef.current = true
+  // Som e vibração só depois de um toque (regra do navegador).
+  useEffect(() => {
+    const liberar = () => prepararSom()
+    window.addEventListener('pointerdown', liberar, { once: true })
+    return () => window.removeEventListener('pointerdown', liberar)
+  }, [])
+
+  /** Para de decodificar quadros (a imagem continua ao vivo). */
+  const pausarLeitura = () => {
+    try { scannerRef.current?.pause(false) } catch { /* já pausado ou ainda não começou */ }
+  }
+  const retomarLeitura = () => {
+    try { scannerRef.current?.resume() } catch { /* não estava pausado */ }
+  }
+
+  /** Tira o resultado da tela e deixa o scanner pronto pro próximo QR. */
+  const liberar = () => {
+    if (temporizadorRef.current) { clearTimeout(temporizadorRef.current); temporizadorRef.current = null }
+    leituraRef.current++ // qualquer resposta atrasada ainda pendente deixa de valer
+    setResult(null)
+    setValidando(false)
+    setConferindo(false)
+    ocupadoRef.current = false
+    retomarLeitura()
+  }
+
+  const mostrarResultado = (id: number, codigo: string, r: ScanResult) => {
+    if (id !== leituraRef.current) return // o operador já seguiu em frente
+    const categoria = categoriaDo(r)
+    setValidando(false)
+    setResult(r)
+    sinalizar(categoria)
+
+    // "Sem resposta" não é resultado: não trava o mesmo QR de ser lido de novo.
+    if (categoria !== 'semResposta') {
+      const quem = r.funcionario?.nome ?? r.veiculo?.placa ?? ''
+      ultimoRef.current = {
+        codigo, em: Date.now(),
+        resumo: `${VISUAL[categoria].titulo}${quem ? ` — ${quem}` : ''}`,
+      }
+    }
+
+    /*
+     * Crachá de outra etapa NÃO some sozinho: há uma decisão a tomar com a
+     * pessoa parada na frente. "Sem resposta" também não: some quando a
+     * resposta chegar ou quando o operador tocar.
+     */
+    if (r.faseErrada || categoria === 'semResposta') return
+
+    if (temporizadorRef.current) clearTimeout(temporizadorRef.current)
+    const duracao = categoria === 'liberado' || categoria === 'saida'
+      ? DURACAO_MS.sucesso
+      : categoria === 'jaValidado' ? DURACAO_MS.jaValidado : DURACAO_MS.erro
+    temporizadorRef.current = setTimeout(liberar, duracao)
+  }
+
+  const processQR = async (bruto: string) => {
+    const codigo = (bruto ?? '').trim()
+    if (!codigo || ocupadoRef.current) return
+
+    /*
+     * O mesmo QR logo depois do resultado dele: é o celular da pessoa que
+     * continuou na frente da câmera. Não valida de novo (era a segunda
+     * validação que confundia o portão) — só avisa, sem cobrir a câmera.
+     */
+    const ultimo = ultimoRef.current
+    if (ultimo && ultimo.codigo === codigo && Date.now() - ultimo.em < REPETIDO_MS) {
+      setRepetido(`Este QR acabou de ser lido: ${ultimo.resumo}. Aponte para o próximo.`)
+      if (repetidoTimerRef.current) clearTimeout(repetidoTimerRef.current)
+      repetidoTimerRef.current = setTimeout(() => setRepetido(null), 3000)
+      return
+    }
+
+    ocupadoRef.current = true
+    pausarLeitura()
+    const id = ++leituraRef.current
+    setRepetido(null)
+    setResult(null)
+    setValidando(true) // "Validando acesso..." aparece NA HORA
+    vibrar(30)
 
     /*
      * Sem escolher "Entrada" ou "Saída" antes: o servidor decide sozinho, pela
-     * própria pessoa — primeira leitura do turno é entrada, segunda é saída,
-     * terceira é recusada (ver `inferirMomentoQR` em lib/actions.ts). Os dois
-     * botões confundiam quem estava no portão, com fila andando — decisão do
-     * Juan em 03/09/2026.
+     * própria pessoa — primeira leitura do turno é entrada, segunda é saída
+     * (ver `inferirMomentoQR` em lib/actions.ts). Decisão do Juan, 03/09/2026.
      */
-    let resultado: ScanResult | null = null
-    try {
-      resultado = ehQrDeVeiculo(data)
-        ? await conferirVeiculoPorQR(eventoIdRef.current, data)
-        : await registrarPresencaQR(eventoIdRef.current, data)
-    } catch {
-      resultado = { success: false, message: 'Erro ao processar QR Code' }
-    }
-    setResult(resultado)
-    setShow(true)
+    const pedido: Promise<ScanResult> = (ehQrDeVeiculo(codigo)
+      ? conferirVeiculoPorQR(eventoIdRef.current, codigo)
+      : registrarPresencaQR(eventoIdRef.current, codigo)
+    ).catch((): ScanResult => ({
+      success: false,
+      message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
+    }))
 
     /*
-     * Crachá de outra etapa NÃO some sozinho.
-     *
-     * Nos outros resultados o aviso passar sozinho é o certo: a fila anda e o
-     * próximo já está com o celular na mão. Aqui não — há uma decisão a tomar
-     * com a pessoa parada na frente, e apagar a tela no meio dela devolveria o
-     * operador ao escuro, sem saber o que fazer com quem está ali.
+     * A resposta pode demorar (rede do evento). Passado o tempo, a tela DIZ que
+     * ainda não chegou — e troca pelo resultado real assim que ele chegar,
+     * porque a validação pode ter sido gravada. Nunca fica parada em silêncio.
      */
-    if (resultado?.faseErrada) return
+    const tempo = setTimeout(() => {
+      mostrarResultado(id, codigo, {
+        success: false,
+        semResposta: true,
+        message: 'A internet está lenta e a resposta ainda não chegou. NÃO leia de novo: o resultado aparece aqui assim que chegar. Se demorar muito, confira a pessoa em "Registrar ponto".',
+      })
+    }, TEMPO_SEM_RESPOSTA_MS)
 
-    /*
-     * Recusa fica mais tempo que confirmação.
-     *
-     * Confirmação é uma palavra e um ✓ — 2,5s sobra, e a fila precisa andar.
-     * Recusa é uma frase com instrução ("aguarde 4 min e leia de novo") e o
-     * operador não tem como voltar pra reler: se sumir antes, ele fica sem
-     * saber por que aquela pessoa não passou.
-     */
-    setTimeout(() => {
-      setShow(false)
-      setTimeout(() => {
-        setResult(null)
-        scanningRef.current = false
-      }, 400)
-    }, resultado?.success ? 2500 : 4500)
-  }
-
-  /** Volta a ler QR. Usado pelos botões da recusa por etapa. */
-  const retomar = () => {
-    setConferindo(false)
-    setShow(false)
-    setTimeout(() => { setResult(null); scanningRef.current = false }, 300)
+    const resposta = await pedido
+    clearTimeout(tempo)
+    mostrarResultado(id, codigo, resposta)
   }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     let desmontou = false
 
-    import('html5-qrcode').then(async ({ Html5Qrcode }) => {
+    import('html5-qrcode').then(async ({ Html5Qrcode, Html5QrcodeSupportedFormats }) => {
       if (desmontou) return
-      const config = { fps: 15, qrbox: { width: 280, height: 280 } }
+      /*
+       * Só QR, sem espelhar (26/09/2026). Sem `formatsToSupport` a biblioteca
+       * procurava TODOS os formatos (códigos de barras de produto inclusive)
+       * em cada quadro; e sem `disableFlip`, todo quadro sem código — quase
+       * todos, enquanto se mira — era decodificado DE NOVO espelhado. A câmera
+       * traseira não espelha o QR: era trabalho dobrado a troco de nada, e
+       * pesa em celular simples esquentado depois de horas de portão.
+       */
+      const config = {
+        fps: 15,
+        // Até 300 px, mas nunca maior que 85% da imagem (tela pequena).
+        qrbox: (largura: number, altura: number) => {
+          const lado = Math.max(120, Math.min(300, Math.floor(Math.min(largura, altura) * 0.85)))
+          return { width: lado, height: lado }
+        },
+        disableFlip: true,
+      }
 
       // Uma instância nova por tentativa: depois de um `start` que falhou, a
       // mesma instância nem sempre aceita começar de novo.
       const tentar = async (camera: string | MediaTrackConstraints) => {
-        const leitor = new Html5Qrcode('qr-reader')
+        const leitor = new Html5Qrcode('qr-reader', {
+          verbose: false,
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          // Leitor nativo do aparelho (Android/Chrome) quando existir — bem
+          // mais rápido que o de JavaScript. Onde não existe, cai no outro.
+          useBarCodeDetectorIfSupported: true,
+        })
         scannerRef.current = leitor
         try {
-          await leitor.start(camera, config, (texto: string) => processQR(texto), () => {})
+          await leitor.start(camera, config, (texto: string) => { void processQR(texto) }, () => {})
         } catch (e) {
           try { leitor.clear() } catch { /* nada pra limpar */ }
           throw e
         }
+        // Foco contínuo quando o aparelho deixa escolher — sem isso, alguns
+        // Android travam o foco longe e o QR na mão fica borrado.
+        try {
+          await leitor.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] })
+        } catch { /* nem todo aparelho aceita — segue com o padrão */ }
       }
 
       /*
@@ -188,17 +378,18 @@ export default function ScannerView({
 
     return () => {
       desmontou = true
+      if (temporizadorRef.current) clearTimeout(temporizadorRef.current)
+      if (repetidoTimerRef.current) clearTimeout(repetidoTimerRef.current)
       if (scannerRef.current?.isScanning) {
         scannerRef.current.stop().catch(() => {})
       }
     }
+    // O scanner nasce uma vez; o resto do estado chega por refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const overlayColor = !result?.success
-    ? 'bg-red-600'
-    : result?.veiculo || result?.momento === 'entrada'
-    ? 'bg-green-600'
-    : 'bg-brand-500'
+  const categoria = result ? categoriaDo(result) : null
+  const visual = categoria ? VISUAL[categoria] : null
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
@@ -288,33 +479,48 @@ export default function ScannerView({
       )}
 
       {!erroCamera && (
-        <p className="text-slate-500 text-sm flex items-center gap-2">
-          <ScanLine className="w-4 h-4" />
-          Aponte a câmera para o QR da credencial ou do veículo
-        </p>
+        repetido ? (
+          <p className="w-full max-w-sm text-center text-amber-300 text-sm font-semibold bg-amber-500/15 border border-amber-500/40 rounded-lg px-3 py-2">
+            {repetido}
+          </p>
+        ) : (
+          <p className="text-slate-500 text-sm flex items-center gap-2">
+            <ScanLine className="w-4 h-4" />
+            Aponte a câmera para o QR da credencial ou do veículo
+          </p>
+        )
       )}
 
-      {/* Overlay full-screen de resultado */}
-      {result && (
+      {/* Validando: aparece no mesmo instante da leitura — a tela nunca fica parada. */}
+      {validando && !result && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 text-white text-center px-8" role="status" aria-live="assertive">
+          <Loader2 className="w-16 h-16 animate-spin mb-6" />
+          <p className="text-3xl font-bold">Validando acesso...</p>
+          <p className="text-base opacity-70 mt-3">QR lido. Aguarde a resposta — não precisa ler de novo.</p>
+        </div>
+      )}
+
+      {/* Resultado: tela inteira, cor e título pelo tipo, e o detalhe do servidor embaixo. */}
+      {result && visual && (
         <div
-          className={`fixed inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-300 ${overlayColor} ${show ? 'opacity-100' : 'opacity-0'}`}
+          className={`fixed inset-0 z-50 flex flex-col items-center justify-center ${visual.fundo}`}
+          role="alert"
+          aria-live="assertive"
+          onClick={() => { if (!result.faseErrada) liberar() }}
         >
-          <div className="text-white text-center px-8">
-            <div className="text-8xl mb-6">
-              {result.success ? (result.veiculo || result.momento === 'entrada' ? '✓' : '↩') : '✕'}
-            </div>
-            <p className="text-3xl font-bold mb-2">{result.message}</p>
+          <div className="text-white text-center px-8 max-w-lg">
+            <div className="text-8xl mb-4 leading-none">{visual.icone}</div>
+            <p className="text-4xl font-extrabold tracking-tight">{visual.titulo}</p>
             {result.funcionario && (
               <>
-                <p className="text-xl font-semibold mt-4 opacity-90">{result.funcionario.nome}</p>
-                <p className="text-base opacity-70 mt-1">
-                  {result.funcionario.cargo ? `${result.funcionario.cargo} • ` : ''}                </p>
+                <p className="text-2xl font-semibold mt-5">{result.funcionario.nome}</p>
+                {result.funcionario.cargo && <p className="text-base opacity-75 mt-1">{result.funcionario.cargo}</p>}
               </>
             )}
             {result.veiculo && (
               <>
-                <p className="text-xl font-semibold mt-4 opacity-90 font-mono">{result.veiculo.placa}</p>
-                <p className="text-base opacity-70 mt-1">
+                <p className="text-2xl font-semibold mt-5 font-mono">{result.veiculo.placa}</p>
+                <p className="text-base opacity-75 mt-1">
                   {result.veiculo.modelo} • {result.veiculo.condutorNome}
                 </p>
                 {result.veiculo.entradaLiberadaEm && (
@@ -324,6 +530,11 @@ export default function ScannerView({
                 )}
               </>
             )}
+            <p className="text-lg mt-5 opacity-95 leading-snug">{result.message}</p>
+
+            {categoria === 'semResposta' && (
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mt-5 opacity-80" />
+            )}
 
             {/*
               * Crachá de outra etapa: o operador precisa DECIDIR, não só ler.
@@ -332,21 +543,28 @@ export default function ScannerView({
               * de verdade — diz se a pessoa está na lista. "Voltar a ler" cobre
               * o caso inocente e mais comum: ela só precisa recarregar a tela.
               */}
-            {result.faseErrada && (
+            {result.faseErrada ? (
               <div className="mt-8 space-y-3 max-w-xs mx-auto">
                 <button
-                  onClick={() => setConferindo(true)}
+                  onClick={e => { e.stopPropagation(); setConferindo(true) }}
                   className="w-full bg-white text-red-700 font-bold rounded-2xl py-4 text-lg shadow-lg"
                 >
                   Pedir o CPF e conferir
                 </button>
                 <button
-                  onClick={retomar}
+                  onClick={e => { e.stopPropagation(); liberar() }}
                   className="w-full border-2 border-white/60 text-white font-semibold rounded-2xl py-3"
                 >
                   Voltar a ler QR Code
                 </button>
               </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); liberar() }}
+                className="mt-8 border-2 border-white/60 text-white font-semibold rounded-2xl px-6 py-3"
+              >
+                {categoria === 'semResposta' ? 'Fechar e ler o próximo' : 'Ler o próximo'}
+              </button>
             )}
           </div>
         </div>
@@ -363,7 +581,7 @@ export default function ScannerView({
           aviso={result?.faseErrada
             ? `O QR apresentado é da ${result.faseErrada.doQR}, e hoje é ${result.faseErrada.deHoje}. Confirme pelo CPF se esta pessoa está credenciada.`
             : 'Sem câmera, dá para conferir quem está credenciado pelo CPF. Para REGISTRAR o ponto, use "Registrar ponto" no topo da tela.'}
-          aoFechar={retomar}
+          aoFechar={liberar}
         />
       )}
     </div>
