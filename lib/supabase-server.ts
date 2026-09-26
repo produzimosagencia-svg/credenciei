@@ -3,7 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { ehMaster, podeGerenciarEventos, podeEscanear, podeAcompanhar } from './permissions'
-import { diaBRT, periodoDoEvento } from './janelas'
+import { diaBRT, periodoDoEvento, somarDias, fimDoTurnoNaMadrugada, type DiaDaJornada } from './janelas'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -288,6 +288,42 @@ export async function eventosAcontecendoHoje(eventoIds: string[]): Promise<Set<s
     if (noPeriodo || comDiaHoje.has(e.id as string)) acontecendo.add(e.id as string)
   }
   return acontecendo
+}
+
+/**
+ * A que DIA DE TRABALHO pertence o que acontece agora neste evento — o
+ * "hoje" da operação, que nem sempre é o dia do calendário.
+ *
+ * Se o turno de ONTEM vira a madrugada e ainda não acabou (ver
+ * `fimDoTurnoNaMadrugada`), agora ainda é ontem: a entrada de quem chega à
+ * 01:00, a leitura dupla na despedida às 05:00 e o registro assistido das
+ * 02:00 ficam todos na noite certa. Fora disso — o caso de quase todo evento
+ * — é simplesmente o dia do calendário, como sempre foi.
+ *
+ * Nunca lança: se a consulta falhar, devolve o dia do calendário (o
+ * comportamento de antes), porque isto roda no meio da leitura do portão.
+ */
+export async function diaDoTurno(eventoId: string, agora: Date = new Date()): Promise<string> {
+  const hoje = diaBRT(agora)
+  if (!eventoId) return hoje
+  try {
+    const ontem = somarDias(hoje, -1)
+    const [{ data: evento }, { data: dias }] = await Promise.all([
+      admin.from('eventos').select('data_inicio, data_fim, janela_fim_inicio, janela_fim_fim').eq('id', eventoId).maybeSingle(),
+      admin.from('jornada_dias').select('tipo, cancelado, saida_inicio, saida_fim')
+        .eq('evento_id', eventoId).eq('data', ontem).order('turno').limit(1),
+    ])
+    if (!evento) return hoje
+    // Sem linha de jornada, o dia de início do evento continua sendo principal
+    // (mesma rede de segurança de `diaDeTrabalho`).
+    const dia: DiaDaJornada | null = (dias?.[0] as DiaDaJornada | undefined)
+      ?? (evento.data_inicio && diaBRT(evento.data_inicio) === ontem ? { tipo: 'principal' } : null)
+    const fim = fimDoTurnoNaMadrugada(evento, dia, ontem)
+    return fim && agora.getTime() < new Date(fim).getTime() ? ontem : hoje
+  } catch (e) {
+    console.error('[diaDoTurno] falhou; usando o dia do calendário', e)
+    return hoje
+  }
 }
 
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {

@@ -75,6 +75,13 @@ export function diaBRT(instante: Date | string = new Date()): string {
   return `${br.getUTCFullYear()}-${p2(br.getUTCMonth() + 1)}-${p2(br.getUTCDate())}`
 }
 
+/** "2026-09-26" → "2026-09-25" (e "2026-09-26" → "2026-09-27" com `+1`). */
+export function somarDias(dia: string, n: number): string {
+  const d = new Date(`${dia}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 // ─── Período do evento ───────────────────────────────────────────────────────
 
 export type EventoJanelas = {
@@ -242,6 +249,50 @@ export function avaliarEntradaSaida(
   const fim = dia[`${campo}_fim`] ?? evento[`janela_${momento}_fim`]
 
   return dentroDaJanela(inicio, fim, agora, etapa)
+}
+
+// ─── O turno que vira a madrugada ────────────────────────────────────────────
+
+/**
+ * Até quando o turno do dia `data` continua na manhã seguinte — ou `null` se
+ * ele não atravessa a meia-noite.
+ *
+ * Pontal Weekend (25/09/2026): a noite de 25 vai das 17:00 às 08:00 do dia
+ * 26. Quem chegava depois da meia-noite, quem batia a saída duas vezes na
+ * despedida e quem era lançado no registro assistido às 01:00 caía no dia 26
+ * — e o painel de 26 abria com "5 saídas" de gente da noite de 25. Com o fim
+ * do turno conhecido, tudo que acontece até ele pertence à noite de 25.
+ *
+ * O fim é, na ordem: o fim da saída configurado; senão a hora em que o
+ * EVENTO acaba (`data_fim`), na manhã seguinte — "cada noite termina às
+ * 08:00"; senão o meio-dia seguinte (só pra não deixar o turno sem fim).
+ */
+export function fimDoTurnoNaMadrugada(
+  evento: EventoJanelas,
+  dia: DiaDaJornada | null,
+  data: string,
+): string | null {
+  if (!dia || dia.cancelado) return null
+  const principal = dia.tipo === 'principal'
+  const saidaInicio = dia.saida_inicio ?? (principal ? evento.janela_fim_inicio ?? null : null)
+  const saidaFim = dia.saida_fim ?? (principal ? evento.janela_fim_fim ?? null : null)
+
+  // Atravessa a meia-noite quando a saída cai no dia SEGUINTE — não antes
+  // (turno do mesmo dia), nem dias depois (data errada no cadastro, que
+  // puxaria um dia inteiro pro dia anterior).
+  const amanha = somarDias(data, 1)
+  const referencia = saidaFim ?? saidaInicio
+  if (!referencia || diaBRT(referencia) !== amanha) return null
+  if (saidaInicio && diaBRT(saidaInicio) > amanha) return null
+  if (saidaFim) return new Date(saidaFim).toISOString()
+
+  const depoisDoInicio = (iso: string) => !saidaInicio || new Date(iso).getTime() > new Date(saidaInicio).getTime()
+  if (evento.data_fim) {
+    const fimNaManha = instanteBRT(amanha, hhmm(evento.data_fim))
+    if (depoisDoInicio(fimNaManha)) return fimNaManha
+  }
+  const meioDia = instanteBRT(amanha, '12:00')
+  return depoisDoInicio(meioDia) ? meioDia : new Date(new Date(saidaInicio!).getTime() + H_MS).toISOString()
 }
 
 // ─── Horário ESPERADO de cada etapa ──────────────────────────────────────────

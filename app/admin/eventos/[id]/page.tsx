@@ -1,8 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
-import { getPerfil, meuSetor, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
-import { diaBRT } from '@/lib/janelas'
 import Link from 'next/link'
 import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
@@ -150,7 +149,9 @@ export default async function EventoPage({
    * provável de se querer conferir) ou, antes de o evento começar, o primeiro.
    */
   const diasDaOperacao = (diasTrabalho ?? []).map(d => d.data as string)
-  const hojeBRT = diaBRT()
+  // O "hoje" da operação: às 05:00 do dia 26, com a noite de 25 terminando só
+  // às 08:00, o painel abre na noite de 25 — é lá que as saídas estão caindo.
+  const hojeBRT = await diaDoTurno(id)
   const diaEscolhido =
     (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
     ?? (diasDaOperacao.includes(hojeBRT) ? hojeBRT : null)

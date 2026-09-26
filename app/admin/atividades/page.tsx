@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Activity, LogIn, Camera, LogOut, Clock, UserX, CameraOff, LogOut as SaidaX, UserCheck, AlertTriangle } from 'lucide-react'
-import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
+import { getPerfil, diaDoTurno, supabaseAdmin } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
-import { diaBRT } from '@/lib/janelas'
 import { VISOES, ehVisao, linhasDaVisao, numerosDoDia, type Visao } from '@/lib/presenca-visoes'
 import StatCard from '@/components/StatCard'
 import SeletorDeDia from '@/components/SeletorDeDia'
@@ -123,7 +122,8 @@ export default async function AtividadesPage({
     .from('jornada_dias').select('data')
     .eq('evento_id', escolhido.id).eq('cancelado', false).order('data')
   const diasDaOperacao = (dias ?? []).map(d => d.data as string)
-  const hoje = diaBRT()
+  // O dia do TURNO — de madrugada, ainda é a noite de ontem (`diaDoTurno`).
+  const hoje = await diaDoTurno(escolhido.id)
   const diaEscolhido =
     (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
     ?? (diasDaOperacao.includes(hoje) ? hoje : null)
