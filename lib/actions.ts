@@ -3925,7 +3925,11 @@ async function inferirMomentoQR(
    * Omitido, é buscado aqui mesmo (mesmo resultado).
    */
   pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
-): Promise<{ momento: 'entrada' | 'fim' } | { reabrir: { id: string; em: string } } | { erro: string; recente?: boolean }> {
+): Promise<
+  | { momento: 'entrada' | 'fim'; entrada?: { em: string; dataRef: string } }
+  | { reabrir: { id: string; em: string } }
+  | { erro: string; recente?: boolean }
+> {
   const entrada = pre && 'entrada' in pre ? pre.entrada ?? null : await entradaDoTurno(funcionarioId, eventoId, agora)
 
   if (entrada) {
@@ -4042,10 +4046,59 @@ async function inferirMomentoQR(
     }
     return { momento: 'fim' }
   }
+
+  // Depois do fim do evento (hoje não é dia de trabalho): a saída do turno
+  // que ficou aberto — ver `turnoAbertoForaDoDiaDeTrabalho`.
+  if (!entradaHoje) {
+    const aberto = await turnoAbertoForaDoDiaDeTrabalho(funcionarioId, eventoId, hoje, agora)
+    if (aberto) return { momento: 'fim', entrada: aberto }
+  }
   return { momento: 'entrada' }
 }
 
 type DiaDeTrabalho = DiaDaJornada & { id: string; data: string }
+
+/**
+ * Turno ainda aberto quando o dia de AGORA não é dia de trabalho — a saída
+ * depois do fim do evento.
+ *
+ * Pontal Weekend, 27/09/2026: a última noite acaba às 08:00, mas tem gente
+ * que sai às 08:30. Depois das 08:00 o dia do turno já é 27 (que não é dia de
+ * trabalho), e quem entrou antes das 14h do dia 26 já passou das 18h de
+ * TETO_TURNO_H — a leitura virava "entrada" e era recusada ("27/09 não está
+ * marcado como dia de trabalho"). A saída tem que acontecer, com o
+ * descredenciamento (pedido do Juan).
+ *
+ * Só vale quando HOJE não é dia de trabalho: num dia normal, uma entrada
+ * antiga sem saída NÃO pode capturar a leitura (era o bug de 26/09, em que a
+ * chegada virava saída da noite anterior). Aqui não há o que capturar por
+ * engano — uma entrada seria recusada de qualquer jeito.
+ */
+async function turnoAbertoForaDoDiaDeTrabalho(
+  funcionarioId: string, eventoId: string, diaTurno: string, agora: Date,
+): Promise<{ em: string; dataRef: string } | null> {
+  const dia = await diaDeTrabalho(eventoId, diaTurno)
+  if (dia && !dia.cancelado) return null // hoje é dia de trabalho: regra normal
+
+  const desde = new Date(agora.getTime() - 36 * 60 * 60 * 1000).toISOString()
+  const { data } = await supabaseAdmin
+    .from('registros')
+    .select('data_ref, created_at')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'entrada')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const e = data?.[0]
+  if (!e) return null
+  const dataRef = (e.data_ref as string | null) ?? diaBRT(e.created_at as string)
+  const { data: fim } = await supabaseAdmin
+    .from('registros')
+    .select('id')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'fim')
+    .eq('data_ref', dataRef).gt('created_at', e.created_at as string)
+    .limit(1)
+  return fim?.length ? null : { em: e.created_at as string, dataRef }
+}
 
 /**
  * O dia de trabalho do evento naquela data — ou `null` se aquele dia não foi
@@ -4354,6 +4407,13 @@ async function diaDeReferencia(
       .limit(1)
     // Só um turno AINDA ABERTO puxa o registro pro dia dele.
     if (!fimDoTurno?.length) dataRef = entrada.dataRef
+  }
+
+  // Depois do fim do evento (hoje não é dia de trabalho), a saída fecha o
+  // turno que ficou aberto — mesma regra do scanner.
+  if (momento !== 'entrada') {
+    const aberto = await turnoAbertoForaDoDiaDeTrabalho(funcionarioId, evento.id, dataRef, agora)
+    if (aberto) dataRef = aberto.dataRef
   }
 
   const dia = await diaDeTrabalho(evento.id, dataRef)
@@ -4922,7 +4982,19 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
   const dadosDoEvento = evento as { data_inicio?: string | null; data_fim?: string | null }
   const faseDeHoje = faseAtualDoQR(agora, dadosDoEvento.data_inicio, dadosDoEvento.data_fim, diaDeHojeQR?.tipo === 'principal')
   const etapa = faseConfere(leitura.fase, faseDeHoje)
-  if (!etapa.ok) {
+  /*
+   * Logo depois do FIM do evento, o crachá do dia do evento ainda vale — só
+   * para a SAÍDA de quem ficou além do horário (27/09/2026: a noite acaba às
+   * 08:00 e tem gente saindo às 08:30 com a credencial ainda mostrando o QR
+   * da noite). Não abre brecha: hoje não é dia de trabalho, então uma
+   * entrada é recusada mais adiante de qualquer jeito (`resolverRegistro`).
+   */
+  const fimDoEventoMs = dadosDoEvento.data_fim ? new Date(dadosDoEvento.data_fim).getTime() : NaN
+  const saidaDepoisDoFim = !etapa.ok
+    && leitura.fase === 'evento' && faseDeHoje === 'desmontagem'
+    && (!diaDeHojeQR || diaDeHojeQR.cancelado === true)
+    && agora.getTime() - fimDoEventoMs >= 0 && agora.getTime() - fimDoEventoMs < 12 * 60 * 60 * 1000
+  if (!etapa.ok && !saidaDepoisDoFim) {
     /*
      * A recusa por etapa não é só um aviso — é uma decisão a tomar.
      *
@@ -5045,7 +5117,12 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
 
   const momento = decidido.momento
 
-  const resolucao = await resolverRegistro(evento as EventoJanelas & { id: string }, func.id, momento, agora, jaBuscado)
+  // A saída depois do fim do evento traz a entrada que ela fecha (ver
+  // `turnoAbertoForaDoDiaDeTrabalho`) — é dela que sai o dia do registro.
+  const resolucao = await resolverRegistro(
+    evento as EventoJanelas & { id: string }, func.id, momento, agora,
+    decidido.entrada ? { ...jaBuscado, entrada: decidido.entrada } : jaBuscado,
+  )
   if (!resolucao.ok) return { success: false, message: resolucao.erro, funcionario: funcInfo }
 
   /*
