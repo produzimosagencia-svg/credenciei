@@ -36,6 +36,7 @@ import {
   TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
+import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
@@ -5303,8 +5304,12 @@ export async function cadastrarFuncionarioPublico(
    * Duas letras é o piso: existe município de nome curto, mas ninguém mora em
    * "a". A coluna segue aceitando nulo no banco porque o cadastro feito pelo
    * organizador (tela do setor, planilha, IA) não pergunta cidade.
+   *
+   * Texto livre desde 25/09/2026 (tem evento fora do ES e gente de fora do
+   * estado) — `grafiaDaCidade` só acerta a grafia das cidades do ES digitadas
+   * sem acento ou com "- ES"; o resto fica como a pessoa escreveu.
    */
-  const cidade = (dados.cidade ?? '').trim()
+  const cidade = grafiaDaCidade(dados.cidade)
   if (cidade.length < 2) {
     return { error: 'Informe a cidade onde você mora — é por ela que os organizadores encontram você para outros eventos.' }
   }

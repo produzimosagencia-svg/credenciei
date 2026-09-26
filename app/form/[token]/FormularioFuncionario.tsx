@@ -5,7 +5,6 @@ import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check,
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
-import SeletorLista from '@/components/SeletorLista'
 import { CIDADES_ES } from '@/lib/cidades'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { useCampoFormatado } from '@/components/inputs'
@@ -366,19 +365,23 @@ export default function FormularioFuncionario({
         </datalist>
       </Field>
       <Field label="Cidade onde você mora *">
-        {/* Lista em vez de texto livre.
-            Digitado à mão, 56 cadastros viraram 10 "cidades" para 7 reais —
-            "Vitória" e "Vitoria", "Vila Velha" e "Vila Velhas". Cada variação
-            some da busca por cidade, que é justamente como o organizador acha
-            quem consegue chegar ao local. A lista mata o problema na origem. */}
-        <SeletorLista
-          opcoes={CIDADES_ES.map(c => ({ valor: c, rotulo: c }))}
-          valor={form.cidade}
-          onChange={v => set('cidade', v)}
-          placeholder="Escolher a cidade…"
-          titulo="Cidade onde você mora"
-          busca
+        {/* Texto livre, com as cidades do ES como sugestão — mesmo jeito do
+            Cargo. Era uma lista travada no ES (56 cadastros tinham virado 10
+            grafias para 7 cidades), mas travava quem mora fora do estado
+            (pedido do Juan, 25/09/2026). A grafia das cidades do ES ainda é
+            acertada no servidor (`grafiaDaCidade`). */}
+        <input
+          required
+          value={form.cidade}
+          onChange={e => set('cidade', e.target.value)}
+          list="cidades-sugeridas"
+          placeholder="Ex: Vitória, Vila Velha…"
+          className="input"
+          autoComplete="address-level2"
         />
+        <datalist id="cidades-sugeridas">
+          {CIDADES_ES.map(c => <option key={c} value={c} />)}
+        </datalist>
       </Field>
       <Field label="Chave PIX (opcional)" tutorial="form-pix">
         <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />
