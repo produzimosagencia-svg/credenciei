@@ -4733,7 +4733,86 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
  * "Saída" antes de cada leitura, e a fila confundia o botão errado —
  * decisão do Juan em 03/09/2026: um só leitor, sem escolha nenhuma.
  */
+/*
+ * ─── HISTÓRICO DE LEITURAS (aceitas E recusadas) ────────────────────────────
+ *
+ * Pedido do Juan (26/09/2026): leitura recusada não deixava rastro — quem
+ * tentou entrar, deu erro e foi pro manual (ou embora) era invisível. Cada
+ * leitura do scanner grava em `leituras_qr` quem foi lido, quem leu, o
+ * resultado e a frase que o operador viu. Grava DEPOIS de responder (`after`),
+ * então não atrasa o portão; e sem a tabela (supabase/upgrade-leituras-qr.sql
+ * ainda não rodado) só não grava. Nunca guarda o conteúdo do QR — tem o token
+ * da credencial dentro.
+ */
+let tabelaDeLeiturasAusente = false
+
+function resultadoDaLeitura(r: ResultadoScan): string {
+  if (r.jaRegistrado) return 'ja_validado'
+  if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
+  return r.qrInvalido ? 'invalido' : 'negado'
+}
+
+async function gravarLeituraQR(dados: {
+  eventoId: string; perfilId: string | null; tipo: 'credencial' | 'veiculo'
+  qrData: string; resultado: ResultadoScan | null
+}) {
+  if (tabelaDeLeiturasAusente) return
+  try {
+    let funcionarioId: string | null = null
+    if (dados.tipo === 'credencial') {
+      const leitura = lerCodigoQR((dados.qrData ?? '').split('|')[0]?.trim() ?? '', diaBRT())
+      if (leitura.ok) {
+        const { data } = await supabaseAdmin.from('funcionarios').select('id').eq('qr_token', leitura.token).maybeSingle()
+        funcionarioId = (data?.id as string | undefined) ?? null
+      }
+    } else {
+      const token = extrairQrTokenDeVeiculo(dados.qrData)
+      if (token) {
+        const { data } = await supabaseAdmin.from('veiculos').select('funcionario_id').eq('qr_token', token).maybeSingle()
+        funcionarioId = (data?.funcionario_id as string | null | undefined) ?? null
+      }
+    }
+    const r = dados.resultado
+    const { error } = await supabaseAdmin.from('leituras_qr').insert([{
+      evento_id: dados.eventoId || null,
+      perfil_id: dados.perfilId,
+      funcionario_id: funcionarioId,
+      tipo: dados.tipo,
+      sucesso: !!r?.success,
+      resultado: r ? resultadoDaLeitura(r) : 'erro',
+      mensagem: r?.message ?? 'Erro inesperado ao validar',
+    }])
+    if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
+      tabelaDeLeiturasAusente = true
+    } else if (error) {
+      console.error('[leituras_qr] não gravou', error.message)
+    }
+  } catch (e) {
+    console.error('[leituras_qr] falhou', e)
+  }
+}
+
+/**
+ * O scanner chama isto. A validação em si é `validarLeituraQR`; aqui ela
+ * ganha duas coisas: nunca lança (uma exceção virava "não foi possível
+ * validar" genérico na tela) e toda leitura vai pro histórico.
+ */
 export async function registrarPresencaQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
+  let resultado: ResultadoScan
+  try {
+    resultado = await validarLeituraQR(eventoId, qrData)
+  } catch (e) {
+    console.error('[registrarPresencaQR]', e)
+    resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
+  }
+  // `getPerfil` é cache() — a validação já buscou, aqui não vai ao banco.
+  const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
+  const final = resultado
+  after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'credencial', qrData, resultado: final }))
+  return resultado
+}
+
+async function validarLeituraQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
   if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
@@ -7437,6 +7516,21 @@ function extrairQrTokenDeVeiculo(bruto: string): string | null {
  * diz se pode entrar, igual a página pública `/veiculo/[token]`.
  */
 export async function conferirVeiculoPorQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
+  // Mesmo tratamento de `registrarPresencaQR`: nunca lança e vai pro histórico.
+  let resultado: ResultadoScan
+  try {
+    resultado = await validarVeiculoPorQR(eventoId, qrData)
+  } catch (e) {
+    console.error('[conferirVeiculoPorQR]', e)
+    resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
+  }
+  const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
+  const final = resultado
+  after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'veiculo', qrData, resultado: final }))
+  return resultado
+}
+
+async function validarVeiculoPorQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
   // O supervisor escaneia a própria equipe; veículo é do evento inteiro e
