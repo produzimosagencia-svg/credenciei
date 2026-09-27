@@ -48,6 +48,7 @@ export default function HistoricoBatidas({
   onSalvo?: () => void
 }) {
   const { resumo } = h
+  const temPausas = h.dias.some(d => (d.pausas ?? []).length > 0)
   const router = useRouter()
 
   const [editando, setEditando] = useState<{ data: string; momento: MomentoPresenca; atual: string | null } | null>(null)
@@ -133,6 +134,11 @@ export default function HistoricoBatidas({
         </span>
       </div>
 
+      {/*
+        * "Nova entrada" / "Nova saída" (pedido do Juan, 26/09/2026): quem saiu
+        * e voltou ao trabalho no mesmo dia. As colunas só aparecem quando
+        * alguém de fato voltou — pra todo o resto a tabela continua igual.
+        */}
       <div className="overflow-x-auto -mx-1">
         <table className="tabela">
           <thead>
@@ -143,12 +149,14 @@ export default function HistoricoBatidas({
               <th>Entrada</th>
               <th>Meio</th>
               <th>Saída</th>
+              {temPausas && <th>Nova entrada</th>}
+              {temPausas && <th>Nova saída</th>}
               <th>Horas</th>
             </tr>
           </thead>
           <tbody>
             {h.dias.map(d => (
-              <Linha key={d.data} dia={d} podeEditar={podeEditar} onEditar={abrirEdicao} />
+              <Linha key={d.data} dia={d} podeEditar={podeEditar} onEditar={abrirEdicao} temPausas={temPausas} />
             ))}
           </tbody>
         </table>
@@ -347,13 +355,33 @@ function Celula({
   )
 }
 
+/** Um horário já feito que não é uma batida editável (saída/volta de uma pausa). */
+function HoraFeita({ em }: { em: string }) {
+  return (
+    <span className="flex items-center gap-1 tabular-nums">
+      <Check className="w-3 h-3 text-green-500 shrink-0" /> {formatarBR(em, 'hora')}
+    </span>
+  )
+}
+
 function Linha({
-  dia, podeEditar, onEditar,
+  dia, podeEditar, onEditar, temPausas = false,
 }: {
   dia: DiaDoHistorico
   podeEditar: boolean
   onEditar: (data: string, momento: MomentoPresenca, atual: string | null) => void
+  /** A tabela tem as colunas "Nova entrada" / "Nova saída". */
+  temPausas?: boolean
 }) {
+  /*
+   * Com pausas, o dia é E1 → S1 → E2 → S2 … → saída final:
+   *   Saída        = a primeira saída (a da pausa);
+   *   Nova entrada = cada volta ao trabalho;
+   *   Nova saída   = as saídas seguintes, a última sendo a batida de verdade
+   *                  (editável), ou "não realizada" enquanto a pessoa segue lá.
+   */
+  const pausas = dia.pausas ?? []
+  const comPausa = pausas.length > 0
   const faltou = !dia.compareceu && !dia.cancelado
   // A linha inteira acende: quem confere o fechamento passa os olhos na
   // coluna da data, não lê célula por célula.
@@ -393,18 +421,36 @@ function Linha({
         )}
       </td>
       <td className="text-slate-600 text-xs">
-        {/* Saídas e voltas no meio do turno (entrada, saída, entrada, saída…)
-            — cada uma aparece, em ordem, antes da saída final do dia. */}
-        {(dia.pausas ?? []).map(p => (
-          <span key={p.saiu} className="block text-slate-500 text-2xs tabular-nums whitespace-nowrap">
-            saiu {formatarBR(p.saiu, 'hora')} · voltou {formatarBR(p.voltou, 'hora')}
-          </span>
-        ))}
-        <Celula batida={dia.fim} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
-        {dia.fim && dia.tipo === 'principal' && (
-          <LogOut className="w-3 h-3 text-slate-400 inline-block ml-1" />
+        {comPausa ? (
+          <HoraFeita em={pausas[0].saiu} />
+        ) : (
+          <>
+            <Celula batida={dia.fim} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
+            {dia.fim && dia.tipo === 'principal' && (
+              <LogOut className="w-3 h-3 text-slate-400 inline-block ml-1" />
+            )}
+          </>
         )}
       </td>
+      {temPausas && (
+        <td className="text-slate-600 text-xs">
+          {comPausa
+            ? <span className="space-y-1 block">{pausas.map(p => <HoraFeita key={p.voltou} em={p.voltou} />)}</span>
+            : <span className="text-slate-300">—</span>}
+        </td>
+      )}
+      {temPausas && (
+        <td className="text-slate-600 text-xs">
+          {comPausa ? (
+            <span className="space-y-1 block">
+              {pausas.slice(1).map(p => <HoraFeita key={p.saiu} em={p.saiu} />)}
+              <Celula batida={dia.fim} silencioso={false} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
+            </span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </td>
+      )}
       <td className="text-slate-500 text-xs tabular-nums">
         {dia.horas !== null ? `${String(dia.horas).replace('.', ',')} h` : '—'}
       </td>

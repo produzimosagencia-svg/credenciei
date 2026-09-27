@@ -277,7 +277,19 @@ export default function LocalizarFuncionario() {
 
           </div>
 
-          {func.ativo && (
+          {func.ativo && (() => {
+            /*
+             * Já entrou E saiu hoje → a pessoa pode estar VOLTANDO ao trabalho
+             * (pedido do Juan, 26/09/2026). "Adicionar mais uma entrada" manda
+             * uma entrada, e o servidor (`registrarPresencaAssistida`) trata
+             * como volta: a saída vira pausa no histórico e o turno reabre com
+             * a chegada original — nada é sobrescrito. Sem limite de voltas.
+             */
+            const entradaFeita = func.etapas.find(e => e.momento === 'entrada')?.quandoISO ?? null
+            const saidaFeita = func.etapas.find(e => e.momento === 'fim')?.quandoISO ?? null
+            const jaSaiu = !!entradaFeita && !!saidaFeita && saidaFeita > entradaFeita
+            const ehVolta = jaSaiu && momento === 'entrada'
+            return (
             <>
               {/* Seletor de etapa — o operador escolhe, o sistema só sugere.
                   Ver o comentário em registrarPresencaAssistida. */}
@@ -309,7 +321,26 @@ export default function LocalizarFuncionario() {
                     )
                   })}
                 </div>
-                {momento && func.etapas.find(e => e.momento === momento)?.quandoISO && (
+                {jaSaiu && (
+                  <button
+                    type="button"
+                    onClick={() => setMomento('entrada')}
+                    className={`btn-press w-full rounded-xl border-2 border-dashed p-3 text-sm font-bold transition-colors ${
+                      ehVolta
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-green-400 text-green-700 hover:bg-green-50'
+                    }`}
+                  >
+                    + Adicionar mais uma entrada
+                    <span className="block text-2xs font-medium text-green-600 mt-0.5">A pessoa saiu e está voltando ao trabalho</span>
+                  </button>
+                )}
+                {ehVolta ? (
+                  <p className="flex items-start gap-1.5 text-green-700 text-2xs bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">
+                    <Check className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    Nova entrada agora. A saída das {formatarBR(saidaFeita!, 'hora')} fica no histórico como pausa — nada é apagado.
+                  </p>
+                ) : momento && func.etapas.find(e => e.momento === momento)?.quandoISO && (
                   <p className="flex items-start gap-1.5 text-amber-700 text-2xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
                     <RotateCcw className="w-3.5 h-3.5 shrink-0 mt-px" />
                     Esta etapa já tem registro — confirmar substitui o horário anterior por agora.
@@ -353,13 +384,16 @@ export default function LocalizarFuncionario() {
               >
                 {registrando
                   ? 'Registrando...'
-                  : momento
-                    ? `Registrar batida — ${func.etapas.find(e => e.momento === momento)?.rotulo}`
-                    : 'Escolha a etapa acima'}
+                  : ehVolta
+                    ? 'Registrar batida — Nova entrada (voltou ao trabalho)'
+                    : momento
+                      ? `Registrar batida — ${func.etapas.find(e => e.momento === momento)?.rotulo}`
+                      : 'Escolha a etapa acima'}
               </button>
               {momento && !foto && <p className="text-slate-400 text-2xs text-center">Tire a foto para liberar o registro.</p>}
             </>
-          )}
+            )
+          })()}
 
           {!func.ativo && (
             <p className="text-xs text-red-500 text-center">

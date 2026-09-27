@@ -4918,7 +4918,7 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
  * ainda não rodado) só não grava. Nunca guarda o conteúdo do QR — tem o token
  * da credencial dentro.
  */
-let tabelaDeLeiturasAusente = false
+let leiturasAusenteDesde = 0
 
 /*
  * Pausas no meio do turno (supabase/upgrade-pausas-turno.sql) — entrada,
@@ -4927,19 +4927,26 @@ let tabelaDeLeiturasAusente = false
  * turno; a saída do meio fica aqui, e o histórico mostra e desconta das
  * horas. Sem a tabela, só não grava — a auditoria continua guardando.
  */
-let tabelaDePausasAusente = false
+/*
+ * "Tabela ausente" vale só por um minuto — não pra sempre. Guardado como
+ * booleano, um servidor que viu a tabela faltar ANTES da migração rodar
+ * continuava pulando a gravação depois dela (a volta do Weberton, 21:55 de
+ * 26/09/2026, ficou sem pausa assim).
+ */
+const AUSENTE_POR_MS = 60_000
+let pausasAusenteDesde = 0
 async function registrarPausa(p: {
   funcionarioId: string; eventoId: string; dataRef: string
   saiuEm: string; voltouEm: string; perfilId: string | null; origem: 'scanner' | 'assistido'
 }) {
-  if (tabelaDePausasAusente) return
+  if (Date.now() - pausasAusenteDesde < AUSENTE_POR_MS) return
   try {
     const { error } = await supabaseAdmin.from('pausas_turno').insert([{
       funcionario_id: p.funcionarioId, evento_id: p.eventoId, data_ref: p.dataRef,
       saiu_em: p.saiuEm, voltou_em: p.voltouEm, registrado_por: p.perfilId, origem: p.origem,
     }])
     if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
-      tabelaDePausasAusente = true
+      pausasAusenteDesde = Date.now()
     } else if (error) {
       console.error('[pausas_turno] não gravou', error.message)
     }
@@ -4959,7 +4966,7 @@ async function gravarLeituraQR(dados: {
   eventoId: string; perfilId: string | null; tipo: 'credencial' | 'veiculo'
   qrData: string; resultado: ResultadoScan | null
 }) {
-  if (tabelaDeLeiturasAusente) return
+  if (Date.now() - leiturasAusenteDesde < AUSENTE_POR_MS) return
   try {
     let funcionarioId: string | null = null
     if (dados.tipo === 'credencial') {
@@ -4986,7 +4993,7 @@ async function gravarLeituraQR(dados: {
       mensagem: r?.message ?? 'Erro inesperado ao validar',
     }])
     if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
-      tabelaDeLeiturasAusente = true
+      leiturasAusenteDesde = Date.now()
     } else if (error) {
       console.error('[leituras_qr] não gravou', error.message)
     }
