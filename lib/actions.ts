@@ -4937,7 +4937,7 @@ const AUSENTE_POR_MS = 60_000
 let pausasAusenteDesde = 0
 async function registrarPausa(p: {
   funcionarioId: string; eventoId: string; dataRef: string
-  saiuEm: string; voltouEm: string; perfilId: string | null; origem: 'scanner' | 'assistido'
+  saiuEm: string; voltouEm: string; perfilId: string | null; origem: 'scanner' | 'assistido' | 'manual'
 }) {
   if (Date.now() - pausasAusenteDesde < AUSENTE_POR_MS) return
   try {
@@ -6679,6 +6679,43 @@ export async function lancarPontoManual(
   const distancia = new Date(quandoISO).getTime() - inicioDoDia
   if (distancia < -12 * 60 * 60 * 1000 || distancia > 36 * 60 * 60 * 1000) {
     return { error: `A data e hora informadas estão longe demais do dia ${dataRef.split('-').reverse().join('/')}. Confira antes de salvar.` }
+  }
+
+  /*
+   * ENTRADA DEPOIS DA SAÍDA = NOVA ENTRADA, não correção (pedido do Juan,
+   * 26/09/2026): a pessoa saiu e voltou ao trabalho. A entrada anterior fica,
+   * a saída vira pausa no histórico e o turno reabre — nada é substituído.
+   * Entrada ANTES da saída continua sendo correção da primeira entrada (é o
+   * que o lápis do histórico usa pra acertar um horário errado).
+   */
+  if (momento === 'entrada') {
+    const { data: doDia } = await supabaseAdmin
+      .from('registros').select('id, tipo, created_at')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id)
+      .eq('data_ref', dataRef).in('tipo', ['entrada', 'fim'])
+    const entradaDoDia = (doDia ?? []).find(r => r.tipo === 'entrada')
+    const saidaDoDia = (doDia ?? []).find(r => r.tipo === 'fim')
+    const saidaMs = saidaDoDia ? new Date(saidaDoDia.created_at as string).getTime() : NaN
+    if (entradaDoDia && saidaDoDia && saidaMs > new Date(entradaDoDia.created_at as string).getTime()
+        && new Date(quandoISO).getTime() > saidaMs) {
+      await registrarPausa({
+        funcionarioId: func.id, eventoId: evento.id, dataRef,
+        saiuEm: saidaDoDia.created_at as string, voltouEm: quandoISO,
+        perfilId: perfil.id, origem: 'manual',
+      })
+      const { error: erroVolta } = await supabaseAdmin.from('registros').delete().eq('id', saidaDoDia.id)
+      if (erroVolta) return { error: 'Não consegui registrar a nova entrada. Tente de novo.' }
+      after(() => registrarAuditoria({
+        perfil, acao: 'REABERTURA_TURNO', eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+        campoAlterado: 'Nova entrada — voltou ao trabalho (lançamento manual)',
+        valorAnterior: `Saída às ${formatarBR(saidaDoDia.created_at as string, 'hora')}`,
+        valorNovo: `Nova entrada às ${formatarBR(quandoISO, 'hora')}`,
+        motivo: justificativa, funcionarioId: func.id,
+      }))
+      revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+      revalidatePath(`/admin/eventos/${evento.id}/presenca`)
+      return { ok: true, nome: func.nome as string, etapa: 'Nova entrada (voltou ao trabalho)' }
+    }
   }
 
   const { error } = await upsertRegistro(func.id, evento.id, momento, {

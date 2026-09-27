@@ -83,7 +83,22 @@ export default function LancarPonto({
     setFeito(null)
   }
 
-  const jaTem = pessoa?.batidas[`${dia}:${etapa}`] ?? null
+  // Depois do `router.refresh()` a lista chega nova; a pessoa escolhida
+  // acompanha (senão as batidas na tela ficariam as de antes do lançamento).
+  const atual = (pessoa && pessoas.find(p => p.id === pessoa.id)) ?? pessoa
+  const jaTem = atual?.batidas[`${dia}:${etapa}`] ?? null
+
+  /*
+   * Já entrou E saiu neste dia: uma ENTRADA com horário depois da saída é
+   * uma NOVA entrada (voltou ao trabalho) — a anterior fica, a saída vira
+   * pausa. Antes da saída, é correção da primeira entrada. Mesma régua do
+   * servidor (`lancarPontoManual`).
+   */
+  const entradaDoDia = atual?.batidas[`${dia}:entrada`] ?? null
+  const saidaDoDia = atual?.batidas[`${dia}:fim`] ?? null
+  const jaSaiu = !!entradaDoDia && !!saidaDoDia && new Date(saidaDoDia).getTime() > new Date(entradaDoDia).getTime()
+  const quandoMs = new Date(`${quando}:00-03:00`).getTime()
+  const novaEntrada = etapa === 'entrada' && jaSaiu && quandoMs > new Date(saidaDoDia!).getTime()
 
   const salvar = () => {
     if (!pessoa) return
@@ -184,7 +199,7 @@ export default function LancarPonto({
         <div className="grid grid-cols-3 gap-2">
           {ETAPAS.map(e => {
             const marcada = etapa === e.momento
-            const existente = pessoa.batidas[`${dia}:${e.momento}`]
+            const existente = atual?.batidas[`${dia}:${e.momento}`]
             return (
               <button
                 key={e.momento} type="button" onClick={() => { setEtapa(e.momento); setFeito(null) }}
@@ -201,9 +216,24 @@ export default function LancarPonto({
         </div>
       </div>
 
-      {/* Etapa que já tem batida: o lançamento SOBRESCREVE. Dito antes de
-          salvar, não depois — o banco só guarda uma por pessoa/etapa/dia. */}
-      {jaTem && (
+      {/* Entrada de quem já saiu: nova entrada (volta) ou correção, pelo horário. */}
+      {etapa === 'entrada' && jaSaiu ? (
+        novaEntrada ? (
+          <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 text-green-800 text-xs">
+            <strong>Nova entrada</strong> — a pessoa saiu às{' '}
+            <strong className="tabular-nums">{formatarBR(saidaDoDia!, 'hora')}</strong> e está voltando ao trabalho.
+            A entrada das <strong className="tabular-nums">{formatarBR(entradaDoDia!, 'hora')}</strong> continua registrada,
+            e a saída fica no histórico como pausa. Nada é substituído.
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-amber-800 text-xs">
+            A pessoa já saiu às <strong className="tabular-nums">{formatarBR(saidaDoDia!, 'hora')}</strong>. Pra registrar a{' '}
+            <strong>volta ao trabalho</strong> (uma nova entrada), escolha um horário <strong>depois das{' '}
+            {formatarBR(saidaDoDia!, 'hora')}</strong>. Com um horário antes, isto corrige a entrada das{' '}
+            <strong className="tabular-nums">{formatarBR(entradaDoDia!, 'hora')}</strong> (substitui).
+          </div>
+        )
+      ) : jaTem && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-amber-800 text-xs">
           Já existe {ETAPAS.find(e => e.momento === etapa)?.rotulo.toLowerCase()} em {rotuloDia(dia)}, às{' '}
           <strong className="tabular-nums">{formatarBR(jaTem, 'hora')}</strong>. Salvar aqui <strong>substitui</strong> esse
@@ -245,7 +275,7 @@ export default function LancarPonto({
         disabled={pendente || motivo.trim().length < 5}
         className="btn btn-primario btn-lg w-full disabled:opacity-50"
       >
-        {pendente ? 'Lançando…' : 'Lançar ponto'}
+        {pendente ? 'Lançando…' : novaEntrada ? 'Lançar nova entrada (voltou ao trabalho)' : 'Lançar ponto'}
       </button>
     </Secao>
   )
