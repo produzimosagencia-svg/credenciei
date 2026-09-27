@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
-import { registrarPresencaQR, conferirVeiculoPorQR } from '@/lib/actions'
+import { registrarPresencaQR, conferirVeiculoPorQR, cancelarLeituraQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import { formatarBR } from '@/lib/tz'
@@ -10,7 +10,7 @@ type Evento = { id: string; nome: string }
 type ScanResult = {
   success: boolean
   message: string
-  funcionario?: { nome: string; cargo: string | null }
+  funcionario?: { nome: string; cargo: string | null; setor?: string | null }
   /** QR de veículo, não de funcionário — mesmo scanner, os dois tipos (24/09/2026). */
   veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   faseErrada?: { doQR: string; deHoje: string }
@@ -20,6 +20,10 @@ type ScanResult = {
   qrInvalido?: boolean
   /** Só da tela: a resposta não chegou no tempo — ver `TEMPO_SEM_RESPOSTA_MS`. */
   semResposta?: boolean
+  /** Prévia: conferido, nada gravado — espera SALVAR / CANCELAR. */
+  previa?: boolean
+  volta?: boolean
+  encerra?: boolean
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
@@ -111,7 +115,9 @@ function categoriaDo(r: ScanResult): Categoria {
 
 const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }> = {
   liberado:    { fundo: 'bg-green-600', icone: '✓', titulo: 'ACESSO LIBERADO' },
-  saida:       { fundo: 'bg-brand-500', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
+  // Entrada verde, saída AZUL — cores bem diferentes pro operador não
+  // confundir o que acabou de fazer (pedido do Juan, 26/09/2026).
+  saida:       { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado:  { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
   negado:      { fundo: 'bg-red-600',   icone: '✕', titulo: 'ACESSO NEGADO' },
   invalido:    { fundo: 'bg-red-600',   icone: '✕', titulo: 'QR CODE INVÁLIDO' },
@@ -178,6 +184,9 @@ export default function ScannerView({
   }
   const [result, setResult] = useState<ScanResult | null>(null)
   const [validando, setValidando] = useState(false)
+  // A prévia esperando SALVAR / CANCELAR.
+  const [confirmacao, setConfirmacao] = useState<{ codigo: string; modo: Modo; r: ScanResult } | null>(null)
+  const [salvando, setSalvando] = useState(false)
   const [conferindo, setConferindo] = useState(false)
   // Aviso discreto abaixo da câmera: o mesmo QR lido de novo logo em seguida.
   const [repetido, setRepetido] = useState<string | null>(null)
@@ -230,6 +239,8 @@ export default function ScannerView({
     leituraRef.current++ // qualquer resposta atrasada ainda pendente deixa de valer
     setResult(null)
     setValidando(false)
+    setConfirmacao(null)
+    setSalvando(false)
     setConferindo(false)
     ocupadoRef.current = false
     retomarLeitura()
@@ -239,6 +250,9 @@ export default function ScannerView({
     if (id !== leituraRef.current) return // o operador já seguiu em frente
     const categoria = categoriaDo(r)
     setValidando(false)
+    // "Sem resposta" aparece POR CIMA da confirmação (que continua lá embaixo);
+    // qualquer resultado de verdade a encerra.
+    if (categoria !== 'semResposta') setConfirmacao(null)
     setResult(r)
     sinalizar(categoria)
 
@@ -265,6 +279,59 @@ export default function ScannerView({
     temporizadorRef.current = setTimeout(liberar, duracao)
   }
 
+  const semRede = (): ScanResult => ({
+    success: false,
+    message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
+  })
+
+  /**
+   * Espera a resposta; se demorar, a tela DIZ que ainda não chegou (e troca
+   * pelo que chegar). Devolve `null` se o operador já seguiu em frente.
+   */
+  const aguardar = async (id: number, codigo: string, m: Modo, pedido: Promise<ScanResult>): Promise<ScanResult | null> => {
+    const tempo = setTimeout(() => {
+      mostrarResultado(id, codigo, m, {
+        success: false,
+        semResposta: true,
+        message: 'A internet está lenta e a resposta ainda não chegou. NÃO leia de novo: o resultado aparece aqui assim que chegar. Se demorar muito, confira a pessoa em "Registrar ponto".',
+      })
+    }, TEMPO_SEM_RESPOSTA_MS)
+    const r = await pedido
+    clearTimeout(tempo)
+    return id === leituraRef.current ? r : null
+  }
+
+  /*
+   * CONFIRMAR ANTES DE GRAVAR (pedido do Juan, 26/09/2026): a leitura mostra
+   * QUEM é e O QUE vai ser registrado (entrada / saída / volta), e só grava
+   * quando o operador toca SALVAR. CANCELAR não grava nada (e fica no
+   * histórico de leituras como cancelada). A confirmação refaz todas as
+   * checagens no servidor — a prévia não é um passe livre.
+   */
+  const confirmar = async () => {
+    const c = confirmacao
+    if (!c || salvando) return
+    const id = ++leituraRef.current
+    setSalvando(true)
+    const r = await aguardar(id, c.codigo, c.modo, registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo).catch(semRede))
+    setSalvando(false)
+    if (!r) return
+    setConfirmacao(null)
+    mostrarResultado(id, c.codigo, c.modo, r)
+  }
+
+  const cancelar = () => {
+    const c = confirmacao
+    if (!c) return
+    void cancelarLeituraQR(eventoIdRef.current, c.codigo, c.modo).catch(() => {})
+    // O mesmo QR parado na frente da câmera não reabre a confirmação na hora.
+    ultimoRef.current = {
+      codigo: c.codigo, modo: c.modo, em: Date.now(),
+      resumo: `CANCELADO${c.r.funcionario?.nome ? ` — ${c.r.funcionario.nome}` : ''}`,
+    }
+    liberar()
+  }
+
   const processQR = async (bruto: string) => {
     const codigo = (bruto ?? '').trim()
     if (!codigo || ocupadoRef.current) return
@@ -289,34 +356,32 @@ export default function ScannerView({
     const id = ++leituraRef.current
     setRepetido(null)
     setResult(null)
-    setValidando(true) // "Validando acesso..." aparece NA HORA
+    setConfirmacao(null)
+    setValidando(true) // "Validando..." aparece NA HORA
     vibrar(30)
 
-    // O botão escolhido vai junto; veículo não tem entrada/saída aqui.
-    const pedido: Promise<ScanResult> = (ehQrDeVeiculo(codigo)
-      ? conferirVeiculoPorQR(eventoIdRef.current, codigo)
-      : registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura)
-    ).catch((): ScanResult => ({
-      success: false,
-      message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
-    }))
+    // Veículo não tem entrada/saída nem confirmação: vai direto.
+    if (ehQrDeVeiculo(codigo)) {
+      const r = await aguardar(id, codigo, modoDaLeitura, conferirVeiculoPorQR(eventoIdRef.current, codigo).catch(semRede))
+      if (r) mostrarResultado(id, codigo, modoDaLeitura, r)
+      return
+    }
 
-    /*
-     * A resposta pode demorar (rede do evento). Passado o tempo, a tela DIZ que
-     * ainda não chegou — e troca pelo resultado real assim que ele chegar,
-     * porque a validação pode ter sido gravada. Nunca fica parada em silêncio.
-     */
-    const tempo = setTimeout(() => {
-      mostrarResultado(id, codigo, modoDaLeitura, {
-        success: false,
-        semResposta: true,
-        message: 'A internet está lenta e a resposta ainda não chegou. NÃO leia de novo: o resultado aparece aqui assim que chegar. Se demorar muito, confira a pessoa em "Registrar ponto".',
-      })
-    }, TEMPO_SEM_RESPOSTA_MS)
-
-    const resposta = await pedido
-    clearTimeout(tempo)
-    mostrarResultado(id, codigo, modoDaLeitura, resposta)
+    // Primeiro a PRÉVIA (nada é gravado); o operador confirma na tela.
+    const previa = await aguardar(
+      id, codigo, modoDaLeitura,
+      registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, { apenasConferir: true }).catch(semRede),
+    )
+    if (!previa) return
+    if (previa.previa) {
+      setResult(null)
+      setValidando(false)
+      setConfirmacao({ codigo, modo: modoDaLeitura, r: previa })
+      vibrar(40)
+      return
+    }
+    // Recusa, "já registrado", QR inválido: mostra direto — não há o que confirmar.
+    mostrarResultado(id, codigo, modoDaLeitura, previa)
   }
 
   useEffect(() => {
@@ -454,7 +519,7 @@ export default function ScannerView({
             onClick={() => escolherModo('fim')}
             className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
               modo === 'fim'
-                ? 'bg-brand-500 text-white shadow-lg ring-2 ring-brand-300'
+                ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-300'
                 : 'border-2 border-slate-600 text-slate-400'
             }`}
           >
@@ -462,7 +527,7 @@ export default function ScannerView({
           </button>
         </div>
         <p className="text-slate-500 text-xs text-center">
-          Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-brand-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
+          Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-blue-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
           O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
         </p>
@@ -517,9 +582,9 @@ export default function ScannerView({
         <div className="relative w-full max-w-sm" data-tutorial="scan-camera">
           <div id="qr-reader" className="rounded-xl overflow-hidden" />
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            {/* A moldura segue o botão: verde entrada, laranja saída — o
+            {/* A moldura segue o botão: verde entrada, azul saída — o
                 operador vê o modo sem tirar o olho da câmera. */}
-            <div className={`w-64 h-64 border-4 rounded-2xl opacity-70 ${modo === 'entrada' ? 'border-green-500' : 'border-brand-400'}`} />
+            <div className={`w-64 h-64 border-4 rounded-2xl opacity-70 ${modo === 'entrada' ? 'border-green-500' : 'border-blue-500'}`} />
           </div>
         </div>
       )}
@@ -536,6 +601,56 @@ export default function ScannerView({
           </p>
         )
       )}
+
+      {/*
+        * CONFIRMAÇÃO: quem é e o que vai ser registrado. SALVAR grava;
+        * CANCELAR, logo abaixo, desiste sem gravar nada. Fundo escuro de
+        * propósito — verde/azul cheio fica só pro resultado JÁ gravado.
+        */}
+      {confirmacao && (() => {
+        const r = confirmacao.r
+        const ehEntrada = confirmacao.modo === 'entrada'
+        const cor = ehEntrada ? 'bg-green-600' : 'bg-blue-600'
+        const acao = ehEntrada ? (r.volta ? 'VOLTA AO TRABALHO' : 'ENTRADA') : 'SAÍDA'
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label={`Confirmar ${acao}`}>
+            <div className="w-full max-w-sm text-center text-white">
+              <p className="text-sm font-semibold opacity-70">Confirme o registro</p>
+              <span className={`inline-block mt-2 rounded-full px-5 py-2 text-lg font-extrabold tracking-wide ${cor}`}>
+                {acao}
+              </span>
+              {r.funcionario && (
+                <>
+                  <p className="text-3xl font-extrabold mt-6 leading-tight">{r.funcionario.nome}</p>
+                  <p className="text-base opacity-75 mt-1">
+                    {[r.funcionario.cargo, r.funcionario.setor].filter(Boolean).join(' · ')}
+                  </p>
+                </>
+              )}
+              <p className="text-base mt-4 opacity-90 leading-snug">{r.message}</p>
+
+              <button
+                type="button"
+                onClick={confirmar}
+                disabled={salvando}
+                className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-70 ${cor}`}
+              >
+                {salvando
+                  ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>
+                  : `SALVAR ${ehEntrada ? 'ENTRADA' : 'SAÍDA'}`}
+              </button>
+              <button
+                type="button"
+                onClick={cancelar}
+                disabled={salvando}
+                className="mt-3 w-full rounded-2xl py-4 text-base font-bold text-white border-2 border-white/50 active:scale-95 transition-all disabled:opacity-50"
+              >
+                CANCELAR
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Validando: aparece no mesmo instante da leitura — a tela nunca fica parada. */}
       {validando && !result && (

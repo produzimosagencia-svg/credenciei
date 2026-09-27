@@ -4786,7 +4786,7 @@ export async function recredenciarFuncionario(funcionarioId: string, fornecedorI
 export type ResultadoScan = {
   success: boolean
   message: string
-  funcionario?: { nome: string; cargo: string | null }
+  funcionario?: { nome: string; cargo: string | null; setor?: string | null }
   /** Preenchido quando o QR lido é de VEÍCULO, não de funcionário — mesmo scanner, os dois tipos. */
   veiculo?: { placa: string; modelo: string; condutorNome: string; entradaLiberadaEm?: string }
   momento?: MomentoPresenca
@@ -4798,6 +4798,17 @@ export type ResultadoScan = {
   jaRegistrado?: boolean
   /** O código lido não é uma credencial válida deste sistema (formato/assinatura). */
   qrInvalido?: boolean
+  /**
+   * PRÉVIA: a leitura foi conferida mas NADA foi gravado — o scanner pede a
+   * confirmação do operador (SALVAR / CANCELAR) antes de registrar.
+   */
+  previa?: boolean
+  /** Na prévia: é a volta de quem já tinha saído hoje (a saída vira pausa). */
+  volta?: boolean
+  /** Na prévia: esta saída encerra a participação no evento (descredencia). */
+  encerra?: boolean
+  /** Só pro histórico de leituras: o operador cancelou na confirmação. */
+  cancelado?: boolean
   /**
    * O crachá é de OUTRA etapa do evento.
    *
@@ -4938,6 +4949,7 @@ async function registrarPausa(p: {
 }
 
 function resultadoDaLeitura(r: ResultadoScan): string {
+  if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
   return r.qrInvalido ? 'invalido' : 'negado'
@@ -4992,23 +5004,49 @@ export async function registrarPresencaQR(
   eventoId: string, qrData: string,
   /** O botão ENTRADA/SAÍDA do scanner. Sem ele, o sistema decide (ver `inferirMomentoQR`). */
   momentoEscolhido?: 'entrada' | 'fim',
+  /**
+   * `apenasConferir`: a leitura é conferida e volta como PRÉVIA, sem gravar —
+   * o scanner mostra SALVAR / CANCELAR e só então chama de novo sem isto
+   * (pedido do Juan, 26/09/2026). A confirmação refaz TODAS as checagens.
+   */
+  opcoes?: { apenasConferir?: boolean },
 ): Promise<ResultadoScan> {
   const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
+  const apenasConferir = opcoes?.apenasConferir === true
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData, escolhido)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
   }
-  // `getPerfil` é cache() — a validação já buscou, aqui não vai ao banco.
-  const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
-  const final = resultado
-  after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'credencial', qrData, resultado: final }))
+  // Prévia aprovada não vai pro histórico (a confirmação vai); prévia
+  // RECUSADA vai — é justamente a leitura recusada que se quer enxergar.
+  if (!resultado.previa) {
+    // `getPerfil` é cache() — a validação já buscou, aqui não vai ao banco.
+    const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
+    const final = resultado
+    after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'credencial', qrData, resultado: final }))
+  }
   return resultado
 }
 
-async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'entrada' | 'fim'): Promise<ResultadoScan> {
+/** O operador leu, viu a prévia e CANCELOU — fica no histórico de leituras. */
+export async function cancelarLeituraQR(eventoId: string, qrData: string, momento?: 'entrada' | 'fim'): Promise<void> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil)) return
+  const rotulo = momento === 'fim' ? 'SAÍDA' : 'ENTRADA'
+  after(() => gravarLeituraQR({
+    eventoId, perfilId: perfil.id as string, tipo: 'credencial', qrData,
+    resultado: { success: false, message: `${rotulo} cancelada pelo operador na confirmação.`, cancelado: true },
+  }))
+}
+
+async function validarLeituraQR(
+  eventoId: string, qrData: string, escolhido?: 'entrada' | 'fim',
+  /** Só confere e devolve a PRÉVIA — não grava nada (ver `ResultadoScan.previa`). */
+  apenasConferir = false,
+): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
   if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
@@ -5048,7 +5086,7 @@ async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'e
     podeEscanearEvento(perfil, eventoId),
     supabaseAdmin
       .from('funcionarios')
-      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id)')
+      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome)')
       .eq('qr_token', token)
       .single(),
     diaDoTurno(eventoId, agora),
@@ -5104,7 +5142,10 @@ async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'e
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
-  const funcInfo = { nome: func.nome, cargo: func.cargo ?? null }
+  const funcInfo = {
+    nome: func.nome, cargo: func.cargo ?? null,
+    setor: (func.fornecedores as unknown as { nome?: string } | null)?.nome ?? null,
+  }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
   }
@@ -5178,6 +5219,13 @@ async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'e
    * por definição, não é o da entrada nem o da saída do dia.
    */
   if ('reabrir' in decidido) {
+    // Prévia: diz o que vai acontecer e para — nada é gravado.
+    if (apenasConferir) {
+      return {
+        success: true, previa: true, volta: true, momento: 'entrada' as const, funcionario: funcInfo,
+        message: `Voltando ao trabalho — saiu às ${formatarBR(decidido.reabrir.em, 'hora')}. A saída fica no histórico como pausa.`,
+      }
+    }
     // A saída do meio vira PAUSA antes de sair da tabela de batidas — é o
     // que o histórico mostra (saiu às X, voltou às Y) e desconta das horas.
     await registrarPausa({
@@ -5236,6 +5284,19 @@ async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'e
       funcionario: funcInfo,
       momento,
       jaRegistrado: true,
+    }
+  }
+
+  // Prévia: tudo conferido, nada gravado — o operador confirma antes.
+  if (apenasConferir) {
+    const encerra = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal && resolucao.saidaFinal
+    return {
+      success: true, previa: true, momento, encerra, funcionario: funcInfo,
+      message: momento === 'entrada'
+        ? 'Confirme para registrar a ENTRADA.'
+        : encerra
+          ? 'Confirme para registrar a SAÍDA. Esta saída encerra a participação no evento.'
+          : 'Confirme para registrar a SAÍDA.',
     }
   }
 
