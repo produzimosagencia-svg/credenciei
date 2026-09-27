@@ -218,10 +218,16 @@ function limparPendente(token: string) {
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
-  token, momentos, podeAutoRegistrar, temCartazNoLocal = false,
+  token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [],
 }: {
   token: string
   momentos: MomentoInfo[]
+  /**
+   * Idas e voltas já feitas hoje (entrada ✓, saída ✓), em ordem — quem saiu
+   * e voltou ao trabalho no mesmo dia. Os cartões de `momentos` são o turno
+   * de AGORA (entrada da volta, saída pendente).
+   */
+  turnosAnteriores?: { entrada: string; saida: string }[]
   /**
    * Entrada e saída ganham registro sem operador (ver `registrarLivre`).
    * Sempre `true` fora do dia principal; no dia principal, só quando o
@@ -513,6 +519,17 @@ export default function CheckinPresenca({
         </div>
       )}
 
+      {/* Saiu e voltou hoje: cada par já feito, e depois o turno de agora. */}
+      {turnosAnteriores.map((t, i) => (
+        <div key={t.saida} className="space-y-2">
+          <CartaoFeito label="Entrada" em={t.entrada} />
+          <CartaoFeito label="Saída" em={t.saida} />
+          <p className="text-center text-slate-400 text-2xs font-semibold pt-1">
+            ↓ Voltou ao trabalho{turnosAnteriores.length > 1 ? ` (${i + 2}ª entrada)` : ''}
+          </p>
+        </div>
+      ))}
+
       {momentos.map(m => (
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao
@@ -585,6 +602,21 @@ function BotaoCopiarLink() {
       {copiado ? <CheckCheck className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {copiado ? 'Link copiado!' : 'Copiar link'}
     </button>
+  )
+}
+
+/** Uma etapa já feita de um turno anterior do mesmo dia (antes da pausa). */
+function CartaoFeito({ label, em }: { label: string; em: string }) {
+  return (
+    <div className="rounded-2xl border p-4 flex items-center gap-3 bg-green-50 border-green-200">
+      <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center shrink-0">
+        <Check className="w-5 h-5 text-white" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-green-800 font-bold text-sm">{label} registrada</p>
+        <p className="text-green-600 text-xs">às {horaBR(em)}</p>
+      </div>
+    </div>
   )
 }
 

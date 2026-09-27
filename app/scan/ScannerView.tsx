@@ -59,9 +59,6 @@ const TEMPO_SEM_RESPOSTA_MS = 10_000
  */
 const REPETIDO_MS = 15_000
 
-/** Quanto tempo cada tipo de resultado fica na tela (ou até tocar). */
-const DURACAO_MS = { sucesso: 3000, jaValidado: 4000, erro: 5000 } as const
-
 /*
  * ENTRADA / SAÍDA escolhidos pelo operador — de volta a pedido do Juan
  * (26/09/2026): quem sai e volta no mesmo dia precisa de entrada, saída,
@@ -236,6 +233,9 @@ export default function ScannerView({
   /** Tira o resultado da tela e deixa o scanner pronto pro próximo QR. */
   const liberar = () => {
     if (temporizadorRef.current) { clearTimeout(temporizadorRef.current); temporizadorRef.current = null }
+    // O "mesmo QR de novo" conta a partir de AGORA (o resultado ficou na tela
+    // até o toque): o celular da pessoa ainda na frente da câmera não reabre.
+    if (ultimoRef.current) ultimoRef.current = { ...ultimoRef.current, em: Date.now() }
     leituraRef.current++ // qualquer resposta atrasada ainda pendente deixa de valer
     setResult(null)
     setValidando(false)
@@ -266,17 +266,10 @@ export default function ScannerView({
     }
 
     /*
-     * Crachá de outra etapa NÃO some sozinho: há uma decisão a tomar com a
-     * pessoa parada na frente. "Sem resposta" também não: some quando a
-     * resposta chegar ou quando o operador tocar.
+     * O resultado NÃO some sozinho (pedido do Juan, 26/09/2026): fica na tela
+     * até o operador tocar em "Ler o próximo". Sumir sozinho fazia o operador
+     * perder o resultado quando olhava pra pessoa, e não pra tela.
      */
-    if (r.faseErrada || categoria === 'semResposta') return
-
-    if (temporizadorRef.current) clearTimeout(temporizadorRef.current)
-    const duracao = categoria === 'liberado' || categoria === 'saida'
-      ? DURACAO_MS.sucesso
-      : categoria === 'jaValidado' ? DURACAO_MS.jaValidado : DURACAO_MS.erro
-    temporizadorRef.current = setTimeout(liberar, duracao)
   }
 
   const semRede = (): ScanResult => ({
@@ -667,7 +660,6 @@ export default function ScannerView({
           className={`fixed inset-0 z-50 flex flex-col items-center justify-center ${visual.fundo}`}
           role="alert"
           aria-live="assertive"
-          onClick={() => { if (!result.faseErrada) liberar() }}
         >
           <div className="text-white text-center px-8 max-w-lg">
             <div className="text-8xl mb-4 leading-none">{visual.icone}</div>
@@ -720,11 +712,12 @@ export default function ScannerView({
                 </button>
               </div>
             ) : (
+              // A ÚNICA saída desta tela — grande, pra não ter dúvida.
               <button
                 onClick={e => { e.stopPropagation(); liberar() }}
-                className="mt-8 border-2 border-white/60 text-white font-semibold rounded-2xl px-6 py-3"
+                className="mt-8 w-full max-w-xs mx-auto block bg-white text-slate-900 font-extrabold text-lg rounded-2xl px-6 py-4 shadow-lg active:scale-95 transition-all"
               >
-                {categoria === 'semResposta' ? 'Fechar e ler o próximo' : 'Ler o próximo'}
+                {categoria === 'semResposta' ? 'Fechar e ler o próximo' : 'LER O PRÓXIMO'}
               </button>
             )}
           </div>

@@ -225,6 +225,30 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     feitoMap[r.tipo] = r.created_at
   }
 
+  /*
+   * Saiu e voltou no mesmo dia (pausas_turno, 26/09/2026): cada ida e volta
+   * aparece como um par já feito (entrada ✓, saída ✓), e o cartão de entrada
+   * de agora mostra a hora da VOLTA — com a saída pendente embaixo. Tolerante
+   * à tabela ainda não existir: sem ela, fica como antes.
+   */
+  const { data: pausasDoDia } = feitoMap.entrada
+    ? await supabase
+        .from('pausas_turno')
+        .select('saiu_em, voltou_em')
+        .eq('funcionario_id', funcionario.id)
+        .eq('evento_id', evento?.id ?? '')
+        .eq('data_ref', dataRef)
+        .order('saiu_em')
+        .then(r => (r.error ? { data: [] as { saiu_em: string; voltou_em: string }[] } : r))
+    : { data: [] as { saiu_em: string; voltou_em: string }[] }
+  const turnosAnteriores: { entrada: string; saida: string }[] = []
+  let entradaAtualEm: string | null = feitoMap.entrada ?? null
+  for (const p of pausasDoDia ?? []) {
+    if (!entradaAtualEm) break
+    turnosAnteriores.push({ entrada: entradaAtualEm, saida: p.saiu_em as string })
+    entradaAtualEm = p.voltou_em as string
+  }
+
   const periodo = evento ? periodoDoEvento(evento) : null
   const dentroDoPeriodoBase = !!periodo && dataRef >= periodo.primeiro && dataRef <= periodo.ultimo
 
@@ -439,7 +463,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   * coexistem por escolha dele, nenhum some.
                   */}
                 <CheckinPresenca
-                  token={token} momentos={momentos}
+                  token={token}
+                  // Com pausas, o cartão de entrada mostra a hora da VOLTA.
+                  momentos={turnosAnteriores.length
+                    ? momentos.map(m => (m.momento === 'entrada' && m.status === 'feito' ? { ...m, feitoEm: entradaAtualEm } : m))
+                    : momentos}
+                  turnosAnteriores={turnosAnteriores}
                   podeAutoRegistrar={!diaPrincipal || evento?.checkin_autonomo === true}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
