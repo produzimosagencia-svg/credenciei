@@ -1,7 +1,7 @@
-import { getPerfil, eventosEscaneaveis, meuSetor } from '@/lib/supabase-server'
+import { getPerfil, eventosEscaneaveis, meuSetor, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { podeEscanear, podeGerenciarEventos, podeAcompanhar } from '@/lib/permissions'
-import ScannerView from './ScannerView'
+import ScannerRouter from './ScannerRouter'
 import { QrCode, Users, ClipboardCheck } from 'lucide-react'
 import Link from 'next/link'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -41,6 +41,25 @@ export default async function ScanPage({
   // Eventos que ESTE usuário pode escanear:
   // master → todos ativos | admin → da própria org | supervisor → só o do próprio setor
   const [eventos, setor] = await Promise.all([eventosEscaneaveis(perfil), meuSetor(perfil)])
+
+  /*
+   * Método de identificação de cada evento — QUERY SEPARADA e TOLERANTE
+   * (mesmo padrão de `exige_meio`/`link_ativo` no resto do sistema): pedir
+   * uma coluna que ainda não existe (migração pendente) derrubaria a
+   * consulta INTEIRA, e o portão inteiro pararia de escanear por causa de um
+   * campo que nem está em uso ainda. Sem a migração, cai em {} — todo evento
+   * se comporta como 'qr', que é exatamente o comportamento de sempre.
+   */
+  let metodosPorEvento: Record<string, string> = {}
+  if (eventos?.length) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('eventos').select('id, metodo_identificacao').in('id', eventos.map(e => e.id))
+      if (!error && data) {
+        metodosPorEvento = Object.fromEntries(data.map(e => [e.id as string, (e.metodo_identificacao as string) ?? 'qr']))
+      }
+    } catch { /* biometria ainda não migrada — todo evento fica 'qr' */ }
+  }
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
@@ -84,7 +103,7 @@ export default async function ScanPage({
           <p className="text-slate-400 font-medium">Nenhum evento ativo disponível</p>
         </div>
       ) : (
-        <ScannerView eventos={eventos} initialEventoId={evento} />
+        <ScannerRouter eventos={eventos} initialEventoId={evento} metodosPorEvento={metodosPorEvento} />
       )}
     </div>
     </TutorialProvider>

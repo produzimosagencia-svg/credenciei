@@ -49,6 +49,7 @@ import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposE
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
+import { descritorValido, distanciaEuclidiana, decidirMatch, MENSAGEM_POR_MOTIVO, LIMIAR_PADRAO, type Candidato } from './biometria'
 import { urlBase } from './ia/ferramentas/base'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import {
@@ -256,6 +257,37 @@ function preEventoDoForm(formData: FormData) {
     msg_pre_evento_envio: inputParaISO(formData.get('msg_pre_evento_envio') as string),
     msg_pre_evento_instrucoes: ((formData.get('msg_pre_evento_instrucoes') as string) || '').trim() || null,
   }
+}
+
+const METODOS_IDENTIFICACAO = new Set(['qr', 'biometria', 'biometria_qr'])
+
+/**
+ * "Método de identificação" (QR / Biometria / Biometria + QR) — coluna nova
+ * (supabase/upgrade-biometria-facial.sql). Update à parte e tolerante, mesmo
+ * padrão de `hora_aviso_dia_evento`: sem a migração, o resto do evento salva
+ * normal e o método fica implicitamente 'qr' (o padrão de sempre) — o QR
+ * nunca deixa de funcionar por causa de uma migração pendente.
+ */
+async function gravarMetodoIdentificacao(eventoId: string, formData: FormData) {
+  if (!formData.has('metodo_identificacao')) return
+  const metodo = (formData.get('metodo_identificacao') as string) || 'qr'
+  if (!METODOS_IDENTIFICACAO.has(metodo)) return
+  const { error } = await supabaseAdmin.from('eventos').update({ metodo_identificacao: metodo }).eq('id', eventoId)
+  if (error) console.error('[gravarMetodoIdentificacao] não gravado (migração pendente?)', error.message)
+
+  /*
+   * Os dois JEITOS de bater por biometria (totem / autoatendimento) —
+   * coluna nova (supabase/upgrade-biometria-modos.sql), tolerante do mesmo
+   * jeito. Só existem os checkboxes na tela quando um modo de biometria está
+   * marcado, mas um checkbox DESMARCADO não manda campo nenhum no FormData —
+   * por isso lê como "false" sempre que o formulário não mandar "on",
+   * nunca como "não mudar".
+   */
+  const { error: erroModos } = await supabaseAdmin.from('eventos').update({
+    biometria_totem: formData.get('biometria_totem') === 'on',
+    biometria_autoatendimento: formData.get('biometria_autoatendimento') === 'on',
+  }).eq('id', eventoId)
+  if (erroModos) console.error('[gravarMetodoIdentificacao] modos não gravados (migração pendente?)', erroModos.message)
 }
 
 /*
@@ -1989,6 +2021,8 @@ export async function criarEvento(formData: FormData) {
   const { data: novo, error } = await db.from('eventos').insert([data]).select('id').single()
   if (error) throw new Error('Não foi possível criar o evento. Confira os dados e tente de novo.')
 
+  await gravarMetodoIdentificacao(novo.id, formData)
+
   // Antes da planilha e de qualquer outra coisa: sem o dia principal, o evento
   // nasce inutilizável — ninguém consegue bater ponto nele.
   await garantirDiaPrincipal(novo.id, data.data_inicio, data.data_fim)
@@ -2040,6 +2074,8 @@ export async function editarEvento(id: string, formData: FormData) {
       .eq('id', id)
     if (erroHora) console.error('[editarEvento] hora_aviso_dia_evento não gravado (migração pendente?)', erroHora.message)
   }
+
+  await gravarMetodoIdentificacao(id, formData)
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
   after(() => sincronizarAgendamentos(id).catch(console.error))
@@ -5147,6 +5183,52 @@ async function validarLeituraQR(
     return { success: false, message: 'Sem acesso a este evento' }
   }
 
+  return autorizarPresenca({
+    perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
+    eventoId, func, agora, escolhido, apenasConferir, diaTurno,
+    origem: 'web',
+  })
+}
+
+/**
+ * A AUTORIZAÇÃO — uma função só, para QUALQUER jeito de identificar a
+ * pessoa (`funcionarioId` já resolvido).
+ *
+ * Isto é o que o pedido do Juan (27/09/2026) chama de "mesma camada final de
+ * autorização" para QR e biometria: nem `validarLeituraQR` (QR) nem
+ * `validarLeituraFacial` (rosto) decidem sozinhos se a pessoa pode entrar —
+ * os dois só descobrem QUEM ela é (por caminhos diferentes) e chamam esta
+ * função, que sempre foi o corpo de `validarLeituraQR` antes de existir
+ * biometria nenhuma. Extraída aqui sem mudar uma linha de lógica — é por
+ * isso que o comportamento do QR não muda em nada.
+ *
+ * Também é a peça que garante NUNCA HAVER DUPLA ENTRADA/SAÍDA entre os dois
+ * métodos: os dois passam pelo mesmo `inferirMomentoQR`/`resolverRegistro`,
+ * que consultam a mesma tabela `registros` pela mesma chave — QR registra a
+ * entrada, biometria lida em seguida vê "já registrado", e vice-versa.
+ */
+async function autorizarPresenca(args: {
+  perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>
+  evento: EventoJanelas & { id: string; organizacao_id: string | null }
+  eventoId: string
+  func: {
+    id: string; nome: string; cpf: string | null; cargo: string | null; telefone: string | null
+    ativo: boolean | null; status_credenciamento: string | null; descredenciado_em: string | null
+    fornecedor_id: string | null; fornecedores: unknown
+  } | null
+  agora: Date
+  escolhido?: 'entrada' | 'fim'
+  apenasConferir: boolean
+  /** Já calculado por quem chama, pro mesmo motivo do resto: uma ida a menos ao banco. */
+  diaTurno: string
+  /** Vai para `registros.origem` — o método que identificou a pessoa. */
+  origem: 'web' | 'face'
+  /** Só a biometria manda isto (o QR nunca passa) — ver `validarLeituraFacial`. */
+  latitude?: number
+  longitude?: number
+}): Promise<ResultadoScan> {
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude } = args
+
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
   const funcInfo = {
@@ -5238,7 +5320,7 @@ async function validarLeituraQR(
     await registrarPausa({
       funcionarioId: func.id, eventoId, dataRef: decidido.reabrir.dataRef,
       saiuEm: decidido.reabrir.em, voltouEm: agora.toISOString(),
-      perfilId: perfil.id, origem: 'scanner',
+      perfilId: perfil.id, origem: origem === 'face' ? 'assistido' : 'scanner',
     })
     const { error: erroReabrir } = await supabaseAdmin
       .from('registros').delete().eq('id', decidido.reabrir.id)
@@ -5268,17 +5350,19 @@ async function validarLeituraQR(
   // A saída depois do fim do evento traz a entrada que ela fecha (ver
   // `turnoAbertoForaDoDiaDeTrabalho`) — é dela que sai o dia do registro.
   const resolucao = await resolverRegistro(
-    evento as EventoJanelas & { id: string }, func.id, momento, agora,
+    evento, func.id, momento, agora,
     decidido.entrada ? { ...jaBuscado, entrada: decidido.entrada } : jaBuscado,
   )
   if (!resolucao.ok) return { success: false, message: resolucao.erro, funcionario: funcInfo }
 
   /*
-   * Segunda leitura do mesmo QR no mesmo dia não reescreve nada.
+   * Segunda leitura (QR ou rosto) no mesmo dia não reescreve nada.
    *
    * Antes valia a última batida. Não vale mais para a entrada, porque ela virou
    * a âncora do horário do meio: reler o crachá uma hora depois empurraria o
    * meio junto, e a pessoa perderia a etapa sem ter feito nada de errado.
+   * É esta checagem que garante NUNCA HAVER DUPLA ENTRADA entre QR e
+   * biometria: os dois métodos consultam a MESMA linha em `registros`.
    *
    * Devolve SUCESSO de propósito. Do ponto de vista de quem está no portão a
    * pessoa está credenciada; pintar a tela de vermelho faria o operador achar
@@ -5307,7 +5391,11 @@ async function validarLeituraQR(
     }
   }
 
-  const extra: Record<string, unknown> = perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}
+  const extra: Record<string, unknown> = {
+    ...(perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}),
+    origem,
+    ...(typeof latitude === 'number' && typeof longitude === 'number' ? { latitude, longitude } : {}),
+  }
   if (momento === 'fim') {
     const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
     if (justificativa) extra.justificativa = justificativa
@@ -5359,6 +5447,386 @@ async function validarLeituraQR(
     funcionario: funcInfo,
     momento,
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BIOMETRIA FACIAL — segundo método de IDENTIFICAÇÃO, ao LADO do QR Code.
+//
+// O QR Code não sai daqui em nenhuma linha: `autorizarPresenca` acima (que já
+// era o corpo de `validarLeituraQR`) é chamada pelos DOIS métodos. Esta seção
+// só resolve "quem é essa pessoa?" a partir de um rosto — a mesma pergunta
+// que o QR resolve a partir de um token — e entrega pra função de sempre.
+//
+// O que NÃO está aqui, de propósito (ver o estudo em c:\Dev\credenciei-
+// biometria): liveness certificado por hardware, totem, câmeras dedicadas,
+// pgvector. Esta é a fatia MVP: cadastro assistido no portão (o operador já
+// autenticado, com a pessoa na frente — mesmo modelo de confiança do
+// registro assistido por foto que já existe) e reconhecimento no scanner do
+// portão, com o QR sempre disponível como alternativa a um toque.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** O evento aceita biometria (sozinha ou junto do QR)? */
+function biometriaHabilitada(metodo: string | null | undefined): boolean {
+  return metodo === 'biometria' || metodo === 'biometria_qr'
+}
+
+/**
+ * Grava toda TENTATIVA de reconhecimento — reconhecida ou não — sem nunca
+ * guardar o rosto nem o vetor. É o que permite responder depois "quantas
+ * pessoas precisaram do QR porque a biometria falhou" (pedido do Juan) sem
+ * reter dado biométrico nenhum no log.
+ *
+ * Tolerante à tabela não existir (a migração é `supabase/upgrade-biometria-
+ * facial.sql`, ainda por rodar) — mesmo padrão de `gravarLeituraQR`.
+ */
+let biometriaTentativasAusenteDesde = 0
+async function gravarTentativaBiometrica(dados: {
+  eventoId: string; perfilId: string | null; funcionarioId: string | null
+  resultado: string; distancia?: number; duracaoMs?: number
+}) {
+  if (Date.now() - biometriaTentativasAusenteDesde < AUSENTE_POR_MS) return
+  try {
+    const { error } = await supabaseAdmin.from('biometria_tentativas').insert([{
+      evento_id: dados.eventoId || null,
+      perfil_id: dados.perfilId,
+      funcionario_id: dados.funcionarioId,
+      resultado: dados.resultado,
+      distancia: dados.distancia ?? null,
+      duracao_ms: dados.duracaoMs ?? null,
+    }])
+    if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
+      biometriaTentativasAusenteDesde = Date.now()
+    } else if (error) {
+      console.error('[biometria_tentativas] não gravou', error.message)
+    }
+  } catch (e) {
+    console.error('[biometria_tentativas] falhou', e)
+  }
+}
+
+/**
+ * Consentimento — SEMPRE antes da captura, nunca depois.
+ *
+ * Biometria é dado sensível (LGPD art. 5º, II); o cadastro hoje é assistido
+ * no portão (o operador segura o aparelho), então quem precisa concordar é a
+ * PESSOA, não o operador — a tela mostra o termo pra ELA e é o toque DELA
+ * que chama isto, antes de a câmera abrir. `podeEscanear` aqui autentica o
+ * APARELHO/sessão que está rodando a tela, não substitui o consentimento da
+ * pessoa.
+ */
+export async function consentirBiometria(funcionarioId: string, eventoId: string): Promise<{ ok?: boolean; error?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil)) return { error: 'Sem permissão.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func || (func.fornecedores as unknown as { evento_id: string })?.evento_id !== eventoId) {
+    return { error: 'Cadastro não encontrado neste evento.' }
+  }
+
+  const { error } = await supabaseAdmin.from('biometria_consentimentos').insert([{
+    funcionario_id: funcionarioId, evento_id: eventoId, registrado_por_perfil_id: perfil.id,
+  }])
+  if (error) {
+    if (/does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
+      return { error: 'Biometria ainda não foi ativada no sistema (migração pendente).' }
+    }
+    return { error: 'Não foi possível registrar o consentimento. Tente de novo.' }
+  }
+  return { ok: true }
+}
+
+/**
+ * Cadastra (ou substitui) o rosto de uma pessoa NESTE evento.
+ *
+ * O vetor (128 números) é o que sai do reconhecimento no NAVEGADOR
+ * (face-api.js) — nunca a foto, nunca chega imagem nenhuma ao servidor.
+ * Exige consentimento já registrado (`consentirBiometria`), e o mesmo escopo
+ * de quem pode registrar presença (supervisor só a própria equipe).
+ */
+export async function cadastrarBiometria(
+  funcionarioId: string, eventoId: string, descritor: number[],
+): Promise<{ ok?: boolean; error?: string }> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil)) return { error: 'Sem permissão.' }
+  if (!descritorValido(descritor)) return { error: 'Rosto não capturado corretamente. Tente de novo.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('id', funcionarioId)
+    .single()
+  if (!func || (func.fornecedores as unknown as { evento_id: string })?.evento_id !== eventoId) {
+    return { error: 'Cadastro não encontrado neste evento.' }
+  }
+  if (perfil.role === 'supervisor') {
+    const meus = await meusSetores(perfil)
+    if (!meus.some(s => s.id === func.fornecedor_id)) {
+      return { error: 'Esta pessoa é de outro setor. Você só cadastra biometria da sua equipe.' }
+    }
+  }
+
+  const { data: consentimento } = await supabaseAdmin
+    .from('biometria_consentimentos')
+    .select('id').eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+    .is('revogado_em', null).order('aceito_em', { ascending: false }).limit(1).maybeSingle()
+  if (!consentimento) {
+    return { error: 'É preciso o consentimento da pessoa antes de cadastrar o rosto dela.' }
+  }
+
+  const { error } = await supabaseAdmin.from('biometria_templates').upsert([{
+    funcionario_id: funcionarioId, evento_id: eventoId, vetor: descritor, criado_por_perfil_id: perfil.id,
+  }], { onConflict: 'funcionario_id,evento_id' })
+  if (error) {
+    if (/does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
+      return { error: 'Biometria ainda não foi ativada no sistema (migração pendente).' }
+    }
+    return { error: mensagemAmigavel(error) }
+  }
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${func.fornecedor_id}`)
+  return { ok: true }
+}
+
+/**
+ * O scanner chama isto pro modo rosto. Mesmo contrato de `registrarPresencaQR`
+ * (prévia + confirmação, nunca lança, sempre vai pro log — aqui em
+ * `biometria_tentativas`, sem nunca guardar o vetor recebido).
+ */
+export async function registrarPresencaFacial(
+  eventoId: string, descritor: number[], escolhido?: 'entrada' | 'fim',
+  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number },
+): Promise<ResultadoScan> {
+  const inicio = Date.now()
+  let funcionarioIdParaLog: string | null = null
+  let distanciaParaLog: number | undefined
+  let resultadoParaLog = 'erro'
+
+  let resultado: ResultadoScan
+  try {
+    const r = await validarLeituraFacial(
+      eventoId, descritor, escolhido, opcoes?.apenasConferir === true,
+      opcoes?.latitude, opcoes?.longitude,
+    )
+    resultado = r.resultado
+    funcionarioIdParaLog = r.funcionarioId
+    distanciaParaLog = r.distancia
+    resultadoParaLog = r.logResultado
+  } catch (e) {
+    console.error('[registrarPresencaFacial]', e)
+    resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo ou use o QR Code.' }
+  }
+
+  // Prévia aprovada ainda não é o registro final — só a confirmação (sem
+  // `apenasConferir`) entra no log, mesmo padrão de `registrarPresencaQR`.
+  if (!resultado.previa) {
+    const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
+    after(() => gravarTentativaBiometrica({
+      eventoId, perfilId, funcionarioId: funcionarioIdParaLog,
+      resultado: resultadoParaLog, distancia: distanciaParaLog, duracaoMs: Date.now() - inicio,
+    }))
+  }
+  return resultado
+}
+
+type ResultadoValidacaoFacial = { resultado: ResultadoScan; funcionarioId: string | null; distancia?: number; logResultado: string }
+
+async function validarLeituraFacial(
+  eventoId: string, descritor: number[], escolhido: 'entrada' | 'fim' | undefined, apenasConferir: boolean,
+  latitude?: number, longitude?: number,
+): Promise<ResultadoValidacaoFacial> {
+  const semLog = (resultado: ResultadoScan, logResultado: string): ResultadoValidacaoFacial =>
+    ({ resultado, funcionarioId: null, logResultado })
+
+  const perfil = await getPerfil()
+  if (!perfil || !podeEscanear(perfil)) return semLog({ success: false, message: 'Sem permissão' }, 'erro')
+
+  if (!descritorValido(descritor)) {
+    return semLog({ success: false, message: 'Rosto não capturado corretamente. Use o QR Code.', qrInvalido: true }, 'qualidade_baixa')
+  }
+
+  const agora = new Date()
+  const [{ data: evento }, podeEsteEvento, diaTurno] = await Promise.all([
+    supabaseAdmin.from('eventos').select(`id, organizacao_id, metodo_identificacao, ${JANELA_SELECT}`).eq('id', eventoId).single(),
+    podeEscanearEvento(perfil, eventoId),
+    diaDoTurno(eventoId, agora),
+  ])
+  if (!evento) return semLog({ success: false, message: 'Evento não encontrado' }, 'erro')
+  if (!biometriaHabilitada((evento as { metodo_identificacao?: string }).metodo_identificacao)) {
+    return semLog({ success: false, message: 'Este evento não usa biometria facial. Use o QR Code.', qrInvalido: true }, 'erro')
+  }
+  if (!podeEsteEvento) return semLog({ success: false, message: 'Sem acesso a este evento' }, 'erro')
+
+  /*
+   * LOCALIZAÇÃO OBRIGATÓRIA no dia do evento (pedido do Juan, 27/09/2026).
+   *
+   * O QR não exige isto — é uma régua só da biometria, mais nova e sem o
+   * mesmo histórico de confiança. No dia principal, sem GPS o aparelho nem
+   * chega a tentar reconhecer ninguém (recusa cedo, antes de gastar a
+   * consulta na galeria). Fora do dia principal (montagem/desmontagem) seque
+   * opcional, mesmo padrão do resto do sistema.
+   */
+  const temGps = typeof latitude === 'number' && typeof longitude === 'number'
+  if (!temGps) {
+    const diaDeHoje = await diaDeTrabalho(eventoId, diaTurno)
+    if (diaDeHoje?.tipo === 'principal') {
+      return semLog({
+        success: false,
+        message: 'Ative a localização do aparelho para registrar pela biometria no dia do evento. Ou use o QR Code.',
+        qrInvalido: true,
+      }, 'sem_localizacao')
+    }
+  }
+
+  /*
+   * A galeria é SÓ deste evento — o coração do isolamento multi-evento
+   * (pedido do Juan): um rosto cadastrado no evento A nunca é comparado
+   * contra o evento B, porque a consulta abaixo nem TRAZ os templates de B.
+   */
+  const { data: templates } = await supabaseAdmin
+    .from('biometria_templates').select('funcionario_id, vetor').eq('evento_id', eventoId)
+
+  const candidatos: Candidato[] = (templates ?? [])
+    .filter(t => descritorValido(t.vetor))
+    .map(t => ({ funcionarioId: t.funcionario_id as string, distancia: distanciaEuclidiana(descritor, t.vetor as number[]) }))
+
+  const match = decidirMatch(candidatos)
+  if (!match.encontrado) {
+    /*
+     * NUNCA revela candidatos nem "quase achei fulano" — só que não achou.
+     * A tela oferece tentar de novo ou ir pro QR; o log guarda o motivo
+     * (`match.motivo`) pra métricas, sem apontar pra ninguém.
+     */
+    return semLog({
+      success: false,
+      message: MENSAGEM_POR_MOTIVO[match.motivo] ?? 'Não conseguimos identificar seu cadastro.',
+      qrInvalido: true,
+    }, match.motivo)
+  }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome)')
+    .eq('id', match.funcionarioId)
+    .single()
+
+  const resultado = await autorizarPresenca({
+    perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
+    eventoId, func, agora, escolhido, apenasConferir, diaTurno,
+    origem: 'face', latitude, longitude,
+  })
+  return { resultado, funcionarioId: match.funcionarioId, distancia: match.distancia, logResultado: resultado.success ? 'sucesso' : 'negado' }
+}
+
+/**
+ * Biometria SEM operador — pela credencial, o funcionário batendo sozinho.
+ *
+ * Irmã de `registrarPresencaLivre` (o mesmo modelo: ação pública, protegida
+ * só pelo token da credencial, sem `getPerfil()` nenhum) — não passa por
+ * `autorizarPresenca` porque aquela função pressupõe um OPERADOR autenticado
+ * (as checagens de escopo do supervisor não fazem sentido pra alguém
+ * registrando a si mesmo). Mesma régua de acesso de `registrarPresencaLivre`
+ * pro resto: aprovado, ativo, dia de trabalho, "já registrou".
+ *
+ * SÓ ENTRADA — mesma decisão do Juan que desligou a saída livre em
+ * `registrarPresencaLivre` ("não tá mapeado, não tá estudado como a gente
+ * pode fazer na prática"). A saída pela biometria continua exigindo o
+ * aparelho do PORTÃO (`registrarPresencaFacial`) ou o QR mostrado lá.
+ *
+ * Só existe se o evento ligou `biometria_autoatendimento` — nasce desligado
+ * (ver supabase/upgrade-biometria-modos.sql); ligar ou não é decisão do
+ * produtor, tela de Editar evento.
+ */
+export async function registrarPresencaFacialLivre(
+  token: string, descritor: number[], latitude: number | null, longitude: number | null,
+): Promise<{ ok?: boolean; error?: string; nome?: string }> {
+  // Mesmo teto de `registrarPresencaLivre`: ação pública, só o token protege.
+  if (!podePassar(`livre-face:${token}`, 20, 10 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
+  if (!descritorValido(descritor)) return { error: 'Rosto não capturado corretamente. Tente de novo.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select(`id, nome, cpf, telefone, ativo, status_credenciamento, fornecedor_id, fornecedores(evento_id, eventos(id, organizacao_id, metodo_identificacao, biometria_autoatendimento, ${JANELA_SELECT}))`)
+    .eq('qr_token', token)
+    .single()
+  if (!func) return { error: 'Credencial não encontrada' }
+  if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') {
+    return { error: 'Seu credenciamento ainda não foi aprovado pelo organizador.' }
+  }
+  if (func.ativo === false) return { error: 'Seu cadastro ainda não foi ativado pelo organizador. Fale com o seu supervisor.' }
+
+  const fornecedor = func.fornecedores as any
+  const evento = fornecedor?.eventos as any
+  const eventoId = fornecedor?.evento_id
+  if (!evento || !eventoId) return { error: 'Evento não encontrado' }
+
+  if (!biometriaHabilitada(evento.metodo_identificacao) || evento.biometria_autoatendimento !== true) {
+    return { error: 'Este evento não usa reconhecimento facial pela credencial. Mostre o QR Code no credenciamento.' }
+  }
+
+  // Mesmo bloqueio que o portão respeita — sem operador olhando, esta
+  // conferência é a única coisa que fecha a porta pra quem foi barrado.
+  if (func.cpf && await cpfEstaBloqueado(eventoId, func.cpf as string, func.fornecedor_id as string)) {
+    return { error: 'Não é possível registrar sua presença agora. Procure o supervisor do seu setor.' }
+  }
+
+  /*
+   * LOCALIZAÇÃO OBRIGATÓRIA no dia do evento — mesma régua do aparelho do
+   * portão (`validarLeituraFacial`). Sem operador nenhum olhando pra pessoa,
+   * o GPS é a única prova de que ela está de fato no local.
+   */
+  const diaTurno = await diaDoTurno(eventoId, new Date())
+  const diaDeHoje = await diaDeTrabalho(eventoId, diaTurno)
+  const temGps = typeof latitude === 'number' && typeof longitude === 'number'
+  if (diaDeHoje?.tipo === 'principal' && !temGps) {
+    return { error: 'Ative a localização do aparelho para registrar sua entrada pela biometria no dia do evento.' }
+  }
+
+  /*
+   * Verificação 1:1 contra o PRÓPRIO cadastro, quando existe.
+   *
+   * Sem operador confirmando com os olhos, isto é a camada que garante que
+   * quem está batendo é de fato quem o token diz ser — não só "alguém com o
+   * link". Sem cadastro ainda, aceita como prova de vida (o mesmo nível do
+   * check-in por selfie do meio, que já existe neste sistema e nunca
+   * verificou rosto nenhum).
+   */
+  const { data: proprioTemplate } = await supabaseAdmin
+    .from('biometria_templates').select('vetor').eq('funcionario_id', func.id).eq('evento_id', eventoId).maybeSingle()
+  if (proprioTemplate && descritorValido(proprioTemplate.vetor)) {
+    const distancia = distanciaEuclidiana(descritor, proprioTemplate.vetor as number[])
+    if (distancia > LIMIAR_PADRAO) {
+      return { error: 'O rosto não bateu com o seu cadastro. Tente de novo com boa luz, ou mostre o QR Code no credenciamento.' }
+    }
+  }
+
+  const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'entrada')
+  if (!resolucao.ok) return { error: resolucao.erro }
+  if (resolucao.jaEm) {
+    return { error: `Você já registrou a entrada em ${formatarBR(resolucao.jaEm, 'curto')}.` }
+  }
+
+  const extra: Record<string, unknown> = { origem: 'face', ...(temGps ? { latitude, longitude } : {}) }
+  const { data: registro, error } = await upsertRegistro(func.id, eventoId, 'entrada', extra, resolucao.dataRef, resolucao.jornadaDiaId)
+  if (error) return { error: 'Erro ao registrar. Tente de novo.' }
+
+  if (temGps && registro) after(() => sincronizarEndereco(registro.id, latitude as number, longitude as number).catch(console.error))
+  if (func.telefone) {
+    after(() =>
+      agendarMeioAposEntrada({
+        eventoId, funcionarioId: func.id, telefone: func.telefone as string,
+        entradaEm: new Date().toISOString(), dataRef: resolucao.dataRef,
+      }).catch(console.error)
+    )
+  }
+  after(() => gravarTentativaBiometrica({ eventoId, perfilId: null, funcionarioId: func.id, resultado: 'sucesso' }))
+
+  return { ok: true, nome: func.nome as string }
 }
 
 /** Marca no próprio registro quem bateu o meio sem o aparelho dar a localização. */
@@ -6316,6 +6784,20 @@ export async function abrirFuncionarioLocalizado(
   if (!dentroDoEscopo) return { error: 'Esta pessoa está fora do seu acesso.' }
 
   return fichaDoFuncionario(func)
+}
+
+/**
+ * Só "este evento usa biometria?" — consulta À PARTE, tolerante, pra não
+ * arriscar a busca de gente (`localizarFuncionario`, já grande e crítica)
+ * quebrando por causa de uma coluna que pode não existir ainda.
+ */
+export async function metodoIdentificacaoDoEvento(eventoId: string): Promise<string> {
+  try {
+    const { data } = await supabaseAdmin.from('eventos').select('metodo_identificacao').eq('id', eventoId).maybeSingle()
+    return (data?.metodo_identificacao as string | null) ?? 'qr'
+  } catch {
+    return 'qr'
+  }
 }
 
 type LinhaLocalizada = {

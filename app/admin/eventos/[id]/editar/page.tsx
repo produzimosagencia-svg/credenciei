@@ -5,6 +5,7 @@ import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
 import DiasPrincipaisExtras from './DiasPrincipaisExtras'
+import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput } from '@/components/inputs'
@@ -282,6 +283,12 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               de custo mais cara do sistema: duas mensagens cobradas por
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
+
+          <MetodoIdentificacao
+            defaultValue={(evento.metodo_identificacao as string | null) ?? 'qr'}
+            defaultTotem={(evento.biometria_totem as boolean | null) ?? true}
+            defaultAutoatendimento={(evento.biometria_autoatendimento as boolean | null) ?? false}
+          />
         </div>
 
         {/*

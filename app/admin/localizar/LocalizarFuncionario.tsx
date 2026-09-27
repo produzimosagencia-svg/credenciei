@@ -1,16 +1,17 @@
 'use client'
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
-  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch,
+  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace,
 } from 'lucide-react'
 import {
-  localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida,
+  localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida, metodoIdentificacaoDoEvento,
   type FuncionarioLocalizado, type CandidatoLocalizado, type MomentoPresenca,
 } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, Cartao, EmptyState } from '@/components/ui/Superficie'
+import CadastroBiometrico from '@/components/CadastroBiometrico'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
 function comprimir(file: File): Promise<string> {
@@ -71,6 +72,16 @@ export default function LocalizarFuncionario() {
   const [buscando, startBusca] = useTransition()
   const [registrando, startRegistro] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Biometria: só oferece o cadastro quando o EVENTO desta pessoa usa
+  // biometria — consulta à parte, tolerante (ver `metodoIdentificacaoDoEvento`).
+  const [metodoEvento, setMetodoEvento] = useState<string>('qr')
+  const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false)
+  useEffect(() => {
+    // Sem pessoa aberta a ficha inteira some da tela (ver `{func && (...)}`
+    // abaixo), botão de biometria incluso — não precisa zerar o estado aqui.
+    if (func?.eventoId) metodoIdentificacaoDoEvento(func.eventoId).then(setMetodoEvento)
+  }, [func?.eventoId])
 
   const recomecar = () => {
     setTermo(''); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null); setErro(null); setSucesso(null)
@@ -275,7 +286,31 @@ export default function LocalizarFuncionario() {
               <Dado icone={MapPin} rotulo="Evento" valor={func.eventoNome} />
             </div>
 
+            {/*
+              * Cadastro assistido de biometria — só aparece quando o EVENTO
+              * usa biometria (qualquer um dos dois modos). O consentimento
+              * de verdade é pedido dentro de `CadastroBiometrico`, pra PESSOA,
+              * não aqui — este botão só abre a tela.
+              */}
+            {(metodoEvento === 'biometria' || metodoEvento === 'biometria_qr') && (
+              <button
+                type="button"
+                onClick={() => setCadastrandoBiometria(true)}
+                className="btn-press w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-300 rounded-xl py-2.5 text-xs font-semibold text-slate-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+              >
+                <ScanFace className="w-3.5 h-3.5" /> Cadastrar biometria facial
+              </button>
+            )}
           </div>
+
+          {cadastrandoBiometria && (
+            <CadastroBiometrico
+              funcionarioId={func.id}
+              eventoId={func.eventoId}
+              nome={func.nome}
+              aoFechar={() => setCadastrandoBiometria(false)}
+            />
+          )}
 
           {func.ativo && (() => {
             /*

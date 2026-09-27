@@ -1,11 +1,12 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, Copy, CheckCheck, ScanLine } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, Copy, CheckCheck, ScanLine, ScanFace } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { registrarPresencaFoto, registrarPresencaLivre } from '@/lib/actions'
+import { registrarPresencaFoto, registrarPresencaLivre, registrarPresencaFacialLivre } from '@/lib/actions'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import EscanearLocal from './EscanearLocal'
+import FaceCapture from '@/components/FaceCapture'
 
 type Status = 'feito' | 'disponivel' | 'aguardando' | 'encerrado' | 'indefinido'
 
@@ -218,7 +219,7 @@ function limparPendente(token: string) {
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
-  token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [],
+  token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [], biometriaAutoatendimento = false,
 }: {
   token: string
   momentos: MomentoInfo[]
@@ -239,6 +240,14 @@ export default function CheckinPresenca({
    * Sem ele não há o que ler, e oferecer a câmera seria um beco sem saída.
    */
   temCartazNoLocal?: boolean
+  /**
+   * O evento liga a ENTRADA por reconhecimento facial, sem ninguém segurando
+   * o aparelho (pedido do Juan, 27/09/2026) — ver `registrarPresencaFacialLivre`
+   * em lib/actions.ts. Independente de `podeAutoRegistrar`/`checkin_autonomo`:
+   * é o toggle PRÓPRIO da biometria (Editar evento → Método de identificação),
+   * não o do QR do cartaz. Só entrada — saída continua exigindo QR ou portão.
+   */
+  biometriaAutoatendimento?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -246,6 +255,9 @@ export default function CheckinPresenca({
   const [busyLivre, setBusyLivre] = useState<'entrada' | 'fim' | null>(null)
   // Qual etapa está esperando a leitura do cartaz. `null` = câmera fechada.
   const [escaneando, setEscaneando] = useState<'entrada' | 'fim' | null>(null)
+  // A câmera de rosto (autoatendimento) está aberta?
+  const [capturandoRosto, setCapturandoRosto] = useState(false)
+  const [erroRosto, setErroRosto] = useState<string | null>(null)
   // Em que ponto estamos: a espera fica longa e sem isto a tela parece travada.
   const [fase, setFase] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -325,6 +337,30 @@ export default function CheckinPresenca({
       setEscaneando(null)
     } finally {
       setBusyLivre(null)
+    }
+  }
+
+  /**
+   * Entrada por reconhecimento facial, sem operador — a versão biométrica
+   * de `registrarLivre` (mesma ideia, `registrarPresencaFacialLivre` no
+   * lugar de `registrarPresencaLivre`). Aqui a LOCALIZAÇÃO é obrigatória no
+   * dia do evento (o servidor recusa sem ela) — por isso espera de verdade a
+   * posição em vez de só tentar com uma folga curta como `registrarLivre` faz.
+   */
+  const registrarComRosto = async (descritor: number[]) => {
+    setErroRosto(null)
+    const local = iniciarLocalizacao()
+    const posicao = local.agora() ?? await Promise.race([local.pronta, aposMs(8000)])
+    try {
+      const r = await registrarPresencaFacialLivre(token, descritor, posicao?.lat ?? null, posicao?.lng ?? null)
+      if (r.ok || ehDuplicata(r.error)) {
+        setCapturandoRosto(false)
+        router.refresh()
+      } else {
+        setErroRosto(r.error ?? 'Não foi possível registrar. Tente de novo.')
+      }
+    } catch {
+      setErroRosto('Não foi possível registrar agora. Verifique a internet e tente de novo.')
     }
   }
 
@@ -556,6 +592,21 @@ export default function CheckinPresenca({
               <p className="text-red-700 text-xs">{m.avisoAtraso}</p>
             </div>
           )}
+          {/*
+            * Biometria autoatendimento — só a ENTRADA, e só quando o
+            * evento ligou (ver o comentário na prop). É uma opção A MAIS,
+            * não substitui o cartaz/registro livre acima: as duas podem
+            * coexistir, a pessoa usa a que estiver disponível pra ela.
+            */}
+          {m.momento === 'entrada' && m.status !== 'feito' && biometriaAutoatendimento && !embutido && (
+            <button
+              type="button"
+              onClick={() => { setErroRosto(null); setCapturandoRosto(true) }}
+              className="btn-press w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-3 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+            >
+              <ScanFace className="w-4 h-4" /> Bater com reconhecimento facial
+            </button>
+          )}
         </div>
       ))}
 
@@ -568,6 +619,22 @@ export default function CheckinPresenca({
           aoLer={tokenDoLocal => registrarLivre(escaneando, tokenDoLocal)}
           aoFechar={() => setEscaneando(null)}
         />
+      )}
+
+      {capturandoRosto && (
+        erroRosto ? (
+          <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center gap-4 p-6 text-center">
+            <p className="text-red-300 text-sm max-w-xs">{erroRosto}</p>
+            <button onClick={() => setErroRosto(null)} className="text-white text-sm font-semibold underline">Tentar de novo</button>
+            <button onClick={() => setCapturandoRosto(false)} className="text-slate-400 text-sm">Fechar</button>
+          </div>
+        ) : (
+          <FaceCapture
+            instrucao="Olhe para a câmera para registrar sua entrada"
+            onCaptura={({ descritor }) => registrarComRosto(descritor)}
+            onCancelar={() => setCapturandoRosto(false)}
+          />
+        )
       )}
     </div>
   )

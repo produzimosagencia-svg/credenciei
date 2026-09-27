@@ -427,6 +427,22 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       })
     : []
 
+  /*
+   * Biometria autoatendimento — consulta À PARTE e tolerante (mesmo padrão
+   * de `metodoIdentificacaoDoEvento`): esta página já é grande e crítica
+   * (é a credencial de todo mundo), e pedir uma coluna que ainda não existe
+   * no select principal derrubaria a página inteira por causa de um recurso
+   * que a maioria dos eventos nem liga.
+   */
+  let biometriaAutoatendimento = false
+  if (evento) {
+    try {
+      const { data } = await supabase
+        .from('eventos').select('metodo_identificacao, biometria_autoatendimento').eq('id', evento.id).maybeSingle()
+      biometriaAutoatendimento = data?.metodo_identificacao !== 'qr' && data?.biometria_autoatendimento === true
+    } catch { /* biometria ainda não migrada */ }
+  }
+
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
       {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="funcionario" token={token} />}
@@ -472,6 +488,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   podeAutoRegistrar={!diaPrincipal || evento?.checkin_autonomo === true}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
+                  biometriaAutoatendimento={biometriaAutoatendimento}
                 />
               </div>
             </div>

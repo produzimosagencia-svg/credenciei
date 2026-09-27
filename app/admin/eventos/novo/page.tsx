@@ -12,6 +12,7 @@ import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
 import DiasPrincipaisExtrasNovo from './DiasPrincipaisExtrasNovo'
+import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-novo',
@@ -71,6 +72,7 @@ type EventoDefaults = {
   janela_entrada_inicio?: string; janela_entrada_fim?: string
   janela_meio_inicio?: string; janela_meio_fim?: string
   janela_fim_inicio?: string; janela_fim_fim?: string
+  metodo_identificacao?: string
 }
 
 function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
@@ -121,6 +123,8 @@ function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
       </Field>
 
       <JanelasHorario defaults={defaults} />
+
+      <MetodoIdentificacao defaultValue={defaults?.metodo_identificacao} />
 
       <DiasPrincipaisExtrasNovo />
 

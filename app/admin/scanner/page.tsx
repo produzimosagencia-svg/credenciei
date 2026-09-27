@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 import { QrCode } from 'lucide-react'
-import { getPerfil, eventosEscaneaveis } from '@/lib/supabase-server'
+import { getPerfil, eventosEscaneaveis, supabaseAdmin } from '@/lib/supabase-server'
 import { podeEscanear } from '@/lib/permissions'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
-import ScannerView from '@/app/scan/ScannerView'
+import ScannerRouter from '@/app/scan/ScannerRouter'
 
 export const revalidate = 0
 
@@ -28,8 +28,20 @@ export default async function ScannerNoPainelPage({
 
   const eventos = await eventosEscaneaveis(perfil)
   const descricao = perfil.role === 'supervisor'
-    ? 'Leia o QR da credencial de quem é da sua equipe — entrada e saída.'
-    : 'Leia o QR da credencial ou do veículo — entrada e saída.'
+    ? 'Leia o QR (ou o rosto, se o evento usar biometria) de quem é da sua equipe — entrada e saída.'
+    : 'Leia o QR (ou o rosto, se o evento usar biometria) da credencial, ou do veículo — entrada e saída.'
+
+  // Mesma consulta tolerante de `/scan` — ver o comentário lá.
+  let metodosPorEvento: Record<string, string> = {}
+  if (eventos.length) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('eventos').select('id, metodo_identificacao').in('id', eventos.map(e => e.id))
+      if (!error && data) {
+        metodosPorEvento = Object.fromEntries(data.map(e => [e.id as string, (e.metodo_identificacao as string) ?? 'qr']))
+      }
+    } catch { /* biometria ainda não migrada — todo evento fica 'qr' */ }
+  }
 
   return (
     <div className="space-y-5">
@@ -43,7 +55,7 @@ export default async function ScannerNoPainelPage({
           />
         </Secao>
       ) : (
-        <ScannerView eventos={eventos} initialEventoId={evento} noPainel />
+        <ScannerRouter eventos={eventos} initialEventoId={evento} metodosPorEvento={metodosPorEvento} noPainel />
       )}
     </div>
   )
