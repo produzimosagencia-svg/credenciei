@@ -14,14 +14,16 @@ import type { TutorialConfig } from '@/components/tutorial/types'
 // quem já tinha visto o tutorial antigo vê o novo automaticamente.
 const TUTORIAL: TutorialConfig = {
   tela: 'scan',
-  // Versão 2: o botão Entrada/Saída saiu (03/09/2026) — quem já tinha visto o
-  // tutorial antigo, com o passo dele, vê o roteiro novo automaticamente.
-  versao: 2,
+  // Versão 3: o botão Entrada/Saída voltou (26/09/2026) — quem já tinha visto
+  // o tutorial anterior vê o roteiro novo automaticamente.
+  versao: 3,
   passos: [
     { alvo: 'scan-evento', titulo: 'Evento', posicao: 'bottom', icone: 'ListChecks',
       descricao: 'Confirme que é o evento certo antes de começar. Se você é supervisor, só aparece o evento do seu setor — não tem como escanear no evento errado.' },
+    { alvo: 'scan-modo', titulo: 'Entrada ou saída', posicao: 'bottom', icone: 'ScanLine',
+      descricao: 'Escolha o que está registrando: ENTRADA (verde) ou SAÍDA (laranja). Fica escolhido até você trocar. Quem saiu e está voltando: ENTRADA — a saída fica no histórico. Se escolher errado, nada é gravado errado: a tela avisa.' },
     { alvo: 'scan-camera', titulo: 'A leitura', posicao: 'top', icone: 'ScanLine',
-      descricao: 'Aponte para o QR Code na tela do celular da pessoa e aguarde: assim que reconhece, o nome dela aparece confirmado. Não tem botão de Entrada ou Saída pra escolher — o sistema decide sozinho, pelo que a pessoa já registrou hoje: primeira leitura é entrada, segunda é saída. Não precisa apertar nada — é contínuo, pode ir passando a fila.' },
+      descricao: 'Aponte para o QR Code na tela do celular da pessoa: aparece "Validando..." na hora e, em seguida, o resultado em tela cheia com o nome. É contínuo, pode ir passando a fila.' },
     { alvo: 'scan-equipe', titulo: 'Sua equipe', posicao: 'bottom', icone: 'Users',
       descricao: 'Atalho para o painel do seu setor, onde você vê quem já registrou cada etapa e quem ainda está pendente. Vale abrir de tempos em tempos durante o evento.' },
   ],

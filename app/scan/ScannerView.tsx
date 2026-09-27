@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { registrarPresencaQR, conferirVeiculoPorQR } from '@/lib/actions'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
@@ -57,6 +57,21 @@ const REPETIDO_MS = 15_000
 
 /** Quanto tempo cada tipo de resultado fica na tela (ou até tocar). */
 const DURACAO_MS = { sucesso: 3000, jaValidado: 4000, erro: 5000 } as const
+
+/*
+ * ENTRADA / SAÍDA escolhidos pelo operador — de volta a pedido do Juan
+ * (26/09/2026): quem sai e volta no mesmo dia precisa de entrada, saída,
+ * entrada, saída, e quem decide é quem está no portão. O modo fica guardado
+ * no aparelho (recarregar a tela não volta pro outro). Escolher o botão
+ * errado não grava nada errado: o servidor avisa ("Entrada já registrada",
+ * "não tem entrada — use ENTRADA") — ver `inferirMomentoQR`.
+ */
+type Modo = 'entrada' | 'fim'
+const CHAVE_MODO = 'credenciei:scanner-modo'
+const semAssinatura = () => () => {}
+const lerModoSalvo = (): string | null => {
+  try { return localStorage.getItem(CHAVE_MODO) } catch { return null }
+}
 
 // O html5-qrcode rejeita às vezes com Error, às vezes com string
 // ("Error getting userMedia, error = NotReadableError: ...") — lê os dois.
@@ -153,6 +168,14 @@ export default function ScannerView({
   noPainel?: boolean
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
+  // O modo salvo vem do aparelho sem piscar a tela (mesmo padrão do menu).
+  const modoSalvo = useSyncExternalStore(semAssinatura, lerModoSalvo, () => null)
+  const [modoEscolhido, setModoEscolhido] = useState<Modo | null>(null)
+  const modo: Modo = modoEscolhido ?? (modoSalvo === 'fim' ? 'fim' : 'entrada')
+  const escolherModo = (m: Modo) => {
+    setModoEscolhido(m)
+    try { localStorage.setItem(CHAVE_MODO, m) } catch { /* aba anônima */ }
+  }
   const [result, setResult] = useState<ScanResult | null>(null)
   const [validando, setValidando] = useState(false)
   const [conferindo, setConferindo] = useState(false)
@@ -171,7 +194,9 @@ export default function ScannerView({
   /** Identifica a leitura da vez — uma resposta atrasada de uma leitura antiga não sobrescreve a atual. */
   const leituraRef = useRef(0)
   /** O último QR com resultado, pra não validar de novo o mesmo QR parado na frente da câmera. */
-  const ultimoRef = useRef<{ codigo: string; em: number; resumo: string } | null>(null)
+  const ultimoRef = useRef<{ codigo: string; modo: Modo; em: number; resumo: string } | null>(null)
+  const modoRef = useRef<Modo>(modo)
+  useEffect(() => { modoRef.current = modo }, [modo])
   const temporizadorRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repetidoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scannerRef = useRef<import('html5-qrcode').Html5Qrcode | null>(null)
@@ -210,7 +235,7 @@ export default function ScannerView({
     retomarLeitura()
   }
 
-  const mostrarResultado = (id: number, codigo: string, r: ScanResult) => {
+  const mostrarResultado = (id: number, codigo: string, modoDaLeitura: Modo, r: ScanResult) => {
     if (id !== leituraRef.current) return // o operador já seguiu em frente
     const categoria = categoriaDo(r)
     setValidando(false)
@@ -221,7 +246,7 @@ export default function ScannerView({
     if (categoria !== 'semResposta') {
       const quem = r.funcionario?.nome ?? r.veiculo?.placa ?? ''
       ultimoRef.current = {
-        codigo, em: Date.now(),
+        codigo, modo: modoDaLeitura, em: Date.now(),
         resumo: `${VISUAL[categoria].titulo}${quem ? ` — ${quem}` : ''}`,
       }
     }
@@ -249,8 +274,10 @@ export default function ScannerView({
      * continuou na frente da câmera. Não valida de novo (era a segunda
      * validação que confundia o portão) — só avisa, sem cobrir a câmera.
      */
+    // Trocar o botão (ENTRADA → SAÍDA) libera o mesmo QR na hora: foi escolha.
+    const modoDaLeitura = modoRef.current
     const ultimo = ultimoRef.current
-    if (ultimo && ultimo.codigo === codigo && Date.now() - ultimo.em < REPETIDO_MS) {
+    if (ultimo && ultimo.codigo === codigo && ultimo.modo === modoDaLeitura && Date.now() - ultimo.em < REPETIDO_MS) {
       setRepetido(`Este QR acabou de ser lido: ${ultimo.resumo}. Aponte para o próximo.`)
       if (repetidoTimerRef.current) clearTimeout(repetidoTimerRef.current)
       repetidoTimerRef.current = setTimeout(() => setRepetido(null), 3000)
@@ -265,14 +292,10 @@ export default function ScannerView({
     setValidando(true) // "Validando acesso..." aparece NA HORA
     vibrar(30)
 
-    /*
-     * Sem escolher "Entrada" ou "Saída" antes: o servidor decide sozinho, pela
-     * própria pessoa — primeira leitura do turno é entrada, segunda é saída
-     * (ver `inferirMomentoQR` em lib/actions.ts). Decisão do Juan, 03/09/2026.
-     */
+    // O botão escolhido vai junto; veículo não tem entrada/saída aqui.
     const pedido: Promise<ScanResult> = (ehQrDeVeiculo(codigo)
       ? conferirVeiculoPorQR(eventoIdRef.current, codigo)
-      : registrarPresencaQR(eventoIdRef.current, codigo)
+      : registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura)
     ).catch((): ScanResult => ({
       success: false,
       message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
@@ -284,7 +307,7 @@ export default function ScannerView({
      * porque a validação pode ter sido gravada. Nunca fica parada em silêncio.
      */
     const tempo = setTimeout(() => {
-      mostrarResultado(id, codigo, {
+      mostrarResultado(id, codigo, modoDaLeitura, {
         success: false,
         semResposta: true,
         message: 'A internet está lenta e a resposta ainda não chegou. NÃO leia de novo: o resultado aparece aqui assim que chegar. Se demorar muito, confira a pessoa em "Registrar ponto".',
@@ -293,7 +316,7 @@ export default function ScannerView({
 
     const resposta = await pedido
     clearTimeout(tempo)
-    mostrarResultado(id, codigo, resposta)
+    mostrarResultado(id, codigo, modoDaLeitura, resposta)
   }
 
   useEffect(() => {
@@ -409,14 +432,38 @@ export default function ScannerView({
           </select>
         </div>
 
-        {/*
-          * Sem botão de Entrada/Saída — de propósito, a pedido do Juan
-          * (03/09/2026). O sistema decide sozinho, pela própria pessoa: quem
-          * não tem turno aberto está entrando; quem tem, está saindo. Ver
-          * `inferirMomentoQR` em lib/actions.ts pra regra inteira.
-          */}
+        {/* ENTRADA / SAÍDA — o operador escolhe (de volta em 26/09/2026). */}
+        <div className="grid grid-cols-2 gap-2" data-tutorial="scan-modo" role="radiogroup" aria-label="Registrar">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={modo === 'entrada'}
+            onClick={() => escolherModo('entrada')}
+            className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
+              modo === 'entrada'
+                ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-300'
+                : 'border-2 border-slate-600 text-slate-400'
+            }`}
+          >
+            ENTRADA
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={modo === 'fim'}
+            onClick={() => escolherModo('fim')}
+            className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
+              modo === 'fim'
+                ? 'bg-brand-500 text-white shadow-lg ring-2 ring-brand-300'
+                : 'border-2 border-slate-600 text-slate-400'
+            }`}
+          >
+            SAÍDA
+          </button>
+        </div>
         <p className="text-slate-500 text-xs text-center">
-          A câmera decide sozinha se é entrada ou saída, pelo que a pessoa já registrou hoje.
+          Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-brand-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
+          Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
           O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
         </p>
       </div>
@@ -470,10 +517,9 @@ export default function ScannerView({
         <div className="relative w-full max-w-sm" data-tutorial="scan-camera">
           <div id="qr-reader" className="rounded-xl overflow-hidden" />
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            {/* Uma cor só: antes ela seguia o botão Entrada/Saída que a
-                pessoa escolhia antes de ler — sem o botão, não há mais o
-                que a moldura precise antecipar. */}
-            <div className="w-64 h-64 border-2 rounded-2xl opacity-60 border-brand-400" />
+            {/* A moldura segue o botão: verde entrada, laranja saída — o
+                operador vê o modo sem tirar o olho da câmera. */}
+            <div className={`w-64 h-64 border-4 rounded-2xl opacity-70 ${modo === 'entrada' ? 'border-green-500' : 'border-brand-400'}`} />
           </div>
         </div>
       )}
@@ -495,7 +541,7 @@ export default function ScannerView({
       {validando && !result && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 text-white text-center px-8" role="status" aria-live="assertive">
           <Loader2 className="w-16 h-16 animate-spin mb-6" />
-          <p className="text-3xl font-bold">Validando acesso...</p>
+          <p className="text-3xl font-bold">Validando {modo === 'entrada' ? 'entrada' : 'saída'}...</p>
           <p className="text-base opacity-70 mt-3">QR lido. Aguarde a resposta — não precisa ler de novo.</p>
         </div>
       )}

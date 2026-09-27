@@ -393,6 +393,13 @@ function Linha({
         )}
       </td>
       <td className="text-slate-600 text-xs">
+        {/* Saídas e voltas no meio do turno (entrada, saída, entrada, saída…)
+            — cada uma aparece, em ordem, antes da saída final do dia. */}
+        {(dia.pausas ?? []).map(p => (
+          <span key={p.saiu} className="block text-slate-500 text-2xs tabular-nums whitespace-nowrap">
+            saiu {formatarBR(p.saiu, 'hora')} · voltou {formatarBR(p.voltou, 'hora')}
+          </span>
+        ))}
         <Celula batida={dia.fim} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
         {dia.fim && dia.tipo === 'principal' && (
           <LogOut className="w-3 h-3 text-slate-400 inline-block ml-1" />

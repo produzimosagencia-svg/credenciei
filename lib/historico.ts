@@ -62,7 +62,12 @@ export type DiaDoHistorico = {
   compareceu: boolean
   /** Cumpriu as três etapas. */
   completo: boolean
-  /** Da entrada à saída, em horas. `null` enquanto faltar uma das duas pontas. */
+  /**
+   * Saídas e voltas no meio do turno (entrada, saída, entrada, saída…), em
+   * ordem. A entrada acima é a primeira do dia e o `fim` a última saída.
+   */
+  pausas: { saiu: string; voltou: string }[]
+  /** Da entrada à saída, em horas, sem o tempo das pausas. `null` enquanto faltar uma das duas pontas. */
   horas: number | null
 }
 
@@ -110,7 +115,7 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
   const evento = setor?.eventos
   if (!evento) return null
 
-  const [{ data: diasBrutos }, { data: registros }] = await Promise.all([
+  const [{ data: diasBrutos }, { data: registros }, { data: pausasBrutas }] = await Promise.all([
     supabaseAdmin
       .from('jornada_dias')
       .select('data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
@@ -122,7 +127,22 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       .eq('funcionario_id', funcionarioId)
       .eq('evento_id', evento.id)
       .order('created_at'),
+    // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio.
+    supabaseAdmin
+      .from('pausas_turno')
+      .select('data_ref, saiu_em, voltou_em')
+      .eq('funcionario_id', funcionarioId)
+      .eq('evento_id', evento.id)
+      .order('saiu_em')
+      .then(r => (r.error ? { data: [] as { data_ref: string; saiu_em: string; voltou_em: string }[] } : r)),
   ])
+
+  const pausasPorDia = new Map<string, { saiu: string; voltou: string }[]>()
+  for (const p of pausasBrutas ?? []) {
+    const dia = p.data_ref as string
+    if (!pausasPorDia.has(dia)) pausasPorDia.set(dia, [])
+    pausasPorDia.get(dia)!.push({ saiu: p.saiu_em as string, voltou: p.voltou_em as string })
+  }
 
   const porDia = new Map<string, Map<string, Batida>>()
   for (const r of registros ?? []) {
@@ -167,6 +187,8 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     const meio = batidas?.get('meio') ?? null
     const fim = batidas?.get('fim') ?? null
     const janela = janelaDoMeio(evento, meta, entrada?.em ?? null)
+    const pausas = pausasPorDia.get(data) ?? []
+    const foraMs = pausas.reduce((s, p) => s + Math.max(0, new Date(p.voltou).getTime() - new Date(p.saiu).getTime()), 0)
 
     return {
       data,
@@ -181,8 +203,9 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
         : null,
       compareceu: !!entrada,
       completo: !!entrada && !!meio && !!fim,
+      pausas,
       horas: entrada && fim
-        ? Math.round(((new Date(fim.em).getTime() - new Date(entrada.em).getTime()) / H_MS) * 100) / 100
+        ? Math.round((Math.max(0, new Date(fim.em).getTime() - new Date(entrada.em).getTime() - foraMs) / H_MS) * 100) / 100
         : null,
     }
   })
@@ -207,9 +230,10 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       diasFaltados: valem.filter(d => !d.compareceu).length,
       diasIncompletos: valem.filter(d => d.compareceu && !d.completo).length,
       horasTotais: Math.round(valem.reduce((soma, d) => soma + (d.horas ?? 0), 0) * 100) / 100,
-      batidasEntrada: valem.filter(d => d.entrada).length,
+      // Cada pausa é uma saída E uma volta (entrada) a mais — conta como batida.
+      batidasEntrada: valem.filter(d => d.entrada).length + valem.reduce((s, d) => s + d.pausas.length, 0),
       batidasMeio: valem.filter(d => d.meio).length,
-      batidasFim: valem.filter(d => d.fim).length,
+      batidasFim: valem.filter(d => d.fim).length + valem.reduce((s, d) => s + d.pausas.length, 0),
     },
   }
 }

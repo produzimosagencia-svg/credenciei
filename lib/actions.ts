@@ -3925,14 +3925,47 @@ async function inferirMomentoQR(
    * Omitido, é buscado aqui mesmo (mesmo resultado).
    */
   pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
+  /**
+   * O botão que o operador escolheu no scanner (ENTRADA ou SAÍDA) — de volta
+   * a pedido do Juan em 26/09/2026. Sem ele (app, tela antiga), o sistema
+   * decide sozinho como antes. Com ele, quem decide é o operador; o sistema
+   * só se recusa a gravar o que não faz sentido, e nesse caso AVISA:
+   *   ENTRADA, já dentro hoje       → "Entrada já registrada"  (nada gravado)
+   *   ENTRADA, já saiu hoje         → volta: reabre o turno, a saída vira pausa
+   *   ENTRADA, turno aberto de ONTEM → entrada de HOJE (ontem fica sem saída —
+   *                                    não inventa uma saída ao meio-dia)
+   *   SAÍDA, turno aberto           → saída (sem carência: foi escolhido)
+   *   SAÍDA, já saiu hoje           → "Saída já registrada"    (nada gravado)
+   *   SAÍDA, sem entrada            → "não tem entrada — use ENTRADA"
+   */
+  escolhido?: 'entrada' | 'fim',
 ): Promise<
   | { momento: 'entrada' | 'fim'; entrada?: { em: string; dataRef: string } }
-  | { reabrir: { id: string; em: string } }
+  | { reabrir: { id: string; em: string; dataRef: string } }
   | { erro: string; recente?: boolean }
 > {
   const entrada = pre && 'entrada' in pre ? pre.entrada ?? null : await entradaDoTurno(funcionarioId, eventoId, agora)
+  const hoje = pre?.diaTurno ?? await diaDoTurno(eventoId, agora)
 
-  if (entrada) {
+  if (entrada && escolhido) {
+    const { data: fimDoTurno } = await supabaseAdmin
+      .from('registros')
+      .select('created_at')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+      .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
+      .gt('created_at', entrada.em)
+      .limit(1)
+    if (!fimDoTurno?.length) {
+      if (escolhido === 'fim') return { momento: 'fim' }
+      // ENTRADA com turno aberto: se é o turno de hoje, ela já está dentro;
+      // se é de outro dia (esqueceu de sair ontem), é a chegada de hoje.
+      if (entrada.dataRef === hoje) {
+        return { erro: `Entrada já registrada às ${formatarBR(entrada.em, 'hora')}. Se a pessoa está saindo, use o botão SAÍDA.`, recente: true }
+      }
+    }
+  }
+
+  if (entrada && !escolhido) {
     /*
      * A saída só FECHA esta entrada se veio DEPOIS dela.
      *
@@ -3990,7 +4023,6 @@ async function inferirMomentoQR(
    * dupla na despedida (saída 05:15, QR lido de novo 05:15) virava ENTRADA
    * do dia 26 — Pontal Weekend, 26/09/2026.
    */
-  const hoje = pre?.diaTurno ?? await diaDoTurno(eventoId, agora)
   const { data: deHoje } = await supabaseAdmin
     .from('registros')
     .select('id, tipo, created_at')
@@ -4000,6 +4032,28 @@ async function inferirMomentoQR(
 
   const entradaHoje = (deHoje ?? []).find(r => r.tipo === 'entrada')
   const saidaHoje = (deHoje ?? []).find(r => r.tipo === 'fim')
+
+  // ── Com o botão escolhido pelo operador ────────────────────────────────
+  if (escolhido === 'fim') {
+    if (entradaHoje && saidaHoje) {
+      return { erro: `Saída já registrada às ${formatarBR(saidaHoje.created_at as string, 'hora')}. Se a pessoa está voltando, use o botão ENTRADA.`, recente: true }
+    }
+    if (entradaHoje) return { momento: 'fim' }
+    const aberto = await turnoAbertoForaDoDiaDeTrabalho(funcionarioId, eventoId, hoje, agora)
+    if (aberto) return { momento: 'fim', entrada: aberto }
+    return { erro: 'Esta pessoa não tem entrada registrada hoje. Se ela está chegando, use o botão ENTRADA.' }
+  }
+  if (escolhido === 'entrada') {
+    if (entradaHoje && saidaHoje) {
+      return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string, dataRef: hoje } }
+    }
+    if (entradaHoje) {
+      return { erro: `Entrada já registrada às ${formatarBR(entradaHoje.created_at as string, 'hora')}. Se a pessoa está saindo, use o botão SAÍDA.`, recente: true }
+    }
+    return { momento: 'entrada' }
+  }
+
+  // ── Sem botão: o sistema decide sozinho (como sempre foi) ──────────────
   if (entradaHoje && saidaHoje) {
     /*
      * Ela já foi embora hoje e está de volta — caso real: sai no almoço,
@@ -4020,7 +4074,7 @@ async function inferirMomentoQR(
         recente: true,
       }
     }
-    return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string } }
+    return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string, dataRef: hoje } }
   }
 
   /*
@@ -4855,6 +4909,34 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
  */
 let tabelaDeLeiturasAusente = false
 
+/*
+ * Pausas no meio do turno (supabase/upgrade-pausas-turno.sql) — entrada,
+ * saída, entrada, saída, sem limite (pedido do Juan, 26/09/2026). O banco só
+ * guarda uma entrada e uma saída por pessoa/dia, então a volta reabre o
+ * turno; a saída do meio fica aqui, e o histórico mostra e desconta das
+ * horas. Sem a tabela, só não grava — a auditoria continua guardando.
+ */
+let tabelaDePausasAusente = false
+async function registrarPausa(p: {
+  funcionarioId: string; eventoId: string; dataRef: string
+  saiuEm: string; voltouEm: string; perfilId: string | null; origem: 'scanner' | 'assistido'
+}) {
+  if (tabelaDePausasAusente) return
+  try {
+    const { error } = await supabaseAdmin.from('pausas_turno').insert([{
+      funcionario_id: p.funcionarioId, evento_id: p.eventoId, data_ref: p.dataRef,
+      saiu_em: p.saiuEm, voltou_em: p.voltouEm, registrado_por: p.perfilId, origem: p.origem,
+    }])
+    if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
+      tabelaDePausasAusente = true
+    } else if (error) {
+      console.error('[pausas_turno] não gravou', error.message)
+    }
+  } catch (e) {
+    console.error('[pausas_turno] falhou', e)
+  }
+}
+
 function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
@@ -4906,10 +4988,15 @@ async function gravarLeituraQR(dados: {
  * ganha duas coisas: nunca lança (uma exceção virava "não foi possível
  * validar" genérico na tela) e toda leitura vai pro histórico.
  */
-export async function registrarPresencaQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
+export async function registrarPresencaQR(
+  eventoId: string, qrData: string,
+  /** O botão ENTRADA/SAÍDA do scanner. Sem ele, o sistema decide (ver `inferirMomentoQR`). */
+  momentoEscolhido?: 'entrada' | 'fim',
+): Promise<ResultadoScan> {
+  const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
@@ -4921,7 +5008,7 @@ export async function registrarPresencaQR(eventoId: string, qrData: string): Pro
   return resultado
 }
 
-async function validarLeituraQR(eventoId: string, qrData: string): Promise<ResultadoScan> {
+async function validarLeituraQR(eventoId: string, qrData: string, escolhido?: 'entrada' | 'fim'): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
   if (!perfil || !podeEscanear(perfil)) return { success: false, message: 'Sem permissão' }
@@ -5072,7 +5159,7 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
   }
 
   const jaBuscado = { entrada: entradaAberta, diaTurno }
-  const decidido = await inferirMomentoQR(func.id, eventoId, agora, jaBuscado)
+  const decidido = await inferirMomentoQR(func.id, eventoId, agora, jaBuscado, escolhido)
   // "Acabou de registrar" é uma leitura REPETIDA, não uma recusa: a tela
   // mostra como "já validado" (âmbar), não como acesso negado (vermelho).
   if ('erro' in decidido) {
@@ -5091,6 +5178,13 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
    * por definição, não é o da entrada nem o da saída do dia.
    */
   if ('reabrir' in decidido) {
+    // A saída do meio vira PAUSA antes de sair da tabela de batidas — é o
+    // que o histórico mostra (saiu às X, voltou às Y) e desconta das horas.
+    await registrarPausa({
+      funcionarioId: func.id, eventoId, dataRef: decidido.reabrir.dataRef,
+      saiuEm: decidido.reabrir.em, voltouEm: agora.toISOString(),
+      perfilId: perfil.id, origem: 'scanner',
+    })
     const { error: erroReabrir } = await supabaseAdmin
       .from('registros').delete().eq('id', decidido.reabrir.id)
     if (erroReabrir) {
@@ -5108,8 +5202,7 @@ async function validarLeituraQR(eventoId: string, qrData: string): Promise<Resul
 
     return {
       success: true,
-      message: `Bem-vindo de volta! Turno reaberto — a saída das ${formatarBR(decidido.reabrir.em, 'hora')} foi desfeita. `
-        + 'Leia o QR de novo quando esta pessoa for embora de vez.',
+      message: `Entrada registrada — voltou ao trabalho. A saída das ${formatarBR(decidido.reabrir.em, 'hora')} ficou no histórico como pausa.`,
       funcionario: funcInfo,
       momento: 'entrada' as const,
     }
@@ -6327,6 +6420,42 @@ export async function registrarPresencaAssistida(
   const path = `${evento.id}/${func.id}/assistido-${momento}-${refAssistido.dataRef}.${ext}`
   const up = await supabaseAdmin.storage.from('presencas').upload(path, buffer, { contentType, upsert: true })
   if (up.error) return { error: 'Não foi possível salvar a foto. Tente de novo.' }
+
+  /*
+   * ENTRADA de quem já entrou E saiu hoje = a VOLTA ao trabalho (26/09/2026).
+   *
+   * Antes, escolher "Entrada" aqui gravava POR CIMA da entrada da tarde — a
+   * hora em que a pessoa chegou se perdia, e a saída ficava antes da entrada.
+   * Agora é o mesmo que o scanner faz: a saída vira pausa (histórico mostra e
+   * desconta das horas) e o turno reabre com a chegada original.
+   */
+  if (momento === 'entrada') {
+    const { data: doDia } = await supabaseAdmin
+      .from('registros').select('id, tipo, created_at')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id)
+      .eq('data_ref', refAssistido.dataRef).in('tipo', ['entrada', 'fim'])
+    const entradaDoDia = (doDia ?? []).find(r => r.tipo === 'entrada')
+    const saidaDoDia = (doDia ?? []).find(r => r.tipo === 'fim')
+    if (entradaDoDia && saidaDoDia && saidaDoDia.created_at > entradaDoDia.created_at) {
+      const agoraISO = new Date().toISOString()
+      await registrarPausa({
+        funcionarioId: func.id, eventoId: evento.id, dataRef: refAssistido.dataRef,
+        saiuEm: saidaDoDia.created_at as string, voltouEm: agoraISO,
+        perfilId: perfil.id, origem: 'assistido',
+      })
+      const { error: erroVolta } = await supabaseAdmin.from('registros').delete().eq('id', saidaDoDia.id)
+      if (erroVolta) return { error: 'Não consegui registrar a volta desta pessoa. Tente de novo.' }
+      after(() => registrarAuditoria({
+        perfil, acao: 'REABERTURA_TURNO', eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+        campoAlterado: 'Voltou a trabalhar no mesmo dia (registro assistido)',
+        valorAnterior: `Saída às ${formatarBR(saidaDoDia.created_at as string, 'hora')}`,
+        valorNovo: `Turno reaberto às ${formatarBR(agoraISO, 'hora')} — foto: ${path}`,
+        motivo: motivo ?? null, funcionarioId: func.id,
+      }))
+      revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+      return { ok: true, nome: func.nome, etapa: 'Entrada (voltou ao trabalho)' }
+    }
+  }
 
   const temGps = typeof dados.latitude === 'number' && typeof dados.longitude === 'number'
   const { data: registro, error } = await upsertRegistro(func.id, evento.id, momento, {
