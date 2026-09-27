@@ -32,6 +32,19 @@ export async function proxy(request: NextRequest) {
     // Os arquivos da marca (public/marca) servem a landing e o login, que
     // não têm sessão — sem isto o logo vira um redirect pra /login.
     pathname.startsWith('/marca/') ||
+    /*
+     * Os PESOS do reconhecimento facial (public/models/), pro navegador
+     * baixar (face-api.js) — servem o AUTOATENDIMENTO na credencial
+     * (`/credential/[token]`), que é PÚBLICO, sem sessão nenhuma.
+     *
+     * Sem esta linha, o próprio funcionário nunca conseguia bater a entrada
+     * por biometria pelo celular dele: o arquivo virava um redirect pra
+     * /login (o navegador tenta baixar um .json e recebe HTML de login no
+     * lugar) e a câmera nunca chegava a abrir. Achado só depois do deploy —
+     * o Scanner do PORTÃO (autenticado) nunca sentiu o problema, porque o
+     * operador sempre tem sessão.
+     */
+    pathname.startsWith('/models/') ||
     // `/wa` é o atalho rastreável pro WhatsApp comercial: é o endereço que
     // está no link da bio do Instagram e em toda divulgação. Quem clica não
     // tem conta. Se esta linha sair, o link da bio cai no login e o comercial
