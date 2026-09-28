@@ -384,7 +384,7 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
     ferramenta({
       nome: 'detalhar_setor',
       descricao:
-        'Ficha de um setor: teto, valor por pessoa, link de cadastro, supervisor vinculado e a equipe com a situação de cada um. Use para "como está o setor X".',
+        'Ficha de um setor: teto, valor por pessoa, link de cadastro, supervisor vinculado e a equipe com a situação de cada um, incluindo A QUE HORAS cada etapa de HOJE foi registrada. Use para "como está o setor X" e para "que horas fulano entrou".',
       parametros: {
         type: 'object',
         properties: { fornecedor_id: { type: 'string' } },
@@ -400,17 +400,28 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
             .eq('fornecedor_id', fornecedor_id),
           supabaseAdmin.from('perfis')
             .select('id, nome, email, telefone, ativo').eq('fornecedor_id', fornecedor_id),
+          /*
+           * `created_at` e `data_ref` de HOJE — sem os dois, esta ficha só
+           * sabia dizer QUE a etapa foi feita, nunca A QUE HORAS (bug real,
+           * 28/09/2026: a IA respondia "já registrou" e não sabia dizer
+           * "que horas?"). Mesmo recorte de `data_ref` já usado na ficha
+           * individual (`buscar_funcionario`, logo acima neste arquivo):
+           * sem ele, num evento de vários dias, contaria a entrada de ONTEM
+           * como se fosse a de hoje.
+           */
           supabaseAdmin.from('registros')
-            .select('funcionario_id, tipo').eq('evento_id', r.setor.evento_id),
+            .select('funcionario_id, tipo, created_at')
+            .eq('evento_id', r.setor.evento_id)
+            .eq('data_ref', diaBRT()),
         ])
 
         const idsDoSetor = new Set((equipe ?? []).map(f => f.id))
-        const feitos = new Map<string, Set<string>>()
+        const feitos = new Map<string, Map<string, string>>()
         for (const reg of registros ?? []) {
           if (!idsDoSetor.has(reg.funcionario_id)) continue
-          const s = feitos.get(reg.funcionario_id) ?? new Set()
-          s.add(reg.tipo)
-          feitos.set(reg.funcionario_id, s)
+          const porEtapa = feitos.get(reg.funcionario_id) ?? new Map<string, string>()
+          porEtapa.set(reg.tipo, reg.created_at)
+          feitos.set(reg.funcionario_id, porEtapa)
         }
 
         return JSON.stringify({
@@ -432,7 +443,10 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
             ativo: f.ativo !== false,
             pago: f.pago === true,
             valor: brl(Number(f.valor_receber ?? 0)),
-            registrou: ORDEM_ETAPAS.filter(t => feitos.get(f.id)?.has(t)).map(t => ROTULO_ETAPA[t]),
+            registrou_hoje: ORDEM_ETAPAS.filter(t => feitos.get(f.id)?.has(t)).map(t => ({
+              etapa: ROTULO_ETAPA[t],
+              em: formatarBR(feitos.get(f.id)!.get(t)!, 'curto'),
+            })),
           })),
         })
       },
