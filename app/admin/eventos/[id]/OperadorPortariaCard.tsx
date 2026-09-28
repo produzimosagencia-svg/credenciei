@@ -2,8 +2,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound } from 'lucide-react'
-import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso } from '@/lib/actions'
+import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound, ScanFace } from 'lucide-react'
+import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso, criarTotem } from '@/lib/actions'
 import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -29,7 +29,7 @@ const formatCpf = (cpf: string) => cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '
  * consulta, em page.tsx.
  */
 export default function OperadorPortariaCard({
-  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false,
+  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false, metodoIdentificacao = 'qr',
 }: {
   eventoId: string
   operadores: Operador[]
@@ -37,8 +37,16 @@ export default function OperadorPortariaCard({
   funcionariosDoEvento?: FuncionarioDoEvento[]
   /** Só o master exclui de verdade — ver `deletarUsuario` em lib/actions.ts. */
   podeExcluir?: boolean
+  /**
+   * Em Biometria + QR Code, este card vira "Cadastrar totem" (pedido do
+   * Juan, 27/09/2026) — o totem é um aparelho fixo, não uma pessoa, então
+   * não faz sentido pedir nome/CPF/telefone; login e senha saem prontos
+   * (`totem1`, `totem2`...). Ver `criarTotem` em lib/actions.ts.
+   */
+  metodoIdentificacao?: string
 }) {
-  const [modalAberto, setModalAberto] = useState<'criar' | Operador | null>(null)
+  const ehBiometriaQr = metodoIdentificacao === 'biometria_qr'
+  const [modalAberto, setModalAberto] = useState<'criar' | 'criar-totem' | Operador | null>(null)
 
   /*
    * Operador é da ORGANIZAÇÃO — a lista cresce a cada evento, não só neste.
@@ -105,7 +113,16 @@ export default function OperadorPortariaCard({
       )}
 
       <div className="mt-3">
-        {operadores.length ? (
+        {ehBiometriaQr ? (
+          <button
+            onClick={() => setModalAberto('criar-totem')}
+            className={operadores.length
+              ? 'flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-semibold transition-colors'
+              : 'btn btn-secundario btn-sm w-full justify-center'}
+          >
+            <ScanFace className="w-3 h-3 shrink-0" /> Cadastrar totem
+          </button>
+        ) : operadores.length ? (
           <button
             onClick={() => setModalAberto('criar')}
             className="flex items-center gap-1.5 text-brand-600 hover:text-brand-700 text-xs font-semibold transition-colors"
@@ -119,7 +136,11 @@ export default function OperadorPortariaCard({
         )}
       </div>
 
-      {modalAberto && (
+      {modalAberto === 'criar-totem' && (
+        <ModalTotem eventoId={eventoId} onFechar={() => setModalAberto(null)} />
+      )}
+
+      {modalAberto && modalAberto !== 'criar-totem' && (
         <ModalOperador
           eventoId={eventoId}
           operador={modalAberto === 'criar' ? null : modalAberto}
@@ -128,6 +149,89 @@ export default function OperadorPortariaCard({
           podeExcluir={podeExcluir}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * Cadastro de totem — sem formulário nenhum, de propósito: um aparelho não
+ * tem nome pra digitar, CPF nem telefone. Um toque cria o próximo
+ * (`totem1`, `totem2`...) e mostra login/senha uma vez, pra copiar direto
+ * na tela de login do tablet.
+ */
+function ModalTotem({ eventoId, onFechar }: { eventoId: string; onFechar: () => void }) {
+  const [isPending, startTransition] = useTransition()
+  const [erro, setErro] = useState<string | null>(null)
+  const [criado, setCriado] = useState<{ nome: string; usuario: string; senha: string } | null>(null)
+  const [copiado, setCopiado] = useState(false)
+  const router = useRouter()
+
+  const criar = () => {
+    setErro(null)
+    startTransition(async () => {
+      try {
+        const r = await criarTotem(eventoId)
+        setCriado(r)
+        router.refresh()
+      } catch (e: any) {
+        setErro(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  const copiar = async () => {
+    if (!criado) return
+    try {
+      await navigator.clipboard.writeText(`Usuário: ${criado.usuario}\nSenha: ${criado.senha}`)
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 4000)
+    } catch {}
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !isPending && onFechar()}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/45" />
+      <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+          <h2 className="text-slate-800 font-bold">Cadastrar totem</h2>
+          <button onClick={onFechar} disabled={isPending} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {criado ? (
+          <div className="p-6 space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+              <ScanFace className="w-8 h-8 text-green-600 mx-auto" />
+              <p className="text-green-800 font-bold mt-2">{criado.nome} criado!</p>
+              <p className="text-green-700 text-sm mt-1">
+                Use este login e senha na tela de login do tablet, em /scan. Guarde num lugar seguro — a
+                senha não aparece de novo depois de fechar esta janela.
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 font-mono text-sm">
+              <p><span className="text-slate-400">Usuário:</span> <span className="text-slate-800 font-semibold">{criado.usuario}</span></p>
+              <p><span className="text-slate-400">Senha:</span> <span className="text-slate-800 font-semibold">{criado.senha}</span></p>
+            </div>
+            <button onClick={copiar} className="btn btn-primario w-full">
+              {copiado ? <CheckCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copiado ? 'Copiado!' : 'Copiar usuário e senha'}
+            </button>
+            <button onClick={onFechar} className="btn btn-secundario w-full">Fechar</button>
+          </div>
+        ) : (
+          <div className="p-6 space-y-4">
+            <p className="text-slate-600 text-sm">
+              Cria um login pronto pra configurar num tablet ou celular fixo no portão — sem precisar de
+              nome, CPF ou telefone de ninguém. Login e senha já saem prontos (totem1, totem2...).
+            </p>
+            {erro && <p className="text-red-500 text-xs">{erro}</p>}
+            <button onClick={criar} disabled={isPending} className="btn btn-primario btn-lg w-full">
+              {isPending ? 'Criando...' : 'Cadastrar totem'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

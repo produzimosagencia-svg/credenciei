@@ -512,6 +512,7 @@ export default async function EventoPage({
                   operadores={operadoresRows ?? []}
                   funcionariosDoEvento={funcionariosDoEventoRows ?? []}
                   podeExcluir={podeExcluir(perfil)}
+                  metodoIdentificacao={(evento as { metodo_identificacao?: string } | null)?.metodo_identificacao ?? 'qr'}
                 />
               )}
             </div>

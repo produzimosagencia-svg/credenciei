@@ -37,7 +37,7 @@ import {
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
 import { grafiaDaCidade } from './cidades'
-import { normalizarCpf, cpfParaEmail } from './usuario'
+import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
@@ -1128,6 +1128,105 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
   revalidatePath(`/admin/eventos/${eventoId}`)
 
   return { ok: true as const, novo: true as const, usuario: cpf, linkSenha, avisado: true as const }
+}
+
+/**
+ * Sem caracteres ambíguos (0/O, 1/l/I) — a senha é lida na tela de um
+ * tablet por alguém montando o portão, não copiada de um gerenciador de
+ * senhas.
+ */
+const ALFABETO_SENHA_TOTEM = 'abcdefghjkmnpqrstuvwxyz23456789'
+function gerarSenhaTotem(tamanho = 8): string {
+  const bytes = randomBytes(tamanho)
+  let senha = ''
+  for (let i = 0; i < tamanho; i++) senha += ALFABETO_SENHA_TOTEM[bytes[i] % ALFABETO_SENHA_TOTEM.length]
+  return senha
+}
+
+/**
+ * Cadastra um totem — um TABLET/CELULAR FIXO no portão, não uma pessoa.
+ *
+ * Só pra eventos em Biometria + QR Code (pedido do Juan, 27/09/2026: "esse
+ * campo seja para criar totem"). Login e senha vêm PRONTOS — `totem1`,
+ * `totem2`... na ordem em que forem criados NESTA ORGANIZAÇÃO (mesmo escopo
+ * dos operadores de portão comuns, ver o comentário em
+ * `OperadorPortariaCard.tsx`) — sem pedir nome, CPF nem telefone: um
+ * aparelho não tem nada disso, e não tem WhatsApp pra receber convite.
+ *
+ * Reaproveita o login por NOME DE USUÁRIO que já existia pro formato antigo
+ * de supervisor (`usuarioParaEmail`, lib/usuario.ts) — a tela de login já
+ * sabe tratar "totem1" como usuário (não tem "@", não são 11 dígitos de
+ * CPF), sem precisar mudar nada lá.
+ */
+export async function criarTotem(eventoId: string) {
+  const perfil = await getPerfil()
+  if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar totem')
+
+  const { data: evento } = await supabaseAdmin
+    .from('eventos').select('id, organizacao_id, nome, metodo_identificacao').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+  const organizacaoId = evento.organizacao_id
+  if (!ehMaster(perfil!.role) && organizacaoId !== perfil!.organizacao_id) {
+    throw new Error('Sem permissão sobre este evento')
+  }
+  if ((evento as { metodo_identificacao?: string }).metodo_identificacao !== 'biometria_qr') {
+    throw new Error('Este evento não está configurado para Biometria + QR Code.')
+  }
+
+  const admin = getAdminSupabase()
+
+  /*
+   * Próximo número da sequência DESTA ORGANIZAÇÃO — não deste evento: o
+   * mesmo totem físico pode servir em mais de um evento com o tempo. Só o
+   * prefixo do e-mail interno importa (`totemN@...`); operadores comuns têm
+   * e-mail por CPF e nunca batem nesse `.like()`.
+   */
+  const { data: totensExistentes } = await admin
+    .from('perfis').select('email').eq('organizacao_id', organizacaoId).eq('role', 'operador_portao').like('email', 'totem%@%')
+
+  let proximoNumero = 1 + (totensExistentes ?? [])
+    .map(t => parseInt(/^totem(\d+)@/.exec(t.email ?? '')?.[1] ?? '0', 10))
+    .reduce((max, n) => Math.max(max, n), 0)
+
+  // Tenta criar; se o login já existir (corrida rara com outra criação ao
+  // mesmo tempo), avança pro próximo número — nunca sobrescreve um totem
+  // que já existe.
+  for (let tentativas = 0; tentativas < 5; tentativas++) {
+    const usuario = `totem${proximoNumero}`
+    const email = usuarioParaEmail(usuario)
+    const senha = gerarSenhaTotem()
+
+    const { data: user, error } = await admin.auth.admin.createUser({ email, password: senha, email_confirm: true })
+    if (error) {
+      if (/already|exist|registered/i.test(error.message)) { proximoNumero++; continue }
+      throw new Error(mensagemAuth(error.message))
+    }
+
+    const { error: erroPerfil } = await admin.from('perfis').insert([{
+      id: user.user!.id,
+      nome: `Totem ${proximoNumero}`,
+      email,
+      telefone: null,
+      ativo: true,
+      cpf: null,
+      role: 'operador_portao',
+      organizacao_id: organizacaoId,
+      fornecedor_id: null,
+      permissoes_usuario: {},
+    }])
+    if (erroPerfil) {
+      await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
+      console.error('[criarTotem] falha ao inserir perfil', { eventoId, organizacaoId, erro: erroPerfil })
+      throw new Error(mensagemAmigavel(erroPerfil))
+    }
+
+    revalidatePath('/admin/usuarios')
+    revalidatePath(`/admin/eventos/${eventoId}`)
+
+    return { ok: true as const, nome: `Totem ${proximoNumero}`, usuario, senha }
+  }
+
+  throw new Error('Não foi possível gerar um login de totem disponível. Tente de novo.')
 }
 
 // ─── Suporte de Sistema ─────────────────────────────────────────────────────
