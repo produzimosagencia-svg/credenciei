@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   Search, X, MapPin, Briefcase, MessageCircle, UserSearch, Users, CalendarPlus,
-  IdCard, Building2, CalendarDays, ShieldCheck,
+  IdCard, Building2, CalendarDays,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
@@ -18,7 +18,7 @@ import { normalizarCidade, chaveCidade } from '@/lib/cidades'
 export const revalidate = 0
 
 /**
- * Encontre colaborador — a base regional da plataforma.
+ * Encontre colaborador — a base regional da plataforma, numa tela só.
  *
  * EXCLUSIVA DO MASTER. Quem já foi credenciado por qualquer cliente aparece
  * aqui, e é isso que torna a tela um produto e não uma listagem: a organização
@@ -26,27 +26,15 @@ export const revalidate = 0
  * atribui gente da base ao evento dela. Aberta ao admin, ela entregaria a
  * equipe de um cliente para o concorrente dele.
  *
- * ─── FUNDIU "BASE DE FUNCIONÁRIOS" ───────────────────────────────────────
+ * ─── SEM TOGGLE — TODA A BASE, SEMPRE ────────────────────────────────────
  *
- * Eram duas telas na mesma consulta: `funcionarios` inteira, agrupada por
- * CPF, master-only, linkando para a mesma ficha (`/admin/pessoas/[cpf]`).
- * A diferença real entre elas era uma coluna — `consentimento_base` —
- * disfarçada de duas rotas inteiras.
- *
- * Agora é um TOGGLE (`?ver=recrutar|todos`), não duas telas:
- *
- *   • recrutar (padrão) — só quem autorizou aparecer (`consentimento_base`).
- *     Ordenada por relevância (quem já trabalhou mais, mais recentemente).
- *     É a lista de quem vale ligar.
- *   • todos — a base inteira, sem o filtro de autorização. Ordenada por
- *     cadastro mais recente. É o registro completo, usado quando um cliente
- *     novo manda planilha e o sistema reconhece quem já passou por aqui.
- *
- * O filtro de autorização NUNCA muda o que a ficha da pessoa mostra (ela já
- * oferece "Atribuir" com ou sem consentimento — ver `/admin/pessoas/[cpf]`).
- * Ele só decide se a pessoa aparece nesta VITRINE de busca. Por isso vira um
- * toggle e não duas permissões: a mesma pessoa, a mesma ficha, duas formas de
- * chegar até ela.
+ * Até 28/09/2026 existia um alternador "Prontas para recrutar" (só quem
+ * marcou `consentimento_base`) / "Toda a base" (todo mundo). Pedido do
+ * Juan: uma tela só, com TODOS os cadastros — inclusive quem não marcou o
+ * aceite. Quem não autorizou continua identificável (etiqueta "Sem
+ * autorização" em cada linha), só não fica mais escondido atrás de um
+ * filtro por padrão. Ordenada por cadastro mais recente — é o registro
+ * completo, cresce sozinho conforme a equipe se cadastra nos eventos.
  */
 
 /*
@@ -57,36 +45,31 @@ export const revalidate = 0
  */
 const TUTORIAL: TutorialConfig = {
   tela: 'encontrar-colaborador',
-  versao: 2,
+  // Versão 3: o alternador "Prontas para recrutar / Toda a base" saiu —
+  // agora é uma lista só, com todo mundo (28/09/2026).
+  versao: 3,
   passos: [
     { alvo: 'enc-resumo', titulo: 'A base regional da plataforma', posicao: 'bottom', icone: 'Users',
       descricao: 'Todo mundo que já foi credenciado no Credenciei, por qualquer cliente. Esta tela é exclusiva do master: é o serviço de montagem de equipe que a organização contrata quando não consegue fechar a própria equipe. Nenhum admin enxerga isto.' },
-    { alvo: 'enc-escopo', titulo: 'Quem entra na lista', posicao: 'bottom', icone: 'ShieldCheck',
-      descricao: '"Prontas para recrutar" mostra só quem autorizou aparecer aqui. "Toda a base" mostra todo mundo já credenciado, sem esse filtro — use quando um cliente novo mandar a planilha da equipe e você quiser conferir quem o sistema já reconhece pelo CPF.' },
     { alvo: 'enc-busca', titulo: 'Busque por nome, CPF ou cidade', posicao: 'bottom', icone: 'Search',
       descricao: 'A cidade é o filtro que mais importa: ela diz quem consegue chegar ao local do evento do cliente. É a cidade onde a pessoa MORA, escrita por ela no cadastro — então "Vila Velha" e "vila velha" encontram as mesmas pessoas, mas abreviação não.' },
     { alvo: 'enc-lista', titulo: 'Quem aparece primeiro', posicao: 'top', icone: 'ShieldCheck',
-      descricao: 'Na lista de recrutamento, quem tem mais presença registrada sobe primeiro. "3 eventos trabalhados" quer dizer que a pessoa foi chamada e bateu entrada — é diferente de só ter se cadastrado. Clique no nome pra ver o histórico completo dela.' },
+      descricao: 'Do cadastro mais recente para o mais antigo. Quem não autorizou aparecer aqui (a caixa de aceite do formulário) mostra a etiqueta "Sem autorização" — a ficha dela continua acessível do mesmo jeito, é só um aviso.' },
     { alvo: 'enc-chamar', titulo: 'Chamar e atribuir', posicao: 'left', icone: 'MessageCircle',
       descricao: '"Chamar" abre o SEU WhatsApp com o número da pessoa — o Credenciei não manda convite automático, então combine função, valor e horário direto com ela. Fechado o combinado, "Atribuir" abre o perfil, onde você escolhe o evento e o setor do cliente. A pessoa entra na equipe dele e recebe o link da credencial.' },
   ],
 }
 
 /*
- * Teto de leitura, por escopo.
- *
- * Era 300 (recrutar sem filtro) / 2000 (recrutar com filtro) / 3000
- * (todos) — a base passou de 300 já em 03/09/2026 (1001 pessoas
- * autorizadas confirmadas no banco) e a tela escondia gente real sem
- * avisar. Corrigido primeiro pra 2000, e o Juan pediu pra ir direto pra
- * 10000 nos três — folga grande o bastante pra não voltar a esconder
- * ninguém tão cedo, sem precisar lembrar de subir de novo a cada evento.
+ * Teto de leitura — folga grande o bastante pra nunca esconder gente sem
+ * avisar (já aconteceu com um teto de 300, depois 2000 — ver histórico do
+ * arquivo). A base de hoje (2198) fica bem abaixo disto.
  */
-const TETO_RECRUTAR_SEM_FILTRO = 10000
-const TETO_RECRUTAR_COM_FILTRO = 10000
-const TETO_TODOS = 10000
+const TETO_BASE = 10000
 
-type Escopo = 'recrutar' | 'todos'
+/** 100 por página (pedido do Juan, 28/09/2026) — renderizar os 2000+
+ *  resultados de uma vez era o que deixava a tela pesada no navegador. */
+const POR_PAGINA = 100
 
 type Pessoa = {
   cpf: string
@@ -106,7 +89,7 @@ type Pessoa = {
 export default async function EncontrarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; cidade?: string; ver?: string; pagina?: string }>
+  searchParams: Promise<{ q?: string; cidade?: string; pagina?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -118,17 +101,11 @@ export default async function EncontrarPage({
    */
   if (!ehMaster(perfil.role)) redirect('/admin')
 
-  const { q, cidade: cidadeParam, ver, pagina: paginaParam } = await searchParams
+  const { q, cidade: cidadeParam, pagina: paginaParam } = await searchParams
   const busca = (q ?? '').trim()
   const cidade = (cidadeParam ?? '').trim()
   const filtrando = !!(busca || cidade)
-  const escopo: Escopo = ver === 'todos' ? 'todos' : 'recrutar'
-  /** 100 por página (pedido do Juan, 28/09/2026) — renderizar os ~2000+
-   *  resultados de uma vez era o que deixava a tela pesada no navegador. */
-  const POR_PAGINA = 100
   const pagina = Math.max(1, parseInt(paginaParam ?? '1', 10) || 1)
-
-  const teto = escopo === 'todos' ? TETO_TODOS : (filtrando ? TETO_RECRUTAR_COM_FILTRO : TETO_RECRUTAR_SEM_FILTRO)
 
   /*
    * Só IDs no join, não nomes. A tela mostra "3 organizações", nunca QUAIS —
@@ -136,29 +113,21 @@ export default async function EncontrarPage({
    * era transportar texto que nada renderiza. Contar id distinto dá o mesmo
    * número com uma fração do payload.
    *
-   * O filtro de autorização só existe no escopo "recrutar" — é isto que dá
-   * sentido à caixa de aceite no formulário. No escopo "todos" a pessoa
-   * aparece de qualquer forma (é o registro completo), mas cada linha
-   * mostra se ela autorizou ou não, pra nunca fingir que autorizou quando
-   * não.
+   * A pessoa aparece de qualquer forma, autorizada ou não (é o registro
+   * completo) — cada linha mostra se ela autorizou, pra nunca fingir que
+   * autorizou quando não.
    *
    * A cidade NÃO entra na consulta do banco.
    *
    * `ilike` compara acento com acento: procurar "Julia" perderia os cadastros
    * gravados como "Júlia". Por isso nome não é filtrado no PostgREST: trazemos
    * o conjunto permitido e comparamos em memória pela chave sem acentos.
-   *
-   * Os dois `if` de filtro se repetem na contagem e na consulta paginada
-   * abaixo — o construtor do Supabase muda de tipo a cada `.eq`/`.like`
-   * encadeado, então uma função genérica pra "aplicar filtro nos dois" luta
-   * contra o tipo em vez de ajudar. Duas consultas pequenas e diretas.
    */
   const digitos = busca.replace(/\D/g, '')
   const buscaPorNome = !!busca && digitos.length < 3
   const termoNome = chaveBusca(busca)
 
   let consultaContagem = supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true })
-  if (escopo === 'recrutar') consultaContagem = consultaContagem.eq('consentimento_base', true)
   if (digitos.length >= 3) consultaContagem = consultaContagem.like('cpf', `%${digitos}%`)
   const { count: totalSemFiltroDeNome } = await consultaContagem
 
@@ -173,8 +142,8 @@ export default async function EncontrarPage({
    * por resposta não importa o que `.limit()` peça (ver o comentário da
    * função em lib/supabase-server.ts) — um `.limit(2000)` aqui devolvia 1000
    * do mesmo jeito, e a tela continuava escondendo gente mesmo depois do
-   * teto ter subido. `teto` continua valendo, só que agora como TETO DE
-   * VERDADE (`tetoTotal`), paginando de 1000 em 1000 até chegar nele.
+   * teto ter subido. `TETO_BASE` vale como TETO DE VERDADE (`tetoTotal`),
+   * paginando de 1000 em 1000 até chegar nele.
    */
   const cadastrosBrutos = await buscarTudo<Cadastro>((de, ate) => {
     let consulta = supabaseAdmin
@@ -182,10 +151,9 @@ export default async function EncontrarPage({
       .select('id, nome, cpf, telefone, cargo, cidade, created_at, consentimento_base, fornecedores!inner(evento_id, eventos!inner(organizacao_id))')
       .order('created_at', { ascending: false })
       .range(de, ate)
-    if (escopo === 'recrutar') consulta = consulta.eq('consentimento_base', true)
     if (digitos.length >= 3) consulta = consulta.like('cpf', `%${digitos}%`)
     return consulta
-  }, { tetoTotal: teto })
+  }, { tetoTotal: TETO_BASE })
 
   const cadastros = buscaPorNome
     ? cadastrosBrutos.filter(c => chaveBusca(c.nome).includes(termoNome))
@@ -242,16 +210,9 @@ export default async function EncontrarPage({
   const semFiltroDeCidade = [...porCpf.values()]
     .filter(p => !cidade || chaveCidade(p.cidade).includes(chaveCidade(cidade)))
 
-  /*
-   * Ordem por escopo. "Recrutar": quem tem mais bagagem primeiro — a pergunta
-   * é "em quem eu confio pra chamar", não "onde está o fulano". "Todos": o
-   * cadastro mais recente primeiro — é o registro, a pergunta é "quem entrou
-   * na base por último".
-   */
-  const pessoas = escopo === 'recrutar'
-    ? semFiltroDeCidade.sort((a, b) =>
-        b.compareceu - a.compareceu || b.eventos.size - a.eventos.size || b.ultimo.localeCompare(a.ultimo))
-    : semFiltroDeCidade.sort((a, b) => b.ultimo.localeCompare(a.ultimo))
+  // Cadastro mais recente primeiro — é o registro completo, a pergunta é
+  // "quem entrou na base por último".
+  const pessoas = semFiltroDeCidade.sort((a, b) => b.ultimo.localeCompare(a.ultimo))
 
   /*
    * Corta em 100 SÓ pra exibir — os cartões de resumo abaixo continuam
@@ -269,21 +230,19 @@ export default async function EncontrarPage({
     (cadastros ?? []).map(c => normalizarCidade(c.cidade)).filter(v => !!v)
   )].sort((a, b) => a.localeCompare(b, 'pt-BR')).slice(0, 40)
 
-  const urlEscopo = (novoEscopo: Escopo) => {
+  const urlFiltro = () => {
     const params = new URLSearchParams()
     if (busca) params.set('q', busca)
     if (cidade) params.set('cidade', cidade)
-    if (novoEscopo === 'todos') params.set('ver', 'todos')
     const qs = params.toString()
     return `/admin/encontrar${qs ? `?${qs}` : ''}`
   }
 
-  /** Troca só a página, preservando busca/cidade/escopo atuais. */
+  /** Troca só a página, preservando busca/cidade atuais. */
   const urlPagina = (novaPagina: number) => {
     const params = new URLSearchParams()
     if (busca) params.set('q', busca)
     if (cidade) params.set('cidade', cidade)
-    if (escopo === 'todos') params.set('ver', 'todos')
     if (novaPagina > 1) params.set('pagina', String(novaPagina))
     const qs = params.toString()
     return `/admin/encontrar${qs ? `?${qs}` : ''}`
@@ -298,76 +257,26 @@ export default async function EncontrarPage({
         acoes={<TutorialButton />}
       />
 
-      {/* O toggle que fundiu as duas telas. Vive junto do cabeçalho porque
-          governa TUDO abaixo: números, ordem, lista inteira. */}
-      <div data-tutorial="enc-escopo" className="inline-flex p-1 bg-slate-100 rounded-xl gap-1">
-        <Link
-          href={urlEscopo('recrutar')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-            escopo === 'recrutar' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />
-          Prontas para recrutar
-        </Link>
-        <Link
-          href={urlEscopo('todos')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-            escopo === 'todos' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <IdCard className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />
-          Toda a base
-        </Link>
+      <div data-tutorial="enc-resumo" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Pessoas na base" value={pessoas.length.toLocaleString('pt-BR')} icon={IdCard} tom="acento" />
+        <StatCard label="Cadastros feitos" value={(totalCadastros ?? 0).toLocaleString('pt-BR')} icon={Users} tom="info" />
+        <StatCard
+          label="Organizações"
+          value={new Set(pessoas.flatMap(p => [...p.organizacoes])).size}
+          icon={Building2}
+          tom="sucesso"
+        />
+        <StatCard label="Já em 2+ eventos" value={pessoas.filter(p => p.eventos.size > 1).length} icon={CalendarDays} tom="aviso" />
       </div>
 
-      {escopo === 'recrutar' ? (
-        <div data-tutorial="enc-resumo" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Pessoas encontradas" value={pessoas.length} icon={UserSearch} tom="acento" />
-          <StatCard label="Com histórico de presença" value={pessoas.filter(p => p.compareceu > 0).length} icon={Users} tom="sucesso" />
-          <StatCard label="Cidades" value={cidades.length} icon={MapPin} tom="info" />
-          <StatCard label="Com telefone" value={pessoas.filter(p => p.telefone).length} icon={MessageCircle} tom="aviso" />
-        </div>
-      ) : (
-        <div data-tutorial="enc-resumo" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Pessoas na base" value={pessoas.length.toLocaleString('pt-BR')} icon={IdCard} tom="acento" />
-          <StatCard label="Cadastros feitos" value={(totalCadastros ?? 0).toLocaleString('pt-BR')} icon={Users} tom="info" />
-          <StatCard
-            label="Organizações"
-            value={new Set(pessoas.flatMap(p => [...p.organizacoes])).size}
-            icon={Building2}
-            tom="sucesso"
-          />
-          <StatCard label="Já em 2+ eventos" value={pessoas.filter(p => p.eventos.size > 1).length} icon={CalendarDays} tom="aviso" />
-        </div>
-      )}
-
-      {escopo === 'todos' && (
-        <Aviso tom="marca">
-          Quando um cliente novo enviar a planilha da equipe dele, quem já estiver aqui é reconhecido
-          pelo CPF e tem o cadastro preenchido sozinho — a pessoa não digita tudo de novo.
-        </Aviso>
-      )}
-
-      {/*
-        * Dois avisos saíram daqui a pedido (02/09/2026):
-        *
-        *  • "Fale com a pessoa pelo seu WhatsApp…" — instrução de como
-        *    recrutar, que quem usa a tela já sabe de cor;
-        *  • "N cadastros da base não aparecem aqui…" — contagem de quem não
-        *    tem `consentimento_base`. O alternador "Toda a base" logo acima
-        *    já leva a eles, então o aviso era um segundo caminho pro mesmo
-        *    lugar, ocupando espaço em toda visita.
-        *
-        * A REGRA NÃO MUDOU: "Prontas para recrutar" continua mostrando só
-        * quem autorizou (`consentimento_base`) — o que saiu foi o letreiro,
-        * não o filtro.
-        */}
+      <Aviso tom="marca">
+        Quando um cliente novo enviar a planilha da equipe dele, quem já estiver aqui é reconhecido
+        pelo CPF e tem o cadastro preenchido sozinho — a pessoa não digita tudo de novo.
+      </Aviso>
 
       {/* Filtros num form GET: a busca vira URL, então dá pra mandar o link
           "garçons em Vila Velha" pra outra pessoa da produção. */}
       <form data-tutorial="enc-busca" className="flex flex-col sm:flex-row gap-2">
-        {escopo === 'todos' && <input type="hidden" name="ver" value="todos" />}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input name="q" defaultValue={busca} placeholder="Nome ou CPF..." className="input" style={{ paddingLeft: 36 }} />
@@ -388,7 +297,7 @@ export default async function EncontrarPage({
         </datalist>
         <button type="submit" className="btn btn-primario shrink-0">Buscar</button>
         {filtrando && (
-          <Link href={urlEscopo(escopo)} className="btn btn-secundario btn-icone shrink-0" aria-label="Limpar filtros">
+          <Link href={urlFiltro()} className="btn btn-secundario btn-icone shrink-0" aria-label="Limpar filtros">
             <X className="w-4 h-4" />
           </Link>
         )}
@@ -403,9 +312,7 @@ export default async function EncontrarPage({
             ? `${(paginaAtual - 1) * POR_PAGINA + 1}–${Math.min(paginaAtual * POR_PAGINA, pessoas.length)} de ${pessoas.length}${filtrando ? ' para esta busca' : ''}`
             : filtrando
               ? `${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'} para esta busca`
-              : escopo === 'recrutar'
-                ? 'Quem tem mais eventos e mais presença aparece primeiro'
-                : 'Do cadastro mais recente para o mais antigo'
+              : 'Do cadastro mais recente para o mais antigo'
         }
       >
         {!pessoas.length ? (
@@ -431,11 +338,10 @@ export default async function EncontrarPage({
                       {p.compareceu > 0
                         ? <Badge tom="positivo">{p.compareceu} evento{p.compareceu !== 1 ? 's' : ''} trabalhado{p.compareceu !== 1 ? 's' : ''}</Badge>
                         : <Badge tom="neutro">Sem presença registrada</Badge>}
-                      {/* Só no escopo "todos": aqui aparece gente que não
-                          autorizou, e a etiqueta evita fingir que autorizou. */}
-                      {escopo === 'todos' && !p.autorizou && (
-                        <Badge tom="atencao">Sem autorização</Badge>
-                      )}
+                      {/* Aqui aparece gente que não autorizou (a caixa de
+                          aceite do formulário) — a etiqueta evita fingir que
+                          autorizou quando não. */}
+                      {!p.autorizou && <Badge tom="atencao">Sem autorização</Badge>}
                     </div>
                     <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
                       {funcao && (
