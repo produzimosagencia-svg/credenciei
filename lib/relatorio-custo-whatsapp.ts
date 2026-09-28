@@ -19,6 +19,8 @@
  * letra visível no rodapé, porque um comprovante que vai pro cliente precisa
  * dizer o que ele está contando.
  */
+import { readFileSync } from 'fs'
+import path from 'path'
 
 export type CustoWhatsAppDoEvento = {
   eventoNome: string
@@ -63,7 +65,30 @@ export async function montarPdfCustoWhatsApp(dados: CustoWhatsAppDoEvento): Prom
 
   const margem = 48
   const largura = doc.internal.pageSize.getWidth() - margem * 2
-  let y = 64
+  let y = margem
+
+  /*
+   * Logo sozinha, no topo (pedido do Juan, 28/09/2026: "todo relatório...
+   * com a cara do Credenciei") — mesmo arquivo e mesmo truque de
+   * lib/orcamentos-pdf.ts (irmão declarado deste no comentário do topo):
+   * `readFileSync` porque só roda no servidor, e o 'FAST' evita que o PDF
+   * saia com megabytes de bitmap cru por causa de uma imagem pequena.
+   * Numa linha própria, acima do título, pra não precisar reformatar o
+   * cabeçalho de texto que já existia.
+   */
+  try {
+    const logoPath = path.join(process.cwd(), 'public/marca/logo-preto.png')
+    const logoBase64 = `data:image/png;base64,${readFileSync(logoPath).toString('base64')}`
+    const props = doc.getImageProperties(logoBase64)
+    const larguraLogo = 90
+    const alturaLogo = (props.height / props.width) * larguraLogo
+    doc.addImage(logoBase64, 'PNG', margem, y, larguraLogo, alturaLogo, undefined, 'FAST')
+    y += alturaLogo + 20
+  } catch (e) {
+    // Sem logo é melhor que sem PDF — o comprovante continua legível e correto.
+    console.error('[relatorio-custo-whatsapp] logo não carregou', e instanceof Error ? e.message : e)
+    y += 16
+  }
 
   // ── Cabeçalho ──────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')

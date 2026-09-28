@@ -23,6 +23,7 @@
  */
 import type { DadosRelatorioEvento, SetorRelatorio, LinhaRelatorio, Periodo } from './relatorios'
 import { formatarBR } from './tz'
+import { COR_MARCA, COR_ACENTO, COR_FAIXA_CLARA, COR_TEXTO, BRANCO, BORDA_CELULA, carregarLogoBuffer, adicionarLogoNaAba } from './marca-relatorio'
 
 // ════════════════════════════════════════════════════════════════════════
 // CÁLCULO — números derivados dos dados reais, nunca inventados
@@ -54,21 +55,6 @@ export function calcularResumoPorFuncao(setor: SetorRelatorio): ResumoFuncao[] {
 // ════════════════════════════════════════════════════════════════════════
 // APARÊNCIA — mesma identidade visual de antes, com menos elementos
 // ════════════════════════════════════════════════════════════════════════
-
-/**
- * O laranja Credenciei (`--laranja` do sistema), em ARGB. A faixa do título
- * leva o tom cheio; os cabeçalhos de tabela, um degrau mais escuro, pra
- * manter contraste com o texto branco; a faixa clara é o laranja a 6%.
- */
-const COR_MARCA = 'FFFF4A0F'
-const COR_ACENTO = 'FFE33C06'
-const COR_FAIXA_CLARA = 'FFFFF2EC'
-const COR_BORDA = 'FFE5E1DF'
-const COR_TEXTO = 'FF201E1D'
-const BRANCO = 'FFFFFFFF'
-
-const bordaFina = { style: 'thin' as const, color: { argb: COR_BORDA } }
-const BORDA_CELULA = { top: bordaFina, left: bordaFina, bottom: bordaFina, right: bordaFina }
 
 const COLUNAS_TABELA_SETOR = [
   { titulo: 'Data', largura: 12 },
@@ -155,11 +141,15 @@ function ordenarLinhas(linhas: LinhaRelatorio[]): LinhaRelatorio[] {
  * cada aba do "relatório completo" — os dois sempre mostram exatamente a
  * mesma coisa, nunca duas versões que podem divergir.
  */
-function escreverAbaSetor(ws: import('exceljs').Worksheet, evento: DadosRelatorioEvento, setor: SetorRelatorio) {
+function escreverAbaSetor(
+  wb: import('exceljs').Workbook, ws: import('exceljs').Worksheet, bufferLogo: ArrayBuffer | null,
+  evento: DadosRelatorioEvento, setor: SetorRelatorio,
+) {
   const nCol = COLUNAS_TABELA_SETOR.length
   ws.columns = COLUNAS_TABELA_SETOR.map(c => ({ width: c.largura }))
 
-  let linha = 1
+  adicionarLogoNaAba(wb, ws, bufferLogo)
+  let linha = 2
   escreverTitulo(ws, linha++, `RELATÓRIO — ${setor.nome.toUpperCase()}`, nCol)
   linha++
   escreverInfo(ws, linha++, 'Evento:', evento.eventoNome, nCol)
@@ -226,11 +216,14 @@ function escreverAbaSetor(ws: import('exceljs').Worksheet, evento: DadosRelatori
 }
 
 /** A aba "Resumo Geral" do relatório completo: Setor | Função | Entradas | Saídas + total. */
-function escreverAbaResumoGeral(ws: import('exceljs').Worksheet, dados: DadosRelatorioEvento) {
+function escreverAbaResumoGeral(
+  wb: import('exceljs').Workbook, ws: import('exceljs').Worksheet, bufferLogo: ArrayBuffer | null, dados: DadosRelatorioEvento,
+) {
   const nCol = COLUNAS_RESUMO_GERAL.length
   ws.columns = COLUNAS_RESUMO_GERAL.map(c => ({ width: c.largura }))
 
-  let linha = 1
+  adicionarLogoNaAba(wb, ws, bufferLogo)
+  let linha = 2
   escreverTitulo(ws, linha++, `RELATÓRIO GERAL — ${dados.eventoNome.toUpperCase()}`, nCol)
   linha++
   escreverInfo(ws, linha++, 'Evento:', dados.eventoNome, nCol)
@@ -350,12 +343,14 @@ const COLUNAS_AUSENTES = [
  * procurar um dado que, por definição, não existe.
  */
 function escreverAbaAusentes(
-  ws: import('exceljs').Worksheet, evento: DadosRelatorioEvento, setores: SetorRelatorio[], titulo: string,
+  wb: import('exceljs').Workbook, ws: import('exceljs').Worksheet, bufferLogo: ArrayBuffer | null,
+  evento: DadosRelatorioEvento, setores: SetorRelatorio[], titulo: string,
 ) {
   const nCol = COLUNAS_AUSENTES.length
   ws.columns = COLUNAS_AUSENTES.map(c => ({ width: c.largura }))
 
-  let linha = 1
+  adicionarLogoNaAba(wb, ws, bufferLogo)
+  let linha = 2
   escreverTitulo(ws, linha++, titulo, nCol)
   linha++
   escreverInfo(ws, linha++, 'Evento:', evento.eventoNome, nCol)
@@ -398,11 +393,11 @@ function escreverAbaAusentes(
  * mão. Pedido do Juan em 03/09/2026.
  */
 export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento): Promise<void> {
-  const wb = await novaPlanilha()
+  const [wb, bufferLogo] = await Promise.all([novaPlanilha(), carregarLogoBuffer()])
   const umSetorSo = dados.setores.length === 1 ? dados.setores[0] : null
   const ws = wb.addWorksheet(nomeDaAba(umSetorSo ? umSetorSo.nome : 'Nao credenciaram', new Set()))
   escreverAbaAusentes(
-    ws, dados, dados.setores,
+    wb, ws, bufferLogo, dados, dados.setores,
     `NÃO CREDENCIARAM${umSetorSo ? ` — ${umSetorSo.nome.toUpperCase()}` : ''}`,
   )
   await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, umSetorSo ? `${umSetorSo.nome}_nao_credenciaram` : 'Nao_credenciaram'))
@@ -412,9 +407,9 @@ export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento): Promi
 export async function gerarRelatorioSetor(dados: DadosRelatorioEvento): Promise<void> {
   const setor = dados.setores[0]
   if (!setor) return
-  const wb = await novaPlanilha()
+  const [wb, bufferLogo] = await Promise.all([novaPlanilha(), carregarLogoBuffer()])
   const ws = wb.addWorksheet(nomeDaAba(setor.nome, new Set()))
-  escreverAbaSetor(ws, dados, setor)
+  escreverAbaSetor(wb, ws, bufferLogo, dados, setor)
   await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, setor.nome))
 }
 
@@ -431,7 +426,7 @@ export async function gerarRelatoriosPorSetorZip(
   /* 'ausentes' gera o mesmo zip, mas com a planilha de quem NÃO bateu. */
   modo: 'credenciados' | 'ausentes' = 'credenciados',
 ): Promise<void> {
-  const { default: JSZip } = await import('jszip')
+  const [{ default: JSZip }, bufferLogo] = await Promise.all([import('jszip'), carregarLogoBuffer()])
   const zip = new JSZip()
   const usados = new Set<string>()
   const ordenados = [...dados.setores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
@@ -440,9 +435,9 @@ export async function gerarRelatoriosPorSetorZip(
     const wb = await novaPlanilha()
     const ws = wb.addWorksheet(nomeDaAba(setor.nome, new Set()))
     if (modo === 'ausentes') {
-      escreverAbaAusentes(ws, dados, [setor], `NÃO CREDENCIARAM — ${setor.nome.toUpperCase()}`)
+      escreverAbaAusentes(wb, ws, bufferLogo, dados, [setor], `NÃO CREDENCIARAM — ${setor.nome.toUpperCase()}`)
     } else {
-      escreverAbaSetor(ws, dados, setor)
+      escreverAbaSetor(wb, ws, bufferLogo, dados, setor)
     }
     const buffer = await wb.xlsx.writeBuffer()
     // Dois setores com o mesmo nome não podem virar o mesmo arquivo.
@@ -464,16 +459,16 @@ export async function gerarRelatoriosPorSetorZip(
 
 /** Relatório completo do evento: Resumo Geral + uma aba por setor. */
 export async function gerarRelatorioCompleto(dados: DadosRelatorioEvento): Promise<void> {
-  const wb = await novaPlanilha()
+  const [wb, bufferLogo] = await Promise.all([novaPlanilha(), carregarLogoBuffer()])
 
   const resumoWs = wb.addWorksheet('Resumo Geral')
-  escreverAbaResumoGeral(resumoWs, dados)
+  escreverAbaResumoGeral(wb, resumoWs, bufferLogo, dados)
 
   const usados = new Set<string>(['Resumo Geral'])
   const ordenados = [...dados.setores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   for (const setor of ordenados) {
     const ws = wb.addWorksheet(nomeDaAba(setor.nome, usados))
-    escreverAbaSetor(ws, dados, setor)
+    escreverAbaSetor(wb, ws, bufferLogo, dados, setor)
   }
 
   await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, 'Completo'))

@@ -9,6 +9,7 @@ import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
+import { COR_MARCA, COR_ACENTO, COR_FAIXA_CLARA, COR_TEXTO, BRANCO, BORDA_CELULA, carregarLogoBuffer, adicionarLogoNaAba } from '@/lib/marca-relatorio'
 
 export type OpcoesFiltro = {
   autores: { id: string; nome: string; role: string; setor: string | null }[]
@@ -255,19 +256,6 @@ function nomeDoArquivo({
   return partes.join(' - ').replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
 }
 
-/*
- * Mesma paleta e mesmos nomes de `lib/relatorio-excel.ts` — não duas
- * identidades visuais diferentes pros arquivos que este sistema exporta.
- */
-const COR_MARCA = 'FFFF4A0F'
-const COR_ACENTO = 'FFE33C06'
-const COR_FAIXA_CLARA = 'FFFFF2EC'
-const COR_BORDA = 'FFE5E1DF'
-const COR_TEXTO = 'FF201E1D'
-const BRANCO = 'FFFFFFFF'
-const bordaFina = { style: 'thin' as const, color: { argb: COR_BORDA } }
-const BORDA_CELULA = { top: bordaFina, left: bordaFina, bottom: bordaFina, right: bordaFina }
-
 /** `wrapText: true` pras colunas que variam muito de tamanho — Detalhe, De, Para, Motivo. */
 const COLUNAS_AUDITORIA = [
   { titulo: 'Data e hora', largura: 17 },
@@ -304,7 +292,9 @@ async function baixarPlanilha(linhas: LinhaAuditoria[], nomeArquivo: string) {
   const nCol = COLUNAS_AUDITORIA.length
   ws.columns = COLUNAS_AUDITORIA.map(c => ({ width: c.largura }))
 
-  let linha = 1
+  // Linha 1 é só a logo (fundo branco) — o conteúdo de verdade começa na 2.
+  adicionarLogoNaAba(wb, ws, await carregarLogoBuffer())
+  let linha = 2
   ws.mergeCells(linha, 1, linha, nCol)
   const titulo = ws.getCell(linha, 1)
   titulo.value = 'AUDITORIA'

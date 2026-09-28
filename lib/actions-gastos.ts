@@ -1,4 +1,6 @@
 'use server'
+import { readFileSync } from 'fs'
+import path from 'path'
 import { revalidatePath } from 'next/cache'
 import { getPerfil, supabaseAdmin } from './supabase-server'
 import { podeRegistrarGastos } from './permissions'
@@ -291,7 +293,6 @@ export async function exportarGastosXlsx(filtro: {
     ws.columns = COLS.map(c => ({ width: c.w }))
     const nCol = COLS.length
 
-    const merge = (linha: number) => ws.mergeCells(linha, 1, linha, nCol)
     const bordaTudo = (linha: number, fina = true) => {
       for (let c = 1; c <= nCol; c++) {
         ws.getCell(linha, c).border = {
@@ -303,14 +304,30 @@ export async function exportarGastosXlsx(filtro: {
       }
     }
 
-    // 1 — Faixa laranja com o nome do evento
-    merge(1)
-    const t = ws.getCell(1, 1)
+    /*
+     * 1 — Faixa laranja com o nome do evento, com a LOGO no canto esquerdo
+     * (pedido do Juan, 28/09/2026: "todo relatório... com a cara do
+     * Credenciei"). Coluna 1 fica sem texto, só o fundo laranja e a
+     * imagem — o título mescla a partir da coluna 2, então a logo tem o
+     * próprio espaço sem disputar com a letra.
+     */
+    ws.getCell(1, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } }
+    ws.mergeCells(1, 2, 1, nCol)
+    const t = ws.getCell(1, 2)
     t.value = `CREDENCIEI · GASTOS — ${evento.nome}`
     t.font = { bold: true, size: 14, color: { argb: BRANCO } }
     t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LARANJA } }
     t.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 }
     ws.getRow(1).height = 30
+    try {
+      const logoPath = path.join(process.cwd(), 'public/marca/iso-branca.png')
+      const base64 = readFileSync(logoPath).toString('base64')
+      const imageId = wb.addImage({ base64: `data:image/png;base64,${base64}`, extension: 'png' })
+      ws.addImage(imageId, { tl: { col: 0.25, row: 0.15 }, ext: { width: 22, height: 22 } })
+    } catch (e) {
+      // Sem logo é melhor que sem planilha — mesmo princípio de lib/orcamentos-pdf.ts.
+      console.error('[gastos-excel] logo não carregou', e)
+    }
 
     // 2-6 — Bloco de informação
     const info = (linha: number, rotulo: string, valor: string) => {
