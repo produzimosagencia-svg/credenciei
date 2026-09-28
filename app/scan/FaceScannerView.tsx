@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { QrCode } from 'lucide-react'
-import { registrarPresencaFacial } from '@/lib/actions'
+import { registrarPresencaFacial, registrarPresencaQR } from '@/lib/actions'
 import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
 
 /*
@@ -25,6 +25,13 @@ import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
  *
  * O QR nunca fica escondido — é o botão pequeno no rodapé, pra quem estiver
  * por perto resolver na hora um caso que a câmera não resolveu sozinha.
+ *
+ * A MESMA câmera também lê QR Code, sozinha (pedido do Juan, 27/09/2026:
+ * "caso o rosto não passe, a pessoa vai ter uma segunda opção" — sem
+ * precisar de ninguém tocando em nada). Quem faz isso é o `FaceCapture`
+ * (prop `onQrDetectado`, ver o componente); aqui só entra o handler
+ * `aoLerQr`, irmão de `aoCapturar` — mesma guarda de tentativa, mesmo
+ * cooldown, mesmo auto-reset, só troca a chamada ao servidor.
  */
 
 type Evento = { id: string; nome: string }
@@ -111,28 +118,14 @@ export default function FaceScannerView({
     setCapturando(true)
   }
 
-  const aoCapturar = async ({ descritor }: ResultadoCaptura) => {
-    const minhaTentativa = tentativaIdRef.current
-    setCapturando(false)
-    setValidando(true)
-
-    let resultado: ScanResult
-    try {
-      // Sem `escolhido`: o servidor decide ENTRADA ou SAÍDA sozinho — não
-      // tem operador aqui pra escolher, e a pessoa nem saberia o que
-      // significa. Sem prévia: aqui não há ninguém pra confirmar, então a
-      // leitura já registra direto (mesma autorização de sempre, no servidor).
-      // Sem localização: o totem é um aparelho FIXO, o servidor não exige
-      // GPS neste caminho (só no autoatendimento pelo celular da pessoa).
-      resultado = await registrarPresencaFacial(eventoId, descritor, undefined, {})
-    } catch (e) {
-      console.error('[FaceScannerView]', e)
-      resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo ou use o QR Code.' }
-    }
-
-    // A estação já seguiu pra outra tentativa enquanto isto estava em voo
-    // (evento trocado, ou já resetou por outro motivo) — essa resposta
-    // chegou tarde demais pra valer.
+  /**
+   * O que fazer com a resposta do servidor — igual pra rosto e pra QR, só
+   * muda QUEM chamou o servidor (`aoCapturar`/`aoLerQr`, abaixo). Recebe a
+   * tentativa que originou a chamada pra descartar respostas tardias de
+   * uma tentativa que a estação já abandonou (evento trocado no meio do
+   * caminho, por exemplo).
+   */
+  const aplicarResultado = (resultado: ScanResult, minhaTentativa: number) => {
     if (tentativaIdRef.current !== minhaTentativa) return
 
     setValidando(false)
@@ -152,6 +145,48 @@ export default function FaceScannerView({
     setResult(resultado)
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(voltarAEscanear, DURACAO_RESULTADO_MS)
+  }
+
+  const aoCapturar = async ({ descritor }: ResultadoCaptura) => {
+    const minhaTentativa = tentativaIdRef.current
+    setCapturando(false)
+    setValidando(true)
+
+    let resultado: ScanResult
+    try {
+      // Sem `escolhido`: o servidor decide ENTRADA ou SAÍDA sozinho — não
+      // tem operador aqui pra escolher, e a pessoa nem saberia o que
+      // significa. Sem prévia: aqui não há ninguém pra confirmar, então a
+      // leitura já registra direto (mesma autorização de sempre, no servidor).
+      // Sem localização: o totem é um aparelho FIXO, o servidor não exige
+      // GPS neste caminho (só no autoatendimento pelo celular da pessoa).
+      resultado = await registrarPresencaFacial(eventoId, descritor, undefined, {})
+    } catch (e) {
+      console.error('[FaceScannerView]', e)
+      resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo ou use o QR Code.' }
+    }
+    aplicarResultado(resultado, minhaTentativa)
+  }
+
+  /**
+   * A câmera achou um QR Code em vez de um rosto (ver `onQrDetectado` em
+   * `FaceCapture.tsx`) — mesma régua de sempre (`registrarPresencaQR`, o
+   * MESMO caminho que o leitor de QR atendido usa), sem `escolhido` pelo
+   * mesmo motivo do rosto: ninguém aqui pra escolher ENTRADA/SAÍDA.
+   */
+  const aoLerQr = async (texto: string) => {
+    const minhaTentativa = tentativaIdRef.current
+    setCapturando(false)
+    setValidando(true)
+
+    let resultado: ScanResult
+    try {
+      resultado = await registrarPresencaQR(eventoId, texto, undefined, {})
+    } catch (e) {
+      console.error('[FaceScannerView]', e)
+      resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo.' }
+    }
+    aplicarResultado(resultado, minhaTentativa)
   }
 
   const categoria = result ? categoriaDo(result) : null
@@ -192,6 +227,7 @@ export default function FaceScannerView({
           key={chaveCaptura}
           instrucao="Aproxime-se da câmera"
           onCaptura={aoCapturar}
+          onQrDetectado={aoLerQr}
           /*
            * "Cancelar" só aparece nos 2 casos fatais que o FaceCapture não
            * resolve sozinho (câmera não abriu, modelo não carregou) — aqui

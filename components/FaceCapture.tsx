@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { Camera, CameraOff, Loader2 } from 'lucide-react'
+import jsQR from 'jsqr'
 
 /*
  * A câmera do rosto — reconhecimento no NAVEGADOR, sem servidor de visão
@@ -58,6 +59,39 @@ export type ResultadoCaptura = { descritor: number[]; qualidade: number }
 
 type Fase = 'carregando' | 'procurando' | 'pisque' | 'processando' | 'erro'
 
+/**
+ * Largura máxima do frame desenhado no canvas pra procurar QR Code — não
+ * precisa da resolução cheia da câmera pra achar um código mostrado a uma
+ * distância razoável, e decodificar em resolução menor é mais rápido.
+ */
+const MAX_LARGURA_QR = 480
+
+/**
+ * Acha um QR Code no frame ATUAL do vídeo, sem abrir outra câmera.
+ *
+ * Só existe pro TOTEM (`onQrDetectado`, mais abaixo) — não abre uma segunda
+ * captura de vídeo (o navegador só entrega uma sessão de câmera ativa por
+ * vez pro mesmo aparelho na prática; duas em paralelo é receita de travar
+ * ou uma delas nunca receber frame). Em vez disso, reaproveita os MESMOS
+ * quadros que o reconhecimento facial já está lendo: desenha o frame num
+ * canvas fora da tela e decodifica com `jsQR` (só pixels, nunca pede
+ * câmera própria) — o mesmo princípio de sempre, um jeito a mais de
+ * responder "quem é essa pessoa?", nunca uma câmera a mais.
+ */
+function tentarLerQr(video: HTMLVideoElement, canvas: HTMLCanvasElement): string | null {
+  if (!video.videoWidth || !video.videoHeight) return null
+  const escala = video.videoWidth > MAX_LARGURA_QR ? MAX_LARGURA_QR / video.videoWidth : 1
+  const largura = Math.round(video.videoWidth * escala)
+  const altura = Math.round(video.videoHeight * escala)
+  if (canvas.width !== largura) canvas.width = largura
+  if (canvas.height !== altura) canvas.height = altura
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(video, 0, 0, largura, altura)
+  const imageData = ctx.getImageData(0, 0, largura, altura)
+  return jsQR(imageData.data, largura, altura)?.data ?? null
+}
+
 /** Distância euclidiana entre dois pontos {x,y} — usada só na razão do olho. */
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
@@ -71,12 +105,21 @@ function razaoDoOlho(pontos: { x: number; y: number }[]): number {
 }
 
 export default function FaceCapture({
-  onCaptura, onCancelar, instrucao,
+  onCaptura, onCancelar, instrucao, onQrDetectado,
 }: {
   onCaptura: (r: ResultadoCaptura) => void
   onCancelar: () => void
   /** Ex.: "Cadastre o rosto" ou "Aproxime-se da câmera". */
   instrucao: string
+  /**
+   * Só o TOTEM passa isto (`app/scan/FaceScannerView.tsx`) — quando ninguém
+   * aparece pra biometria, a câmera também tenta achar um QR Code no mesmo
+   * frame (ver `tentarLerQr`). Sem esta prop, o componente funciona byte a
+   * byte como sempre: cadastro no formulário e autoatendimento na
+   * credencial não fazem sentido físico pra isto (ver o comentário em
+   * `tentarLerQr`) e não a passam.
+   */
+  onQrDetectado?: (texto: string) => void
 }) {
   const [fase, setFase] = useState<Fase>('carregando')
   const [mensagem, setMensagem] = useState('Carregando reconhecimento facial…')
@@ -87,6 +130,8 @@ export default function FaceCapture({
   const olhoFechadoAlgumaVezRef = useRef(false)
   /** Desde quando há um rosto ÚNICO e bom na tela — zera se a pessoa sair do quadro. */
   const rostoBomDesdeRef = useRef<number | null>(null)
+  /** Canvas fora da tela, só pra `tentarLerQr` — nunca entra no DOM renderizado. */
+  const canvasQrRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     let desmontou = false
@@ -137,7 +182,33 @@ export default function FaceCapture({
         if (jaCapturouRef.current || !videoRef.current || videoRef.current.readyState < 2) return
 
         const todos = await faceapi.detectAllFaces(videoRef.current, opcoesDeteccao)
-        if (todos.length === 0) { rostoBomDesdeRef.current = null; olhoFechadoAlgumaVezRef.current = false; setFase('procurando'); setMensagem(instrucao); return }
+        if (todos.length === 0) {
+          rostoBomDesdeRef.current = null
+          olhoFechadoAlgumaVezRef.current = false
+          /*
+           * Ninguém pro reconhecimento facial agora é exatamente o momento
+           * de checar QR também — é o estado de quem está mostrando a
+           * credencial pra câmera em vez do rosto (o celular geralmente
+           * cobre o próprio rosto). Sem custo extra no caminho mais comum
+           * (tem alguém, tenta reconhecer): só entra aqui quando a detecção
+           * de rosto, mais barata, já não achou nada.
+           */
+          if (onQrDetectado && videoRef.current) {
+            if (!canvasQrRef.current) canvasQrRef.current = document.createElement('canvas')
+            const texto = tentarLerQr(videoRef.current, canvasQrRef.current)
+            if (texto) {
+              jaCapturouRef.current = true
+              setFase('processando')
+              setMensagem('Identificando…')
+              parar()
+              onQrDetectado(texto)
+              return
+            }
+          }
+          setFase('procurando')
+          setMensagem(instrucao)
+          return
+        }
         if (todos.length > 1) { rostoBomDesdeRef.current = null; olhoFechadoAlgumaVezRef.current = false; setFase('procurando'); setMensagem('Mais de um rosto na câmera — só uma pessoa por vez.'); return }
 
         /*
