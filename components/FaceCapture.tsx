@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CameraOff, Loader2 } from 'lucide-react'
+import { Camera, CameraOff, Loader2, SwitchCamera } from 'lucide-react'
 import jsQR from 'jsqr'
 
 /*
@@ -123,6 +123,14 @@ export default function FaceCapture({
 }) {
   const [fase, setFase] = useState<Fase>('carregando')
   const [mensagem, setMensagem] = useState('Carregando reconhecimento facial…')
+  /*
+   * Frontal por padrão (é assim que a maioria abre o celular pra se
+   * reconhecer), mas um tablet montado num totem pode ter a câmera TRASEIRA
+   * virada pra quem chega — pedido do Juan, 28/09/2026, testando no
+   * aparelho de verdade. O botão deixa quem está configurando o aparelho
+   * escolher, sem precisar mexer em código.
+   */
+  const [camera, setCamera] = useState<'user' | 'environment'>('user')
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -135,6 +143,12 @@ export default function FaceCapture({
 
   useEffect(() => {
     let desmontou = false
+    // Reinicia do zero a cada troca de câmera — o quadro mudou de verdade,
+    // um "rosto bom desde" ou um piscar contados na câmera anterior não
+    // fazem sentido pra esta.
+    jaCapturouRef.current = false
+    olhoFechadoAlgumaVezRef.current = false
+    rostoBomDesdeRef.current = null
 
     const parar = () => {
       if (intervaloRef.current) { clearInterval(intervaloRef.current); intervaloRef.current = null }
@@ -159,7 +173,7 @@ export default function FaceCapture({
       if (desmontou) return
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: camera }, audio: false })
         if (desmontou) { stream.getTracks().forEach(t => t.stop()); return }
         streamRef.current = stream
         if (videoRef.current) {
@@ -275,7 +289,7 @@ export default function FaceCapture({
 
     return () => { desmontou = true; parar() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [camera])
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -284,10 +298,21 @@ export default function FaceCapture({
           template tá muito feio"). `env(safe-area-inset-top)` afasta do
           notch/relógio do celular. */}
       <div
-        className="flex items-center justify-center gap-2 text-white/70 text-sm font-semibold shrink-0"
+        className="relative flex items-center justify-center gap-2 text-white/70 text-sm font-semibold shrink-0"
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)', paddingBottom: '14px' }}
       >
         <Camera className="w-4 h-4" /> Reconhecimento facial
+        {/* Frontal ou traseira — um tablet fixo no totem pode ter a câmera
+            que serve virada pro outro lado (pedido do Juan, 28/09/2026). */}
+        <button
+          type="button"
+          onClick={() => setCamera(c => (c === 'user' ? 'environment' : 'user'))}
+          className="absolute right-4 text-white/70 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+          aria-label="Trocar câmera frontal/traseira"
+          title="Trocar câmera frontal/traseira"
+        >
+          <SwitchCamera className="w-4 h-4" />
+        </button>
       </div>
 
       {fase === 'erro' ? (
@@ -313,7 +338,10 @@ export default function FaceCapture({
          */
         <div className="flex-1 min-h-0 flex items-center justify-center px-4 pb-2">
           <div className="relative w-full max-w-md aspect-[3/4] rounded-3xl overflow-hidden bg-slate-900">
-            <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+            {/* Espelha só a frontal — é como as pessoas esperam se ver numa
+                selfie. A traseira mostra o mundo do jeito que ele é; espelhar
+                ela confundiria quem está posicionando o aparelho. */}
+            <video ref={videoRef} muted playsInline className={`w-full h-full object-cover ${camera === 'user' ? 'scale-x-[-1]' : ''}`} />
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
               <div className={`w-[68%] max-w-[280px] aspect-[3/4] border-4 rounded-[50%] transition-colors duration-300 ${
                 fase === 'pisque' ? 'border-amber-400 animate-pulse' : fase === 'processando' ? 'border-green-400' : 'border-white/70'
