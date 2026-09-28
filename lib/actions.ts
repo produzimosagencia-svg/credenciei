@@ -4971,6 +4971,69 @@ export async function recredenciarFuncionario(funcionarioId: string, fornecedorI
   return { ok: true as const }
 }
 
+/**
+ * Limpeza ÚNICA (28/09/2026): libera quem ficou descredenciado pelo GATILHO
+ * AUTOMÁTICO que existia até hoje — saída no último dia de trabalho
+ * descredenciava sozinha (ver o comentário longo em `autorizarPresenca`,
+ * removido nesta mesma data). Sem tocar em quem foi removido da equipe DE
+ * PROPÓSITO pelo organizador (`descredenciarFuncionario`, que continua
+ * existindo e continua precisando do clique manual pra desfazer).
+ *
+ * Como diferenciar sem o banco ter guardado a origem (nunca guardou): o
+ * gatilho automático SEMPRE gravava a saída (`registros`, tipo='fim') na
+ * MESMA leitura em que descredenciava — os dois carimbos ficam a poucos
+ * milissegundos um do outro, sempre dentro da mesma requisição. Uma remoção
+ * manual não grava saída nenhuma. Por isso: só libera quem tem um 'fim'
+ * registrado a até 15s do carimbo de descredenciamento.
+ *
+ * Só master — mexe em qualquer organização de propósito: o gatilho rodava
+ * em produção pra todo mundo, não só numa organização ou evento.
+ */
+export async function liberarDescredenciamentosIndevidos(): Promise<{ total: number; nomes: string[] }> {
+  const perfil = await getPerfil()
+  if (!perfil || !ehMaster(perfil.role)) throw new Error('Só o acesso master pode rodar esta limpeza.')
+
+  const { data: descredenciados } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, descredenciado_em, fornecedores(evento_id)')
+    .not('descredenciado_em', 'is', null)
+
+  const liberados: string[] = []
+  for (const f of descredenciados ?? []) {
+    const eventoId = (f.fornecedores as unknown as { evento_id?: string } | null)?.evento_id
+    const descredenciadoEm = f.descredenciado_em as string | null
+    if (!eventoId || !descredenciadoEm) continue
+
+    const centro = new Date(descredenciadoEm).getTime()
+    const { data: fimPorPerto } = await supabaseAdmin
+      .from('registros')
+      .select('id')
+      .eq('funcionario_id', f.id as string)
+      .eq('evento_id', eventoId)
+      .eq('tipo', 'fim')
+      .gte('created_at', new Date(centro - 15_000).toISOString())
+      .lte('created_at', new Date(centro + 15_000).toISOString())
+      .limit(1)
+    if (!fimPorPerto?.length) continue
+
+    const { error } = await supabaseAdmin
+      .from('funcionarios')
+      .update({ descredenciado_em: null, descredenciado_por: null })
+      .eq('id', f.id as string)
+    if (!error) liberados.push(f.nome as string)
+  }
+
+  if (liberados.length) {
+    after(() => registrarAuditoria({
+      perfil: perfil as { id: string; nome: string },
+      acao: 'LIMPEZA_DESCREDENCIAMENTO_AUTOMATICO',
+      motivo: `Liberou ${liberados.length} pessoa(s) descredenciada(s) pelo gatilho automático removido em 28/09/2026: ${liberados.join(', ')}`,
+    }))
+  }
+
+  return { total: liberados.length, nomes: liberados }
+}
+
 export type ResultadoScan = {
   success: boolean
   message: string

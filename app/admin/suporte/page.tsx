@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation'
-import { UserCog } from 'lucide-react'
+import { UserCog, Wrench } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { PageHeader, Secao, EmptyState, Badge } from '@/components/ui/Superficie'
 import SuporteModal from './SuporteModal'
+import LimparDescredenciamentosButton from './LimparDescredenciamentosButton'
 
 export const revalidate = 0
 
@@ -92,6 +93,10 @@ export default async function SuportePage() {
             })}
           </div>
         )}
+      </Secao>
+
+      <Secao tom="neutro" icone={<Wrench className="w-3.5 h-3.5" />} titulo="Manutenção" corpoClassName="">
+        <LimparDescredenciamentosButton />
       </Secao>
     </div>
   )
