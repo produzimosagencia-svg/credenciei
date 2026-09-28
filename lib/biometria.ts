@@ -76,7 +76,15 @@ export type Candidato = { funcionarioId: string; distancia: number }
 
 export type ResultadoMatch =
   | { encontrado: true; funcionarioId: string; distancia: number }
-  | { encontrado: false; motivo: 'sem_candidatos' | 'acima_do_limiar' | 'ambiguo' }
+  /*
+   * `distancia` aqui é só a do MELHOR candidato — nunca o `funcionarioId`
+   * dele. Existe só para calibração (ver `biometria_tentativas.distancia`,
+   * lib/actions.ts): sem isto, uma leitura que quase deu certo ("acima do
+   * limiar" por 0,01) e uma que não tinha ninguém perto ficavam idênticas
+   * no log, e não dava pra saber se o limiar está apertado demais. Nunca
+   * chega na tela da pessoa — `MENSAGEM_POR_MOTIVO` não usa este campo.
+   */
+  | { encontrado: false; motivo: 'sem_candidatos' | 'acima_do_limiar' | 'ambiguo'; distancia?: number }
 
 /**
  * Decide, entre TODOS os candidatos de UM evento, quem (se alguém) é a
@@ -98,11 +106,11 @@ export function decidirMatch(
 
   const ordenados = [...candidatos].sort((a, b) => a.distancia - b.distancia)
   const melhor = ordenados[0]
-  if (melhor.distancia > limiar) return { encontrado: false, motivo: 'acima_do_limiar' }
+  if (melhor.distancia > limiar) return { encontrado: false, motivo: 'acima_do_limiar', distancia: melhor.distancia }
 
   const segundo = ordenados[1]
   if (segundo && (segundo.distancia - melhor.distancia) < margemMinima) {
-    return { encontrado: false, motivo: 'ambiguo' }
+    return { encontrado: false, motivo: 'ambiguo', distancia: melhor.distancia }
   }
 
   return { encontrado: true, funcionarioId: melhor.funcionarioId, distancia: melhor.distancia }

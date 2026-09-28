@@ -5647,8 +5647,8 @@ async function validarLeituraFacial(
   eventoId: string, descritor: number[], escolhido: 'entrada' | 'fim' | undefined, apenasConferir: boolean,
   latitude?: number, longitude?: number,
 ): Promise<ResultadoValidacaoFacial> {
-  const semLog = (resultado: ResultadoScan, logResultado: string): ResultadoValidacaoFacial =>
-    ({ resultado, funcionarioId: null, logResultado })
+  const semLog = (resultado: ResultadoScan, logResultado: string, distancia?: number): ResultadoValidacaoFacial =>
+    ({ resultado, funcionarioId: null, logResultado, distancia })
 
   const perfil = await getPerfil()
   if (!perfil || !podeEscanear(perfil)) return semLog({ success: false, message: 'Sem permissão' }, 'erro')
@@ -5711,7 +5711,7 @@ async function validarLeituraFacial(
       success: false,
       message: `${MENSAGEM_POR_MOTIVO[match.motivo] ?? 'Não conseguimos identificar seu cadastro.'} Tente de novo, olhando direto pra câmera. Se continuar sem reconhecer, use o QR Code.`,
       naoIdentificado: true,
-    }, match.motivo)
+    }, match.motivo, match.distancia)
   }
 
   const { data: func } = await supabaseAdmin
@@ -5808,6 +5808,7 @@ export async function registrarPresencaFacialLivre(
   if (proprioTemplate && descritorValido(proprioTemplate.vetor)) {
     const distancia = distanciaEuclidiana(descritor, proprioTemplate.vetor as number[])
     if (distancia > LIMIAR_PADRAO) {
+      after(() => gravarTentativaBiometrica({ eventoId, perfilId: null, funcionarioId: func.id, resultado: 'acima_do_limiar', distancia }))
       return { error: 'O rosto não bateu com o seu cadastro. Tente de novo com boa luz, ou mostre o QR Code no credenciamento.' }
     }
   }

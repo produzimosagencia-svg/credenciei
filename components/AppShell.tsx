@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard,
+  FileText, Gauge, IdCard, ScanFace,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -173,6 +173,13 @@ function gruposPara(perfil: Perfil): Grupo[] {
   }
   if (podeGerenciarEventos(perfil) || role === 'supervisor') {
     administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
+  }
+  /*
+   * Biometria não é dividida por setor (é config do evento inteiro), por
+   * isso sem supervisor aqui, diferente de Relatórios logo acima.
+   */
+  if (podeGerenciarEventos(perfil)) {
+    administrativo.push({ href: '/admin/biometria', label: 'Biometria', icon: ScanFace })
   }
   if (podeGerenciarUsuarios(perfil)) {
     administrativo.push({ href: '/admin/usuarios', label: 'Acessos', icon: Users })
