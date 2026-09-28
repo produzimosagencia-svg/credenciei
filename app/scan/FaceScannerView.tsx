@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { QrCode, MapPin, MapPinOff } from 'lucide-react'
+import { QrCode } from 'lucide-react'
 import { registrarPresencaFacial } from '@/lib/actions'
 import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
 
@@ -26,33 +26,6 @@ import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
  * O QR nunca fica escondido — é o botão pequeno no rodapé, pra quem estiver
  * por perto resolver na hora um caso que a câmera não resolveu sozinha.
  */
-
-/**
- * A localização do APARELHO (o tablet/celular fixo no portão) — toda leitura
- * de rosto no dia do evento precisa vir com localização. Pede uma vez só, ao
- * abrir a tela: é um aparelho fixo, não anda durante o turno. Sem ela, o
- * totem continua funcionando — é o SERVIDOR quem decide se aquele dia exige
- * (`validarLeituraFacial`); aqui só se avisa com antecedência.
- */
-function useLocalizacaoDoAparelho() {
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null)
-  const [negada, setNegada] = useState(false)
-  useEffect(() => {
-    // Adiado num tique: chamar setState direto no corpo do efeito (mesmo
-    // condicional) é o que o linter reclama — mesmo padrão já usado em
-    // CheckinPresenca.tsx para leituras de API do navegador após montar.
-    const id = setTimeout(() => {
-      if (!navigator.geolocation) { setNegada(true); return }
-      navigator.geolocation.getCurrentPosition(
-        pos => setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-        () => setNegada(true),
-        { enableHighAccuracy: true, timeout: 10_000 },
-      )
-    }, 0)
-    return () => clearTimeout(id)
-  }, [])
-  return { coords, negada }
-}
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -108,7 +81,6 @@ export default function FaceScannerView({
   aoTrocarParaQr: (eventoId: string) => void
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
-  const { coords: localizacao, negada: localizacaoNegada } = useLocalizacaoDoAparelho()
 
   const [capturando, setCapturando] = useState(true)
   const [validando, setValidando] = useState(false)
@@ -150,9 +122,9 @@ export default function FaceScannerView({
       // tem operador aqui pra escolher, e a pessoa nem saberia o que
       // significa. Sem prévia: aqui não há ninguém pra confirmar, então a
       // leitura já registra direto (mesma autorização de sempre, no servidor).
-      resultado = await registrarPresencaFacial(eventoId, descritor, undefined, {
-        latitude: localizacao?.latitude, longitude: localizacao?.longitude,
-      })
+      // Sem localização: o totem é um aparelho FIXO, o servidor não exige
+      // GPS neste caminho (só no autoatendimento pelo celular da pessoa).
+      resultado = await registrarPresencaFacial(eventoId, descritor, undefined, {})
     } catch (e) {
       console.error('[FaceScannerView]', e)
       resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo ou use o QR Code.' }
@@ -203,21 +175,6 @@ export default function FaceScannerView({
           Modo totem — a pessoa só olha pra câmera. O sistema reconhece quem é o
           setor e decide sozinho se é entrada ou saída.
         </p>
-
-        {/* Aviso ANTES de dar problema na fila: no dia do evento, a
-            biometria exige localização — melhor resolver a permissão do
-            aparelho agora do que descobrir só quando alguém for recusado. */}
-        {localizacaoNegada && (
-          <p className="flex items-center justify-center gap-1.5 text-amber-400 text-2xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
-            <MapPinOff className="w-3.5 h-3.5 shrink-0" />
-            Localização não disponível — no dia do evento, a biometria exige. Permita o acesso à localização e recarregue a página.
-          </p>
-        )}
-        {localizacao && (
-          <p className="flex items-center justify-center gap-1 text-slate-500 text-2xs">
-            <MapPin className="w-3 h-3 shrink-0" /> Localização ativa
-          </p>
-        )}
 
         {/* O QR nunca fica escondido — pra quem estiver por perto resolver
             na hora um caso que a câmera não resolveu sozinha. */}

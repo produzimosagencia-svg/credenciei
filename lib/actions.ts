@@ -5670,25 +5670,15 @@ async function validarLeituraFacial(
   if (!podeEsteEvento) return semLog({ success: false, message: 'Sem acesso a este evento' }, 'erro')
 
   /*
-   * LOCALIZAÇÃO OBRIGATÓRIA no dia do evento (pedido do Juan, 27/09/2026).
-   *
-   * O QR não exige isto — é uma régua só da biometria, mais nova e sem o
-   * mesmo histórico de confiança. No dia principal, sem GPS o aparelho nem
-   * chega a tentar reconhecer ninguém (recusa cedo, antes de gastar a
-   * consulta na galeria). Fora do dia principal (montagem/desmontagem) seque
-   * opcional, mesmo padrão do resto do sistema.
+   * SEM exigência de localização aqui — mudou de ideia em 27/09/2026: este
+   * caminho (`registrarPresencaFacial`) é hoje usado só pelo TOTEM
+   * (`app/scan/FaceScannerView.tsx`), um aparelho FIXO no portão. Pedir GPS
+   * pessoa por pessoa num tablet que nunca sai do lugar não prova nada a
+   * mais, só cria fricção. A localização continua obrigatória no dia do
+   * evento só no autoatendimento pelo CELULAR DA PRÓPRIA PESSOA
+   * (`registrarPresencaFacialLivre`, mais abaixo) — ali sim ela prova que
+   * quem está batendo está de fato no local.
    */
-  const temGps = typeof latitude === 'number' && typeof longitude === 'number'
-  if (!temGps) {
-    const diaDeHoje = await diaDeTrabalho(eventoId, diaTurno)
-    if (diaDeHoje?.tipo === 'principal') {
-      return semLog({
-        success: false,
-        message: 'Ative a localização do aparelho para registrar pela biometria no dia do evento. Ou use o QR Code.',
-        qrInvalido: true,
-      }, 'sem_localizacao')
-    }
-  }
 
   /*
    * A galeria é SÓ deste evento — o coração do isolamento multi-evento
