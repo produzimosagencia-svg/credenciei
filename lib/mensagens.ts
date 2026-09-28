@@ -1710,17 +1710,40 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   }
 
   /*
-   * Credenciamento negado — SEM TEMPLATE APROVADO AINDA.
+   * Credenciamento negado — template `credenciamento_negado` já estava
+   * APROVADO na Meta (achado em 28/09/2026, consultando a API de templates
+   * direto: o comentário antigo aqui dizia "sem template ainda", mas ele
+   * existia e nunca tinha sido ligado). Corpo real, 4 variáveis: nome,
+   * evento, motivo, supervisor — "Motivo: {{3}}. Procure o seu supervisor
+   * {{4}} para resolver antes do evento." Sem botão: uma negativa não tem
+   * QR nem link pra mostrar.
    *
-   * `return null` cancela o envio sem erro (mesma convenção de
-   * `veiculo_cadastrado` antes de ser ligado): a negativa em si já foi
-   * aplicada por `negarCredenciamento`, isto é só o aviso por WhatsApp. Fica
-   * pronto pra preencher assim que o nome do template aprovado chegar —
-   * mesmo padrão: nome + evento no corpo, sem link nenhum (não há mais QR
-   * pra mostrar).
+   * O supervisor é o do SETOR da pessoa (quem ela de fato procura no dia a
+   * dia) — não necessariamente quem clicou em "negar" (`decidido_por` pode
+   * ser um admin decidindo por alguém). Sem supervisor cadastrado no setor,
+   * cai num texto genérico em vez de travar o envio.
    */
   if (msg.tipo === 'credenciamento_negado') {
-    return null
+    if (!msg.funcionario_id) return null
+    const [{ data: func }, { data: evento }] = await Promise.all([
+      supabase.from('funcionarios').select('nome, motivo_negacao, fornecedor_id').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome').eq('id', msg.evento_id).single(),
+    ])
+    if (!func || !evento) return null
+
+    const { data: supervisor } = func.fornecedor_id
+      ? await supabase.from('perfis').select('nome').eq('fornecedor_id', func.fornecedor_id).eq('role', 'supervisor').eq('ativo', true).limit(1).maybeSingle()
+      : { data: null }
+
+    return {
+      template,
+      params: [
+        func.nome,
+        evento.nome,
+        (func.motivo_negacao as string | null)?.trim() || 'não informado',
+        (supervisor?.nome as string | undefined) ?? 'responsável pelo setor',
+      ],
+    }
   }
 
   /*
@@ -1738,16 +1761,13 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
    * nova. A quantidade é sempre a contagem ATUAL de pendentes, não a de
    * quando foi agendado (pode ter mudado entre a manhã e o envio).
    *
-   * O GATILHO já roda de verdade (chamado a cada execução do cron — ver
-   * app/api/cron/enviar-mensagens/route.ts). Falta só a CONFIRMAÇÃO final de
-   * que o template foi aprovado na Meta — até lá, `return null` represa sem
-   * nunca tentar enviar contra um template que ainda não existe (mesmo
-   * cuidado de `veiculo_cadastrado` antes de ser ligado). Confirmado, a
-   * mudança é só apagar a linha `return null` logo abaixo.
+   * ATIVADO em 28/09/2026: o template já estava APROVADO na Meta há tempo
+   * (achado consultando a API de templates direto) — só o código nunca
+   * tinha sido atualizado pra parar de represar com `return null`. O
+   * GATILHO já rodava de verdade a cada execução do cron (ver
+   * app/api/cron/enviar-mensagens/route.ts); faltava só isto.
    */
   if (msg.tipo === 'alerta_supervisor_credenciamento') {
-    return null
-
     if (!msg.perfil_id) return null
     const [{ data: supervisor }, { data: evento }] = await Promise.all([
       supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single(),
@@ -1764,12 +1784,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     // (na hora certa) — nada a avisar, não manda mensagem vazia.
     if (!pendentes) return null
 
-    // `!` em vez de narrowing normal: este bloco é INTENCIONALMENTE morto
-    // (return null lá em cima) até a Meta aprovar, e o TS não propaga
-    // narrowing de control-flow dentro de código inalcançável — já validado
-    // pelo `if` acima, que roda de verdade assim que a linha for apagada.
     const diasParaOEvento = Math.round(
-      (new Date(`${diaBRT(evento!.data_inicio as string)}T00:00:00-03:00`).getTime()
+      (new Date(`${diaBRT(evento.data_inicio as string)}T00:00:00-03:00`).getTime()
         - new Date(`${msg.data_ref}T00:00:00-03:00`).getTime()) / (24 * 60 * 60 * 1000)
     )
 
@@ -1780,9 +1796,9 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       // montar o texto livre da Evolution/log — no corpo da Meta quem leva o
       // link é o BOTÃO, via `botaoParam`.
       params: [
-        supervisor!.nome as string,
+        supervisor.nome as string,
         prazoPorExtenso(Math.max(diasParaOEvento, 0)),
-        evento!.nome as string,
+        evento.nome as string,
         quantidadePorExtenso(pendentes),
         `${SITE_URL}/admin/eventos/${msg.evento_id}/aprovacoes`,
       ],

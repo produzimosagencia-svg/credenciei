@@ -264,6 +264,21 @@ Toque no link abaixo para ver as instruções de acesso. Guarde esta mensagem: v
 
 ${link}`,
 
+  /**
+   * Mesmo texto aprovado na Meta (template `credenciamento_negado`,
+   * ativado em 28/09/2026 — ver o comentário em lib/mensagens.ts sobre o
+   * template já existir e nunca ter sido ligado). Sem botão: uma negativa
+   * não tem QR nem link pra mostrar.
+   */
+  credenciamento_negado: ([nome, evento, motivo, supervisor]) =>
+`Olá, ${nome}! ⚠️
+
+Seu credenciamento para o evento ${evento} não foi aprovado.
+
+Motivo: ${motivo}.
+
+Procure o seu supervisor ${supervisor} para resolver antes do evento.`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 
