@@ -269,7 +269,7 @@ export default function FornecedorCard({
             ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
             : <Link2 className="w-3.5 h-3.5 shrink-0" />}
           <span className={copied ? '' : 'hidden sm:inline'}>
-            {copied ? 'Link copiado' : 'Link do formulário'}
+            {copied ? 'Link copiado' : 'Link cadastro'}
           </span>
         </button>
         <button

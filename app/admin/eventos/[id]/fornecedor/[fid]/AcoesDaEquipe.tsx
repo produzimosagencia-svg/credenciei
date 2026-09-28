@@ -50,7 +50,7 @@ export default function AcoesDaEquipe({
           {copiado
             ? <Check className="w-3.5 h-3.5 shrink-0 text-sucesso-600" />
             : <Copy className="w-3.5 h-3.5 shrink-0" />}
-          {copiado ? 'Link copiado' : 'Link do formulário'}
+          {copiado ? 'Link copiado' : 'Link cadastro'}
         </button>
       )}
     </>
