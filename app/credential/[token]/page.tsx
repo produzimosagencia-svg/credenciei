@@ -1,6 +1,6 @@
 import { supabaseAdmin as supabase, diaDoTurno } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
-import { QrCode, Clock, Ban, XCircle } from 'lucide-react'
+import { QrCode, Clock, Ban, XCircle, ScanFace } from 'lucide-react'
 import QRCode from 'qrcode'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
@@ -435,11 +435,15 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * que a maioria dos eventos nem liga.
    */
   let biometriaAutoatendimento = false
+  let metodoAcesso: 'qr' | 'biometria' | 'biometria_qr' = 'qr'
   if (evento) {
     try {
       const { data } = await supabase
         .from('eventos').select('metodo_identificacao, biometria_autoatendimento').eq('id', evento.id).maybeSingle()
-      biometriaAutoatendimento = data?.metodo_identificacao !== 'qr' && data?.biometria_autoatendimento === true
+      if (data?.metodo_identificacao === 'biometria' || data?.metodo_identificacao === 'biometria_qr') {
+        metodoAcesso = data.metodo_identificacao
+      }
+      biometriaAutoatendimento = metodoAcesso !== 'qr' && data?.biometria_autoatendimento === true
     } catch { /* biometria ainda não migrada */ }
   }
 
@@ -469,7 +473,28 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
 
-              <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} />
+              {/*
+                * Guia de acesso — só quando o evento roda biometria. O QR
+                * continua existindo (bloco abaixo), só deixa de ser
+                * apresentado como o método principal: pedido do Juan
+                * (27/09/2026), pra pessoa não ficar em dúvida se precisa
+                * mostrar o QR Code ou não.
+                */}
+              {metodoAcesso !== 'qr' && (
+                <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 space-y-1.5">
+                  <p className="flex items-center gap-1.5 text-brand-700 font-bold text-sm">
+                    <ScanFace className="w-4 h-4 shrink-0" /> Reconhecimento facial
+                  </p>
+                  <p className="text-brand-900/80 text-xs leading-snug">
+                    Seu acesso será feito por reconhecimento facial. No dia do evento, dirija-se a{' '}
+                    <strong>{evento?.local?.trim() || 'o local do credenciamento'}</strong> e procure a equipe.
+                    Posicione-se em frente ao tablet quando for chamado e aguarde a confirmação.
+                    {metodoAcesso === 'biometria_qr' && ' Se não for possível te reconhecer, a equipe pode usar o QR Code abaixo como alternativa.'}
+                  </p>
+                </div>
+              )}
+
+              <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso} />
 
               <div data-tutorial="cred-etapas">
                 {/*
@@ -489,6 +514,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
                   biometriaAutoatendimento={biometriaAutoatendimento}
+                  metodoAcesso={metodoAcesso}
                 />
               </div>
             </div>

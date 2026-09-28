@@ -220,6 +220,7 @@ const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
   token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [], biometriaAutoatendimento = false,
+  metodoAcesso = 'qr',
 }: {
   token: string
   momentos: MomentoInfo[]
@@ -248,6 +249,12 @@ export default function CheckinPresenca({
    * não o do QR do cartaz. Só entrada — saída continua exigindo QR ou portão.
    */
   biometriaAutoatendimento?: boolean
+  /**
+   * Como o evento reconhece a pessoa — muda o texto dos cartões de
+   * entrada/saída (ver `Cartao`), nunca o comportamento de registro em si:
+   * o QR continua funcionando igual em qualquer método.
+   */
+  metodoAcesso?: 'qr' | 'biometria' | 'biometria_qr'
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -572,6 +579,7 @@ export default function CheckinPresenca({
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}
             podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre}
             onLivre={m => registrarLivre(m)}
+            metodoAcesso={metodoAcesso}
             /*
              * Dentro do WhatsApp a câmera da página não abre — nem no Android
              * nem no iPhone. Oferecer "escanear" como caminho principal ali
@@ -688,7 +696,7 @@ function CartaoFeito({ label, em }: { label: string; em: string }) {
 }
 
 function Cartao({
-  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre, onEscanear,
+  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre, onEscanear, metodoAcesso = 'qr',
 }: {
   info: MomentoInfo
   busy: boolean
@@ -700,6 +708,7 @@ function Cartao({
   onLivre: (momento: 'entrada' | 'fim') => void
   /** Abre a câmera para ler o cartaz. Ausente quando o evento não tem cartaz. */
   onEscanear?: (momento: 'entrada' | 'fim') => void
+  metodoAcesso?: 'qr' | 'biometria' | 'biometria_qr'
 }) {
   const janela = info.janelaTexto || 'horário não definido'
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
@@ -823,6 +832,24 @@ function Cartao({
               </>
             )}
           </button>
+        </div>
+      )
+    }
+    // Fora do modo QR: reconhecimento facial no portão — o QR acima continua
+    // valendo, mas só é citado como o que a equipe usa se o tablet falhar.
+    if (metodoAcesso !== 'qr') {
+      return (
+        <div className={`${base} bg-blue-50 border-blue-200`}>
+          <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center shrink-0">
+            <ScanFace className="w-5 h-5 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-blue-800 font-bold text-sm">{info.label} — reconhecimento facial no portão</p>
+            <p className="text-blue-600 text-xs">
+              Procure a equipe e posicione-se em frente ao tablet
+              {metodoAcesso === 'biometria_qr' ? ', ou mostre o QR acima' : ''} • {janela}
+            </p>
+          </div>
         </div>
       )
     }

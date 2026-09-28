@@ -22,7 +22,12 @@
 
 /** Ordem dos parâmetros = a mesma de `montarEnvioTemplate`. */
 const MODELOS: Record<string, (p: string[]) => string> = {
-  boas_vindas_funcionario: ([nome, evento, setor, data, local, link]) =>
+  /*
+   * `comoFunciona` chega pronto de `instrucoesDeAcesso` (lib/mensagens.ts) —
+   * é o único trecho que muda entre QR e biometria, e a decisão de qual
+   * texto usar mora lá, não aqui. Este arquivo só interpola.
+   */
+  boas_vindas_funcionario: ([nome, evento, setor, data, local, link, comoFunciona]) =>
 `Oi, ${nome}! 🎉 Seu cadastro no *${evento}* está confirmado.
 
 📋 Setor: ${setor}
@@ -34,15 +39,7 @@ ${link}
 
 ⭐ Salve esse link nos favoritos — é ele que você vai usar o evento inteiro.
 
-*Como funciona no dia:*
-
-1️⃣ *CHEGADA* — vá ao credenciamento e mostre o QR Code da credencial.
-2️⃣ *DURANTE O TURNO* — a gente te avisa por aqui na hora; abra o link e tire uma selfie, com a localização do celular ligada.
-3️⃣ *SAÍDA* — na hora de ir, volte ao credenciamento e mostre o QR Code de novo.
-
-🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
-
-🔐 O crachá da montagem é diferente do crachá do dia do evento — a tela troca sozinha. Mostre sempre a tela ao vivo, nunca um print.
+${comoFunciona}
 
 ⏰ Pode ficar tranquilo: a gente te avisa por aqui na hora de cada etapa. 😉`,
 
@@ -78,7 +75,12 @@ Corre lá! 🏃`,
    * gente que só aparece nesse dia — quem erra aqui erra na frente de todo
    * mundo. Por isso as três etapas vêm escritas, com horário e o que fazer.
    */
-  aviso_dia_evento: ([nome, evento, local, abre, fecha, meio, saidaAbre, saidaFecha, link]) =>
+  /*
+   * `descricaoEntrada`/`descricaoSaida` chegam prontas de `instrucoesDeAcesso`
+   * (lib/mensagens.ts) — só a frase de COMO acessar muda com o método do
+   * evento; os avisos ⚠️ abaixo são genéricos e continuam fixos aqui.
+   */
+  aviso_dia_evento: ([nome, evento, local, abre, fecha, meio, saidaAbre, saidaFecha, link, descricaoEntrada, descricaoSaida]) =>
 `🎉 *HOJE É O GRANDE DIA!*
 
 ${nome}, hoje é o *${evento}*. Segue tudo o que você precisa saber 👇
@@ -89,7 +91,7 @@ ${nome}, hoje é o *${evento}*. Segue tudo o que você precisa saber 👇
 
 *1️⃣ ENTRADA — das ${abre} às ${fecha}*
 
-Vá ao *credenciamento* e mostre o QR Code da sua credencial. É ele que registra sua entrada oficial no evento.
+${descricaoEntrada}
 
 ⚠️ Chegue com folga: fora desse horário o sistema não aceita, e aí só o responsável consegue liberar.
 
@@ -101,7 +103,7 @@ Você mesmo faz, pelo celular: abra sua credencial, toque no cartão do meio e t
 
 *3️⃣ SAÍDA — das ${saidaAbre} às ${saidaFecha}*
 
-Volte ao credenciamento e mostre o QR Code de novo. É isso que fecha o seu dia e libera o seu pagamento.
+${descricaoSaida}
 
 ━━━━━━━━━━━━━━━━━━
 
@@ -159,7 +161,7 @@ ${link}
 
 Obrigado pelo trabalho! 🙏`,
 
-  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link]) =>
+  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link, rotuloCredencial]) =>
 `📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.
 
 👤 Função: ${funcao}
@@ -168,7 +170,7 @@ Obrigado pelo trabalho! 🙏`,
 
 📌 ${instrucoes}
 
-🔗 Sua credencial com o QR Code:
+🔗 ${rotuloCredencial}
 ${link}
 
 Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,

@@ -26,7 +26,16 @@ import { EyeOff, ShieldAlert } from 'lucide-react'
  */
 
 export default function QrProtegido(
-  { dataUrl, dia, faseLabel }: { dataUrl: string; dia: string; faseLabel: string }
+  { dataUrl, dia, faseLabel, metodoAcesso = 'qr' }: {
+    dataUrl: string
+    dia: string
+    faseLabel: string
+    /**
+     * Fora do modo QR o código continua existindo (é o plano B do scanner),
+     * só a LEGENDA muda — nunca mais apresentado como o jeito de entrar.
+     */
+    metodoAcesso?: 'qr' | 'biometria' | 'biometria_qr'
+  }
 ) {
   const [oculto, setOculto] = useState(false)
 
@@ -107,7 +116,9 @@ export default function QrProtegido(
       </div>
 
       <p className="text-slate-400 text-xs mt-2">
-        Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento
+        {metodoAcesso === 'qr' && <>Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento</>}
+        {metodoAcesso === 'biometria' && 'QR Code de reserva — use apenas se a equipe pedir'}
+        {metodoAcesso === 'biometria_qr' && 'Use este QR Code se a equipe pedir, como alternativa ao reconhecimento facial'}
       </p>
 
       <p className="text-slate-400 text-2xs mt-1.5 flex items-center justify-center gap-1">

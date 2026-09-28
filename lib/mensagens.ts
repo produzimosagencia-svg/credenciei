@@ -170,6 +170,91 @@ const INSTRUCAO_ETAPA: Record<MomentoRegistro, string> = {
 }
 
 /**
+ * Exatamente o bloco "Como funciona no dia" de `boas_vindas_funcionario` de
+ * sempre — extraído pra cá só pra poder ser reaproveitado sem duplicar
+ * caractere por caractere. Nunca editar um sem editar o outro em conjunto.
+ */
+const COMO_FUNCIONA_QR = `*Como funciona no dia:*
+
+1️⃣ *CHEGADA* — vá ao credenciamento e mostre o QR Code da credencial.
+2️⃣ *DURANTE O TURNO* — a gente te avisa por aqui na hora; abra o link e tire uma selfie, com a localização do celular ligada.
+3️⃣ *SAÍDA* — na hora de ir, volte ao credenciamento e mostre o QR Code de novo.
+
+🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
+
+🔐 O crachá da montagem é diferente do crachá do dia do evento — a tela troca sozinha. Mostre sempre a tela ao vivo, nunca um print.`
+
+type MetodoAcesso = 'qr' | 'biometria' | 'biometria_qr'
+
+type InstrucoesAcesso = {
+  /** Frase curta por etapa — {{3}} de `lembrete_credenciamento`/`reforco_credenciamento`. */
+  etapa: Record<MomentoRegistro, string>
+  /** Frase com o "porquê", usada no aviso do dia do evento. */
+  diaEvento: { entrada: string; fim: string }
+  /** O bloco "Como funciona no dia" inteiro, usado no boas-vindas. */
+  comoFunciona: string
+  /** Rótulo antes do link da credencial, na confirmação de escala. */
+  rotuloCredencial: string
+}
+
+/**
+ * Central: TODO texto de "como entrar/sair" que as mensagens usam vem
+ * daqui, decidido a partir de `eventos.metodo_identificacao`. Nenhum outro
+ * lugar decide esse texto de novo — os templates em `mensagens-modelos.ts`
+ * só recebem o resultado pronto e interpolam.
+ *
+ * Biometria não substitui o QR — ele continua existindo como alternativa
+ * (o scanner sempre aceita os dois) — mas a MENSAGEM não pode apresentar os
+ * dois como se fossem igualmente principais: pedido explícito do Juan
+ * (27/09/2026), "senão a pessoa fica na dúvida se precisa mostrar o QR ou
+ * não". Por isso `biometria_qr` menciona o QR só como algo que "a equipe
+ * pode usar", nunca como instrução direta pra pessoa.
+ */
+function instrucoesDeAcesso(metodoBruto: unknown): InstrucoesAcesso {
+  const metodo: MetodoAcesso = metodoBruto === 'biometria' || metodoBruto === 'biometria_qr' ? metodoBruto : 'qr'
+
+  if (metodo === 'qr') {
+    return {
+      etapa: INSTRUCAO_ETAPA,
+      diaEvento: {
+        entrada: 'Vá ao *credenciamento* e mostre o QR Code da sua credencial. É ele que registra sua entrada oficial no evento.',
+        fim: 'Volte ao credenciamento e mostre o QR Code de novo. É isso que fecha o seu dia e libera o seu pagamento.',
+      },
+      comoFunciona: COMO_FUNCIONA_QR,
+      rotuloCredencial: 'Sua credencial com o QR Code:',
+    }
+  }
+
+  const fallbackQr = metodo === 'biometria_qr'
+    ? ' Se não for possível te reconhecer, a equipe pode usar o QR Code da sua credencial.'
+    : ''
+
+  return {
+    etapa: {
+      entrada: `Vá até o portão de credenciamento e posicione-se em frente ao tablet para o reconhecimento facial.${fallbackQr}`,
+      meio: INSTRUCAO_ETAPA.meio,
+      fim: `Volte ao portão de credenciamento e posicione-se em frente ao tablet para registrar a saída.${fallbackQr}`,
+    },
+    diaEvento: {
+      entrada: `Vá até o *portão de credenciamento* e posicione-se em frente ao tablet — o reconhecimento facial registra sua entrada oficial no evento.${fallbackQr}`,
+      fim: `Volte ao *portão de credenciamento* e posicione-se em frente ao tablet de novo — é isso que fecha o seu dia e libera o seu pagamento.${fallbackQr}`,
+    },
+    comoFunciona: `*Como funciona no dia:*
+
+1️⃣ *CHEGADA* — vá até o portão de credenciamento e posicione-se em frente ao tablet para o reconhecimento facial.
+2️⃣ *DURANTE O TURNO* — a gente te avisa por aqui na hora; abra o link e tire uma selfie, com a localização do celular ligada.
+3️⃣ *SAÍDA* — na hora de ir, volte ao portão e posicione-se em frente ao tablet de novo.
+
+🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
+
+${metodo === 'biometria_qr'
+  ? '📌 Se o tablet não conseguir te reconhecer, a equipe pode usar o QR Code da sua credencial como alternativa.'
+  : '👤 O reconhecimento facial libera sua entrada e saída automaticamente — não precisa mostrar nada na tela.'}`,
+    rotuloCredencial: 'Sua credencial:',
+  }
+}
+
+/**
  * Nome do modelo de texto de cada tipo. Vários tipos compartilham o mesmo
  * modelo (a etapa entra como parâmetro).
  */
@@ -1315,7 +1400,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
       supabase.from('eventos')
-        .select('nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim, batida_livre')
+        .select('nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim, batida_livre, metodo_identificacao')
         .eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
@@ -1366,7 +1451,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       params: [
         func.nome,                                                              // {{1}} nome
         evento.nome as string,                                                  // {{2}} evento
-        INSTRUCAO_ETAPA[momento],                                               // {{3}} etapa pendente
+        instrucoesDeAcesso((evento as { metodo_identificacao?: string }).metodo_identificacao).etapa[momento], // {{3}} etapa pendente
         horarioLimiteISO ? formatarBR(horarioLimiteISO, 'hora') : 'a definir',  // {{4}} prazo
         credencial,                                                             // {{5}} link
       ],
@@ -1456,7 +1541,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!msg.funcionario_id) return null
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, cargo, qr_token, fornecedor_id').eq('id', msg.funcionario_id).single(),
-      supabase.from('eventos').select('nome, local, data_inicio, msg_pre_evento_instrucoes').eq('id', msg.evento_id).single(),
+      supabase.from('eventos').select('nome, local, data_inicio, msg_pre_evento_instrucoes, metodo_identificacao').eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
     const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
@@ -1477,6 +1562,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         dataLocal,
         instrucoes,
         credencial,
+        instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial,
       ],
     }
   }
@@ -1487,7 +1573,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!msg.funcionario_id) return null
     const [{ data: func }, { data: evento }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token, fornecedor_id').eq('id', msg.funcionario_id).single(),
-      supabase.from('eventos').select('nome, local, data_inicio').eq('id', msg.evento_id).single(),
+      supabase.from('eventos').select('nome, local, data_inicio, metodo_identificacao').eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
     const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
@@ -1504,6 +1590,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
         evento.local?.trim() || 'a confirmar',
         credencial,
+        instrucoesDeAcesso(evento.metodo_identificacao).comoFunciona,
       ],
     }
   }
@@ -1514,7 +1601,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const [{ data: func }, { data: evento }, { data: diaDaJornada }] = await Promise.all([
       supabase.from('funcionarios').select('nome, qr_token').eq('id', msg.funcionario_id).single(),
       supabase.from('eventos')
-        .select('nome, local, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_fim_inicio, janela_fim_fim')
+        .select('nome, local, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_fim_inicio, janela_fim_fim, metodo_identificacao')
         .eq('id', msg.evento_id).single(),
       // O dia da mensagem pode ter horário próprio (2ª noite de um festival).
       supabase.from('jornada_dias')
@@ -1543,6 +1630,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const credencial = linkDaCredencial(func.qr_token, 'aviso_dia_evento')
     if (!credencial) return null
 
+    const acesso = instrucoesDeAcesso(evento.metodo_identificacao)
+
     return {
       template,
       params: [
@@ -1555,6 +1644,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         saidaInicio ? hora(saidaInicio) : 'o fim do turno',
         saidaFim ? hora(saidaFim) : 'o fim do evento',
         credencial,
+        acesso.diaEvento.entrada,
+        acesso.diaEvento.fim,
       ],
     }
   }
