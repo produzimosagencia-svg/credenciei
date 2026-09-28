@@ -36,6 +36,13 @@ import { Camera, CameraOff, Loader2 } from 'lucide-react'
  *  repositório oficial do face-api.js (MIT), justadudewhohacks/face-api.js. */
 const CAMINHO_MODELOS = '/models'
 
+/**
+ * Prazo pro pipeline FECHAR a captura depois que um rosto bom já apareceu —
+ * não é um relógio geral do componente. Conta a partir de `rostoBomDesdeRef`,
+ * nunca do `mount`: um totem sem operador passa a maior parte do tempo sem
+ * ninguém na câmera, e isso não pode contar como demora (era o bug: a tela
+ * travava sozinha a cada ~20s parada, mesmo sem ninguém passando — 27/09/2026).
+ */
 const TEMPO_LIMITE_MS = 20_000
 /** EAR (razão de abertura do olho) abaixo disto conta como olho fechado. */
 const LIMIAR_OLHO_FECHADO = 0.22
@@ -83,7 +90,6 @@ export default function FaceCapture({
 
   useEffect(() => {
     let desmontou = false
-    const inicioEm = Date.now()
 
     const parar = () => {
       if (intervaloRef.current) { clearInterval(intervaloRef.current); intervaloRef.current = null }
@@ -130,17 +136,9 @@ export default function FaceCapture({
       intervaloRef.current = setInterval(async () => {
         if (jaCapturouRef.current || !videoRef.current || videoRef.current.readyState < 2) return
 
-        if (Date.now() - inicioEm > TEMPO_LIMITE_MS) {
-          jaCapturouRef.current = true
-          parar()
-          setFase('erro')
-          setMensagem('Não foi possível concluir o reconhecimento a tempo. Use o QR Code.')
-          return
-        }
-
         const todos = await faceapi.detectAllFaces(videoRef.current, opcoesDeteccao)
-        if (todos.length === 0) { rostoBomDesdeRef.current = null; setFase('procurando'); setMensagem(instrucao); return }
-        if (todos.length > 1) { rostoBomDesdeRef.current = null; setFase('procurando'); setMensagem('Mais de um rosto na câmera — só uma pessoa por vez.'); return }
+        if (todos.length === 0) { rostoBomDesdeRef.current = null; olhoFechadoAlgumaVezRef.current = false; setFase('procurando'); setMensagem(instrucao); return }
+        if (todos.length > 1) { rostoBomDesdeRef.current = null; olhoFechadoAlgumaVezRef.current = false; setFase('procurando'); setMensagem('Mais de um rosto na câmera — só uma pessoa por vez.'); return }
 
         /*
          * SÓ pontos do rosto por enquanto — SEM extrair o vetor de
@@ -151,6 +149,26 @@ export default function FaceCapture({
         const comPontos = await faceapi.detectSingleFace(videoRef.current, opcoesDeteccao).withFaceLandmarks()
         if (!comPontos) return
         if (rostoBomDesdeRef.current === null) rostoBomDesdeRef.current = Date.now()
+        const desde = rostoBomDesdeRef.current
+
+        /*
+         * Prazo pra quando TEM alguém na câmera mas o pipeline não fecha a
+         * captura — nunca pra "ninguém apareceu ainda" (os dois `return`
+         * acima resetam o relógio antes de chegar aqui). No totem sem
+         * operador, ficar parado sem ninguém na frente é o descanso normal
+         * entre uma pessoa e outra, não uma falha — contar esse tempo era o
+         * bug que travava a tela a cada ~20s mesmo sem ninguém passando
+         * (27/09/2026). Por isso recupera SOZINHO, sem virar `'erro'`: a
+         * causa mais comum é a pessoa ter saído do quadro no meio do
+         * processo, não um defeito — o certo é tentar de novo do zero.
+         */
+        if (Date.now() - desde > TEMPO_LIMITE_MS) {
+          rostoBomDesdeRef.current = null
+          olhoFechadoAlgumaVezRef.current = false
+          setFase('procurando')
+          setMensagem(instrucao)
+          return
+        }
 
         /*
          * O piscar de olhos é a prova de vida — mas não pode travar o
@@ -161,7 +179,7 @@ export default function FaceCapture({
          */
         const ear = (razaoDoOlho(comPontos.landmarks.getLeftEye()) + razaoDoOlho(comPontos.landmarks.getRightEye())) / 2
         if (ear < LIMIAR_OLHO_FECHADO) olhoFechadoAlgumaVezRef.current = true
-        const esperandoHaMuitoTempo = Date.now() - (rostoBomDesdeRef.current ?? Date.now()) > ESPERA_MAXIMA_PISCAR_MS
+        const esperandoHaMuitoTempo = Date.now() - desde > ESPERA_MAXIMA_PISCAR_MS
 
         if (!olhoFechadoAlgumaVezRef.current && !esperandoHaMuitoTempo) {
           setFase('pisque')

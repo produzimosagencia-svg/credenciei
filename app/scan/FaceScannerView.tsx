@@ -119,11 +119,20 @@ export default function FaceScannerView({
   const [chaveCaptura, setChaveCaptura] = useState(0)
   const ultimoRegistradoRef = useRef<{ nome: string; em: number } | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Identifica CADA volta do loop — incrementado toda vez que a estação
+   * reseta (resultado mostrado, evento trocado, etc). Uma resposta do
+   * servidor que chega depois de a estação já ter seguido pra outra
+   * tentativa não pode mais sobrescrever a tela: `aoCapturar` guarda o
+   * valor no início e confere de novo antes de aplicar o resultado.
+   */
+  const tentativaIdRef = useRef(0)
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   /** Volta a escanear sozinho — é o totem, ninguém precisa tocar em nada. */
   const voltarAEscanear = () => {
+    tentativaIdRef.current += 1
     setChaveCaptura(c => c + 1)
     setResult(null)
     setValidando(false)
@@ -131,6 +140,7 @@ export default function FaceScannerView({
   }
 
   const aoCapturar = async ({ descritor }: ResultadoCaptura) => {
+    const minhaTentativa = tentativaIdRef.current
     setCapturando(false)
     setValidando(true)
 
@@ -147,6 +157,12 @@ export default function FaceScannerView({
       console.error('[FaceScannerView]', e)
       resultado = { success: false, message: 'Não foi possível validar agora. Tente de novo ou use o QR Code.' }
     }
+
+    // A estação já seguiu pra outra tentativa enquanto isto estava em voo
+    // (evento trocado, ou já resetou por outro motivo) — essa resposta
+    // chegou tarde demais pra valer.
+    if (tentativaIdRef.current !== minhaTentativa) return
+
     setValidando(false)
 
     // A mesma pessoa ainda na frente da câmera, logo depois de já ter
@@ -219,7 +235,15 @@ export default function FaceScannerView({
           key={chaveCaptura}
           instrucao="Aproxime-se da câmera"
           onCaptura={aoCapturar}
-          onCancelar={() => aoTrocarParaQr(eventoId)}
+          /*
+           * "Cancelar" só aparece nos 2 casos fatais que o FaceCapture não
+           * resolve sozinho (câmera não abriu, modelo não carregou) — aqui
+           * NUNCA pode significar "desliga a biometria da estação inteira":
+           * isso trocaria o totem pra QR permanentemente sem ninguém ter
+           * pedido. Só tenta a câmera de novo; "Validar por QR Code" (abaixo,
+           * sempre visível) continua sendo a única saída deliberada pro QR.
+           */
+          onCancelar={voltarAEscanear}
         />
       )}
 
