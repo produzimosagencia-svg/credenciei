@@ -255,36 +255,134 @@ function nomeDoArquivo({
   return partes.join(' - ').replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
 }
 
+/*
+ * Mesma paleta e mesmos nomes de `lib/relatorio-excel.ts` — não duas
+ * identidades visuais diferentes pros arquivos que este sistema exporta.
+ */
+const COR_MARCA = 'FFFF4A0F'
+const COR_ACENTO = 'FFE33C06'
+const COR_FAIXA_CLARA = 'FFFFF2EC'
+const COR_BORDA = 'FFE5E1DF'
+const COR_TEXTO = 'FF201E1D'
+const BRANCO = 'FFFFFFFF'
+const bordaFina = { style: 'thin' as const, color: { argb: COR_BORDA } }
+const BORDA_CELULA = { top: bordaFina, left: bordaFina, bottom: bordaFina, right: bordaFina }
+
+/** `wrapText: true` pras colunas que variam muito de tamanho — Detalhe, De, Para, Motivo. */
+const COLUNAS_AUDITORIA = [
+  { titulo: 'Data e hora', largura: 17 },
+  { titulo: 'Ação', largura: 22 },
+  { titulo: 'Detalhe', largura: 24, quebraLinha: true },
+  { titulo: 'Pessoa afetada', largura: 22 },
+  { titulo: 'CPF', largura: 15 },
+  { titulo: 'Setor da pessoa', largura: 17 },
+  { titulo: 'De', largura: 26, quebraLinha: true },
+  { titulo: 'Para', largura: 26, quebraLinha: true },
+  { titulo: 'Motivo', largura: 22, quebraLinha: true },
+  { titulo: 'Quem fez', largura: 22 },
+  { titulo: 'Tipo de acesso', largura: 15 },
+  { titulo: 'Setor de quem fez', largura: 17 },
+  { titulo: 'Evento', largura: 22 },
+  { titulo: 'Entrou no evento em', largura: 17 },
+  { titulo: 'IP', largura: 14 },
+] as const
+
+/**
+ * Reescrito com `exceljs` (28/09/2026, reclamação real do Juan com print:
+ * "ficou muito péssimo, horrível a leitura") — o `xlsx` puro usado antes só
+ * escreve os valores crus, sem cabeçalho destacado, sem quebra de linha nas
+ * colunas de texto mais longo (De/Para/Motivo apareciam cortados no meio) e
+ * sem congelar o cabeçalho ao rolar. `exceljs` já é usado pro relatório de
+ * credenciamento (`lib/relatorio-excel.ts`) — mesma paleta, mesmo padrão de
+ * cabeçalho e borda, pra não ter duas identidades visuais diferentes pros
+ * arquivos que este sistema exporta.
+ */
 async function baixarPlanilha(linhas: LinhaAuditoria[], nomeArquivo: string) {
-  // `xlsx` é pesado e só serve neste clique — carregado sob demanda pra não
-  // entrar no bundle de quem só está lendo a tela.
-  const XLSX = await import('xlsx')
+  const ExcelJS = await import('exceljs')
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Auditoria')
+  const nCol = COLUNAS_AUDITORIA.length
+  ws.columns = COLUNAS_AUDITORIA.map(c => ({ width: c.largura }))
 
-  const dados = linhas.map(l => ({
-    'Data e hora': formatarBR(l.criadoEm, 'completo'),
-    'Ação': ACAO_LABELS[l.acao] ?? l.acao,
-    'Detalhe': l.campoAlterado ?? '',
-    'Pessoa afetada': l.funcionarioNome ?? '',
-    'CPF': l.funcionarioCpf ? formatCpf(l.funcionarioCpf) : '',
-    'Setor da pessoa': l.funcionarioSetor ?? '',
-    'De': l.valorAnterior ?? '',
-    'Para': l.valorNovo ?? '',
-    'Motivo': l.motivo ?? '',
-    'Quem fez': l.usuarioResponsavel,
-    'Tipo de acesso': l.autorRole ? (ROLE_LABELS[l.autorRole as Role] ?? l.autorRole) : '',
-    'Setor de quem fez': l.autorSetor ?? '',
-    'Evento': l.eventoNome ?? '',
-    'Entrou no evento em': l.primeiraEntradaEm ? formatarBR(l.primeiraEntradaEm, 'completo') : (l.acao === 'CADASTRO_FUNCIONARIO' ? 'Ainda não' : ''),
-    'IP': l.ip ?? '',
-  }))
+  let linha = 1
+  ws.mergeCells(linha, 1, linha, nCol)
+  const titulo = ws.getCell(linha, 1)
+  titulo.value = 'AUDITORIA'
+  titulo.font = { bold: true, size: 14, color: { argb: BRANCO } }
+  titulo.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_MARCA } }
+  titulo.alignment = { vertical: 'middle', horizontal: 'left' }
+  ws.getRow(linha).height = 26
+  linha++
 
-  const ws = XLSX.utils.json_to_sheet(dados)
-  ws['!cols'] = [
-    { wch: 18 }, { wch: 22 }, { wch: 26 }, { wch: 28 }, { wch: 16 }, { wch: 18 },
-    { wch: 28 }, { wch: 28 }, { wch: 24 }, { wch: 24 }, { wch: 18 }, { wch: 18 },
-    { wch: 28 }, { wch: 20 }, { wch: 16 },
-  ]
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Auditoria')
-  XLSX.writeFile(wb, `${nomeArquivo}.xlsx`)
+  const info = ws.getCell(linha, 1)
+  info.value = `${linhas.length} registro${linhas.length === 1 ? '' : 's'} — gerado em ${formatarBR(new Date().toISOString(), 'completo')}`
+  info.font = { italic: true, size: 9, color: { argb: COR_TEXTO } }
+  linha += 2
+
+  const linhaCabecalho = linha
+  COLUNAS_AUDITORIA.forEach((c, i) => {
+    const cel = ws.getCell(linhaCabecalho, i + 1)
+    cel.value = c.titulo
+    cel.font = { bold: true, color: { argb: BRANCO }, size: 10 }
+    cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_ACENTO } }
+    cel.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+    cel.border = BORDA_CELULA
+  })
+  ws.getRow(linhaCabecalho).height = 26
+  linha++
+
+  linhas.forEach((l, idx) => {
+    const valores: (string | number | Date | null)[] = [
+      new Date(l.criadoEm),
+      ACAO_LABELS[l.acao] ?? l.acao,
+      l.campoAlterado ?? '',
+      l.funcionarioNome ?? '',
+      l.funcionarioCpf ? formatCpf(l.funcionarioCpf) : '',
+      l.funcionarioSetor ?? '',
+      l.valorAnterior ?? '',
+      l.valorNovo ?? '',
+      l.motivo ?? '',
+      l.usuarioResponsavel,
+      l.autorRole ? (ROLE_LABELS[l.autorRole as Role] ?? l.autorRole) : '',
+      l.autorSetor ?? '',
+      l.eventoNome ?? '',
+      l.primeiraEntradaEm ? new Date(l.primeiraEntradaEm) : (l.acao === 'CADASTRO_FUNCIONARIO' ? 'Ainda não' : ''),
+      l.ip ?? '',
+    ]
+    const zebra = idx % 2 === 1
+    valores.forEach((v, i) => {
+      const coluna = COLUNAS_AUDITORIA[i]
+      const cel = ws.getCell(linha, i + 1)
+      cel.value = v
+      cel.border = BORDA_CELULA
+      cel.alignment = {
+        vertical: 'middle',
+        horizontal: i === 0 || 'quebraLinha' in coluna ? 'left' : 'center',
+        wrapText: 'quebraLinha' in coluna,
+      }
+      if (v instanceof Date) cel.numFmt = 'dd/mm/yyyy hh:mm'
+      // Faixa alternada — com 15 colunas lado a lado, é o que deixa o olho
+      // não perder a linha ao ler da esquerda pra direita.
+      if (zebra) cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_FAIXA_CLARA } }
+    })
+    linha++
+  })
+
+  // Congela até o cabeçalho — rolando uma auditoria de centenas de linhas,
+  // a pessoa não perde de vista o que cada coluna significa.
+  ws.views = [{ state: 'frozen', ySplit: linhaCabecalho }]
+  if (linhas.length) {
+    ws.autoFilter = { from: { row: linhaCabecalho, column: 1 }, to: { row: linhaCabecalho + linhas.length, column: nCol } }
+  }
+
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${nomeArquivo}.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
