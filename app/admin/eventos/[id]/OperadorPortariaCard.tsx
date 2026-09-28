@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound, ScanFace } from 'lucide-react'
-import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso, criarTotem } from '@/lib/actions'
+import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso, criarTotem, editarTotem } from '@/lib/actions'
 import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -18,6 +18,9 @@ type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: st
 const MINIMO_PARA_BUSCAR = 6
 
 const formatCpf = (cpf: string) => cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+
+/** É um totem (login `totemN@...`), não um operador humano de verdade? */
+const ehTotem = (o: Operador) => /^totem\d+@/.test(o.email)
 
 /**
  * Operadores de portão — quem lê o QR e registra ponto manual sem precisar
@@ -67,11 +70,13 @@ export default function OperadorPortariaCard({
         * quando não há nenhum, que é quando ela é o que falta fazer.
         */}
       <h3 className="text-slate-800 font-semibold text-base flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4 text-brand-500 shrink-0" />
-        Operadores de portão
+        {ehBiometriaQr ? <ScanFace className="w-4 h-4 text-brand-500 shrink-0" /> : <ShieldCheck className="w-4 h-4 text-brand-500 shrink-0" />}
+        {ehBiometriaQr ? 'Totem de credenciamento' : 'Operadores de portão'}
       </h3>
       <p className="text-slate-500 text-xs mt-1">
-        Lê o QR e registra ponto no portão — sem acesso a editar evento, equipe ou usuários.
+        {ehBiometriaQr
+          ? 'Reconhece o rosto (ou lê o QR) e registra ponto no portão — sem acesso a editar evento, equipe ou usuários.'
+          : 'Lê o QR e registra ponto no portão — sem acesso a editar evento, equipe ou usuários.'}
       </p>
 
       <div className="flex-1 mt-3">
@@ -140,7 +145,20 @@ export default function OperadorPortariaCard({
         <ModalTotem eventoId={eventoId} onFechar={() => setModalAberto(null)} />
       )}
 
-      {modalAberto && modalAberto !== 'criar-totem' && (
+      {/*
+        * Editar um totem NUNCA pode cair no formulário de operador humano —
+        * bug real (28/09/2026): aquele formulário exige CPF de 11 dígitos e
+        * telefone, e `editarSupervisor` até recalcula o login a partir do
+        * CPF digitado, o que quebraria o acesso `totemN` do tablet. Detecta
+        * pelo formato do e-mail (`ehTotem`), não por `ehBiometriaQr`: um
+        * totem criado quando o evento era Biometria + QR continua sendo um
+        * totem mesmo que o método do evento mude depois.
+        */}
+      {modalAberto && typeof modalAberto === 'object' && ehTotem(modalAberto) && (
+        <ModalEditarTotem operador={modalAberto} onFechar={() => setModalAberto(null)} podeExcluir={podeExcluir} />
+      )}
+
+      {modalAberto && modalAberto !== 'criar-totem' && !(typeof modalAberto === 'object' && ehTotem(modalAberto)) && (
         <ModalOperador
           eventoId={eventoId}
           operador={modalAberto === 'criar' ? null : modalAberto}
@@ -149,6 +167,102 @@ export default function OperadorPortariaCard({
           podeExcluir={podeExcluir}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * Editar totem — SÓ status e senha (ver `editarTotem`, lib/actions.ts).
+ * Nunca nome/CPF/telefone: um aparelho não tem nada disso.
+ */
+function ModalEditarTotem({ operador, onFechar, podeExcluir }: {
+  operador: Operador
+  onFechar: () => void
+  podeExcluir: boolean
+}) {
+  const [isPending, startTransition] = useTransition()
+  const [erro, setErro] = useState<string | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const router = useRouter()
+
+  const handleSubmit = (formData: FormData) => {
+    setErro(null)
+    startTransition(async () => {
+      const r = await editarTotem(operador.id, formData)
+      if (r?.error) { setErro(r.error); return }
+      router.refresh()
+      onFechar()
+    })
+  }
+
+  const confirmarExclusao = () => {
+    setConfirmOpen(false)
+    startTransition(async () => {
+      try {
+        await deletarUsuario(operador.id)
+        router.refresh()
+        onFechar()
+      } catch (e: any) {
+        setErro(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !isPending && onFechar()}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/45" />
+      <div className="modal-pop-in relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+          <h2 className="text-slate-800 font-bold">Editar {operador.nome}</h2>
+          <button onClick={onFechar} disabled={isPending} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form action={handleSubmit} className="p-6 space-y-4">
+          <p className="text-slate-500 text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+            Login: <span className="font-mono font-semibold text-slate-700">{exibirIdentificador(operador.email)}</span> — é um
+            aparelho fixo no portão, não tem CPF nem WhatsApp.
+          </p>
+          <Field label="Nova senha (opcional)">
+            <input name="senha" type="password" minLength={6} placeholder="Deixe em branco para manter" className="input" />
+          </Field>
+          <Field label="Status">
+            <SeletorLista
+              name="ativo" defaultValor={String(operador.ativo)} titulo="Status"
+              opcoes={[{ valor: 'true', rotulo: 'Ativo' }, { valor: 'false', rotulo: 'Inativo' }]}
+            />
+          </Field>
+
+          {erro && <p className="text-red-500 text-xs">{erro}</p>}
+
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={isPending} className="btn btn-primario btn-lg flex-1">
+              {isPending ? 'Salvando...' : 'Salvar alterações'}
+            </button>
+            {podeExcluir && (
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
+                disabled={isPending}
+                className="btn-press w-12 h-12 flex items-center justify-center shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl disabled:opacity-50"
+                title="Excluir totem"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={confirmarExclusao}
+        isPending={isPending}
+        zIndexClassName="z-[60]"
+        mensagem={`Excluir o totem "${operador.nome}"?`}
+      />
     </div>
   )
 }

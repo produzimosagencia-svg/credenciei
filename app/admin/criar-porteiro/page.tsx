@@ -50,7 +50,7 @@ export default async function CriarPorteiroPage({
   }
 
   const { data: evento } = await supabase
-    .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
+    .from('eventos').select('id, nome, organizacao_id, metodo_identificacao').eq('id', eventoParam).single()
   if (!evento) notFound()
   if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
@@ -73,11 +73,14 @@ export default async function CriarPorteiroPage({
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
+  const metodoIdentificacao = (evento as { metodo_identificacao?: string }).metodo_identificacao ?? 'qr'
+  const ehBiometriaQr = metodoIdentificacao === 'biometria_qr'
+
   return (
     <div className="space-y-5">
       <PageHeader
         titulo="Gestor de credenciamento"
-        descricao={`${evento.nome} — o acesso de quem fica no portão lendo o QR`}
+        descricao={`${evento.nome} — o acesso de quem fica no portão` + (ehBiometriaQr ? ', pelo rosto ou pelo QR' : ' lendo o QR')}
         acoes={
           <Link href="/admin/criar-porteiro" className="btn btn-secundario">
             <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
@@ -85,13 +88,14 @@ export default async function CriarPorteiroPage({
         }
       />
 
-      <ComoFunciona />
+      <ComoFunciona totem={ehBiometriaQr} />
 
       <OperadorPortariaCard
         eventoId={eventoParam}
         operadores={(operadores ?? []) as { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]}
         funcionariosDoEvento={(funcionarios ?? []) as { id: string; nome: string; cpf: string; telefone: string }[]}
         podeExcluir={podeExcluirDeVerdade(perfil.role)}
+        metodoIdentificacao={metodoIdentificacao}
       />
     </div>
   )
@@ -102,19 +106,25 @@ export default async function CriarPorteiroPage({
  * entra. O "não faz" é a metade que importa — é ela que responde a pergunta
  * real de quem vai entregar o acesso a um contratado.
  */
-function ComoFunciona() {
-  const faz = [
-    { icone: ScanLine, titulo: 'Lê o QR no portão', texto: 'Escaneia a credencial da equipe e registra entrada e saída na hora.' },
-    { icone: ClipboardCheck, titulo: 'Registra ponto no lugar da pessoa', texto: 'Quando o QR não abre ou o celular morreu: acha a pessoa, tira a foto do rosto e registra. Fica gravado quem registrou.' },
-    { icone: KeyRound, titulo: 'Entra com o próprio CPF', texto: 'Recebe um WhatsApp com um link para criar a senha. Depois entra com CPF e senha — não precisa de senha de admin.' },
-  ]
+function ComoFunciona({ totem = false }: { totem?: boolean }) {
+  const faz = totem
+    ? [
+        { icone: ScanLine, titulo: 'Reconhece o rosto no portão', texto: 'A câmera identifica a pessoa sozinha e registra entrada e saída na hora — sem ninguém segurando o aparelho.' },
+        { icone: ClipboardCheck, titulo: 'QR Code como alternativa', texto: 'Se o rosto não for reconhecido, a mesma câmera também lê o QR da credencial — sem precisar trocar de tela.' },
+        { icone: KeyRound, titulo: 'Entra com login de totem', texto: 'Login e senha já saem prontos ao cadastrar (ex.: "totem1") — configure uma vez no tablet fixo do portão.' },
+      ]
+    : [
+        { icone: ScanLine, titulo: 'Lê o QR no portão', texto: 'Escaneia a credencial da equipe e registra entrada e saída na hora.' },
+        { icone: ClipboardCheck, titulo: 'Registra ponto no lugar da pessoa', texto: 'Quando o QR não abre ou o celular morreu: acha a pessoa, tira a foto do rosto e registra. Fica gravado quem registrou.' },
+        { icone: KeyRound, titulo: 'Entra com o próprio CPF', texto: 'Recebe um WhatsApp com um link para criar a senha. Depois entra com CPF e senha — não precisa de senha de admin.' },
+      ]
 
   return (
     <Secao
       tom="acento"
       icone={<ShieldCheck className="w-3.5 h-3.5" />}
-      titulo="O que o porteiro faz"
-      descricao="No sistema esse acesso se chama “operador de portão”"
+      titulo={totem ? 'O que o totem faz' : 'O que o porteiro faz'}
+      descricao={totem ? 'No sistema, o totem é um "operador de portão" com login de aparelho' : 'No sistema esse acesso se chama “operador de portão”'}
       corpoClassName="p-5 space-y-4"
     >
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -128,10 +138,9 @@ function ComoFunciona() {
       </div>
 
       <p className="text-slate-400 text-xs">
-        O porteiro pertence à <strong>organização</strong>, não a um evento: a mesma pessoa cobre o
-        portão de vários eventos do mesmo cliente sem precisar de um acesso novo a cada vez. Quando
-        o trabalho acabar, marque como <strong>Inativo</strong> em vez de excluir — o histórico das
-        batidas que ela registrou continua de pé.
+        {totem
+          ? <>O totem pertence à <strong>organização</strong>, não a um evento: o mesmo tablet pode servir mais de um evento do mesmo cliente com o tempo. Quando não for mais usado, marque como <strong>Inativo</strong> em vez de excluir — o histórico das batidas que ele registrou continua de pé.</>
+          : <>O porteiro pertence à <strong>organização</strong>, não a um evento: a mesma pessoa cobre o portão de vários eventos do mesmo cliente sem precisar de um acesso novo a cada vez. Quando o trabalho acabar, marque como <strong>Inativo</strong> em vez de excluir — o histórico das batidas que ela registrou continua de pé.</>}
       </p>
     </Secao>
   )

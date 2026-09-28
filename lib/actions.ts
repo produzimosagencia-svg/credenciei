@@ -1131,19 +1131,6 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
 }
 
 /**
- * Sem caracteres ambíguos (0/O, 1/l/I) — a senha é lida na tela de um
- * tablet por alguém montando o portão, não copiada de um gerenciador de
- * senhas.
- */
-const ALFABETO_SENHA_TOTEM = 'abcdefghjkmnpqrstuvwxyz23456789'
-function gerarSenhaTotem(tamanho = 8): string {
-  const bytes = randomBytes(tamanho)
-  let senha = ''
-  for (let i = 0; i < tamanho; i++) senha += ALFABETO_SENHA_TOTEM[bytes[i] % ALFABETO_SENHA_TOTEM.length]
-  return senha
-}
-
-/**
  * Cadastra um totem — um TABLET/CELULAR FIXO no portão, não uma pessoa.
  *
  * Só pra eventos em Biometria + QR Code (pedido do Juan, 27/09/2026: "esse
@@ -1152,6 +1139,12 @@ function gerarSenhaTotem(tamanho = 8): string {
  * dos operadores de portão comuns, ver o comentário em
  * `OperadorPortariaCard.tsx`) — sem pedir nome, CPF nem telefone: um
  * aparelho não tem nada disso, e não tem WhatsApp pra receber convite.
+ *
+ * A SENHA É O MESMO NOME DO LOGIN (pedido do Juan, 28/09/2026) — quem
+ * configura o tablet digita "totem1" duas vezes, sem precisar anotar nada à
+ * parte. É uma conta `operador_portao` (só lê QR/rosto e registra ponto,
+ * sem acesso a editar evento, equipe ou usuários) — o mesmo baixo risco já
+ * aceito pra essa role justifica a troca por simplicidade aqui.
  *
  * Reaproveita o login por NOME DE USUÁRIO que já existia pro formato antigo
  * de supervisor (`usuarioParaEmail`, lib/usuario.ts) — a tela de login já
@@ -1194,7 +1187,7 @@ export async function criarTotem(eventoId: string) {
   for (let tentativas = 0; tentativas < 5; tentativas++) {
     const usuario = `totem${proximoNumero}`
     const email = usuarioParaEmail(usuario)
-    const senha = gerarSenhaTotem()
+    const senha = usuario
 
     const { data: user, error } = await admin.auth.admin.createUser({ email, password: senha, email_confirm: true })
     if (error) {
@@ -1227,6 +1220,49 @@ export async function criarTotem(eventoId: string) {
   }
 
   throw new Error('Não foi possível gerar um login de totem disponível. Tente de novo.')
+}
+
+/**
+ * Edita um totem — SÓ status e senha, nunca nome/CPF/telefone.
+ *
+ * Bug real encontrado em 28/09/2026: editar um totem caía no mesmo formulário
+ * de operador humano, que EXIGE CPF de 11 dígitos e telefone — `editarSupervisor`
+ * até recalcula o e-mail a partir do CPF digitado, o que trocaria o login
+ * `totemN@...` por um baseado em CPF, quebrando o acesso do tablet. Um totem
+ * não tem nenhum desses dados, então precisa do próprio caminho.
+ */
+export async function editarTotem(id: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
+
+    const admin = getAdminSupabase()
+    const { data: alvo } = await admin.from('perfis').select('organizacao_id, email, role').eq('id', id).single()
+    if (!alvo) throw new Error('Totem não encontrado')
+    if (alvo.role !== 'operador_portao' || !/^totem\d+@/.test(alvo.email ?? '')) {
+      throw new Error('Este acesso não é um totem.')
+    }
+    if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+      throw new Error('Sem permissão sobre este totem')
+    }
+
+    const ativo = formData.get('ativo') !== 'false'
+    const novaSenha = (formData.get('senha') as string) || ''
+    if (novaSenha && novaSenha.length < 6) throw new Error('Senha muito curta. Use ao menos 6 caracteres.')
+
+    const { error: erroPerfil } = await admin.from('perfis').update({ ativo }).eq('id', id)
+    if (erroPerfil) throw new Error(mensagemAmigavel(erroPerfil))
+
+    if (novaSenha) {
+      const { error: erroSenha } = await admin.auth.admin.updateUserById(id, { password: novaSenha })
+      if (erroSenha) throw new Error(mensagemAuth(erroSenha.message))
+    }
+
+    revalidatePath('/admin/usuarios')
+    return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
 }
 
 // ─── Suporte de Sistema ─────────────────────────────────────────────────────
