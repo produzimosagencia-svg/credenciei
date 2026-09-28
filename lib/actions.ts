@@ -4377,11 +4377,13 @@ type Resolucao =
       /** Dia principal do evento — é o que dispara o descredenciamento na saída. */
       diaPrincipal: boolean
       /**
-       * É o ÚLTIMO dia principal do evento (não existe outro depois dele)?
-       * Um festival de mais de uma noite pode ter vários dias principais —
-       * só a saída do último de fato encerra o ciclo da pessoa no evento.
-       * Sem isto, a saída de sexta descredenciaria todo mundo antes da
-       * segunda noite nem começar.
+       * É o ÚLTIMO dia de trabalho do evento (não existe NENHUM outro depois
+       * dele, de nenhum tipo)? Um festival de mais de uma noite pode ter
+       * vários dias principais — só a saída do último de fato encerra o
+       * ciclo da pessoa no evento. Sem isto, a saída de sexta descredenciaria
+       * todo mundo antes da segunda noite nem começar. Também vale pra quem
+       * tem montagem/desmontagem depois do último dia principal — ver
+       * `haMaisDiasDeTrabalhoDepois`.
        */
       ultimoDiaPrincipal: boolean
       /** A saída de agora já é no horário de saída do dia — ver `ehSaidaFinal`. */
@@ -4409,18 +4411,25 @@ function ehSaidaFinal(
 }
 
 /**
- * Existe outro dia principal (tipo='principal', não cancelado) depois de
+ * Existe outro dia de trabalho (qualquer tipo, não cancelado) depois de
  * `dataRef`, neste evento?
  *
  * Pra um evento de um dia só (o caso de sempre) isto é sempre `false` — a
- * consulta não acha nada depois do único dia principal que existe.
+ * consulta não acha nada depois do único dia que existe.
+ *
+ * Até 28/09/2026 só contava dias tipo='principal' — certo pro festival de
+ * duas noites (não descredenciar na saída da primeira), mas errado pra
+ * quem tem MONTAGEM/DESMONTAGEM depois do último dia principal: evento de
+ * 27 a 30 com desmontagem só no 30 fechava o vínculo de quem saiu no 27,
+ * mesmo ela tendo volta marcada pra desmontagem. Achado num teste ao vivo
+ * do Juan. Agora conta qualquer dia da escala — de qualquer tipo — que
+ * ainda vem depois: só é "sem volta" quando não sobra mais nenhum.
  */
-async function haMaisDiasPrincipaisDepois(eventoId: string, dataRef: string): Promise<boolean> {
+async function haMaisDiasDeTrabalhoDepois(eventoId: string, dataRef: string): Promise<boolean> {
   const { data } = await supabaseAdmin
     .from('jornada_dias')
     .select('id')
     .eq('evento_id', eventoId)
-    .eq('tipo', 'principal')
     .eq('cancelado', false)
     .gt('data', dataRef)
     .limit(1)
@@ -4468,7 +4477,7 @@ async function resolverRegistro(
   /*
    * As três consultas que dependem só do dia saem juntas — em série eram
    * três idas ao banco a mais em cada leitura do portão. As checagens abaixo
-   * continuam na mesma ordem de sempre; `haMaisDiasPrincipaisDepois` só é
+   * continuam na mesma ordem de sempre; `haMaisDiasDeTrabalhoDepois` só é
    * usado quando o dia é principal, mas buscar à toa custa menos que esperar.
    */
   const [dia, { data: jaExiste }, haMaisDepois] = await Promise.all([
@@ -4481,7 +4490,7 @@ async function resolverRegistro(
       .eq('tipo', momento)
       .eq('data_ref', dataRef)
       .limit(1),
-    haMaisDiasPrincipaisDepois(evento.id, dataRef),
+    haMaisDiasDeTrabalhoDepois(evento.id, dataRef),
   ])
 
   if (momento === 'meio') {
@@ -4643,7 +4652,7 @@ async function diaDeReferencia(
 
   const dia = await diaDeTrabalho(evento.id, dataRef)
   const diaPrincipal = dia?.tipo === 'principal'
-  const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasPrincipaisDepois(evento.id, dataRef)) : false
+  const ultimoDiaPrincipal = diaPrincipal ? !(await haMaisDiasDeTrabalhoDepois(evento.id, dataRef)) : false
   // Sem o horário de saída do evento em mãos, usa o do dia (a noite do
   // festival tem o próprio) — ver `ehSaidaFinal`.
   const saidaFinal = ehSaidaFinal(evento as { janela_fim_inicio?: string | null }, dia, agora)
