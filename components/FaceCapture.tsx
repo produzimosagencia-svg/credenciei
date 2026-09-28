@@ -301,20 +301,30 @@ export default function FaceCapture({
           </div>
         </div>
       ) : (
-        // A câmera ocupa o meio da tela inteiro — não uma caixinha pequena
-        // flutuando num fundo preto vazio.
-        <div className="relative flex-1 mx-4 mb-2 rounded-3xl overflow-hidden bg-slate-900">
-          <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-            <div className={`w-[68%] max-w-[280px] aspect-[3/4] border-4 rounded-[50%] transition-colors duration-300 ${
-              fase === 'pisque' ? 'border-amber-400 animate-pulse' : fase === 'processando' ? 'border-green-400' : 'border-white/70'
-            }`} />
-          </div>
-          {(fase === 'carregando' || fase === 'processando') && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <Loader2 className="w-10 h-10 text-white animate-spin" />
+        /*
+         * Proporção e largura máxima travadas — sem isso, numa tela larga
+         * (desktop, tablet deitado) o vídeo esticava pra ocupar o espaço
+         * inteiro e virava um retângulo bem largo e raso, com o rosto
+         * espremido (reclamação real do Juan, 28/09/2026: "muito feio pelo
+         * computador"). Com o aspecto travado, o MESMO layout funciona bem
+         * num celular estreito (ocupa a largura toda) e numa tela grande
+         * (centraliza, sem esticar) — não são dois desenhos, é um só que
+         * se adapta.
+         */
+        <div className="flex-1 min-h-0 flex items-center justify-center px-4 pb-2">
+          <div className="relative w-full max-w-md aspect-[3/4] rounded-3xl overflow-hidden bg-slate-900">
+            <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div className={`w-[68%] max-w-[280px] aspect-[3/4] border-4 rounded-[50%] transition-colors duration-300 ${
+                fase === 'pisque' ? 'border-amber-400 animate-pulse' : fase === 'processando' ? 'border-green-400' : 'border-white/70'
+              }`} />
             </div>
-          )}
+            {(fase === 'carregando' || fase === 'processando') && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <Loader2 className="w-10 h-10 text-white animate-spin" />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
