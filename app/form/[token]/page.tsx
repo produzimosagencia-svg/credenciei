@@ -51,6 +51,21 @@ export default async function FormPage({
   if (!fornecedor) notFound()
 
   const evento = (fornecedor.eventos as any)
+
+  /*
+   * Biometria — consulta À PARTE e tolerante, mesmo padrão do resto do
+   * sistema: esta página é a PORTA DE ENTRADA de toda a equipe, e pedir uma
+   * coluna que ainda não existe no select principal derrubaria o cadastro
+   * inteiro por causa de um recurso que a maioria dos eventos nem liga.
+   */
+  let biometriaHabilitada = false
+  if (evento?.id) {
+    try {
+      const { data } = await supabase
+        .from('eventos').select('metodo_identificacao').eq('id', evento.id).maybeSingle()
+      biometriaHabilitada = data?.metodo_identificacao === 'biometria' || data?.metodo_identificacao === 'biometria_qr'
+    } catch { /* biometria ainda não migrada */ }
+  }
   const autorizacao = individual
     ? await consultarAutorizacaoCadastroIndividual(individual)
     : null
@@ -116,6 +131,7 @@ export default async function FormPage({
             origem={origem}
             cpfInicial={cpf}
             autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
+            biometriaHabilitada={biometriaHabilitada}
           />
         </div>
       </div>

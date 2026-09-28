@@ -6126,7 +6126,23 @@ export async function registrarPresencaLivre(
  */
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
-  dados: { nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string; consentimento?: boolean; fotoBase64?: string; origem?: string },
+  dados: {
+    nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string
+    consentimento?: boolean; fotoBase64?: string; origem?: string
+    /**
+     * O rosto (128 números), quando o evento usa biometria e a pessoa
+     * aceitou cadastrar — pedido do Juan (27/09/2026): "a pessoa preenche o
+     * formulário e o próximo passo é biometrar o rosto".
+     *
+     * Chega JUNTO com o resto do cadastro, na MESMA chamada — de propósito.
+     * Uma ação pública separada que aceitasse um `funcionarioId` cru,
+     * chamada DEPOIS de criar o registro, aceitaria o rosto de qualquer id
+     * que alguém adivinhasse (IDOR). Aqui não há esse risco: o template só é
+     * gravado no MESMO INSTANTE em que o registro nasce, preso ao id que
+     * acabou de ser gerado dentro desta própria função.
+     */
+    biometriaDescritor?: number[]
+  },
   autorizacaoIndividual?: string,
 ): Promise<{ qrToken?: string; status?: StatusCredenciamento; error?: string }> {
   const { data: fornecedor } = await supabaseAdmin
@@ -6291,6 +6307,31 @@ export async function cadastrarFuncionarioPublico(
       return { error: 'Erro ao enviar a foto. Tente novamente.' }
     }
     await supabaseAdmin.from('funcionarios').update({ foto_perfil_path: path }).eq('id', data.id)
+  }
+
+  /*
+   * Biometria — SÓ SE o evento usa (o próprio `dados.biometriaDescritor` já
+   * vem vazio quando não usa: a tela nem oferece a câmera nesse caso). Falha
+   * aqui NUNCA desfaz o cadastro — ao contrário da foto (que É o cadastro
+   * pedindo pra tentar de novo), o rosto é um EXTRA: a pessoa sempre pode
+   * cadastrar depois, no portão, ou simplesmente usar o QR Code.
+   */
+  if (descritorValido(dados.biometriaDescritor)) {
+    try {
+      await supabaseAdmin.from('biometria_consentimentos').insert([{
+        funcionario_id: data.id, evento_id: fornecedor.evento_id,
+        // Sem operador — quem aceitou foi a própria pessoa, no formulário.
+        registrado_por_perfil_id: null,
+      }])
+      const { error: erroTemplate } = await supabaseAdmin.from('biometria_templates').upsert([{
+        funcionario_id: data.id, evento_id: fornecedor.evento_id, vetor: dados.biometriaDescritor,
+      }], { onConflict: 'funcionario_id,evento_id' })
+      if (erroTemplate) console.error('[cadastrarFuncionarioPublico] biometria não gravada', erroTemplate.message)
+    } catch (e) {
+      // Biometria ainda não migrada, ou outra falha — o cadastro (a parte
+      // que importa de verdade) já está feito e não pode ser desfeito por isso.
+      console.error('[cadastrarFuncionarioPublico] biometria falhou', e)
+    }
   }
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))

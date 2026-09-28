@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock } from 'lucide-react'
+import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock, ScanFace } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
@@ -9,6 +9,7 @@ import { CIDADES_ES } from '@/lib/cidades'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { useCampoFormatado } from '@/components/inputs'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
+import FaceCapture from '@/components/FaceCapture'
 
 /**
  * Onde o app fica nas lojas.
@@ -55,7 +56,7 @@ function comprimir(file: File): Promise<string> {
 }
 
 export default function FormularioFuncionario({
-  fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual,
+  fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual, biometriaHabilitada = false,
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
@@ -64,6 +65,13 @@ export default function FormularioFuncionario({
   cpfInicial?: string
   /** Segredo pessoal validado outra vez no servidor ao concluir. */
   autorizacaoIndividual?: string
+  /**
+   * O evento usa biometria — pedido do Juan (27/09/2026): "a pessoa preenche
+   * o formulário e o próximo passo é biometrar o rosto". Sempre OPCIONAL
+   * (botão "Pular"): quem não quiser, ou não conseguir usar a câmera, segue
+   * o cadastro normalmente e usa o QR Code sempre.
+   */
+  biometriaHabilitada?: boolean
 }) {
   const router = useRouter()
   const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
@@ -76,6 +84,11 @@ export default function FormularioFuncionario({
   const [autofill, setAutofill] = useState(false)
   const [erroCpf, setErroCpf] = useState<string | null>(null)
   const [erroEnvio, setErroEnvio] = useState<string | null>(null)
+  // Biometria: mostra a câmera ENTRE preencher e enviar de verdade — nunca
+  // trava o cadastro (sempre dá pra pular).
+  // null = etapa fechada · 'intro' = explicação, antes da câmera · 'camera' = capturando
+  const [etapaBiometria, setEtapaBiometria] = useState<'intro' | 'camera' | null>(null)
+  const [jaPassouPelaBiometria, setJaPassouPelaBiometria] = useState(false)
   const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   /*
@@ -160,12 +173,26 @@ export default function FormularioFuncionario({
     }
   }
 
+  /**
+   * Antes de enviar de verdade: se o evento usa biometria e a pessoa ainda
+   * não passou por aquela etapa, MOSTRA a câmera em vez de enviar — é o
+   * "próximo passo" pedido pelo Juan. Segunda vez (já veio da câmera, com
+   * rosto capturado OU depois de "Pular"), envia direto.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validarCpf(form.cpf)) {
       setErroCpf('CPF inválido. Confira os números.')
       return
     }
+    if (biometriaHabilitada && !jaPassouPelaBiometria) {
+      setEtapaBiometria('intro')
+      return
+    }
+    await enviarCadastro(null)
+  }
+
+  const enviarCadastro = async (descritorRosto: number[] | null) => {
     setLoading(true)
     setErroEnvio(null)
     /*
@@ -186,6 +213,7 @@ export default function FormularioFuncionario({
         consentimento,
         chavePix: form.chavePix,
         fotoBase64: foto ?? undefined,
+        biometriaDescritor: descritorRosto ?? undefined,
       }, autorizacaoIndividual)
 
       if (res.qrToken) {
@@ -210,6 +238,58 @@ export default function FormularioFuncionario({
     } finally {
       setLoading(false)
     }
+  }
+
+  /*
+   * A etapa de biometria — entre preencher e enviar de verdade. SEMPRE dá
+   * pra pular, nos dois pontos (aqui na explicação, e dentro da câmera):
+   * quem não quiser, ou cuja câmera não abrir, segue o cadastro normalmente
+   * — o QR Code sempre funciona.
+   */
+  const pularBiometria = () => {
+    setJaPassouPelaBiometria(true)
+    setEtapaBiometria(null)
+    void enviarCadastro(null)
+  }
+
+  if (etapaBiometria === 'intro') {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center p-6 gap-5 text-center">
+        <ScanFace className="w-12 h-12 text-brand-400" />
+        <div className="max-w-sm space-y-2">
+          <p className="text-white text-lg font-bold">Quase lá — registre seu rosto</p>
+          <p className="text-slate-300 text-sm leading-relaxed">
+            Com isto, você entra e sai do evento só olhando para a câmera do portão, sem precisar mostrar o QR Code
+            toda vez. É opcional: se preferir, pule esta etapa e use só o QR Code normalmente.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2.5 w-full max-w-xs">
+          <button
+            onClick={() => setEtapaBiometria('camera')}
+            className="w-full bg-brand-500 text-white font-bold rounded-2xl py-4 active:scale-95 transition-all"
+          >
+            Registrar meu rosto
+          </button>
+          <button onClick={pularBiometria} className="w-full text-slate-400 text-sm font-semibold py-2">
+            Pular esta etapa
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (etapaBiometria === 'camera') {
+    return (
+      <FaceCapture
+        instrucao="Olhe para a câmera para cadastrar seu rosto"
+        onCancelar={pularBiometria}
+        onCaptura={({ descritor }) => {
+          setJaPassouPelaBiometria(true)
+          setEtapaBiometria(null)
+          void enviarCadastro(descritor)
+        }}
+      />
+    )
   }
 
   if (qrToken) {
