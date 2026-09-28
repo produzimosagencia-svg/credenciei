@@ -5392,15 +5392,6 @@ async function autorizarPresenca(args: {
   if (func.ativo === false) {
     return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do setor antes de registrar.', funcionario: funcInfo }
   }
-  // Já cumpriu o evento e saiu: o crachá não vale mais aqui. O histórico
-  // continua inteiro — o que acabou foi o vínculo com ESTE evento.
-  if (func.descredenciado_em) {
-    return {
-      success: false,
-      message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do setor.`,
-      funcionario: funcInfo,
-    }
-  }
 
   /*
    * CPF barrado pelo supervisor do setor (ver `bloquearCpf`).
@@ -5441,6 +5432,27 @@ async function autorizarPresenca(args: {
   }
 
   /*
+   * DESCREDENCIADO — mas só bloqueia quando NÃO é uma volta do mesmo dia.
+   *
+   * Bug real (28/09/2026, achado num teste ao vivo do Juan): a saída
+   * "final" é decidida por HORÁRIO (`ehSaidaFinal` — depois que a janela de
+   * saída abre), não por intenção. Quem sai pra uma pausa depois desse
+   * horário e volta no MESMO dia batia direto nesta trava antes mesmo de
+   * `inferirMomentoQR` ter a chance de reconhecer que era uma volta —
+   * reabertura de turno e descredenciamento andavam em paralelo, e o mais
+   * severo sempre vencia. Por isso a checagem entra AQUI, depois de saber
+   * se `decidido` é uma reabertura: reabertura prova, pelo próprio fato de
+   * estar acontecendo, que aquela saída não era definitiva.
+   */
+  if (func.descredenciado_em && !('reabrir' in decidido)) {
+    return {
+      success: false,
+      message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do setor.`,
+      funcionario: funcInfo,
+    }
+  }
+
+  /*
    * A VOLTA DE QUEM JÁ TINHA IDO EMBORA HOJE.
    *
    * Apaga a saída daquele dia e o turno fica aberto de novo, com a chegada
@@ -5470,6 +5482,11 @@ async function autorizarPresenca(args: {
       .from('registros').delete().eq('id', decidido.reabrir.id)
     if (erroReabrir) {
       return { success: false, message: 'Não consegui reabrir o turno desta pessoa. Tente de novo.', funcionario: funcInfo }
+    }
+    // A saída que reabriu tinha descredenciado por engano (ver o comentário
+    // acima) — desfaz junto, senão a PRÓXIMA saída trava tudo de novo.
+    if (func.descredenciado_em) {
+      await supabaseAdmin.from('funcionarios').update({ descredenciado_em: null, descredenciado_por: null }).eq('id', func.id)
     }
 
     // A saída apagada não some: fica aqui, com horário e com quem leu o QR.

@@ -43,6 +43,16 @@ const TEMPLATES_AUTENTICACAO = new Set([
 const QTD_VARIAVEIS_BODY: Record<string, number> = {
   veiculo_cadastrado: 2,
   alerta_supervisor_credenciamento: 4,
+  /*
+   * BUG REAL encontrado em 28/09/2026: `aviso_dia_evento` (9 variáveis
+   * aprovadas na Meta) e `boas_vindas_funcionario` (6) passaram a receber
+   * 11 e 7 `params` depois do trabalho de biometria — os itens extras
+   * (texto condicional de acesso, só pro Evolution/log) iam junto pro
+   * corpo da Meta, que rejeita a contagem errada. As duas mensagens
+   * provavelmente estavam falhando silenciosamente em produção.
+   */
+  aviso_dia_evento: 9,
+  boas_vindas_funcionario: 6,
 }
 
 export type ResultadoEnvio = {
