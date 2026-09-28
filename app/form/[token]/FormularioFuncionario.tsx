@@ -84,6 +84,13 @@ export default function FormularioFuncionario({
   const [autofill, setAutofill] = useState(false)
   const [erroCpf, setErroCpf] = useState<string | null>(null)
   const [erroEnvio, setErroEnvio] = useState<string | null>(null)
+  /*
+   * Tela verde "Biometria cadastrada!" — entre o cadastro do rosto e a tela
+   * de "aguardando autorização" (pedido do Juan, 27/09/2026). Só liga depois
+   * que o SERVIDOR confirmar que gravou tudo (`enviarCadastro`, ao receber
+   * `qrToken`) — nunca antes, senão a tela mentiria se o envio falhasse.
+   */
+  const [biometriaConfirmada, setBiometriaConfirmada] = useState(false)
   // Biometria: mostra a câmera ENTRE preencher e enviar de verdade — nunca
   // trava o cadastro (sempre dá pra pular).
   // null = etapa fechada · 'intro' = explicação, antes da câmera · 'camera' = capturando
@@ -230,6 +237,8 @@ export default function FormularioFuncionario({
         }
         setStatusEnvio(res.status ?? 'pendente')
         setQrToken(res.qrToken)
+        // Só quando a pessoa DE FATO cadastrou o rosto agora (não quando pulou).
+        if (descritorRosto) setBiometriaConfirmada(true)
       } else {
         setErroEnvio(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
       }
@@ -289,6 +298,34 @@ export default function FormularioFuncionario({
           void enviarCadastro(descritor)
         }}
       />
+    )
+  }
+
+  /*
+   * "Biometria cadastrada!" — entre o rosto (já confirmado pelo servidor) e
+   * a tela de status normal (pendente/aprovado). Um passo, uma confirmação
+   * clara, antes de seguir pro que vem depois (pedido do Juan, 27/09/2026).
+   */
+  if (biometriaConfirmada) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm">
+        <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500 rounded-2xl mb-2 shadow-lg shadow-green-200">
+          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-slate-800 font-bold text-xl">Biometria cadastrada com sucesso!</h2>
+        <p className="text-slate-500 text-sm">
+          Seu rosto já está registrado para este evento. A partir de agora você pode entrar e sair só olhando
+          para a câmera do portão — sem precisar mostrar o QR Code toda vez.
+        </p>
+        <button
+          onClick={() => setBiometriaConfirmada(false)}
+          className="block w-full btn btn-primario btn-lg"
+        >
+          Continuar →
+        </button>
+      </div>
     )
   }
 
