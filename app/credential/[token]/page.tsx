@@ -481,11 +481,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 * mostrar o QR Code ou não.
                 */}
               {metodoAcesso !== 'qr' && (
-                <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 space-y-1.5">
-                  <p className="flex items-center gap-1.5 text-brand-700 font-bold text-sm">
-                    <ScanFace className="w-4 h-4 shrink-0" /> Reconhecimento facial
+                <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 space-y-2">
+                  <p className="flex items-center gap-2 text-brand-700 font-bold text-base">
+                    <ScanFace className="w-5 h-5 shrink-0" /> Reconhecimento facial
                   </p>
-                  <p className="text-brand-900/80 text-xs leading-snug">
+                  <p className="text-brand-900/80 text-sm leading-relaxed">
                     Seu acesso será feito por reconhecimento facial. No dia do evento, dirija-se a{' '}
                     <strong>{evento?.local?.trim() || 'o local do credenciamento'}</strong> e procure a equipe.
                     Posicione-se em frente ao tablet quando for chamado e aguarde a confirmação.

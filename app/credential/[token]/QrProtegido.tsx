@@ -115,7 +115,7 @@ export default function QrProtegido(
         </div>
       </div>
 
-      <p className="text-slate-400 text-xs mt-2">
+      <p className={`text-slate-400 mt-2 ${metodoAcesso === 'qr' ? 'text-xs' : 'text-sm leading-relaxed'}`}>
         {metodoAcesso === 'qr' && <>Apresente este QR code na <strong>entrada</strong> e na <strong>saída</strong> do evento</>}
         {metodoAcesso === 'biometria' && 'QR Code de reserva — use apenas se a equipe pedir'}
         {metodoAcesso === 'biometria_qr' && 'Use este QR Code se a equipe pedir, como alternativa ao reconhecimento facial'}

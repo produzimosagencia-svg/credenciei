@@ -845,7 +845,7 @@ function Cartao({
           </div>
           <div className="min-w-0">
             <p className="text-blue-800 font-bold text-sm">{info.label} — reconhecimento facial no portão</p>
-            <p className="text-blue-600 text-xs">
+            <p className="text-blue-600 text-sm leading-snug">
               Procure a equipe e posicione-se em frente ao tablet
               {metodoAcesso === 'biometria_qr' ? ', ou mostre o QR acima' : ''} • {janela}
             </p>
