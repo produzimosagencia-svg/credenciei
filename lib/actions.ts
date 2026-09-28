@@ -4688,33 +4688,12 @@ async function sincronizarEndereco(registroId: string, lat: number, lng: number)
 }
 
 /**
- * Encerra o vínculo da pessoa com AQUELE evento.
+ * Recoloca alguém no evento depois de um descredenciamento.
  *
- * ⚠️ Descredenciar NÃO apaga ninguém. A linha em `funcionarios` é o que mantém
- * a pessoa na base geral (que é agregada por CPF a partir dela) e o que segura
- * o histórico de batidas pelo `funcionario_id`. Apagar aqui destruiria o
- * histórico do evento junto — inclusive o que sustenta o pagamento.
- *
- * O que muda é só um carimbo de data: a pessoa sai das listas de credenciados
- * daquele evento e o QR dela para de ser aceito ali. Ela continua na base,
- * continua com todo o histórico, e pode ser credenciada em outro evento
- * amanhã — o vínculo é por evento, não global.
- */
-async function descredenciar(funcionarioId: string, perfilId: string | null) {
-  const { error } = await supabaseAdmin
-    .from('funcionarios')
-    .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfilId })
-    .eq('id', funcionarioId)
-    .is('descredenciado_em', null) // idempotente: não reescreve a data original
-  if (error) console.error('[descredenciar] falhou:', error)
-}
-
-/**
- * Recoloca alguém no evento depois de um descredenciamento indevido.
- *
- * Existe porque a saída no dia principal descredencia sozinha: se o operador
- * escaneou a pessoa errada, ou ela precisou voltar ao posto, sem isto o único
- * jeito de desfazer seria mexer no banco à mão.
+ * Desfaz o que `descredenciarFuncionario` (abaixo) fez de propósito — a
+ * saída não descredencia mais sozinha (ver o comentário em
+ * `autorizarPresenca`), então hoje isto só desfaz uma remoção manual, feita
+ * de engano ou porque a pessoa precisou voltar ao posto.
  */
 /**
  * Tira uma pessoa da equipe do setor — a "exclusão" do supervisor.
@@ -4994,8 +4973,6 @@ export type ResultadoScan = {
   previa?: boolean
   /** Na prévia: é a volta de quem já tinha saído hoje (a saída vira pausa). */
   volta?: boolean
-  /** Na prévia: esta saída encerra a participação no evento (descredencia). */
-  encerra?: boolean
   /** Só pro histórico de leituras: o operador cancelou na confirmação. */
   cancelado?: boolean
   /**
@@ -5550,14 +5527,9 @@ async function autorizarPresenca(args: {
 
   // Prévia: tudo conferido, nada gravado — o operador confirma antes.
   if (apenasConferir) {
-    const encerra = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal && resolucao.saidaFinal
     return {
-      success: true, previa: true, momento, encerra, funcionario: funcInfo,
-      message: momento === 'entrada'
-        ? 'Confirme para registrar a ENTRADA.'
-        : encerra
-          ? 'Confirme para registrar a SAÍDA. Esta saída encerra a participação no evento.'
-          : 'Confirme para registrar a SAÍDA.',
+      success: true, previa: true, momento, funcionario: funcInfo,
+      message: momento === 'entrada' ? 'Confirme para registrar a ENTRADA.' : 'Confirme para registrar a SAÍDA.',
     }
   }
 
@@ -5595,25 +5567,23 @@ async function autorizarPresenca(args: {
   }
 
   /*
-   * Saída no ÚLTIMO DIA PRINCIPAL fecha o ciclo da pessoa no evento.
+   * NUNCA MAIS descredencia sozinho na saída — nem no último dia principal.
    *
-   * Só no dia principal: nos dias de preparação a pessoa sai e volta no dia
-   * seguinte, e descredenciar ali a impediria de bater o ponto na montagem do
-   * dia seguinte. E só no ÚLTIMO: um festival de mais de uma noite (cada
-   * noite marcada como principal) não pode descredenciar na saída da
-   * primeira noite — a pessoa ainda volta amanhã, e descredenciada ela seria
-   * recusada na entrada da segunda noite.
+   * Existiu até 28/09/2026: a saída do último dia principal fechava o
+   * vínculo, achando que "acabou o show, a pessoa não volta". Três bugs
+   * reais em produção vieram exatamente daqui — pausa no mesmo dia sendo
+   * lida como definitiva, e quem ainda tinha montagem/desmontagem marcada
+   * ficando trancado sem conseguir voltar. Pedido explícito do Juan
+   * (28/09/2026, teste ao vivo): "não pode travar dele credenciar... ele
+   * pode entrar e sair mais de uma vez no mesmo dia, tudo precisa estar
+   * registrado" — toda entrada/saída grava normalmente, sempre, e só o
+   * organizador remove alguém da equipe de propósito (`descredenciarFuncionario`,
+   * o botão "Remover da equipe" no painel do setor).
    */
-  const encerrou = momento === 'fim' && resolucao.diaPrincipal && resolucao.ultimoDiaPrincipal && resolucao.saidaFinal
-  if (encerrou) await descredenciar(func.id, perfil.id)
 
   return {
     success: true,
-    message: momento === 'entrada'
-      ? 'Entrada registrada!'
-      : encerrou
-        ? 'Saída registrada. Descredenciado do evento!'
-        : 'Saída registrada!',
+    message: momento === 'entrada' ? 'Entrada registrada!' : 'Saída registrada!',
     funcionario: funcInfo,
     momento,
   }
@@ -7250,10 +7220,8 @@ export async function registrarPresencaAssistida(
       }).catch(console.error)
     )
   }
-  // Mesma regra do scanner: a saída do ÚLTIMO dia principal fecha o vínculo.
-  if (momento === 'fim' && refAssistido.diaPrincipal && refAssistido.ultimoDiaPrincipal && refAssistido.saidaFinal) {
-    await descredenciar(func.id, perfil.id)
-  }
+  // Mesma regra do scanner: nunca descredencia sozinho na saída — ver o
+  // comentário em `autorizarPresenca`.
 
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
   return { ok: true, nome: func.nome, etapa: etapaEscolhida.rotulo }
