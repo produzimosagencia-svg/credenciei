@@ -21,6 +21,11 @@ import { Camera, CameraOff, Loader2 } from 'lucide-react'
  * revisar isso primeiro (ver docs/estudo-viabilidade.md em
  * c:\Dev\credenciei-biometria, seção 5).
  *
+ * O piscar tem um TETO de espera (`ESPERA_MAXIMA_PISCAR_MS`): passado esse
+ * tempo com um rosto bom na tela, captura mesmo sem ter visto o piscar —
+ * ele vira reforço quando acontece rápido, não uma trava que faz a pessoa
+ * esperar por algo que às vezes ela nem entende que precisa fazer.
+ *
  * Detecção (achou um rosto?) ≠ identificação (é a pessoa X?) ≠ liveness (é
  * uma pessoa de verdade, agora?) — três perguntas diferentes, resolvidas em
  * ordem: 1) `deteccaoUtilizavel`, 2) o piscar (aqui), 3) o match no servidor
@@ -34,6 +39,13 @@ const CAMINHO_MODELOS = '/models'
 const TEMPO_LIMITE_MS = 20_000
 /** EAR (razão de abertura do olho) abaixo disto conta como olho fechado. */
 const LIMIAR_OLHO_FECHADO = 0.22
+/**
+ * Passado isto com um rosto bom na tela e ainda sem piscar, captura assim
+ * mesmo — o piscar vira bônus, não trava mais o reconhecimento (pedido do
+ * Juan, 27/09/2026: "demorando muito"). Continua rejeitando a foto/print
+ * óbvios: sem rosto nenhum, ou mais de um, o tempo nem começa a contar.
+ */
+const ESPERA_MAXIMA_PISCAR_MS = 3_500
 
 export type ResultadoCaptura = { descritor: number[]; qualidade: number }
 
@@ -66,6 +78,8 @@ export default function FaceCapture({
   const intervaloRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const jaCapturouRef = useRef(false)
   const olhoFechadoAlgumaVezRef = useRef(false)
+  /** Desde quando há um rosto ÚNICO e bom na tela — zera se a pessoa sair do quadro. */
+  const rostoBomDesdeRef = useRef<number | null>(null)
 
   useEffect(() => {
     let desmontou = false
@@ -125,29 +139,42 @@ export default function FaceCapture({
         }
 
         const todos = await faceapi.detectAllFaces(videoRef.current, opcoesDeteccao)
-        if (todos.length === 0) { setFase('procurando'); setMensagem(instrucao); return }
-        if (todos.length > 1) { setFase('procurando'); setMensagem('Mais de um rosto na câmera — só uma pessoa por vez.'); return }
+        if (todos.length === 0) { rostoBomDesdeRef.current = null; setFase('procurando'); setMensagem(instrucao); return }
+        if (todos.length > 1) { rostoBomDesdeRef.current = null; setFase('procurando'); setMensagem('Mais de um rosto na câmera — só uma pessoa por vez.'); return }
 
+        /*
+         * SÓ pontos do rosto por enquanto — SEM extrair o vetor de
+         * reconhecimento ainda. É a parte mais pesada de calcular, e não
+         * serve pra nada enquanto só se está checando o piscar; extrair a
+         * cada 350ms, à toa, era o maior peso desnecessário no celular.
+         */
+        const comPontos = await faceapi.detectSingleFace(videoRef.current, opcoesDeteccao).withFaceLandmarks()
+        if (!comPontos) return
+        if (rostoBomDesdeRef.current === null) rostoBomDesdeRef.current = Date.now()
+
+        /*
+         * O piscar de olhos é a prova de vida — mas não pode travar o
+         * reconhecimento pra sempre: passado `ESPERA_MAXIMA_PISCAR_MS` com um
+         * rosto bom na tela, captura mesmo sem ter visto o piscar (pedido do
+         * Juan, 27/09/2026: "demorando muito"). Continua rejeitando foto/print
+         * óbvios — sem rosto nenhum ou mais de um, o relógio nem começa.
+         */
+        const ear = (razaoDoOlho(comPontos.landmarks.getLeftEye()) + razaoDoOlho(comPontos.landmarks.getRightEye())) / 2
+        if (ear < LIMIAR_OLHO_FECHADO) olhoFechadoAlgumaVezRef.current = true
+        const esperandoHaMuitoTempo = Date.now() - (rostoBomDesdeRef.current ?? Date.now()) > ESPERA_MAXIMA_PISCAR_MS
+
+        if (!olhoFechadoAlgumaVezRef.current && !esperandoHaMuitoTempo) {
+          setFase('pisque')
+          setMensagem('Pisque os olhos para confirmar que é você, ao vivo.')
+          return
+        }
+
+        // Só AGORA extrai o vetor — uma vez, na leitura que de fato captura.
         const deteccao = await faceapi
           .detectSingleFace(videoRef.current, opcoesDeteccao)
           .withFaceLandmarks()
           .withFaceDescriptor()
         if (!deteccao) return
-
-        /*
-         * O piscar de olhos: espera até ver pelo menos UM quadro com o olho
-         * fechado. Isso já rejeita a foto parada (nunca pisca) sem exigir
-         * hardware — ver a nota de limitação no topo do arquivo.
-         */
-        const landmarks = deteccao.landmarks
-        const ear = (razaoDoOlho(landmarks.getLeftEye()) + razaoDoOlho(landmarks.getRightEye())) / 2
-        if (ear < LIMIAR_OLHO_FECHADO) olhoFechadoAlgumaVezRef.current = true
-
-        if (!olhoFechadoAlgumaVezRef.current) {
-          setFase('pisque')
-          setMensagem('Pisque os olhos para confirmar que é você, ao vivo.')
-          return
-        }
 
         jaCapturouRef.current = true
         setFase('processando')
@@ -162,42 +189,63 @@ export default function FaceCapture({
   }, [])
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center p-4 gap-5">
-      <div className="relative w-full max-w-sm aspect-square rounded-2xl overflow-hidden bg-black">
-        {fase === 'erro' ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
-            <CameraOff className="w-10 h-10 text-red-400" />
-            <p className="text-red-200 text-sm">{mensagem}</p>
-          </div>
-        ) : (
-          <>
-            <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className={`w-56 h-64 border-4 rounded-[50%] opacity-70 transition-colors ${
-                fase === 'pisque' ? 'border-amber-400' : fase === 'processando' ? 'border-green-400' : 'border-white/60'
-              }`} />
-            </div>
-            {(fase === 'carregando' || fase === 'processando') && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                <Loader2 className="w-10 h-10 text-white animate-spin" />
-              </div>
-            )}
-          </>
-        )}
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Cabeçalho — sem ele, o topo da tela ficava um vazio preto sem
+          explicar o que está acontecendo (pedido do Juan, 27/09/2026: "esse
+          template tá muito feio"). `env(safe-area-inset-top)` afasta do
+          notch/relógio do celular. */}
+      <div
+        className="flex items-center justify-center gap-2 text-white/70 text-sm font-semibold shrink-0"
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)', paddingBottom: '14px' }}
+      >
+        <Camera className="w-4 h-4" /> Reconhecimento facial
       </div>
 
-      <p className="text-white text-center text-base font-semibold flex items-center gap-2 max-w-sm">
-        {fase !== 'erro' && <Camera className="w-4 h-4 shrink-0 opacity-70" />}
-        {mensagem}
-      </p>
+      {fase === 'erro' ? (
+        // Mesmo cartão do erro de câmera do leitor de QR (ScannerView) — cor,
+        // borda e espaçamento iguais, pra biometria não parecer uma tela à parte.
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-red-950/40 border border-red-800 rounded-xl p-5 text-center">
+            <CameraOff className="w-9 h-9 text-red-400 mx-auto" />
+            <p className="text-red-200 font-semibold text-sm mt-3">A câmera não concluiu</p>
+            <p className="text-red-300/90 text-sm mt-1.5 leading-relaxed">{mensagem}</p>
+          </div>
+        </div>
+      ) : (
+        // A câmera ocupa o meio da tela inteiro — não uma caixinha pequena
+        // flutuando num fundo preto vazio.
+        <div className="relative flex-1 mx-4 mb-2 rounded-3xl overflow-hidden bg-slate-900">
+          <video ref={videoRef} muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className={`w-[68%] max-w-[280px] aspect-[3/4] border-4 rounded-[50%] transition-colors duration-300 ${
+              fase === 'pisque' ? 'border-amber-400 animate-pulse' : fase === 'processando' ? 'border-green-400' : 'border-white/70'
+            }`} />
+          </div>
+          {(fase === 'carregando' || fase === 'processando') && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <Loader2 className="w-10 h-10 text-white animate-spin" />
+            </div>
+          )}
+        </div>
+      )}
 
-      <button
-        type="button"
-        onClick={onCancelar}
-        className="border-2 border-white/50 text-white font-semibold rounded-2xl px-6 py-3 active:scale-95 transition-all"
+      {/* Rodapé — instrução e o botão, com respiro do fundo da tela
+          (barra de gestos do celular). */}
+      <div
+        className="shrink-0 flex flex-col items-center gap-4 px-6"
+        style={{ paddingTop: '18px', paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)' }}
       >
-        Cancelar
-      </button>
+        <p className="text-white text-center text-base font-semibold leading-snug max-w-sm">
+          {mensagem}
+        </p>
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="border-2 border-white/50 text-white font-semibold rounded-2xl px-8 py-3 active:scale-95 transition-all"
+        >
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }

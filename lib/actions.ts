@@ -4835,6 +4835,15 @@ export type ResultadoScan = {
   /** O código lido não é uma credencial válida deste sistema (formato/assinatura). */
   qrInvalido?: boolean
   /**
+   * Biometria SEM MATCH na galeria — a pessoa ainda não cadastrou o rosto
+   * neste evento (ou o rosto captado não bateu com segurança). NÃO é uma
+   * recusa de acesso (pedido do Juan, 27/09/2026: "a pessoa precisa
+   * cadastrar o rosto, o qr code é uma segunda opção") — é diferente de
+   * `qrInvalido`, que cobre outros motivos (evento sem biometria, foto
+   * ruim, sem localização) onde "cadastre o rosto" não faz sentido dizer.
+   */
+  naoIdentificado?: boolean
+  /**
    * PRÉVIA: a leitura foi conferida mas NADA foi gravado — o scanner pede a
    * confirmação do operador (SALVAR / CANCELAR) antes de registrar.
    */
@@ -5697,13 +5706,21 @@ async function validarLeituraFacial(
   if (!match.encontrado) {
     /*
      * NUNCA revela candidatos nem "quase achei fulano" — só que não achou.
-     * A tela oferece tentar de novo ou ir pro QR; o log guarda o motivo
-     * (`match.motivo`) pra métricas, sem apontar pra ninguém.
+     *
+     * NÃO é uma recusa de acesso — na imensa maioria das vezes é a PRIMEIRA
+     * leitura de alguém que ainda não cadastrou o rosto. A biometria continua
+     * sendo a PRIORIDADE mesmo aqui: a mensagem pede pra tentar de novo
+     * primeiro; o QR só aparece como plano B, nunca como o caminho sugerido
+     * (pedido explícito do Juan, 27/09/2026: "a prioridade é a pessoa se
+     * cadastrar com a biometria, qr code é apenas um plano B no dia do
+     * evento"). `naoIdentificado` é o que a tela usa pra mostrar isto sem
+     * cara de erro/rejeição. O log guarda o motivo (`match.motivo`) pra
+     * métricas, sem apontar pra ninguém.
      */
     return semLog({
       success: false,
-      message: MENSAGEM_POR_MOTIVO[match.motivo] ?? 'Não conseguimos identificar seu cadastro.',
-      qrInvalido: true,
+      message: `${MENSAGEM_POR_MOTIVO[match.motivo] ?? 'Não conseguimos identificar seu cadastro.'} Tente de novo, olhando direto pra câmera. Se continuar sem reconhecer, use o QR Code.`,
+      naoIdentificado: true,
     }, match.motivo)
   }
 

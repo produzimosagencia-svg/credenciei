@@ -37,6 +37,8 @@ type ScanResult = {
   previa?: boolean
   volta?: boolean
   encerra?: boolean
+  /** Sem match na galeria — a pessoa ainda não cadastrou o rosto. NÃO é uma recusa de acesso. */
+  naoIdentificado?: boolean
 }
 
 /*
@@ -61,6 +63,9 @@ type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'naoIdentifica
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
+  // Sem match na galeria: NÃO é recusa de acesso, é "ainda não cadastrou o
+  // rosto" — cor e título diferentes de `negado` (pedido do Juan, 27/09/2026).
+  if (r.naoIdentificado) return 'naoIdentificado'
   return 'negado'
 }
 
@@ -69,7 +74,10 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   saida:      { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado: { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
   negado:     { fundo: 'bg-red-600', icone: '✕', titulo: 'ACESSO NEGADO' },
-  naoIdentificado: { fundo: 'bg-red-600', icone: '?', titulo: 'NÃO IDENTIFICADO' },
+  // Azul, não vermelho: não é um erro nem uma rejeição — é o caminho normal
+  // de quem ainda não cadastrou o rosto. O QR aqui é a AÇÃO a tomar, não um
+  // "desista e tente outra coisa".
+  naoIdentificado: { fundo: 'bg-blue-600', icone: '👤', titulo: 'ROSTO AINDA NÃO CADASTRADO' },
 }
 
 export default function FaceScannerView({
@@ -284,6 +292,16 @@ export default function FaceScannerView({
             )}
             <p className="text-lg mt-5 opacity-95 leading-snug">{result.message}</p>
 
+            {/*
+              * A biometria continua sendo a PRIORIDADE mesmo aqui — "tentar
+              * de novo" pelo rosto vem primeiro e cheio. O QR é sempre o
+              * plano B, nunca a sugestão principal (pedido explícito do
+              * Juan, 27/09/2026: "a prioridade é a pessoa se cadastrar com
+              * a biometria, qr code é apenas um plano B no dia do evento") —
+              * inclusive quando o rosto ainda não foi reconhecido: o botão
+              * de QR aqui é só pra não deixar ninguém travado, não é o
+              * caminho que o sistema empurra.
+              */}
             <div className="mt-8 space-y-3 max-w-xs mx-auto">
               <button onClick={reiniciar} className="w-full bg-white text-slate-900 font-extrabold rounded-2xl py-4 text-lg shadow-lg active:scale-95 transition-all">
                 TENTAR NOVAMENTE
