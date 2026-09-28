@@ -106,7 +106,7 @@ type Pessoa = {
 export default async function EncontrarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; cidade?: string; ver?: string }>
+  searchParams: Promise<{ q?: string; cidade?: string; ver?: string; pagina?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -118,11 +118,15 @@ export default async function EncontrarPage({
    */
   if (!ehMaster(perfil.role)) redirect('/admin')
 
-  const { q, cidade: cidadeParam, ver } = await searchParams
+  const { q, cidade: cidadeParam, ver, pagina: paginaParam } = await searchParams
   const busca = (q ?? '').trim()
   const cidade = (cidadeParam ?? '').trim()
   const filtrando = !!(busca || cidade)
   const escopo: Escopo = ver === 'todos' ? 'todos' : 'recrutar'
+  /** 100 por página (pedido do Juan, 28/09/2026) — renderizar os ~2000+
+   *  resultados de uma vez era o que deixava a tela pesada no navegador. */
+  const POR_PAGINA = 100
+  const pagina = Math.max(1, parseInt(paginaParam ?? '1', 10) || 1)
 
   const teto = escopo === 'todos' ? TETO_TODOS : (filtrando ? TETO_RECRUTAR_COM_FILTRO : TETO_RECRUTAR_SEM_FILTRO)
 
@@ -188,13 +192,25 @@ export default async function EncontrarPage({
     : cadastrosBrutos
   const totalCadastros = buscaPorNome ? cadastros.length : (totalSemFiltroDeNome ?? 0)
 
-  // Quem de fato apareceu nos eventos: é o dado que separa "já foi chamado"
-  // de "já trabalhou". Sem isso a tela recomendaria quem nunca compareceu.
+  /*
+   * Quem de fato apareceu nos eventos: é o dado que separa "já foi chamado"
+   * de "já trabalhou". Sem isso a tela recomendaria quem nunca compareceu.
+   *
+   * EM LOTES — bug real encontrado em 28/09/2026: com a base passando de
+   * ~2000 pessoas, um único `.in()` com todos os IDs de uma vez gera uma URL
+   * de mais de 80 mil caracteres e a consulta quebra com `414 URI Too Long`
+   * (silencioso, porque nada aqui conferia `error`) — era isso que fazia a
+   * tela não abrir. 200 IDs por lote fica bem abaixo de qualquer limite de
+   * URL; os lotes saem em paralelo (`Promise.all`), não em fila.
+   */
   const ids = (cadastros ?? []).map(c => c.id)
-  const { data: entradas } = ids.length
-    ? await supabaseAdmin.from('registros').select('funcionario_id').eq('tipo', 'entrada').in('funcionario_id', ids)
-    : { data: [] as { funcionario_id: string }[] }
-  const compareceu = new Set((entradas ?? []).map(r => r.funcionario_id))
+  const TAMANHO_LOTE_PRESENCA = 200
+  const lotes: string[][] = []
+  for (let i = 0; i < ids.length; i += TAMANHO_LOTE_PRESENCA) lotes.push(ids.slice(i, i + TAMANHO_LOTE_PRESENCA))
+  const resultadosPresenca = await Promise.all(
+    lotes.map(lote => supabaseAdmin.from('registros').select('funcionario_id').eq('tipo', 'entrada').in('funcionario_id', lote))
+  )
+  const compareceu = new Set(resultadosPresenca.flatMap(r => (r.data ?? []).map(x => x.funcionario_id)))
 
   const porCpf = new Map<string, Pessoa>()
   for (const c of cadastros ?? []) {
@@ -237,6 +253,17 @@ export default async function EncontrarPage({
         b.compareceu - a.compareceu || b.eventos.size - a.eventos.size || b.ultimo.localeCompare(a.ultimo))
     : semFiltroDeCidade.sort((a, b) => b.ultimo.localeCompare(a.ultimo))
 
+  /*
+   * Corta em 100 SÓ pra exibir — os cartões de resumo abaixo continuam
+   * contando `pessoas` inteiro (a base toda), não a página atual. Fatiar em
+   * vez de reconsultar: a agregação por CPF já rodou rápido pra base
+   * inteira (a parte pesada era jogar 2000+ linhas no HTML de uma vez, não
+   * a consulta em si — ver o comentário lá em cima, no `.in()` em lotes).
+   */
+  const totalPaginas = Math.max(1, Math.ceil(pessoas.length / POR_PAGINA))
+  const paginaAtual = Math.min(pagina, totalPaginas)
+  const pessoasDaPagina = pessoas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA)
+
   // Cidades da base, pra sugerir no filtro sem a pessoa ter que adivinhar.
   const cidades = [...new Set(
     (cadastros ?? []).map(c => normalizarCidade(c.cidade)).filter(v => !!v)
@@ -247,6 +274,17 @@ export default async function EncontrarPage({
     if (busca) params.set('q', busca)
     if (cidade) params.set('cidade', cidade)
     if (novoEscopo === 'todos') params.set('ver', 'todos')
+    const qs = params.toString()
+    return `/admin/encontrar${qs ? `?${qs}` : ''}`
+  }
+
+  /** Troca só a página, preservando busca/cidade/escopo atuais. */
+  const urlPagina = (novaPagina: number) => {
+    const params = new URLSearchParams()
+    if (busca) params.set('q', busca)
+    if (cidade) params.set('cidade', cidade)
+    if (escopo === 'todos') params.set('ver', 'todos')
+    if (novaPagina > 1) params.set('pagina', String(novaPagina))
     const qs = params.toString()
     return `/admin/encontrar${qs ? `?${qs}` : ''}`
   }
@@ -361,11 +399,13 @@ export default async function EncontrarPage({
         titulo="Resultados"
         icone={<UserSearch className="w-3.5 h-3.5" />}
         descricao={
-          filtrando
-            ? `${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'} para esta busca`
-            : escopo === 'recrutar'
-              ? 'Quem tem mais eventos e mais presença aparece primeiro'
-              : 'Do cadastro mais recente para o mais antigo'
+          pessoas.length > POR_PAGINA
+            ? `${(paginaAtual - 1) * POR_PAGINA + 1}–${Math.min(paginaAtual * POR_PAGINA, pessoas.length)} de ${pessoas.length}${filtrando ? ' para esta busca' : ''}`
+            : filtrando
+              ? `${pessoas.length} pessoa${pessoas.length === 1 ? '' : 's'} para esta busca`
+              : escopo === 'recrutar'
+                ? 'Quem tem mais eventos e mais presença aparece primeiro'
+                : 'Do cadastro mais recente para o mais antigo'
         }
       >
         {!pessoas.length ? (
@@ -380,7 +420,7 @@ export default async function EncontrarPage({
           />
         ) : (
           <div data-tutorial="enc-lista" className="divide-y divide-slate-100">
-            {pessoas.map((p, i) => {
+            {pessoasDaPagina.map((p, i) => {
               const funcao = [...p.cargos.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
               const zap = p.telefone ? `55${p.telefone.replace(/\D/g, '')}` : null
               return (
@@ -439,6 +479,24 @@ export default async function EncontrarPage({
           </div>
         )}
       </Secao>
+
+      {/* 100 por página (pedido do Juan, 28/09/2026) — só aparece quando há
+          mais de uma página, pra não ocupar espaço à toa numa busca estreita. */}
+      {totalPaginas > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          {paginaAtual > 1 ? (
+            <Link href={urlPagina(paginaAtual - 1)} className="btn btn-secundario btn-sm">Anterior</Link>
+          ) : (
+            <span className="btn btn-secundario btn-sm opacity-40 pointer-events-none">Anterior</span>
+          )}
+          <span className="text-slate-500 text-xs font-medium">Página {paginaAtual} de {totalPaginas}</span>
+          {paginaAtual < totalPaginas ? (
+            <Link href={urlPagina(paginaAtual + 1)} className="btn btn-secundario btn-sm">Próxima</Link>
+          ) : (
+            <span className="btn btn-secundario btn-sm opacity-40 pointer-events-none">Próxima</span>
+          )}
+        </div>
+      )}
     </div>
     </TutorialProvider>
   )

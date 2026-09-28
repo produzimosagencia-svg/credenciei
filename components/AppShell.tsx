@@ -240,7 +240,7 @@ function gruposPara(perfil: Perfil): Grupo[] {
          * com um toggle interno (Prontas para recrutar / Toda a base) — ver o
          * comentário no topo de app/admin/encontrar/page.tsx.
          */
-        { href: '/admin/encontrar', label: 'Encontre colaborador', icon: UserSearch },
+        { href: '/admin/encontrar', label: 'Base funcionário', icon: UserSearch },
         // O canal de WhatsApp é da plataforma, não de um evento: quem dispara
         // em massa e responde conversa é o dono, nunca o produtor de um cliente.
         { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
