@@ -33,7 +33,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import {
   diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
-  TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
+  somarDias, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
 import { grafiaDaCidade } from './cidades'
@@ -107,6 +107,35 @@ async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | nu
     { onConflict: 'evento_id,data,turno' },
   )
   if (error) console.error('[evento] não consegui materializar o dia principal:', error.message)
+
+  /*
+   * Evento de mais de um dia: os dias ENTRE início e fim viram dia de
+   * trabalho automaticamente, como 'preparacao' (entrada/saída livres).
+   *
+   * Pedido do Juan (28/09/2026, teste ao vivo): marcar "27 a 30" na data do
+   * evento e só aparecerem 2 dias de trabalho (27 e 30, quando alguém
+   * lembrou de marcar a desmontagem) confundia — ele esperava ver a
+   * sequência inteira. Antes disso o produtor precisava marcar cada dia do
+   * meio à mão na grade "Dias de trabalho"; continua podendo DESMARCAR um
+   * dia de folga de verdade lá, isto só preenche o padrão. Só entra o que
+   * ainda não existe — nunca sobrescreve um dia já marcado (ex.: uma
+   * desmontagem cadastrada antes de o fim do evento mudar).
+   */
+  if (periodo.ultimo > periodo.primeiro) {
+    const { data: existentes } = await supabaseAdmin
+      .from('jornada_dias').select('data')
+      .eq('evento_id', eventoId)
+      .gte('data', periodo.primeiro).lte('data', periodo.ultimo)
+    const jaTem = new Set((existentes ?? []).map(d => d.data as string))
+    const faltando: { evento_id: string; jornada_id: null; data: string; turno: number; tipo: 'preparacao'; cancelado: boolean }[] = []
+    for (let d = somarDias(periodo.primeiro, 1); d <= periodo.ultimo; d = somarDias(d, 1)) {
+      if (!jaTem.has(d)) faltando.push({ evento_id: eventoId, jornada_id: null, data: d, turno: 0, tipo: 'preparacao', cancelado: false })
+    }
+    if (faltando.length) {
+      const { error: erroFaltando } = await supabaseAdmin.from('jornada_dias').insert(faltando)
+      if (erroFaltando) console.error('[evento] não consegui preencher os dias entre início e fim:', erroFaltando.message)
+    }
+  }
 }
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
