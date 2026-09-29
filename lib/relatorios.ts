@@ -156,17 +156,36 @@ async function resolverPeriodo(eventoId: string, pedido?: Periodo): Promise<Peri
 }
 
 type RegistroBruto = { funcionario_id: string; tipo: string; data_ref: string | null; created_at: string }
+type PausaBruta = { funcionario_id: string; data_ref: string; saiu_em: string; voltou_em: string }
 
 /**
  * Monta as linhas de um setor, já dentro do período: uma por (funcionário,
- * dia) em que houve entrada OU saída. Quem não registrou nada no período
- * simplesmente não aparece — é o que mantém a tabela enxuta (o pedido:
- * "evitar transformar isso numa tabela gigantesca e confusa"). O resumo por
- * setor/função, calculado à parte, é quem responde "quantos faltam".
+ * dia) em que houve entrada OU saída — ou MAIS de uma, se houve pausa (ver
+ * abaixo). Quem não registrou nada no período simplesmente não aparece — é
+ * o que mantém a tabela enxuta (o pedido: "evitar transformar isso numa
+ * tabela gigantesca e confusa"). O resumo por setor/função, calculado à
+ * parte, é quem responde "quantos faltam".
+ *
+ * ─── PAUSA VIRA LINHA A MAIS (29/09/2026) ────────────────────────────────
+ *
+ * Sair e voltar no mesmo dia (ex.: duas diárias, tarde e noite) REABRE o
+ * turno em vez de criar uma segunda entrada — o banco não aceita duas
+ * entradas no mesmo `data_ref` (ver `inferirMomentoQR`). A saída do meio é
+ * APAGADA de `registros` e sobrevive só em `pausas_turno`. Achado real do
+ * Juan: o relatório de credenciamento só lia `registros`, então mostrava
+ * uma pessoa "entrando" de tarde e "saindo" de madrugada, sem rastro
+ * nenhum da volta pro trabalho à noite — como se tivesse sido um turno
+ * único de 20h, quando na verdade foram duas diárias separadas.
+ *
+ * A correção: cada pausa do dia parte a linha em duas — a entrada original
+ * até o horário em que saiu, e de quando voltou até a saída final (ou até
+ * a pausa seguinte, se houve mais de uma). `historico.ts` já faz o mesmo
+ * cálculo pro modal de uma pessoa; aqui é a versão pro relatório de todos.
  */
 function linhasDoSetor(
   funcionarios: { id: string; nome: string; cargo: string | null }[],
   registrosPorFuncionario: Map<string, RegistroBruto[]>,
+  pausasPorFuncionario: Map<string, PausaBruta[]>,
   nomeSetor: string,
 ): LinhaRelatorio[] {
   const linhas: LinhaRelatorio[] = []
@@ -183,15 +202,24 @@ function linhasDoSetor(
       porDia.set(r.data_ref, grupo)
     }
 
+    const pausas = pausasPorFuncionario.get(f.id) ?? []
+
     for (const [dia, doDia] of [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const entradaOriginal = doDia.find(r => r.tipo === 'entrada')?.created_at ?? null
+      const saidaFinal = doDia.find(r => r.tipo === 'fim')?.created_at ?? null
+      const pausasDoDia = pausas.filter(p => p.data_ref === dia).sort((a, b) => a.saiu_em.localeCompare(b.saiu_em))
+
+      let entradaDaVez = entradaOriginal
+      for (const p of pausasDoDia) {
+        linhas.push({
+          funcionarioId: f.id, nome: f.nome, setor: nomeSetor, funcao: f.cargo ?? '',
+          dataRef: dia, entradaISO: entradaDaVez, saidaISO: p.saiu_em,
+        })
+        entradaDaVez = p.voltou_em
+      }
       linhas.push({
-        funcionarioId: f.id,
-        nome: f.nome,
-        setor: nomeSetor,
-        funcao: f.cargo ?? '',
-        dataRef: dia,
-        entradaISO: doDia.find(r => r.tipo === 'entrada')?.created_at ?? null,
-        saidaISO: doDia.find(r => r.tipo === 'fim')?.created_at ?? null,
+        funcionarioId: f.id, nome: f.nome, setor: nomeSetor, funcao: f.cargo ?? '',
+        dataRef: dia, entradaISO: entradaDaVez, saidaISO: saidaFinal,
       })
     }
   }
@@ -209,14 +237,24 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
     .from('funcionarios').select('id, nome, cargo').eq('fornecedor_id', fornecedorId).order('nome')
 
   const ids = (funcionarios ?? []).map(f => f.id)
-  const { data: registros } = ids.length
-    ? await supabaseAdmin.from('registros')
-        .select('funcionario_id, tipo, data_ref, created_at')
-        .in('funcionario_id', ids)
-        .in('tipo', ['entrada', 'fim'])
-        .gte('data_ref', periodo.de)
-        .lte('data_ref', periodo.ate)
-    : { data: [] as RegistroBruto[] }
+  const [{ data: registros }, { data: pausasBrutas }] = ids.length
+    ? await Promise.all([
+        supabaseAdmin.from('registros')
+          .select('funcionario_id, tipo, data_ref, created_at')
+          .in('funcionario_id', ids)
+          .in('tipo', ['entrada', 'fim'])
+          .gte('data_ref', periodo.de)
+          .lte('data_ref', periodo.ate),
+        // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio —
+        // mesmo padrão de `historico.ts`.
+        supabaseAdmin.from('pausas_turno')
+          .select('funcionario_id, data_ref, saiu_em, voltou_em')
+          .in('funcionario_id', ids)
+          .gte('data_ref', periodo.de)
+          .lte('data_ref', periodo.ate)
+          .then(r => (r.error ? { data: [] as PausaBruta[] } : r)),
+      ])
+    : [{ data: [] as RegistroBruto[] }, { data: [] as PausaBruta[] }]
 
   const porFuncionario = new Map<string, RegistroBruto[]>()
   for (const r of (registros ?? []) as RegistroBruto[]) {
@@ -225,11 +263,18 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
     porFuncionario.set(r.funcionario_id, arr)
   }
 
+  const pausasPorFuncionario = new Map<string, PausaBruta[]>()
+  for (const p of (pausasBrutas ?? []) as PausaBruta[]) {
+    const arr = pausasPorFuncionario.get(p.funcionario_id) ?? []
+    arr.push(p)
+    pausasPorFuncionario.set(p.funcionario_id, arr)
+  }
+
   const equipe = funcionarios ?? []
   return {
     id: fornecedor.id,
     nome: fornecedor.nome,
-    linhas: linhasDoSetor(equipe, porFuncionario, fornecedor.nome),
+    linhas: linhasDoSetor(equipe, porFuncionario, pausasPorFuncionario, fornecedor.nome),
     // O avesso, da mesma fonte: quem não tem nenhum registro no período.
     ausentes: equipe
       .filter(f => !(porFuncionario.get(f.id) ?? []).length)
