@@ -108,34 +108,75 @@ async function garantirDiaPrincipal(eventoId: string, dataInicioISO: string | nu
   )
   if (error) console.error('[evento] não consegui materializar o dia principal:', error.message)
 
-  /*
-   * Evento de mais de um dia: os dias ENTRE início e fim viram dia de
-   * trabalho automaticamente, como 'preparacao' (entrada/saída livres).
-   *
-   * Pedido do Juan (28/09/2026, teste ao vivo): marcar "27 a 30" na data do
-   * evento e só aparecerem 2 dias de trabalho (27 e 30, quando alguém
-   * lembrou de marcar a desmontagem) confundia — ele esperava ver a
-   * sequência inteira. Antes disso o produtor precisava marcar cada dia do
-   * meio à mão na grade "Dias de trabalho"; continua podendo DESMARCAR um
-   * dia de folga de verdade lá, isto só preenche o padrão. Só entra o que
-   * ainda não existe — nunca sobrescreve um dia já marcado (ex.: uma
-   * desmontagem cadastrada antes de o fim do evento mudar).
-   */
-  if (periodo.ultimo > periodo.primeiro) {
-    const { data: existentes } = await supabaseAdmin
-      .from('jornada_dias').select('data')
-      .eq('evento_id', eventoId)
-      .gte('data', periodo.primeiro).lte('data', periodo.ultimo)
-    const jaTem = new Set((existentes ?? []).map(d => d.data as string))
-    const faltando: { evento_id: string; jornada_id: null; data: string; turno: number; tipo: 'preparacao'; cancelado: boolean }[] = []
-    for (let d = somarDias(periodo.primeiro, 1); d <= periodo.ultimo; d = somarDias(d, 1)) {
-      if (!jaTem.has(d)) faltando.push({ evento_id: eventoId, jornada_id: null, data: d, turno: 0, tipo: 'preparacao', cancelado: false })
-    }
-    if (faltando.length) {
-      const { error: erroFaltando } = await supabaseAdmin.from('jornada_dias').insert(faltando)
-      if (erroFaltando) console.error('[evento] não consegui preencher os dias entre início e fim:', erroFaltando.message)
-    }
+  await preencherDiasEntre(eventoId, periodo)
+}
+
+/**
+ * Evento de mais de um dia: os dias ENTRE início e fim viram dia de trabalho
+ * automaticamente, como 'preparacao' (entrada/saída livres).
+ *
+ * Pedido do Juan (28/09/2026, teste ao vivo): marcar "27 a 30" na data do
+ * evento e só aparecerem 2 dias de trabalho (27 e 30, quando alguém lembrou
+ * de marcar a desmontagem) confundia — ele esperava ver a sequência inteira.
+ * Antes disso o produtor precisava marcar cada dia do meio à mão na grade
+ * "Dias de trabalho"; continua podendo DESMARCAR um dia de folga de verdade
+ * lá, isto só preenche o padrão. Só entra o que ainda não existe — nunca
+ * sobrescreve um dia já marcado (ex.: uma desmontagem cadastrada antes de o
+ * fim do evento mudar).
+ *
+ * Chamada por `garantirDiaPrincipal` (todo evento CRIADO ou EDITADO depois
+ * de 28/09/2026 já sai com isto certo) e por `preencherDiasFaltantesDeTodosEventos`
+ * (a limpeza única pros eventos que já existiam antes desta data).
+ */
+async function preencherDiasEntre(eventoId: string, periodo: { primeiro: string; ultimo: string }): Promise<number> {
+  if (periodo.ultimo <= periodo.primeiro) return 0
+
+  const { data: existentes } = await supabaseAdmin
+    .from('jornada_dias').select('data')
+    .eq('evento_id', eventoId)
+    .gte('data', periodo.primeiro).lte('data', periodo.ultimo)
+  const jaTem = new Set((existentes ?? []).map(d => d.data as string))
+  const faltando: { evento_id: string; jornada_id: null; data: string; turno: number; tipo: 'preparacao'; cancelado: boolean }[] = []
+  for (let d = somarDias(periodo.primeiro, 1); d <= periodo.ultimo; d = somarDias(d, 1)) {
+    if (!jaTem.has(d)) faltando.push({ evento_id: eventoId, jornada_id: null, data: d, turno: 0, tipo: 'preparacao', cancelado: false })
   }
+  if (!faltando.length) return 0
+
+  const { error } = await supabaseAdmin.from('jornada_dias').insert(faltando)
+  if (error) { console.error('[evento] não consegui preencher os dias entre início e fim:', error.message); return 0 }
+  return faltando.length
+}
+
+/**
+ * Limpeza ÚNICA (28/09/2026): aplica `preencherDiasEntre` em TODO evento que
+ * já existia antes desta correção — sem esperar que alguém reabra e salve a
+ * tela de editar evento de cada um. Só master, mesma razão de
+ * `liberarDescredenciamentosIndevidos`: mexe em qualquer organização.
+ */
+export async function preencherDiasFaltantesDeTodosEventos(): Promise<{ eventos: number; dias: number }> {
+  const perfil = await getPerfil()
+  if (!perfil || !ehMaster(perfil.role)) throw new Error('Só o acesso master pode rodar esta limpeza.')
+
+  const { data: eventos } = await supabaseAdmin.from('eventos').select('id, data_inicio, data_fim')
+
+  let eventosAfetados = 0
+  let diasCriados = 0
+  for (const e of eventos ?? []) {
+    const periodo = periodoDoEvento(e as { data_inicio: string | null; data_fim: string | null })
+    if (!periodo) continue
+    const n = await preencherDiasEntre(e.id as string, periodo)
+    if (n > 0) { eventosAfetados++; diasCriados += n }
+  }
+
+  if (diasCriados) {
+    after(() => registrarAuditoria({
+      perfil: perfil as { id: string; nome: string },
+      acao: 'LIMPEZA_DIAS_DE_TRABALHO',
+      motivo: `Preencheu ${diasCriados} dia(s) de trabalho faltando em ${eventosAfetados} evento(s) (dias entre início e fim sem jornada_dias)`,
+    }))
+  }
+
+  return { eventos: eventosAfetados, dias: diasCriados }
 }
 
 // Com RLS ligado, o banco só é acessível pela service role (no servidor).
@@ -4117,55 +4158,89 @@ async function entradaDoTurno(funcionarioId: string, eventoId: string, agora: Da
  * índice e reescrever as leituras de presença do sistema inteiro. A saída
  * apagada não some: vai pra Auditoria com o horário.
  */
+/**
+ * O botão ENTRADA/SAÍDA escolhido pelo operador manda, sem gente nenhuma —
+ * simplificação pedida pelo Juan (28/09/2026), depois de três bugs reais
+ * seguidos virem da mesma complicação (janela de horário, dia marcado como
+ * trabalho, carência de alguns minutos, turno "ainda aberto" só dentro de
+ * um teto de horas): "não importa quantas vezes a pessoa passe o rosto, se
+ * bater uma vez é uma entrada, se bater a segunda é uma saída, se bater a
+ * terceira é outra entrada, assim por diante." A única coisa que o sistema
+ * ainda decide sozinho é qual das duas isto é — o CONTEÚDO de cada uma
+ * (quando, quem, em qual evento) sempre foi e continua sendo o que o
+ * operador escolheu e a leitura identificou.
+ *
+ * `escolhido` só falta em caminhos antigos que não passam pelo botão — pra
+ * esses, a régua completa (abaixo, no "sem botão") continua de pé.
+ */
+async function entradaEmAberto(funcionarioId: string, eventoId: string) {
+  const { data } = await supabaseAdmin
+    .from('registros')
+    .select('id, data_ref, created_at')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'entrada')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const e = data?.[0]
+  if (!e) return null
+  const { data: fim } = await supabaseAdmin
+    .from('registros')
+    .select('id')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'fim')
+    .eq('data_ref', e.data_ref as string).gt('created_at', e.created_at as string)
+    .limit(1)
+  if (fim?.length) return null
+  return { em: e.created_at as string, dataRef: e.data_ref as string }
+}
+
 async function inferirMomentoQR(
   funcionarioId: string, eventoId: string, agora: Date,
   /**
    * O que quem chama JÁ buscou — o scanner busca os dois em paralelo com o
    * resto da leitura, em vez de pagar mais duas idas ao banco em série aqui.
-   * Omitido, é buscado aqui mesmo (mesmo resultado).
+   * Omitido, é buscado aqui mesmo (mesmo resultado). Só vale pro caminho
+   * "sem botão" — o caminho com botão sempre busca fresco (ver `entradaEmAberto`).
    */
   pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
-  /**
-   * O botão que o operador escolheu no scanner (ENTRADA ou SAÍDA) — de volta
-   * a pedido do Juan em 26/09/2026. Sem ele (app, tela antiga), o sistema
-   * decide sozinho como antes. Com ele, quem decide é o operador; o sistema
-   * só se recusa a gravar o que não faz sentido, e nesse caso AVISA:
-   *   ENTRADA, já dentro hoje       → "Entrada já registrada"  (nada gravado)
-   *   ENTRADA, já saiu hoje         → volta: reabre o turno, a saída vira pausa
-   *   ENTRADA, turno aberto de ONTEM → entrada de HOJE (ontem fica sem saída —
-   *                                    não inventa uma saída ao meio-dia)
-   *   SAÍDA, turno aberto           → saída (sem carência: foi escolhido)
-   *   SAÍDA, já saiu hoje           → "Saída já registrada"    (nada gravado)
-   *   SAÍDA, sem entrada            → "não tem entrada — use ENTRADA"
-   */
   escolhido?: 'entrada' | 'fim',
 ): Promise<
   | { momento: 'entrada' | 'fim'; entrada?: { em: string; dataRef: string } }
   | { reabrir: { id: string; em: string; dataRef: string } }
   | { erro: string; recente?: boolean }
 > {
+  if (escolhido) {
+    const aberta = await entradaEmAberto(funcionarioId, eventoId)
+    if (escolhido === 'fim') {
+      if (aberta) return { momento: 'fim', entrada: aberta }
+      return { erro: 'Esta pessoa não tem entrada em aberto pra fechar. Se ela está chegando, use o botão ENTRADA.' }
+    }
+    // escolhido === 'entrada'
+    if (aberta) {
+      return { erro: `Entrada já registrada às ${formatarBR(aberta.em, 'hora')}. Se a pessoa está saindo, use o botão SAÍDA.`, recente: true }
+    }
+    /*
+     * Sem turno aberto. O banco não aceita duas entradas no mesmo
+     * `data_ref` (índice único) — se já existe um par entrada+saída fechado
+     * HOJE, esta entrada REABRE aquele dia (a saída vira pausa) em vez de
+     * tentar duplicar a linha. De outro dia, é só uma entrada nova.
+     */
+    const hoje = pre?.diaTurno ?? await diaDoTurno(eventoId, agora)
+    const { data: fechadoHoje } = await supabaseAdmin
+      .from('registros')
+      .select('id, created_at')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+      .eq('tipo', 'fim').eq('data_ref', hoje)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const f = fechadoHoje?.[0]
+    if (f) return { reabrir: { id: f.id as string, em: f.created_at as string, dataRef: hoje } }
+    return { momento: 'entrada' }
+  }
+
+  // ─── SEM BOTÃO (caminhos antigos que não escolhem) ─────────────────────
   const entrada = pre && 'entrada' in pre ? pre.entrada ?? null : await entradaDoTurno(funcionarioId, eventoId, agora)
   const hoje = pre?.diaTurno ?? await diaDoTurno(eventoId, agora)
 
-  if (entrada && escolhido) {
-    const { data: fimDoTurno } = await supabaseAdmin
-      .from('registros')
-      .select('created_at')
-      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
-      .eq('tipo', 'fim').eq('data_ref', entrada.dataRef)
-      .gt('created_at', entrada.em)
-      .limit(1)
-    if (!fimDoTurno?.length) {
-      if (escolhido === 'fim') return { momento: 'fim' }
-      // ENTRADA com turno aberto: se é o turno de hoje, ela já está dentro;
-      // se é de outro dia (esqueceu de sair ontem), é a chegada de hoje.
-      if (entrada.dataRef === hoje) {
-        return { erro: `Entrada já registrada às ${formatarBR(entrada.em, 'hora')}. Se a pessoa está saindo, use o botão SAÍDA.`, recente: true }
-      }
-    }
-  }
-
-  if (entrada && !escolhido) {
+  if (entrada) {
     /*
      * A saída só FECHA esta entrada se veio DEPOIS dela.
      *
@@ -4233,27 +4308,7 @@ async function inferirMomentoQR(
   const entradaHoje = (deHoje ?? []).find(r => r.tipo === 'entrada')
   const saidaHoje = (deHoje ?? []).find(r => r.tipo === 'fim')
 
-  // ── Com o botão escolhido pelo operador ────────────────────────────────
-  if (escolhido === 'fim') {
-    if (entradaHoje && saidaHoje) {
-      return { erro: `Saída já registrada às ${formatarBR(saidaHoje.created_at as string, 'hora')}. Se a pessoa está voltando, use o botão ENTRADA.`, recente: true }
-    }
-    if (entradaHoje) return { momento: 'fim' }
-    const aberto = await turnoAbertoForaDoDiaDeTrabalho(funcionarioId, eventoId, hoje, agora)
-    if (aberto) return { momento: 'fim', entrada: aberto }
-    return { erro: 'Esta pessoa não tem entrada registrada hoje. Se ela está chegando, use o botão ENTRADA.' }
-  }
-  if (escolhido === 'entrada') {
-    if (entradaHoje && saidaHoje) {
-      return { reabrir: { id: saidaHoje.id as string, em: saidaHoje.created_at as string, dataRef: hoje } }
-    }
-    if (entradaHoje) {
-      return { erro: `Entrada já registrada às ${formatarBR(entradaHoje.created_at as string, 'hora')}. Se a pessoa está saindo, use o botão SAÍDA.`, recente: true }
-    }
-    return { momento: 'entrada' }
-  }
-
-  // ── Sem botão: o sistema decide sozinho (como sempre foi) ──────────────
+  // O sistema decide sozinho (como sempre foi, pra quem não manda `escolhido`).
   if (entradaHoje && saidaHoje) {
     /*
      * Ela já foi embora hoje e está de volta — caso real: sai no almoço,

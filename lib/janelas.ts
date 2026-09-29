@@ -201,8 +201,13 @@ export function dentroDaJanela(
  *
  * O DIA é quem manda, não o período do evento:
  *
- * - dia que não foi marcado como dia de trabalho → recusa. É o que sustenta
- *   "estava escalado para 5 dias e veio em 4" no fechamento;
+ * - dia que não foi marcado como dia de trabalho → livre, do mesmo jeito que
+ *   um dia de preparação (até 28/09/2026 isto recusava a batida — pedido do
+ *   Juan depois de um teste ao vivo travar: "não importa quantas vezes a
+ *   pessoa passe o rosto, se bater é uma entrada, saída, entrada..." — a
+ *   batida NUNCA se recusa por causa da escala; ela só deixa de contar nos
+ *   números de "dias escalados" do fechamento, que é o que `historico.ts` já
+ *   faz sozinho a partir de `jornada_dias`, sem precisar bloquear aqui);
  * - dia de preparação → livre, a pessoa bate quando começa e quando termina;
  * - dia principal → vale a janela configurada pelo produtor.
  */
@@ -215,12 +220,7 @@ export function avaliarEntradaSaida(
 ): Veredito {
   const etapa = momento === 'entrada' ? 'entrada' : 'saída'
 
-  if (!dia) {
-    return {
-      ok: false,
-      erro: `${diaBR(data)} não está marcado como dia de trabalho deste evento. Fale com o organizador para incluir o dia.`,
-    }
-  }
+  if (!dia) return { ok: true }
   if (dia.cancelado) {
     return { ok: false, erro: `O trabalho de ${diaBR(data)} foi cancelado pelo organizador.` }
   }
