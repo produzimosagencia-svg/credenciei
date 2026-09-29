@@ -8,14 +8,18 @@ import s from './_landing/landing.module.css'
 import Revelar from './_landing/Revelar'
 import Calculadora from './_landing/Calculadora'
 import AnimatedScanLoader from '@/components/ui/animated-scan-loader'
+import IconeInstagram from '@/components/ui/IconeInstagram'
 
 /*
  * Landing pública — a raiz do site. O painel continua em /admin; quem já
  * está logado chega lá pelo "Entrar" (o login redireciona) ou direto pela URL.
  *
- * Os textos, números e o preço são os aprovados no Claude Design. Três coisas
- * ainda são PLACEHOLDER, propositalmente iguais ao desenho, pra trocar quando
- * o material chegar: os seis logos de clientes e os três depoimentos.
+ * Os textos, números e o preço são os aprovados no Claude Design. Os três
+ * depoimentos ainda são PLACEHOLDER, propositalmente iguais ao desenho, pra
+ * trocar quando o material chegar. A esteira de logos de clientes foi tirada
+ * em 29/09/2026 (pedido do Juan) até ter logo de verdade pra mostrar — o
+ * CSS dela (`.clientes`, `.esteira*`, `.clienteSlot`) continua no módulo,
+ * sem uso, pra não perder o trabalho se ela voltar.
  *
  * O caminho comercial é o WhatsApp, pelo atalho /wa (que registra a origem).
  * Não existe formulário aqui, e não deve existir.
@@ -56,7 +60,7 @@ function atalhoWhatsApp(busca: Record<string, string | string[] | undefined>) {
 const PASSOS = [
   { n: '01', Icone: LinkIcon, titulo: 'Fornecedores cadastram a equipe por link', texto: 'Você cria o evento e os setores. Cada setor ganha um link de cadastro — o fornecedor manda pro time dele e a lista se preenche sozinha. Você aprova em lote.', quem: 'Produtor · antes do evento' },
   { n: '02', Icone: QrCode, titulo: 'Cada pessoa recebe um QR único', texto: 'Função, setor e período de acesso já vão na credencial digital, direto no WhatsApp da pessoa. Nada pra imprimir na véspera.', quem: 'Equipe · no celular' },
-  { n: '03', Icone: ScanLine, titulo: 'Check-in no portão, registrado', texto: 'Quem controla o acesso escaneia. Entrada, meio e saída ficam gravados por hora e por pessoa, e saem em relatório no fim do dia.', quem: 'Portaria · durante o evento' },
+  { n: '03', Icone: ScanLine, titulo: 'Check-in no portão, por QR ou reconhecimento facial', texto: 'Quem controla o acesso escaneia o QR — ou aponta a câmera e o sistema reconhece o rosto sozinho. Entrada, meio e saída ficam gravados por hora e por pessoa, e saem em relatório no fim do dia.', quem: 'Portaria · durante o evento' },
 ]
 
 const BENEFICIOS = [
@@ -70,8 +74,6 @@ const DEPOIMENTOS = [
   { texto: '“O relatório de presença acabou com a briga de pagamento com fornecedor. Quem não entrou, não aparece. Ponto final.”', nome: 'Nome da produtora', cargo: 'Sócia · Produtora de eventos' },
   { texto: '“Mandei o link pros fornecedores na segunda, na quarta a equipe inteira já estava com QR no celular. Eu não digitei um nome.”', nome: 'Nome do gerente', cargo: 'Gerente de operações · Arena' },
 ]
-
-const CLIENTES = Array.from({ length: 6 }, (_, i) => `Logo cliente ${i + 1}`)
 
 export default async function Landing({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // Next 16: searchParams é Promise e precisa de await.
@@ -95,6 +97,15 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
             <a href="#precos">Preços</a>
           </div>
           <div className={s.navAcoes}>
+            <a
+              href="https://www.instagram.com/credenciei"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Credenciei no Instagram"
+              style={{ display: 'flex', alignItems: 'center', color: 'inherit', opacity: 0.8 }}
+            >
+              <IconeInstagram size={20} />
+            </a>
             <Link href="/login" className={`${s.btn} ${s.btnVidro}`}>Entrar</Link>
             <a href="#cta" className={`${s.btn} ${s.btnPrimario}`}><MessageCircle size={16} />Fale com o time</a>
           </div>
@@ -116,22 +127,11 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         </div>
         <div className={s.heroNumeros}>
           <div><p className={s.numero}>+4.800</p><p className={s.numeroSub}>profissionais credenciados</p></div>
-          <div><p className={s.numero}>1.008</p><p className={s.numeroSub}>pessoas num único evento</p></div>
+          <div><p className={s.numero}>2.036</p><p className={s.numeroSub}>pessoas num único evento</p></div>
           <div><p className={s.numero}>&lt; 3s</p><p className={s.numeroSub}>por check-in no portão</p></div>
         </div>
       </section>
 
-      {/* CLIENTES — logos em cinza, do mesmo tamanho, passando pra direita. */}
-      <section className={`${s.limite} ${s.clientes}`} data-revelar>
-        <p className={s.clientesTitulo}>Quem já credenciou com a gente</p>
-        <div className={s.esteira} aria-label="Logos de clientes">
-          <div className={s.esteiraTrilho}>
-            {[...CLIENTES, ...CLIENTES].map((nome, i) => (
-              <div key={i} className={s.clienteSlot} aria-hidden={i >= CLIENTES.length}>{nome}</div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* NA PRÁTICA */}
       <section id="como" className={`${s.limite} ${s.secao}`}>
@@ -199,15 +199,19 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         <div className={s.secaoTopo} data-revelar>
           <p className={s.kicker}>Preço simples</p>
           <h2 className={s.h2}>Um valor por evento. Um real por pessoa.</h2>
-          <p className={s.lead}>Sem mensalidade e sem licença por usuário. Setores, operadores, lembretes por WhatsApp e relatórios já estão inclusos.</p>
+          <p className={s.lead}>Sem mensalidade pra evento avulso, e sem licença por usuário. Setores, operadores, lembretes por WhatsApp e relatórios já estão inclusos.</p>
         </div>
         <div className={s.precoCartao} data-revelar>
-          <p className={s.precoRotulo}>Por evento</p>
+          <p className={s.precoRotulo}>Por evento · a partir de</p>
           <p className={s.precoLinha}><span className={s.precoValor}>R$ 500</span><span className={s.precoDesc}>taxa fixa</span></p>
           <div className={s.precoMais}><span /><span className={s.mais}>+</span><span /></div>
           <p className={s.precoLinha}><span className={`${s.precoValorGradiente} ${s.gradienteTexto}`}>R$ 1</span><span className={s.precoDesc}>por funcionário credenciado</span></p>
           <Calculadora />
         </div>
+        <p className={s.lead} data-revelar style={{ marginTop: 24, textAlign: 'center' }}>
+          Casa de festas ou espaço com evento toda semana? Também temos{' '}
+          <a href={WHATSAPP_COMERCIAL} className={s.gradienteTexto} style={{ fontWeight: 700 }}>pacote mensal</a> — fale com a gente.
+        </p>
       </section>
 
       {/* CTA FINAL */}

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { EyeOff, ShieldAlert } from 'lucide-react'
+import IconeInstagram from '@/components/ui/IconeInstagram'
 
 /**
  * O QR Code da credencial, com as proteções que a plataforma web permite.
@@ -127,6 +128,18 @@ export default function QrProtegido(
             mostra o crachá da montagem no dia do evento e não entende a recusa. */}
         Este é o seu QR da {faseLabel}. A credencial é pessoal — emprestar é uso indevido.
       </p>
+
+      {/* Convite pro Instagram — embaixo do QR, nunca em cima dele: cobrir
+          parte da imagem arrisca a câmera do portão não ler o código. */}
+      <a
+        href="https://www.instagram.com/credenciei"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
+      >
+        <IconeInstagram size={14} />
+        Siga a gente no Instagram
+      </a>
     </div>
   )
 }

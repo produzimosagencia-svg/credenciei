@@ -10,6 +10,7 @@ import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { useCampoFormatado } from '@/components/inputs'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import FaceCapture from '@/components/FaceCapture'
+import IconeInstagram from '@/components/ui/IconeInstagram'
 
 /**
  * Onde o app fica nas lojas.
@@ -561,6 +562,16 @@ export default function FormularioFuncionario({
       >
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}
       </button>
+
+      <a
+        href="https://www.instagram.com/credenciei"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-center gap-1.5 text-slate-400 text-xs font-medium hover:text-brand-600 transition-colors"
+      >
+        <IconeInstagram size={14} />
+        Siga a gente no Instagram
+      </a>
     </form>
   )
 }
