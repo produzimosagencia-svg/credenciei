@@ -105,7 +105,7 @@ function razaoDoOlho(pontos: { x: number; y: number }[]): number {
 }
 
 export default function FaceCapture({
-  onCaptura, onCancelar, instrucao, onQrDetectado,
+  onCaptura, onCancelar, instrucao, onQrDetectado, extraTopo,
 }: {
   onCaptura: (r: ResultadoCaptura) => void
   onCancelar: () => void
@@ -120,6 +120,16 @@ export default function FaceCapture({
    * `tentarLerQr`) e não a passam.
    */
   onQrDetectado?: (texto: string) => void
+  /**
+   * Conteúdo extra logo abaixo do cabeçalho, DENTRO da tela cheia da câmera
+   * — só o scanner atendido passa isto (o ENTRADA/SAÍDA do
+   * `FaceScannerView.tsx`). Sem isto, a câmera é `fixed inset-0` e cobre
+   * qualquer botão que o componente pai tenha desenhado por baixo dela —
+   * era exatamente o bug relatado pelo Juan (28/09/2026): os botões de
+   * ENTRADA/SAÍDA existiam, mas ficavam escondidos atrás da câmera assim
+   * que ela abria, porque nunca tinham como aparecer POR CIMA.
+   */
+  extraTopo?: React.ReactNode
 }) {
   const [fase, setFase] = useState<Fase>('carregando')
   const [mensagem, setMensagem] = useState('Carregando reconhecimento facial…')
@@ -314,6 +324,8 @@ export default function FaceCapture({
           <SwitchCamera className="w-4 h-4" />
         </button>
       </div>
+
+      {extraTopo && <div className="shrink-0 px-4 pb-3">{extraTopo}</div>}
 
       {fase === 'erro' ? (
         // Mesmo cartão do erro de câmera do leitor de QR (ScannerView) — cor,

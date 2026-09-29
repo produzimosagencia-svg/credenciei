@@ -247,6 +247,45 @@ export default function FaceScannerView({
   const categoria = result ? categoriaDo(result) : null
   const visual = categoria ? VISUAL[categoria] : null
 
+  /*
+   * ENTRADA / SAÍDA — mesmo layout e mesma cor do leitor de QR. Passado pra
+   * DENTRO da tela cheia da câmera (`extraTopo`, abaixo): sem isso, os
+   * botões ficavam desenhados aqui embaixo, mas a câmera (`fixed inset-0`)
+   * cobre a tela inteira por cima deles o tempo todo que está escaneando —
+   * ou seja, na prática nunca apareciam (bug relatado pelo Juan, 28/09/2026,
+   * com print mostrando a câmera sem botão nenhum em cima).
+   */
+  const toggleEntradaSaida = (
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Registrar">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={modo === 'entrada'}
+        onClick={() => escolherModo('entrada')}
+        className={`rounded-xl py-3 font-extrabold text-sm tracking-wide transition-all active:scale-95 ${
+          modo === 'entrada'
+            ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-300'
+            : 'border-2 border-white/30 text-white/70'
+        }`}
+      >
+        ENTRADA
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={modo === 'fim'}
+        onClick={() => escolherModo('fim')}
+        className={`rounded-xl py-3 font-extrabold text-sm tracking-wide transition-all active:scale-95 ${
+          modo === 'fim'
+            ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-300'
+            : 'border-2 border-white/30 text-white/70'
+        }`}
+      >
+        SAÍDA
+      </button>
+    </div>
+  )
+
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
       <div className="w-full max-w-sm space-y-3">
@@ -261,35 +300,7 @@ export default function FaceScannerView({
           </select>
         </div>
 
-        {/* ENTRADA / SAÍDA — mesmo layout e mesma cor do leitor de QR. */}
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Registrar">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={modo === 'entrada'}
-            onClick={() => escolherModo('entrada')}
-            className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
-              modo === 'entrada'
-                ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-300'
-                : 'border-2 border-slate-600 text-slate-400'
-            }`}
-          >
-            ENTRADA
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={modo === 'fim'}
-            onClick={() => escolherModo('fim')}
-            className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
-              modo === 'fim'
-                ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-300'
-                : 'border-2 border-slate-600 text-slate-400'
-            }`}
-          >
-            SAÍDA
-          </button>
-        </div>
+        {toggleEntradaSaida}
         <p className="text-slate-500 text-xs text-center">
           Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-blue-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
@@ -313,6 +324,7 @@ export default function FaceScannerView({
           onCaptura={aoCapturar}
           onQrDetectado={aoLerQr}
           onCancelar={voltarAEscanear}
+          extraTopo={toggleEntradaSaida}
         />
       )}
 
