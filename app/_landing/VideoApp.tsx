@@ -31,6 +31,20 @@ export default function VideoApp({ className }: { className?: string }) {
     // Rejeita em silêncio quando o navegador bloqueia autoplay — o botão de
     // play manual (abaixo) é o plano B nesse caso, não um erro pra tratar.
     v.play().catch(() => {})
+
+    /*
+     * REFORÇO: o PRIMEIRO toque/clique em QUALQUER lugar da página — não
+     * precisa ser no vídeo — já conta como gesto do usuário pro navegador, e
+     * isso é o suficiente pra tocar mesmo quando o autoplay puro foi
+     * bloqueado (Modo de Baixo Consumo, preferência de Auto-Play do
+     * Safari). Sem isto, só tocava se a pessoa achasse e apertasse o botão
+     * de play EM CIMA do vídeo — na prática, quase ninguém precisa mais
+     * fazer isso, porque o primeiro toque em QUALQUER coisa da página já
+     * resolve. Só um disparo (`once`), só enquanto ainda não está tocando.
+     */
+    const tentarComGesto = () => { if (v.paused) v.play().catch(() => {}) }
+    document.addEventListener('pointerdown', tentarComGesto, { once: true, passive: true })
+    return () => document.removeEventListener('pointerdown', tentarComGesto)
   }, [])
 
   const tocarManual = () => {
