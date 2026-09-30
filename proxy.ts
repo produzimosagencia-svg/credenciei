@@ -45,6 +45,16 @@ export async function proxy(request: NextRequest) {
      * operador sempre tem sessão.
      */
     pathname.startsWith('/models/') ||
+    /*
+     * Vídeos da landing (public/videos/) — mesmo motivo de /marca/: a
+     * landing (`/`) é pública, sem sessão, e sem esta linha o arquivo de
+     * vídeo (e o poster) viravam redirect pra /login. Foi exatamente isso
+     * que aconteceu com o vídeo de abertura do app (30/09/2026): o elemento
+     * <video> carregava, mas a resposta era a PÁGINA DE LOGIN em vez do
+     * .mp4 — por isso nem o poster nem o autoplay funcionavam em lugar
+     * nenhum, não só no celular.
+     */
+    pathname.startsWith('/videos/') ||
     // `/wa` é o atalho rastreável pro WhatsApp comercial: é o endereço que
     // está no link da bio do Instagram e em toda divulgação. Quem clica não
     // tem conta. Se esta linha sair, o link da bio cai no login e o comercial
