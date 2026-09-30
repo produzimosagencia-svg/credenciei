@@ -6,6 +6,7 @@ import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/men
 import { validarCpf } from '@/lib/format'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
+import { obterFuncionalidadesOrganizacao } from '@/lib/actions'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
@@ -17,12 +18,18 @@ import type { LinhaPlanilha } from '@/lib/planilha'
  * mesmas nos dois — se ficassem duplicadas, uma ia envelhecer sozinha.
  */
 
-/** Uma linha que a importação deixou de fora por CPF repetido. */
+/** Uma linha que a importação deixou de fora. */
 export type LinhaIgnorada = {
   nome: string
   cpf: string
   /** Em qual setor deste evento o CPF já estava. Vazio = repetido na própria planilha. */
   setor: string | null
+  /**
+   * Por que ficou de fora — ausente ou `'duplicado'` é o caso de sempre (CPF
+   * repetido). Os outros dois só existem em evento com subeventos/cota
+   * ligados (Vital, 30/09/2026).
+   */
+  motivo?: 'duplicado' | 'subevento_invalido' | 'cota_atingida'
 }
 
 export type ResultadoImportacao =
@@ -62,6 +69,29 @@ export async function importarFuncionarios(
   const eventoId = evento?.id ?? fornecedor.evento_id
 
   /*
+   * SUBEVENTO — mesma régua do cadastro por link (`cadastrarFuncionarioPublico`
+   * em lib/actions.ts), pedido do Vital (30/09/2026). Resolvido AQUI, antes de
+   * preparar as linhas, porque com 0 escalas a importação inteira não tem
+   * como continuar — não faz sentido gastar tempo lendo a planilha primeiro.
+   */
+  const funcionalidades = await obterFuncionalidadesOrganizacao(evento?.organizacao_id ?? null)
+  let escalasDoFornecedor: { subevento_id: string; nome: string; cota: number | null }[] = []
+  if (funcionalidades.subeventosHabilitado) {
+    const { data: escalas } = await supabaseAdmin
+      .from('fornecedor_subeventos')
+      .select('subevento_id, cota, subeventos(nome)')
+      .eq('fornecedor_id', fornecedorId)
+    escalasDoFornecedor = (escalas ?? []).map(e => ({
+      subevento_id: e.subevento_id as string,
+      nome: ((e.subeventos as unknown as { nome?: string } | null)?.nome ?? '').trim(),
+      cota: e.cota as number | null,
+    }))
+    if (escalasDoFornecedor.length === 0) {
+      return { ok: false, status: 400, error: 'Este fornecedor ainda não foi escalado em nenhum subevento deste evento. Escale-o antes de importar.' }
+    }
+  }
+
+  /*
    * NINGUÉM ENTRA INATIVO — nem acima do teto do setor.
    *
    * Existia aqui uma "trava de ativação": quem passasse de
@@ -97,6 +127,7 @@ export async function importarFuncionarios(
       cidade: f.cidade?.trim() || null,
       valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
       fornecedor_id: fornecedorId,
+      subevento: f.subevento?.trim() ?? '',
     }
   }).filter(f => f.nome && f.cpf)
 
@@ -165,6 +196,83 @@ export async function importarFuncionarios(
     return { ok: false, status: 400, error: motivo, ignorados }
   }
 
+  /*
+   * SUBEVENTO — cada linha entra no subevento certo. Com 1 escala só, é
+   * automático (a planilha nem precisa da coluna); com 2+, a coluna
+   * "Subevento" decide, e quem não bater com nenhuma escala fica de fora
+   * (reportado, não descartado em silêncio).
+   */
+  let comSubevento = payload.map(f => ({ ...f, subevento_id: null as string | null }))
+  if (funcionalidades.subeventosHabilitado) {
+    if (escalasDoFornecedor.length === 1) {
+      const unico = escalasDoFornecedor[0].subevento_id
+      comSubevento = comSubevento.map(f => ({ ...f, subevento_id: unico }))
+    } else {
+      comSubevento = comSubevento.filter(f => {
+        const achado = escalasDoFornecedor.find(e => e.nome.toLowerCase() === f.subevento.toLowerCase())
+        if (!achado) {
+          ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'subevento_invalido' })
+          return false
+        }
+        f.subevento_id = achado.subevento_id
+        return true
+      })
+    }
+  }
+
+  /*
+   * TRAVA DE COTA — insere só até a cota RESTANTE, na ordem da planilha.
+   * Nunca tudo-ou-nada: 3 linhas acima do limite numa planilha de 300 não
+   * podem derrubar as outras 297.
+   */
+  let finalPayload = comSubevento
+  if (funcionalidades.travaCotaHabilitada) {
+    if (funcionalidades.subeventosHabilitado) {
+      const restantePorSubevento = new Map<string, number | null>()
+      for (const e of escalasDoFornecedor) {
+        if (e.cota === null) { restantePorSubevento.set(e.subevento_id, null); continue }
+        const { count } = await supabaseAdmin
+          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', e.subevento_id)
+        restantePorSubevento.set(e.subevento_id, Math.max(0, e.cota - (count ?? 0)))
+      }
+      finalPayload = finalPayload.filter(f => {
+        const restante = f.subevento_id ? restantePorSubevento.get(f.subevento_id) ?? null : null
+        if (restante === null) return true
+        if (restante <= 0) {
+          ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'cota_atingida' })
+          return false
+        }
+        restantePorSubevento.set(f.subevento_id as string, restante - 1)
+        return true
+      })
+    } else {
+      const { data: forn } = await supabaseAdmin
+        .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).maybeSingle()
+      const cota = forn?.quantidade_estimada ?? null
+      if (cota) {
+        const { count } = await supabaseAdmin
+          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+        let restante = Math.max(0, cota - (count ?? 0))
+        finalPayload = finalPayload.filter(f => {
+          if (restante <= 0) {
+            ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'cota_atingida' })
+            return false
+          }
+          restante--
+          return true
+        })
+      }
+    }
+  }
+
+  if (finalPayload.length === 0) {
+    return {
+      ok: false, status: 400,
+      error: 'Nenhuma linha pôde ser importada — confira os motivos na lista abaixo.',
+      ignorados,
+    }
+  }
+
   // Base central do Credenciei: quem já foi credenciado antes — por este ou
   // por qualquer outro cliente — entra com telefone, cargo, PIX e cidade que
   // a planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
@@ -173,13 +281,13 @@ export async function importarFuncionarios(
   const { data: conhecidos } = await supabaseAdmin
     .from('funcionarios')
     .select('cpf, telefone, cargo, chave_pix, cidade')
-    .in('cpf', payload.map(f => f.cpf))
+    .in('cpf', finalPayload.map(f => f.cpf))
     .order('created_at', { ascending: false })
 
   const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>()
   for (const c of conhecidos ?? []) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
 
-  for (const f of payload) {
+  for (const f of finalPayload) {
     const anterior = base.get(f.cpf)
     if (!anterior) continue
     const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}`
@@ -190,13 +298,34 @@ export async function importarFuncionarios(
     if (`${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}` !== antes) reaproveitados++
   }
 
+  // `subevento` (texto da planilha) e `subevento_id` ficam de FORA do insert
+  // principal — coluna nova, à parte, mesmo cuidado de `exige_meio`: uma
+  // migração pendente não pode derrubar a importação inteira por causa de
+  // um recurso que a maioria dos eventos nem liga.
+  const cpfParaSubevento = new Map(finalPayload.map(f => [f.cpf, f.subevento_id]))
   const { data: inseridos, error } = await supabaseAdmin
     .from('funcionarios')
-    .insert(payload)
+    .insert(finalPayload.map(f => ({
+      nome: f.nome, cpf: f.cpf, telefone: f.telefone, chave_pix: f.chave_pix, cargo: f.cargo,
+      cidade: f.cidade, valor_receber: f.valor_receber, fornecedor_id: f.fornecedor_id, ativo: f.ativo,
+    })))
     .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, qr_token')
 
   if (error) {
     return { ok: false, status: 500, error: mensagemAmigavel(error) }
+  }
+
+  if (funcionalidades.subeventosHabilitado && inseridos?.length) {
+    const idsPorSubevento = new Map<string, string[]>()
+    for (const ins of inseridos) {
+      const subeventoId = cpfParaSubevento.get(ins.cpf as string)
+      if (!subeventoId) continue
+      idsPorSubevento.set(subeventoId, [...(idsPorSubevento.get(subeventoId) ?? []), ins.id as string])
+    }
+    for (const [subeventoId, ids] of idsPorSubevento) {
+      const { error: erroSub } = await supabaseAdmin.from('funcionarios').update({ subevento_id: subeventoId }).in('id', ids)
+      if (erroSub) console.error('[importacao] subevento_id não gravado (migração pendente?)', erroSub.message)
+    }
   }
 
   // Auditoria: "quem se cadastrou, que horas, por meio de que" (pedido do

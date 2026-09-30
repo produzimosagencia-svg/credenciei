@@ -15,11 +15,13 @@ type Evento = { id: string; nome: string }
  * ou evento comum) — o padrão de sempre, sem biometria nenhuma na tela.
  */
 export default function ScannerRouter({
-  eventos, initialEventoId, metodosPorEvento, noPainel = false, portaoNome = null,
+  eventos, initialEventoId, metodosPorEvento, subeventosPorEvento = {}, noPainel = false, portaoNome = null,
 }: {
   eventos: Evento[]
   initialEventoId?: string
   metodosPorEvento: Record<string, string>
+  /** Subeventos de cada evento (Vital, 30/09/2026) — vazio/ausente = evento sem subeventos. */
+  subeventosPorEvento?: Record<string, { id: string; nome: string }[]>
   /** Dentro do painel (/admin/scanner) — só afeta o leitor de QR; o leitor de
    *  rosto continua em tela cheia escura (é assim que a câmera precisa ser mostrada). */
   noPainel?: boolean
@@ -43,6 +45,7 @@ export default function ScannerRouter({
         initialEventoId={eventoAtivo}
         aoTrocarParaQr={id => { setEventoAtivo(id); setUsarRosto(false) }}
         portaoNome={portaoNome}
+        subeventosPorEvento={subeventosPorEvento}
       />
     )
   }
@@ -65,7 +68,7 @@ export default function ScannerRouter({
 
   return (
     <div className="flex-1 flex flex-col">
-      <ScannerView eventos={eventos} initialEventoId={eventoAtivo} noPainel={noPainel} />
+      <ScannerView eventos={eventos} initialEventoId={eventoAtivo} noPainel={noPainel} subeventosPorEvento={subeventosPorEvento} />
       {algumEventoTemBiometria && (
         <div className="px-4 pb-4">
           <button

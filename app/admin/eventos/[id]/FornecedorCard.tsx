@@ -7,6 +7,7 @@ import { deletarFornecedor, alternarLinkDoSetor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import PlanilhaModal from './PlanilhaModal'
 import SupervisorModal from './SupervisorModal'
+import EscalaSubeventoModal from './EscalaSubeventoModal'
 import ConfirmModal from '@/components/ConfirmModal'
 
 type Fornecedor = {
@@ -22,6 +23,8 @@ type Fornecedor = {
 type Supervisor = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
 type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
 type DiaDoEvento = { data: string; tipo: string }
+type Subevento = { id: string; nome: string }
+type EscalaFornecedor = { subevento_id: string; cota: number | null }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -35,6 +38,8 @@ export default function FornecedorCard({
   linkAtivo = true,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
+  subeventos = [],
+  escalasDoFornecedor = [],
 }: {
   fornecedor: Fornecedor
   eventoId: string
@@ -51,6 +56,10 @@ export default function FornecedorCard({
   diasDoEvento?: DiaDoEvento[]
   /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
   exigeMeio?: boolean
+  /** Subeventos do evento — vazio = evento não usa (feature desligada). */
+  subeventos?: Subevento[]
+  /** Em quais subeventos ESTE fornecedor já está escalado, com a cota de cada um. */
+  escalasDoFornecedor?: EscalaFornecedor[]
   /**
    * O link de cadastro deste setor está ligado?
    *
@@ -171,6 +180,15 @@ export default function FornecedorCard({
             usa toda hora está na faixa de ações, abaixo. */}
         <div className="flex items-center gap-0.5 shrink-0 -mr-1.5 -mt-1">
           <PlanilhaModal fornecedorId={f.id} eventoId={eventoId} setorNome={f.nome} dias={diasDoEvento} />
+          {!!subeventos.length && (
+            <EscalaSubeventoModal
+              fornecedorId={f.id}
+              eventoId={eventoId}
+              fornecedorNome={f.nome}
+              subeventos={subeventos}
+              escalasAtuais={escalasDoFornecedor}
+            />
+          )}
           <FornecedorModal
             mode="editar"
             eventoId={eventoId}

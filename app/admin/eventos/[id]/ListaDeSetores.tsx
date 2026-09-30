@@ -41,6 +41,8 @@ type FuncionarioDoSetor = {
   pago?: boolean | null; pago_em?: string | null; foto_perfil_path?: string | null; ativo?: boolean | null
 }
 type DiaDoEvento = { data: string; tipo: string }
+type Subevento = { id: string; nome: string }
+type EscalaFornecedor = { subevento_id: string; cota: number | null }
 
 /*
  * A busca deixou de ter um teto de "a partir de quantos setores aparece".
@@ -68,6 +70,8 @@ export default function ListaDeSetores({
   podeEditarCpf,
   podeEditarPonto,
   role,
+  subeventos = [],
+  escalasPorFornecedor = {},
 }: {
   fornecedores: Fornecedor[]
   eventoId: string
@@ -79,6 +83,10 @@ export default function ListaDeSetores({
   setoresComMeio: Set<string>
   /** Só os DESLIGADOS — ausente/vazio significa todos ligados. */
   setoresComLinkDesligado?: Set<string>
+  /** Subeventos do evento — vazio = evento não usa (feature desligada). */
+  subeventos?: Subevento[]
+  /** Escalas de cada fornecedor, por id do fornecedor. */
+  escalasPorFornecedor?: Record<string, EscalaFornecedor[]>
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
   /** Só pro cabeçalho do modal de "pessoa encontrada" — não muda nenhuma consulta. */
@@ -306,6 +314,8 @@ export default function ListaDeSetores({
               linkAtivo={!setoresComLinkDesligado?.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
+              subeventos={subeventos}
+              escalasDoFornecedor={escalasPorFornecedor[f.id] ?? []}
             />
           ))}
         </div>

@@ -145,7 +145,7 @@ export default function ImportarFuncionarios({
             <div className="text-xs px-2 py-1.5 rounded-lg text-amber-700 bg-amber-50 space-y-1.5">
               <p className="flex items-start gap-1.5 font-medium">
                 <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                {status.ignorados.length} CPF{status.ignorados.length !== 1 ? 's' : ''} já cadastrado{status.ignorados.length !== 1 ? 's' : ''} neste evento {status.ignorados.length !== 1 ? 'foram ignorados' : 'foi ignorado'} (sem duplicar ninguém):
+                {status.ignorados.length} linha{status.ignorados.length !== 1 ? 's' : ''} não {status.ignorados.length !== 1 ? 'foram importadas' : 'foi importada'}:
               </p>
               {/* Rola: com planilha grande a lista passa de 30 linhas, e sem
                   altura o aviso empurrava o resto do modal pra fora da tela. */}
@@ -153,9 +153,15 @@ export default function ImportarFuncionarios({
                 {status.ignorados.map((f, i) => (
                   <li key={`${f.cpf}-${i}`} className="text-amber-800">
                     {f.nome || 'Sem nome na planilha'} — CPF: {formatCpf(f.cpf)}
-                    {f.setor
-                      ? <span className="text-amber-600"> (já está em {f.setor})</span>
-                      : <span className="text-amber-600"> (repetido na própria planilha)</span>}
+                    {f.motivo === 'subevento_invalido' ? (
+                      <span className="text-amber-600"> (subevento da planilha não bate com nenhuma escala deste fornecedor)</span>
+                    ) : f.motivo === 'cota_atingida' ? (
+                      <span className="text-amber-600"> (cota máxima já atingida)</span>
+                    ) : f.setor ? (
+                      <span className="text-amber-600"> (já está em {f.setor})</span>
+                    ) : (
+                      <span className="text-amber-600"> (repetido na própria planilha)</span>
+                    )}
                   </li>
                 ))}
               </ul>

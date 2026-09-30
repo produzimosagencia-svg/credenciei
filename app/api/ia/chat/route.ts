@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     ? corpo.planilha.map(l => ({
         nome: texto(l?.nome), cpf: texto(l?.cpf), telefone: texto(l?.telefone),
         cargo: texto(l?.cargo), cidade: texto(l?.cidade), valor: texto(l?.valor),
-        chavePix: texto(l?.chavePix),
+        chavePix: texto(l?.chavePix), subevento: texto(l?.subevento),
       }))
     : undefined
 

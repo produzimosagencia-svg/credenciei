@@ -18,6 +18,8 @@ export type LinhaPlanilha = {
   cargo: string
   cidade: string
   valor: string
+  /** Só usado em evento com subeventos (Vital, 30/09/2026) — nome do subevento, texto livre. */
+  subevento: string
 }
 
 /**
@@ -34,6 +36,7 @@ const COLUNAS: Record<keyof LinhaPlanilha, string[]> = {
   // É o que alimenta a busca por região em "Encontrar funcionários".
   cidade: ['cidade', 'cidade onde mora', 'municipio', 'município', 'city'],
   valor: ['valor', 'valor a receber', 'valor_receber'],
+  subevento: ['subevento', 'sub-evento', 'sub evento', 'setor de acesso'],
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,6 +70,7 @@ export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[
       cargo: valorDaColuna(linha, COLUNAS.cargo),
       cidade: valorDaColuna(linha, COLUNAS.cidade),
       valor: valorDaColuna(linha, COLUNAS.valor),
+      subevento: valorDaColuna(linha, COLUNAS.subevento),
     }))
     .filter(l => l.nome)
 }

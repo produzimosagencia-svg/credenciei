@@ -43,6 +43,22 @@ export default async function ScannerNoPainelPage({
     } catch { /* biometria ainda não migrada — todo evento fica 'qr' */ }
   }
 
+  // Subeventos de cada evento (Vital, 30/09/2026) — mesma consulta tolerante.
+  let subeventosPorEvento: Record<string, { id: string; nome: string }[]> = {}
+  if (eventos.length) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('subeventos').select('id, nome, evento_id').in('evento_id', eventos.map(e => e.id))
+      if (!error && data) {
+        subeventosPorEvento = {}
+        for (const s of data) {
+          const lista = (subeventosPorEvento[s.evento_id as string] ??= [])
+          lista.push({ id: s.id as string, nome: s.nome as string })
+        }
+      }
+    } catch { /* subeventos ainda não migrado — nenhum evento mostra seletor */ }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader titulo="Scanner" descricao={descricao} />
@@ -59,6 +75,7 @@ export default async function ScannerNoPainelPage({
           eventos={eventos}
           initialEventoId={evento}
           metodosPorEvento={metodosPorEvento}
+          subeventosPorEvento={subeventosPorEvento}
           portaoNome={(perfil as { portao_nome?: string | null }).portao_nome ?? null}
           noPainel
         />

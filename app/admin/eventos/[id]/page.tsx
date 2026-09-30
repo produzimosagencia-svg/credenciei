@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
+import SubeventosCard from './SubeventosCard'
+import { obterFuncionalidadesOrganizacao } from '@/lib/actions'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
@@ -103,6 +105,10 @@ export default async function EventoPage({
 
   if (!evento) notFound()
 
+  // Subeventos (Vital, 30/09/2026) — desligado por padrão; a organização liga
+  // em Configurações → Funcionalidade do Sistema (ver obterFuncionalidadesOrganizacao).
+  const funcionalidades = await obterFuncionalidadesOrganizacao(evento.organizacao_id as string | null)
+
   // Isolamento por organização: admin só acessa eventos da própria org
   if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
 
@@ -183,6 +189,8 @@ export default async function EventoPage({
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
     { count: pendentesDeAprovacao },
+    { data: subeventosRows },
+    { data: escalasRows },
   ] = await Promise.all([
     supabase.from('registros').select('funcionario_id, tipo')
       .eq('evento_id', id).eq('data_ref', diaEscolhido),
@@ -231,6 +239,13 @@ export default async function EventoPage({
       .select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
       .eq('fornecedores.evento_id', id)
       .eq('status_credenciamento', 'pendente'),
+    // Subeventos — só quando a organização ligou a funcionalidade.
+    funcionalidades.subeventosHabilitado
+      ? supabase.from('subeventos').select('id, nome').eq('evento_id', id).order('nome')
+      : Promise.resolve(vazio),
+    funcionalidades.subeventosHabilitado && fornecedorIds.length
+      ? supabase.from('fornecedor_subeventos').select('fornecedor_id, subevento_id, cota').in('fornecedor_id', fornecedorIds)
+      : Promise.resolve(vazio),
   ])
 
   const setoresComMeio = new Set(
@@ -274,6 +289,13 @@ export default async function EventoPage({
     }
   }
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
+
+  const subeventos = (subeventosRows ?? []) as { id: string; nome: string }[]
+  const escalasPorFornecedor: Record<string, { subevento_id: string; cota: number | null }[]> = {}
+  for (const e of escalasRows ?? []) {
+    const lista = (escalasPorFornecedor[e.fornecedor_id as string] ??= [])
+    lista.push({ subevento_id: e.subevento_id as string, cota: e.cota as number | null })
+  }
 
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
@@ -518,6 +540,10 @@ export default async function EventoPage({
             </div>
           )}
 
+          {funcionalidades.subeventosHabilitado && podeGerenciarEventos(perfil) && (
+            <SubeventosCard eventoId={id} subeventos={subeventos} />
+          )}
+
           {!fornecedores?.length ? (
             <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum fornecedor ainda" />
           ) : (
@@ -539,6 +565,8 @@ export default async function EventoPage({
                  basta cobrir gerente/admin/master/suporte. */
               podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
               role={perfil?.role}
+              subeventos={subeventos}
+              escalasPorFornecedor={escalasPorFornecedor}
             />
           )}
         </Secao>

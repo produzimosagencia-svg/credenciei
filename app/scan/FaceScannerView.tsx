@@ -102,7 +102,7 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
 type Origem = { tipo: 'rosto'; descritor: number[] } | { tipo: 'qr'; texto: string }
 
 export default function FaceScannerView({
-  eventos, initialEventoId, aoTrocarParaQr, portaoNome = null,
+  eventos, initialEventoId, aoTrocarParaQr, portaoNome = null, subeventosPorEvento = {},
 }: {
   eventos: Evento[]
   initialEventoId?: string
@@ -110,8 +110,13 @@ export default function FaceScannerView({
   aoTrocarParaQr: (eventoId: string) => void
   /** Nome do portão deste totem (ex.: "Entrada VIP") — ver `perfis.portao_nome`. */
   portaoNome?: string | null
+  /** Subeventos de cada evento (Vital, 30/09/2026) — vazio/ausente = evento sem subeventos. */
+  subeventosPorEvento?: Record<string, { id: string; nome: string }[]>
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
+  const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
+  // "Ao entrar, o operador escolhe qual subevento vai ler" (Vital, 30/09/2026).
+  const [subeventoId, setSubeventoId] = useState('')
 
   // O modo salvo vem do aparelho sem piscar a tela (mesmo padrão do QR).
   const modoSalvo = useSyncExternalStore(semAssinatura, lerModoSalvo, () => null)
@@ -166,8 +171,8 @@ export default function FaceScannerView({
 
   const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean): Promise<ScanResult> =>
     origem.tipo === 'rosto'
-      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir }).catch(semRede)
-      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir }).catch(semRede)
+      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoId: subeventoId || undefined }).catch(semRede)
+      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoId: subeventoId || undefined }).catch(semRede)
 
   /** Resultado final (gravado ou recusado) — fica na tela até "LER O PRÓXIMO". */
   const aplicarResultadoFinal = (r: ScanResult, m: Modo) => {
@@ -308,7 +313,7 @@ export default function FaceScannerView({
             <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
             <select
               value={eventoId}
-              onChange={e => { setEventoId(e.target.value); voltarAEscanear() }}
+              onChange={e => { setEventoId(e.target.value); setSubeventoId(''); voltarAEscanear() }}
               className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
             >
               {eventos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
@@ -318,6 +323,22 @@ export default function FaceScannerView({
           <div className="text-center">
             <p className="text-white font-bold text-base">{eventos[0]?.nome}</p>
             {portaoNome && <p className="text-slate-400 text-xs mt-0.5">{portaoNome}</p>}
+          </div>
+        )}
+
+        {/* Subevento — "ao entrar, o operador escolhe qual subevento vai
+            ler" (Vital, 30/09/2026). Só aparece em evento com subevento. */}
+        {!!subeventosDoEvento.length && (
+          <div>
+            <label className="text-slate-400 text-sm block mb-1.5">Subevento (este portão)</label>
+            <select
+              value={subeventoId}
+              onChange={e => setSubeventoId(e.target.value)}
+              className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
+            >
+              <option value="">Selecione...</option>
+              {subeventosDoEvento.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
           </div>
         )}
 

@@ -5346,13 +5346,13 @@ export async function registrarPresencaQR(
    * o scanner mostra SALVAR / CANCELAR e só então chama de novo sem isto
    * (pedido do Juan, 26/09/2026). A confirmação refaz TODAS as checagens.
    */
-  opcoes?: { apenasConferir?: boolean },
+  opcoes?: { apenasConferir?: boolean; subeventoId?: string },
 ): Promise<ResultadoScan> {
   const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
   const apenasConferir = opcoes?.apenasConferir === true
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoId)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
@@ -5383,6 +5383,8 @@ async function validarLeituraQR(
   eventoId: string, qrData: string, escolhido?: 'entrada' | 'fim',
   /** Só confere e devolve a PRÉVIA — não grava nada (ver `ResultadoScan.previa`). */
   apenasConferir = false,
+  /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
+  subeventoId?: string,
 ): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
@@ -5480,7 +5482,7 @@ async function validarLeituraQR(
   return autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'web',
+    origem: 'web', subeventoIdLido: subeventoId,
   })
 }
 
@@ -5520,8 +5522,14 @@ async function autorizarPresenca(args: {
   /** Só a biometria manda isto (o QR nunca passa) — ver `validarLeituraFacial`. */
   latitude?: number
   longitude?: number
+  /**
+   * Qual subevento o operador escolheu ler neste portão (Vital, 30/09/2026) —
+   * só vem preenchido em eventos que usam subeventos. `undefined` = evento
+   * sem subeventos, nenhuma checagem nova entra em jogo.
+   */
+  subeventoIdLido?: string
 }): Promise<ResultadoScan> {
-  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude } = args
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdLido } = args
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
@@ -5531,6 +5539,35 @@ async function autorizarPresenca(args: {
   }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
+  }
+
+  /*
+   * SUBEVENTO — a credencial precisa ser do MESMO subevento que este portão
+   * está lendo (Vital, 30/09/2026: "ao entrar, o operador escolhe qual
+   * subevento vai ler"). Consulta À PARTE e tolerante (mesmo padrão de
+   * `exige_meio`/`link_ativo`): só roda quando o portão de fato escolheu um
+   * subevento — na imensa maioria dos eventos (sem a feature) isto não pesa
+   * leitura nenhuma. É controle de acesso de verdade, por isso BLOQUEIA (não
+   * é só um aviso como o "cadastrado em outro evento" da biometria).
+   */
+  if (subeventoIdLido) {
+    try {
+      const { data: funcSub } = await supabaseAdmin
+        .from('funcionarios').select('subevento_id, subeventos(nome)').eq('id', func.id).maybeSingle()
+      const subeventoDaCredencial = (funcSub as { subevento_id?: string | null } | null)?.subevento_id ?? null
+      if (subeventoDaCredencial !== subeventoIdLido) {
+        const nomeCorreto = (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
+        const { data: subeventoAqui } = await supabaseAdmin.from('subeventos').select('nome').eq('id', subeventoIdLido).maybeSingle()
+        const nomeAqui = subeventoAqui?.nome ?? 'este subevento'
+        return {
+          success: false,
+          funcionario: funcInfo,
+          message: nomeCorreto
+            ? `Esta credencial é do subevento ${nomeCorreto}. Aqui está lendo ${nomeAqui} — não autoriza a entrada.`
+            : `Esta credencial não está vinculada a nenhum subevento. Aqui está lendo ${nomeAqui} — não autoriza a entrada.`,
+        }
+      }
+    } catch { /* migração pendente — sem checagem de subevento */ }
   }
   const statusCred = statusCredenciamentoValido(func.status_credenciamento as string)
   if (statusCred === 'pendente') {
@@ -5902,7 +5939,7 @@ export async function cadastrarBiometria(
  */
 export async function registrarPresencaFacial(
   eventoId: string, descritor: number[], escolhido?: 'entrada' | 'fim',
-  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number },
+  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoId?: string },
 ): Promise<ResultadoScan> {
   const inicio = Date.now()
   let funcionarioIdParaLog: string | null = null
@@ -5913,7 +5950,7 @@ export async function registrarPresencaFacial(
   try {
     const r = await validarLeituraFacial(
       eventoId, descritor, escolhido, opcoes?.apenasConferir === true,
-      opcoes?.latitude, opcoes?.longitude,
+      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoId,
     )
     resultado = r.resultado
     funcionarioIdParaLog = r.funcionarioId
@@ -5941,6 +5978,8 @@ type ResultadoValidacaoFacial = { resultado: ResultadoScan; funcionarioId: strin
 async function validarLeituraFacial(
   eventoId: string, descritor: number[], escolhido: 'entrada' | 'fim' | undefined, apenasConferir: boolean,
   latitude?: number, longitude?: number,
+  /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
+  subeventoId?: string,
 ): Promise<ResultadoValidacaoFacial> {
   const semLog = (resultado: ResultadoScan, logResultado: string, distancia?: number): ResultadoValidacaoFacial =>
     ({ resultado, funcionarioId: null, logResultado, distancia })
@@ -6064,7 +6103,7 @@ async function validarLeituraFacial(
   const resultado = await autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'face', latitude, longitude,
+    origem: 'face', latitude, longitude, subeventoIdLido: subeventoId,
   })
   return { resultado, funcionarioId: match.funcionarioId, distancia: match.distancia, logResultado: resultado.success ? 'sucesso' : 'negado' }
 }
@@ -6617,6 +6656,12 @@ export async function cadastrarFuncionarioPublico(
      * acabou de ser gerado dentro desta própria função.
      */
     biometriaDescritor?: number[]
+    /**
+     * Qual subevento a pessoa vai trabalhar — só existe (e só é obrigatório)
+     * quando o fornecedor tem MAIS de uma escala neste evento (ver
+     * `fornecedor_subeventos`). Com 0 ou 1 escala, a tela nem pergunta.
+     */
+    subeventoId?: string
   },
   autorizacaoIndividual?: string,
 ): Promise<{
@@ -6742,6 +6787,61 @@ export async function cadastrarFuncionarioPublico(
     return { error: `Este CPF já está credenciado neste evento pelo setor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
   }
 
+  /*
+   * SUBEVENTO + TRAVA DE COTA — pedido do Vital (30/09/2026). Só roda quando
+   * a organização ligou a funcionalidade (nasce desligada em
+   * `organizacoes.subeventos_habilitado`/`trava_cota_habilitada`) — pra
+   * qualquer outro cliente isto é como se não existisse.
+   */
+  const organizacaoIdDoEvento = (fornecedor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
+  const funcionalidades = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
+  let subeventoIdResolvido: string | null = null
+
+  if (funcionalidades.subeventosHabilitado) {
+    const { data: escalas } = await supabaseAdmin
+      .from('fornecedor_subeventos')
+      .select('subevento_id, cota')
+      .eq('fornecedor_id', fornecedorId)
+    const lista = escalas ?? []
+    // Fornecedor ainda não escalado em NENHUM subevento — bloqueia em vez de
+    // deixar a pessoa entrar sem subevento (quebraria a checagem no portão).
+    if (lista.length === 0) {
+      return { error: 'Este setor ainda não foi escalado em nenhum subevento deste evento. Fale com o organizador.' }
+    }
+    if (lista.length === 1) {
+      subeventoIdResolvido = lista[0].subevento_id as string
+    } else {
+      if (!dados.subeventoId || !lista.some(e => e.subevento_id === dados.subeventoId)) {
+        return { error: 'Selecione em qual subevento você vai trabalhar.' }
+      }
+      subeventoIdResolvido = dados.subeventoId
+    }
+
+    if (funcionalidades.travaCotaHabilitada) {
+      const cota = lista.find(e => e.subevento_id === subeventoIdResolvido)?.cota ?? null
+      if (cota !== null) {
+        const { count } = await supabaseAdmin
+          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', subeventoIdResolvido)
+        if ((count ?? 0) >= cota) {
+          return { error: 'Seu setor está com o número máximo de pessoas. Contate seu supervisor.' }
+        }
+      }
+    }
+  } else if (funcionalidades.travaCotaHabilitada) {
+    // Sem subevento: a cota é a do fornecedor inteiro (`quantidade_estimada`,
+    // hoje só decorativa — aqui, com o toggle ligado, passa a valer de verdade).
+    const { data: forn } = await supabaseAdmin
+      .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).maybeSingle()
+    const cota = forn?.quantidade_estimada ?? null
+    if (cota) {
+      const { count } = await supabaseAdmin
+        .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+      if ((count ?? 0) >= cota) {
+        return { error: 'Seu setor está com o número máximo de pessoas. Contate seu supervisor.' }
+      }
+    }
+  }
+
   const { data, error } = await supabaseAdmin.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
     nome: dados.nome.trim(),
@@ -6774,6 +6874,15 @@ export async function cadastrarFuncionarioPublico(
   }]).select('id, qr_token').single()
 
   if (error || !data) return { error: 'Erro ao enviar formulário' }
+
+  // Coluna nova, à parte — mesmo cuidado de `exige_meio` em `criarFornecedor`:
+  // gravar direto no insert faria uma migração pendente derrubar o cadastro
+  // INTEIRO (que já foi criado) em vez de só este campo extra.
+  if (subeventoIdResolvido) {
+    const { error: erroSubevento } = await supabaseAdmin
+      .from('funcionarios').update({ subevento_id: subeventoIdResolvido }).eq('id', data.id)
+    if (erroSubevento) console.error('[cadastrarFuncionarioPublico] subevento_id não gravado (migração pendente?)', erroSubevento.message)
+  }
 
   if (match) {
     const contentType = match[1]
@@ -9053,6 +9162,142 @@ export async function salvarPermissao(
    */
   revalidatePath('/admin', 'layout')
   return { ok: true as const }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNCIONALIDADE DO SISTEMA — liga/desliga por organização (pedido do Vital,
+// 30/09/2026). Diferente de `permissoes_organizacao` (que é sobre QUEM PODE
+// FAZER O QUÊ), isto é sobre QUAIS RECURSOS EXISTEM pra aquele cliente —
+// subeventos e trava de cota nascem desligados, e só aparecem na tela de quem
+// ligou. A maioria dos clientes nunca vê nada disto.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type FuncionalidadesOrganizacao = {
+  subeventosHabilitado: boolean
+  travaCotaHabilitada: boolean
+}
+
+/**
+ * Tolerante à migração pendente (mesmo padrão do resto do sistema): sem as
+ * colunas, tudo se comporta como hoje — nenhum recurso novo aparece.
+ */
+export async function obterFuncionalidadesOrganizacao(organizacaoId: string | null): Promise<FuncionalidadesOrganizacao> {
+  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false }
+  if (!organizacaoId) return vazio
+  const { data, error } = await supabaseAdmin
+    .from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
+  if (error || !data) return vazio
+  return {
+    subeventosHabilitado: (data as { subeventos_habilitado?: boolean }).subeventos_habilitado === true,
+    travaCotaHabilitada: (data as { trava_cota_habilitada?: boolean }).trava_cota_habilitada === true,
+  }
+}
+
+/** Master-only — mesmo guard da tela de Configurações. */
+export async function editarFuncionalidadesOrganizacao(organizacaoId: string, formData: FormData) {
+  const perfil = await getPerfil()
+  if (!perfil || !ehMaster(perfil.role)) throw new Error('Apenas o master altera funcionalidades do sistema.')
+
+  const { error } = await supabaseAdmin.from('organizacoes').update({
+    subeventos_habilitado: formData.get('subeventos_habilitado') === 'on',
+    trava_cota_habilitada: formData.get('trava_cota_habilitada') === 'on',
+  }).eq('id', organizacaoId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  revalidatePath('/admin/configuracoes')
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUBEVENTOS — evento mãe com portões/categorias de acesso (Vital: Empresarial,
+// Bloco, Camarote Navista, Camarotes em geral, Arquibancada, Geral). Cada um é
+// uma linha em `subeventos`, presa ao evento mãe — sem data/local próprios.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export async function criarSubevento(eventoId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    const nome = ((formData.get('nome') as string) ?? '').trim()
+    if (!nome) throw new Error('Informe o nome do subevento.')
+    const { error } = await supabaseAdmin.from('subeventos').insert([{ evento_id: eventoId, nome }])
+    if (error) throw new Error(mensagemAmigavel(error))
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+export async function editarSubevento(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    const nome = ((formData.get('nome') as string) ?? '').trim()
+    if (!nome) throw new Error('Informe o nome do subevento.')
+    const { error } = await supabaseAdmin.from('subeventos').update({ nome }).eq('id', id).eq('evento_id', eventoId)
+    if (error) throw new Error(mensagemAmigavel(error))
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+export async function excluirSubevento(id: string, eventoId: string): Promise<{ error?: string }> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    /*
+     * Quem já está cadastrado neste subevento fica com `subevento_id = null`
+     * (ON DELETE SET NULL) — não é excluído junto. Avisa antes de deixar
+     * alguém "sem subevento" num evento que usa a feature, pra não virar um
+     * caso estranho no portão sem ninguém ter decidido isso de propósito.
+     */
+    const { count } = await supabaseAdmin
+      .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', id)
+    if (count) {
+      throw new Error(`Este subevento tem ${count} pessoa${count === 1 ? '' : 's'} vinculada${count === 1 ? '' : 's'}. Mova-as para outro subevento antes de excluir.`)
+    }
+    const { error } = await supabaseAdmin.from('subeventos').delete().eq('id', id).eq('evento_id', eventoId)
+    if (error) throw new Error(mensagemAmigavel(error))
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * Salva de uma vez todas as escalas de um fornecedor — um checkbox (escalado
+ * ou não) + uma cota por subevento do evento. Faz o diff contra o que já
+ * existe em `fornecedor_subeventos` (upsert dos marcados, remove os
+ * desmarcados) em vez de apagar tudo e reinserir, pra não perder o
+ * `created_at` original de uma escala que só teve a cota mudada.
+ */
+export async function salvarEscalasDoFornecedor(
+  fornecedorId: string, eventoId: string,
+  escalas: { subeventoId: string; escalado: boolean; cota: number | null }[],
+): Promise<{ error?: string }> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+
+    const marcados = escalas.filter(e => e.escalado)
+    const desmarcadosIds = escalas.filter(e => !e.escalado).map(e => e.subeventoId)
+
+    if (desmarcadosIds.length) {
+      const { error } = await supabaseAdmin.from('fornecedor_subeventos')
+        .delete().eq('fornecedor_id', fornecedorId).in('subevento_id', desmarcadosIds)
+      if (error) throw new Error(mensagemAmigavel(error))
+    }
+    if (marcados.length) {
+      const { error } = await supabaseAdmin.from('fornecedor_subeventos').upsert(
+        marcados.map(e => ({ fornecedor_id: fornecedorId, subevento_id: e.subeventoId, cota: e.cota })),
+        { onConflict: 'fornecedor_id,subevento_id' },
+      )
+      if (error) throw new Error(mensagemAmigavel(error))
+    }
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
 }
 
 /**

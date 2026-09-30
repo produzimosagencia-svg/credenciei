@@ -163,14 +163,23 @@ export default function ScannerView({
   eventos,
   initialEventoId,
   noPainel = false,
+  subeventosPorEvento = {},
 }: {
   eventos: Evento[]
   initialEventoId?: string
   /** Dentro do painel (/admin/scanner), que tem tema claro e escuro — o
    *  seletor usa o estilo do painel em vez do fixo da tela preta do portão. */
   noPainel?: boolean
+  /** Subeventos de cada evento (Vital, 30/09/2026) — vazio/ausente = evento sem subeventos. */
+  subeventosPorEvento?: Record<string, { id: string; nome: string }[]>
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
+  const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
+  // "Ao entrar, o operador escolhe qual subevento vai ler" (Vital, 30/09/2026)
+  // — escolha da SESSÃO, não fica salva no aparelho: portão muda de gente.
+  const [subeventoId, setSubeventoId] = useState('')
+  const subeventoIdRef = useRef('')
+  useEffect(() => { subeventoIdRef.current = subeventoId }, [subeventoId])
   // O modo salvo vem do aparelho sem piscar a tela (mesmo padrão do menu).
   const modoSalvo = useSyncExternalStore(semAssinatura, lerModoSalvo, () => null)
   const [modoEscolhido, setModoEscolhido] = useState<Modo | null>(null)
@@ -306,7 +315,7 @@ export default function ScannerView({
     if (!c || salvando) return
     const id = ++leituraRef.current
     setSalvando(true)
-    const r = await aguardar(id, c.codigo, c.modo, registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo).catch(semRede))
+    const r = await aguardar(id, c.codigo, c.modo, registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, { subeventoId: subeventoIdRef.current || undefined }).catch(semRede))
     setSalvando(false)
     if (!r) return
     setConfirmacao(null)
@@ -363,7 +372,7 @@ export default function ScannerView({
     // Primeiro a PRÉVIA (nada é gravado); o operador confirma na tela.
     const previa = await aguardar(
       id, codigo, modoDaLeitura,
-      registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, { apenasConferir: true }).catch(semRede),
+      registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, { apenasConferir: true, subeventoId: subeventoIdRef.current || undefined }).catch(semRede),
     )
     if (!previa) return
     if (previa.previa) {
@@ -479,7 +488,7 @@ export default function ScannerView({
           <label className="text-slate-400 text-sm block mb-1.5" data-tutorial="scan-evento">Evento</label>
           <select
             value={eventoId}
-            onChange={e => setEventoId(e.target.value)}
+            onChange={e => { setEventoId(e.target.value); setSubeventoId('') }}
             className={noPainel
               ? 'input w-full'
               : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
@@ -489,6 +498,27 @@ export default function ScannerView({
             ))}
           </select>
         </div>
+
+        {/*
+          * Subevento — "ao entrar, o operador escolhe qual subevento vai
+          * ler" (Vital, 30/09/2026). Só aparece em evento que tem subevento
+          * cadastrado; sem isso, ~99% dos eventos nem veem este campo.
+          */}
+        {!!subeventosDoEvento.length && (
+          <div>
+            <label className="text-slate-400 text-sm block mb-1.5">Subevento (este portão)</label>
+            <select
+              value={subeventoId}
+              onChange={e => setSubeventoId(e.target.value)}
+              className={noPainel ? 'input w-full' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
+            >
+              <option value="">Selecione...</option>
+              {subeventosDoEvento.map(s => (
+                <option key={s.id} value={s.id}>{s.nome}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* ENTRADA / SAÍDA — o operador escolhe (de volta em 26/09/2026). */}
         <div className="grid grid-cols-2 gap-2" data-tutorial="scan-modo" role="radiogroup" aria-label="Registrar">

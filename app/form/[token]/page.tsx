@@ -6,6 +6,7 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { consultarAutorizacaoCadastroIndividual } from '@/lib/cadastro-individual'
+import { obterFuncionalidadesOrganizacao } from '@/lib/actions'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-cadastro',
@@ -44,13 +45,34 @@ export default async function FormPage({
 
   const { data: fornecedor } = await supabase
     .from('fornecedores')
-    .select('*, eventos(id, nome, local, data_inicio, cadastro_suspenso)')
+    .select('*, eventos(id, nome, local, data_inicio, cadastro_suspenso, organizacao_id)')
     .eq('token_formulario', token)
     .single()
 
   if (!fornecedor) notFound()
 
   const evento = (fornecedor.eventos as any)
+
+  /*
+   * SUBEVENTO — quando a organização usa (Vital, 30/09/2026), a pessoa
+   * escolhe em qual subevento vai trabalhar (só quando o fornecedor tem MAIS
+   * de uma escala — com 0 ou 1, nem aparece, ver FormularioFuncionario).
+   * Tolerante e à parte, mesmo motivo de sempre: recurso que a maioria dos
+   * eventos nem liga não pode derrubar o cadastro por uma migração pendente.
+   */
+  let subeventosDisponiveis: { id: string; nome: string }[] = []
+  try {
+    const { subeventosHabilitado } = await obterFuncionalidadesOrganizacao(evento?.organizacao_id ?? null)
+    if (subeventosHabilitado) {
+      const { data: escalas } = await supabase
+        .from('fornecedor_subeventos')
+        .select('subevento_id, subeventos(id, nome)')
+        .eq('fornecedor_id', fornecedor.id)
+      subeventosDisponiveis = (escalas ?? [])
+        .map(e => (e.subeventos as unknown as { id: string; nome: string } | null))
+        .filter((s): s is { id: string; nome: string } => !!s)
+    }
+  } catch { /* migração pendente — segue sem subevento, como hoje */ }
 
   /*
    * Biometria — consulta À PARTE e tolerante, mesmo padrão do resto do
@@ -132,6 +154,7 @@ export default async function FormPage({
             cpfInicial={cpf}
             autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
             biometriaHabilitada={biometriaHabilitada}
+            subeventosDisponiveis={subeventosDisponiveis}
           />
         </div>
       </div>

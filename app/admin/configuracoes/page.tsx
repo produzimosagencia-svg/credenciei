@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Settings, Building2, ShieldAlert } from 'lucide-react'
+import { Settings, Building2, ShieldAlert, ToggleLeft } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
-import { obterPermissoes } from '@/lib/actions'
+import { obterPermissoes, obterFuncionalidadesOrganizacao } from '@/lib/actions'
 import { PageHeader, Secao, Aviso } from '@/components/ui/Superficie'
 import GradePermissoes from './GradePermissoes'
+import FuncionalidadesForm from './FuncionalidadesForm'
 
 export const revalidate = 0
 
@@ -41,42 +42,41 @@ export const revalidate = 0
 export default async function ConfiguracoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ org?: string }>
+  searchParams: Promise<{ org?: string; aba?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!ehMaster(perfil.role)) redirect('/admin')
 
-  const { org } = await searchParams
+  const { org, aba } = await searchParams
   const organizacaoId = org && org !== 'plataforma' ? org : null
+  const abaAtiva = aba === 'funcionalidades' ? 'funcionalidades' : 'permissoes'
 
-  const [{ data: organizacoes }, salvas] = await Promise.all([
+  const [{ data: organizacoes }, salvas, funcionalidades] = await Promise.all([
     supabase.from('organizacoes').select('id, nome').order('nome'),
     obterPermissoes(organizacaoId),
+    obterFuncionalidadesOrganizacao(organizacaoId),
   ])
 
   const nomeDoEscopo = organizacaoId
     ? (organizacoes ?? []).find(o => o.id === organizacaoId)?.nome ?? 'Organização'
     : 'Padrão da plataforma'
 
+  // Preserva a organização escolhida ao trocar de aba.
+  const hrefAba = (a: string) => organizacaoId ? `/admin/configuracoes?org=${organizacaoId}&aba=${a}` : `/admin/configuracoes?aba=${a}`
+
   return (
     <div className="space-y-5">
       <PageHeader
         titulo="Configurações"
-        descricao="O que cada tipo de acesso pode fazer no sistema"
+        descricao="O que cada tipo de acesso pode fazer, e quais recursos cada cliente usa"
       />
-
-      <Aviso tom="atencao" icone={<ShieldAlert className="w-3.5 h-3.5" />}>
-        <strong>Vale na hora.</strong> Cada clique muda o sistema imediatamente para quem tem
-        aquele tipo de acesso — menu, botões e as próprias ações no servidor. Enquanto uma célula
-        estiver no padrão, nada muda em relação a como o sistema sempre funcionou.
-      </Aviso>
 
       {/* Links, e não select: o escopo fica na URL e dá pra comparar duas
           organizações em duas abas. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Link
-          href="/admin/configuracoes"
+          href={abaAtiva === 'permissoes' ? '/admin/configuracoes' : `/admin/configuracoes?aba=${abaAtiva}`}
           className={!organizacaoId ? 'btn btn-primario btn-sm' : 'btn btn-secundario btn-sm'}
         >
           <Settings className="w-3.5 h-3.5 shrink-0" /> Padrão da plataforma
@@ -84,7 +84,7 @@ export default async function ConfiguracoesPage({
         {(organizacoes ?? []).map(o => (
           <Link
             key={o.id as string}
-            href={`/admin/configuracoes?org=${o.id}`}
+            href={`/admin/configuracoes?org=${o.id}&aba=${abaAtiva}`}
             className={organizacaoId === o.id ? 'btn btn-primario btn-sm' : 'btn btn-secundario btn-sm'}
           >
             <Building2 className="w-3.5 h-3.5 shrink-0" /> {o.nome as string}
@@ -92,16 +92,61 @@ export default async function ConfiguracoesPage({
         ))}
       </div>
 
-      <Secao
-        tom="acento"
-        icone={<Settings className="w-3.5 h-3.5" />}
-        titulo={`Permissões — ${nomeDoEscopo}`}
-        descricao={organizacaoId
-          ? 'O que estiver no padrão aqui segue o padrão da plataforma'
-          : 'Vale para toda organização que não tiver regra própria'}
-      >
-        <GradePermissoes organizacaoId={organizacaoId} salvas={salvas} />
-      </Secao>
+      {/* Aba: Permissões (de sempre) × Funcionalidade do Sistema (nova,
+          30/09/2026 — pedido do Vital). */}
+      <div className="flex items-center gap-1.5 border-b border-slate-200">
+        <Link
+          href={hrefAba('permissoes')}
+          className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            abaAtiva === 'permissoes' ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Permissões
+        </Link>
+        <Link
+          href={hrefAba('funcionalidades')}
+          className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            abaAtiva === 'funcionalidades' ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Funcionalidade do Sistema
+        </Link>
+      </div>
+
+      {abaAtiva === 'permissoes' ? (
+        <>
+          <Aviso tom="atencao" icone={<ShieldAlert className="w-3.5 h-3.5" />}>
+            <strong>Vale na hora.</strong> Cada clique muda o sistema imediatamente para quem tem
+            aquele tipo de acesso — menu, botões e as próprias ações no servidor. Enquanto uma célula
+            estiver no padrão, nada muda em relação a como o sistema sempre funcionou.
+          </Aviso>
+
+          <Secao
+            tom="acento"
+            icone={<Settings className="w-3.5 h-3.5" />}
+            titulo={`Permissões — ${nomeDoEscopo}`}
+            descricao={organizacaoId
+              ? 'O que estiver no padrão aqui segue o padrão da plataforma'
+              : 'Vale para toda organização que não tiver regra própria'}
+          >
+            <GradePermissoes organizacaoId={organizacaoId} salvas={salvas} />
+          </Secao>
+        </>
+      ) : !organizacaoId ? (
+        <Aviso tom="atencao" icone={<ToggleLeft className="w-3.5 h-3.5" />}>
+          Funcionalidade do sistema é por cliente — não existe &quot;padrão da plataforma&quot; aqui.
+          Escolha uma organização acima para configurar.
+        </Aviso>
+      ) : (
+        <Secao
+          tom="acento"
+          icone={<ToggleLeft className="w-3.5 h-3.5" />}
+          titulo={`Funcionalidade do Sistema — ${nomeDoEscopo}`}
+          descricao="Recursos avançados, desligados por padrão — só aparecem pra quem ligar"
+        >
+          <FuncionalidadesForm organizacaoId={organizacaoId} funcionalidades={funcionalidades} />
+        </Secao>
+      )}
     </div>
   )
 }
