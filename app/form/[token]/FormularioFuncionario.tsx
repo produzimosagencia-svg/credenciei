@@ -92,11 +92,24 @@ export default function FormularioFuncionario({
    * `qrToken`) — nunca antes, senão a tela mentiria se o envio falhasse.
    */
   const [biometriaConfirmada, setBiometriaConfirmada] = useState(false)
+  /**
+   * `true` quando o rosto veio de um cadastro reaproveitado (outro evento),
+   * não de uma captura nova agora — muda o texto da tela verde de sucesso.
+   */
+  const [biometriaReaproveitada, setBiometriaReaproveitada] = useState(false)
   // Biometria: mostra a câmera ENTRE preencher e enviar de verdade — nunca
   // trava o cadastro (sempre dá pra pular).
   // null = etapa fechada · 'intro' = explicação, antes da câmera · 'camera' = capturando
   const [etapaBiometria, setEtapaBiometria] = useState<'intro' | 'camera' | null>(null)
   const [jaPassouPelaBiometria, setJaPassouPelaBiometria] = useState(false)
+  /**
+   * Vem de `buscarCadastroPorCpf` — este CPF já tem um rosto cadastrado (em
+   * QUALQUER evento anterior). Quando true, o envio pula a etapa de câmera
+   * inteira: o servidor reaproveita o cadastro sozinho
+   * (`resolverBiometriaNoCadastro`), sem pedir a pessoa passar pela câmera
+   * de novo.
+   */
+  const [biometriaJaCadastrada, setBiometriaJaCadastrada] = useState(false)
   const cpfBuscado = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   /*
@@ -127,6 +140,7 @@ export default function FormularioFuncionario({
   const onCpf = (value: string) => {
     set('cpf', value)
     setAutofill(false)
+    setBiometriaJaCadastrada(false)
     const digitos = value.replace(/\D/g, '')
     if (digitos.length < 11) { setErroCpf(null); return }
     if (!validarCpf(digitos)) { setErroCpf('CPF inválido. Confira os números.'); return }
@@ -151,6 +165,7 @@ export default function FormularioFuncionario({
         chavePix: f.chavePix || (dados.chavePix ?? ''),
       }))
       setAutofill(true)
+      setBiometriaJaCadastrada(dados.temBiometriaCadastrada)
     }).catch(() => {})
   }
 
@@ -186,6 +201,11 @@ export default function FormularioFuncionario({
    * não passou por aquela etapa, MOSTRA a câmera em vez de enviar — é o
    * "próximo passo" pedido pelo Juan. Segunda vez (já veio da câmera, com
    * rosto capturado OU depois de "Pular"), envia direto.
+   *
+   * EXCETO quando este CPF já tem biometria cadastrada em outro evento
+   * (`biometriaJaCadastrada`) — nesse caso pula a câmera de vez: o servidor
+   * reaproveita o rosto sozinho (`resolverBiometriaNoCadastro`), pedido do
+   * Juan pra nunca fazer quem já cadastrou o rosto uma vez repetir a etapa.
    */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -193,7 +213,7 @@ export default function FormularioFuncionario({
       setErroCpf('CPF inválido. Confira os números.')
       return
     }
-    if (biometriaHabilitada && !jaPassouPelaBiometria) {
+    if (biometriaHabilitada && !jaPassouPelaBiometria && !biometriaJaCadastrada) {
       setEtapaBiometria('intro')
       return
     }
@@ -238,8 +258,17 @@ export default function FormularioFuncionario({
         }
         setStatusEnvio(res.status ?? 'pendente')
         setQrToken(res.qrToken)
-        // Só quando a pessoa DE FATO cadastrou o rosto agora (não quando pulou).
-        if (descritorRosto) setBiometriaConfirmada(true)
+        /*
+         * A tela verde de biometria aparece quando o SERVIDOR confirma que
+         * ficou com um rosto pra este evento — capturado agora (`descritorRosto`)
+         * OU reaproveitado de um cadastro anterior (`res.temBiometria` sem
+         * ter vindo da câmera desta vez). Nunca quando a pessoa pulou e não
+         * tinha nada pra reaproveitar.
+         */
+        if (descritorRosto || res.temBiometria) {
+          setBiometriaConfirmada(true)
+          setBiometriaReaproveitada(!!res.biometriaReaproveitada)
+        }
       } else {
         setErroEnvio(res.error ?? 'Erro ao enviar formulário. Tente novamente.')
       }
@@ -315,9 +344,13 @@ export default function FormularioFuncionario({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-slate-800 font-bold text-xl">Biometria cadastrada com sucesso!</h2>
+        <h2 className="text-slate-800 font-bold text-xl">
+          {biometriaReaproveitada ? 'Sua biometria já estava cadastrada!' : 'Biometria cadastrada com sucesso!'}
+        </h2>
         <p className="text-slate-500 text-sm">
-          Seu rosto já está registrado para este evento. A partir de agora você pode entrar e sair só olhando
+          {biometriaReaproveitada
+            ? 'Você já tinha cadastrado seu rosto em outro evento — não precisou passar pela câmera de novo. Ele já está pronto pra este evento também.'
+            : 'Seu rosto já está registrado para este evento.'} A partir de agora você pode entrar e sair só olhando
           para a câmera do portão — sem precisar mostrar o QR Code toda vez.
         </p>
         <button

@@ -210,7 +210,17 @@ type InstrucoesAcesso = {
  * não". Por isso `biometria_qr` menciona o QR só como algo que "a equipe
  * pode usar", nunca como instrução direta pra pessoa.
  */
-function instrucoesDeAcesso(metodoBruto: unknown): InstrucoesAcesso {
+function instrucoesDeAcesso(
+  metodoBruto: unknown,
+  /**
+   * Só usado pela mensagem de aprovação (`boas_vindas_funcionario`) — se a
+   * pessoa AINDA NÃO tem rosto cadastrado neste evento, o "como funciona"
+   * pede pra completar o cadastro pelo link em vez de dizer que já está tudo
+   * pronto. Ver `resolverBiometriaNoCadastro`/`completarBiometriaPublica`
+   * em lib/actions.ts (29/09/2026).
+   */
+  opcoes?: { faltaBiometria?: boolean },
+): InstrucoesAcesso {
   const metodo: MetodoAcesso = metodoBruto === 'biometria' || metodoBruto === 'biometria_qr' ? metodoBruto : 'qr'
 
   if (metodo === 'qr') {
@@ -247,9 +257,11 @@ function instrucoesDeAcesso(metodoBruto: unknown): InstrucoesAcesso {
 
 🔄 Se você trabalha mais de um dia, cada dia tem o seu próprio ciclo — amanhã começa tudo de novo.
 
-${metodo === 'biometria_qr'
-  ? '📌 Se o tablet não conseguir te reconhecer, a equipe pode usar o QR Code da sua credencial como alternativa.'
-  : '👤 O reconhecimento facial libera sua entrada e saída automaticamente — não precisa mostrar nada na tela.'}`,
+${opcoes?.faltaBiometria
+  ? '⚠️ *Falta uma etapa*: você ainda não cadastrou seu rosto. Abra o link acima e cadastre antes do dia do evento — sem isso a equipe não consegue te reconhecer no portão.'
+  : metodo === 'biometria_qr'
+    ? '📌 Se o tablet não conseguir te reconhecer, a equipe pode usar o QR Code da sua credencial como alternativa.'
+    : '👤 O reconhecimento facial libera sua entrada e saída automaticamente — não precisa mostrar nada na tela.'}`,
     rotuloCredencial: 'Sua credencial:',
   }
 }
@@ -1581,6 +1593,21 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const credencial = linkDaCredencial(func.qr_token, 'boas_vindas_funcionario')
     if (!credencial) return null
 
+    /*
+     * A pessoa já tem rosto cadastrado NESTE evento (capturado no formulário
+     * ou reaproveitado de outro evento pelo CPF — ver
+     * `resolverBiometriaNoCadastro` em lib/actions.ts)? Só importa quando o
+     * evento usa biometria; tolerante à tabela ainda não existir.
+     */
+    let faltaBiometria = false
+    if (evento.metodo_identificacao === 'biometria' || evento.metodo_identificacao === 'biometria_qr') {
+      try {
+        const { data: template } = await supabase
+          .from('biometria_templates').select('id').eq('funcionario_id', msg.funcionario_id).eq('evento_id', msg.evento_id).maybeSingle()
+        faltaBiometria = !template
+      } catch { /* biometria ainda não migrada */ }
+    }
+
     return {
       template,
       params: [
@@ -1590,7 +1617,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
         evento.local?.trim() || 'a confirmar',
         credencial,
-        instrucoesDeAcesso(evento.metodo_identificacao).comoFunciona,
+        instrucoesDeAcesso(evento.metodo_identificacao, { faltaBiometria }).comoFunciona,
       ],
     }
   }

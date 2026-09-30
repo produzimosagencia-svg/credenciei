@@ -6115,6 +6115,53 @@ export async function registrarPresencaFacialLivre(
   return { ok: true, nome: func.nome as string }
 }
 
+/**
+ * Rede de segurança: completa a biometria de quem já está aprovado e
+ * credenciado, mas ainda não tem rosto cadastrado NESTE evento — pulou no
+ * formulário, câmera falhou, ou o formulário nem oferecia biometria ainda
+ * quando ela se cadastrou. Chamada pela própria credencial
+ * (`/credential/[token]`), com o mesmo modelo de confiança de
+ * `registrarPresencaFacialLivre`: o `qr_token` É o segredo, sem sessão.
+ *
+ * Passa pela MESMA régua de `cadastrarFuncionarioPublico`
+ * (`resolverBiometriaNoCadastro`) — se o CPF já ganhou um perfil mestre
+ * enquanto isso (cadastro em outro evento no meio do caminho), reaproveita
+ * sem nem precisar do descritor recém-capturado.
+ */
+export async function completarBiometriaPublica(
+  token: string, descritor: number[],
+): Promise<{ ok?: boolean; reaproveitada?: boolean; error?: string }> {
+  if (!podePassar(`completar-biometria:${token}`, 10, 10 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
+  if (!descritorValido(descritor)) return { error: 'Rosto não capturado corretamente. Tente de novo.' }
+
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, cpf, status_credenciamento, fornecedor_id, fornecedores(evento_id, eventos(metodo_identificacao))')
+    .eq('qr_token', token)
+    .single()
+  if (!func) return { error: 'Credencial não encontrada' }
+  if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') {
+    return { error: 'Seu credenciamento ainda não foi aprovado pelo organizador.' }
+  }
+
+  const fornecedor = func.fornecedores as any
+  const evento = fornecedor?.eventos as any
+  const eventoId = fornecedor?.evento_id
+  if (!eventoId) return { error: 'Evento não encontrado' }
+  if (!biometriaHabilitada(evento?.metodo_identificacao)) {
+    return { error: 'Este evento não usa reconhecimento facial.' }
+  }
+
+  const { temBiometria, biometriaReaproveitada } = await resolverBiometriaNoCadastro({
+    funcionarioId: func.id as string, eventoId, cpf: func.cpf as string, descritor,
+  })
+  if (!temBiometria) return { error: 'Não foi possível salvar sua biometria agora. Tente de novo.' }
+
+  return { ok: true, reaproveitada: biometriaReaproveitada }
+}
+
 /** Marca no próprio registro quem bateu o meio sem o aparelho dar a localização. */
 const JUSTIFICATIVA_SEM_GPS = 'Meio registrado sem localização (aparelho não forneceu).'
 
@@ -6406,6 +6453,85 @@ export async function registrarPresencaLivre(
 // ─── Cadastro público (formulário do fornecedor) ──────────────────────────────
 
 /**
+ * Resolve a biometria de UM funcionário/evento — captura fresca ou
+ * reaproveitada de um cadastro anterior (mesmo CPF, qualquer evento
+ * passado). Usada por `cadastrarFuncionarioPublico` (no formulário) e por
+ * `completarBiometriaPublica` (quem pulou/falhou no formulário e completa
+ * depois, pela credencial) — a MESMA régua nos dois lugares, pra nunca
+ * divergir.
+ *
+ * `biometria_templates` continua com uma linha por (funcionario_id,
+ * evento_id) — o reconhecimento no portão (`validarLeituraFacial`) não
+ * muda NADA: só comparar dentro do evento, como sempre. `biometria_perfis`
+ * (cpf → vetor) é só o banco mestre que alimenta essa linha sem precisar
+ * de câmera de novo.
+ *
+ * Nunca lança pra quem chama: falha aqui não pode desfazer um cadastro que
+ * já está feito — o rosto é sempre um EXTRA, nunca o motivo de recusar a
+ * pessoa. Tolerante à migração `upgrade-biometria-perfil-cpf.sql` ainda não
+ * ter rodado (mesmo padrão de `pausas_turno`/`metodo_identificacao`): sem a
+ * tabela, o reaproveitamento simplesmente não acontece, e tudo funciona como
+ * antes desta mudança.
+ */
+async function resolverBiometriaNoCadastro(args: {
+  funcionarioId: string
+  eventoId: string
+  cpf: string
+  /** Vetor capturado agora pela câmera — ausente quando a pessoa pulou ou o evento não usa biometria. */
+  descritor?: number[]
+}): Promise<{ temBiometria: boolean; biometriaReaproveitada: boolean }> {
+  const { funcionarioId, eventoId, cpf, descritor } = args
+  const semBiometria = { temBiometria: false, biometriaReaproveitada: false }
+
+  const gravarConsentimento = () =>
+    supabaseAdmin.from('biometria_consentimentos').insert([{
+      funcionario_id: funcionarioId, evento_id: eventoId,
+      // Sem operador — quem aceitou foi a própria pessoa, sem ninguém do
+      // staff por perto (formulário público ou credencial).
+      registrado_por_perfil_id: null,
+    }])
+
+  try {
+    if (descritorValido(descritor)) {
+      const [, { error: erroTemplate }] = await Promise.all([
+        gravarConsentimento(),
+        supabaseAdmin.from('biometria_templates').upsert([{
+          funcionario_id: funcionarioId, evento_id: eventoId, vetor: descritor,
+        }], { onConflict: 'funcionario_id,evento_id' }),
+      ])
+      if (erroTemplate) { console.error('[biometria] template não gravado', erroTemplate.message); return semBiometria }
+
+      // Vira o novo perfil mestre pra esta pessoa — o próximo evento reaproveita.
+      const { error: erroPerfil } = await supabaseAdmin.from('biometria_perfis').upsert([{
+        cpf, vetor: descritor, origem_funcionario_id: funcionarioId, origem_evento_id: eventoId,
+        atualizado_em: new Date().toISOString(),
+      }], { onConflict: 'cpf' })
+      if (erroPerfil) console.error('[biometria] perfil mestre não gravado (migração pendente?)', erroPerfil.message)
+
+      return { temBiometria: true, biometriaReaproveitada: false }
+    }
+
+    // Sem captura agora: existe um perfil mestre deste CPF pra reaproveitar?
+    const { data: perfil, error: erroBusca } = await supabaseAdmin
+      .from('biometria_perfis').select('vetor').eq('cpf', cpf).maybeSingle()
+    if (erroBusca || !perfil || !descritorValido(perfil.vetor)) return semBiometria
+
+    const [, { error: erroTemplate }] = await Promise.all([
+      gravarConsentimento(),
+      supabaseAdmin.from('biometria_templates').upsert([{
+        funcionario_id: funcionarioId, evento_id: eventoId, vetor: perfil.vetor,
+      }], { onConflict: 'funcionario_id,evento_id' }),
+    ])
+    if (erroTemplate) { console.error('[biometria] template reaproveitado não gravado', erroTemplate.message); return semBiometria }
+
+    return { temBiometria: true, biometriaReaproveitada: true }
+  } catch (e) {
+    console.error('[biometria] resolverBiometriaNoCadastro falhou', e)
+    return semBiometria
+  }
+}
+
+/**
  * Insere um funcionário a partir do formulário público. O token do formulário já
  * foi validado ao abrir a página; aqui revalidamos o fornecedor no servidor.
  * Formulário curto: nome, CPF, telefone, função e cidade.
@@ -6430,7 +6556,13 @@ export async function cadastrarFuncionarioPublico(
     biometriaDescritor?: number[]
   },
   autorizacaoIndividual?: string,
-): Promise<{ qrToken?: string; status?: StatusCredenciamento; error?: string }> {
+): Promise<{
+  qrToken?: string; status?: StatusCredenciamento; error?: string
+  /** A pessoa ficou com biometria cadastrada NESTE evento — capturada agora ou reaproveitada. */
+  temBiometria?: boolean
+  /** `true` quando o rosto veio de um cadastro anterior (outro evento), sem passar pela câmera agora. */
+  biometriaReaproveitada?: boolean
+}> {
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
     .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso, organizacao_id)')
@@ -6600,25 +6732,13 @@ export async function cadastrarFuncionarioPublico(
    * vem vazio quando não usa: a tela nem oferece a câmera nesse caso). Falha
    * aqui NUNCA desfaz o cadastro — ao contrário da foto (que É o cadastro
    * pedindo pra tentar de novo), o rosto é um EXTRA: a pessoa sempre pode
-   * cadastrar depois, no portão, ou simplesmente usar o QR Code.
+   * cadastrar depois, no portão, na credencial (`completarBiometriaPublica`),
+   * ou simplesmente usar o QR Code.
    */
-  if (descritorValido(dados.biometriaDescritor)) {
-    try {
-      await supabaseAdmin.from('biometria_consentimentos').insert([{
-        funcionario_id: data.id, evento_id: fornecedor.evento_id,
-        // Sem operador — quem aceitou foi a própria pessoa, no formulário.
-        registrado_por_perfil_id: null,
-      }])
-      const { error: erroTemplate } = await supabaseAdmin.from('biometria_templates').upsert([{
-        funcionario_id: data.id, evento_id: fornecedor.evento_id, vetor: dados.biometriaDescritor,
-      }], { onConflict: 'funcionario_id,evento_id' })
-      if (erroTemplate) console.error('[cadastrarFuncionarioPublico] biometria não gravada', erroTemplate.message)
-    } catch (e) {
-      // Biometria ainda não migrada, ou outra falha — o cadastro (a parte
-      // que importa de verdade) já está feito e não pode ser desfeito por isso.
-      console.error('[cadastrarFuncionarioPublico] biometria falhou', e)
-    }
-  }
+  const { temBiometria, biometriaReaproveitada } = await resolverBiometriaNoCadastro({
+    funcionarioId: data.id as string, eventoId: fornecedor.evento_id as string, cpf,
+    descritor: dados.biometriaDescritor,
+  })
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
   after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
@@ -6639,7 +6759,7 @@ export async function cadastrarFuncionarioPublico(
   // A mensagem de boas-vindas (com o link/QR) só dispara na APROVAÇÃO agora —
   // ver `aprovarCredenciamento`. Represada de propósito: mandar o link antes
   // de alguém aprovar entregaria uma credencial que ainda não vale.
-  return { qrToken: data.qr_token, status: 'pendente' as const }
+  return { qrToken: data.qr_token, status: 'pendente' as const, temBiometria, biometriaReaproveitada }
 }
 
 /**
@@ -6665,7 +6785,17 @@ export async function cadastrarFuncionarioPublico(
 export async function buscarCadastroPorCpf(
   fornecedorId: string,
   cpfBruto: string
-): Promise<{ nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null; cidade: string | null } | null> {
+): Promise<{
+  nome: string; telefone: string; empresa: string; cargo: string; chavePix: string | null; cidade: string | null
+  /**
+   * Já existe um rosto cadastrado pra este CPF (qualquer evento passado) —
+   * ver `biometria_perfis`/`resolverBiometriaNoCadastro`. O formulário usa
+   * isto pra NÃO pedir a câmera de novo pra quem já cadastrou uma vez.
+   * `false` também quando a migração ainda não rodou (tolerante, nunca quebra
+   * o autofill por causa disso).
+   */
+  temBiometriaCadastrada: boolean
+} | null> {
   const cpf = cpfBruto.replace(/\D/g, '')
   if (!validarCpf(cpf)) return null
 
@@ -6723,6 +6853,16 @@ export async function buscarCadastroPorCpf(
   }
 
   if (!func) return null
+
+  // Tolerante: sem a tabela (upgrade-biometria-perfil-cpf.sql ainda não
+  // rodou), ou qualquer outra falha, entra como "sem biometria" — nunca
+  // quebra o autofill do resto do formulário por causa disso.
+  let temBiometriaCadastrada = false
+  try {
+    const { data: perfil } = await supabaseAdmin.from('biometria_perfis').select('id').eq('cpf', cpf).maybeSingle()
+    temBiometriaCadastrada = !!perfil
+  } catch { /* biometria ainda não migrada */ }
+
   return {
     nome: func.nome,
     telefone: func.telefone,
@@ -6730,6 +6870,7 @@ export async function buscarCadastroPorCpf(
     cargo: func.cargo ?? '',
     chavePix: func.chave_pix ?? null,
     cidade: func.cidade ?? null,
+    temBiometriaCadastrada,
   }
 }
 

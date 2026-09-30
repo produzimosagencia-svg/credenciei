@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
+import CadastrarBiometriaCard from './CadastrarBiometriaCard'
 import ManterAtualizado from '@/components/ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
@@ -436,6 +437,10 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    */
   let biometriaAutoatendimento = false
   let metodoAcesso: 'qr' | 'biometria' | 'biometria_qr' = 'qr'
+  // Falta cadastrar o rosto NESTE evento — pulou no formulário, câmera
+  // falhou, ou o formulário nem oferecia biometria quando ela se cadastrou.
+  // Ver CadastrarBiometriaCard.tsx (a rede de segurança) e `completarBiometriaPublica`.
+  let faltaBiometria = false
   if (evento) {
     try {
       const { data } = await supabase
@@ -444,6 +449,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         metodoAcesso = data.metodo_identificacao
       }
       biometriaAutoatendimento = metodoAcesso !== 'qr' && data?.biometria_autoatendimento === true
+
+      if (metodoAcesso !== 'qr') {
+        const { data: template } = await supabase
+          .from('biometria_templates').select('id').eq('funcionario_id', funcionario.id).eq('evento_id', evento.id).maybeSingle()
+        faltaBiometria = !template
+      }
     } catch { /* biometria ainda não migrada */ }
   }
 
@@ -493,6 +504,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   </p>
                 </div>
               )}
+
+              {faltaBiometria && <CadastrarBiometriaCard token={token} />}
 
               <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso} />
 
