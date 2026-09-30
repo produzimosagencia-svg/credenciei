@@ -157,6 +157,14 @@
 .beneficioNumero p:last-child { margin-top: 4px !important; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(243, 242, 242, 0.45); }
 @media (max-width: 900px) { .beneficiosLista { grid-template-columns: 1fr; } }
 
+/* Vídeo do app — moldura escura, o vídeo em si tem fundo branco. */
+.videoMoldura {
+  width: 100%; max-width: 640px; margin: 44px auto 0; padding: 14px; border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+.video { display: block; width: 100%; height: auto; border-radius: 16px; background: #fff; }
+
 /* Depoimentos */
 .depoimentos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 44px; }
 .depoimento { display: flex; flex-direction: column; gap: 20px; }

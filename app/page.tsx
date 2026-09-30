@@ -126,6 +126,17 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         </div>
       </section>
 
+      {/* APP — a mesma animação de abertura do aplicativo dos colaboradores. */}
+      <section className={`${s.limite} ${s.secao}`} data-revelar>
+        <div className={s.secaoTopo}>
+          <p className={s.kicker}>Também tem aplicativo</p>
+          <h2 className={s.h2}>Sua equipe leva a credencial no bolso.</h2>
+          <p className={s.lead}>Cada colaborador aprovado pode instalar o app Credenciei — credencial, histórico e pagamento sempre à mão, sem depender do link do WhatsApp.</p>
+        </div>
+        <div className={s.videoMoldura}>
+          <video className={s.video} src="/videos/abertura-app.mp4" autoPlay muted loop playsInline />
+        </div>
+      </section>
 
       {/* NA PRÁTICA */}
       <section id="como" className={`${s.limite} ${s.secao}`}>
