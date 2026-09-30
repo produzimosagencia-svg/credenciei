@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import {
-  ArrowDown, Link as LinkIcon, MessageCircle, QrCode, Quote,
-  ScanLine, ShieldCheck, Wallet, Zap, User,
+  ArrowDown, Link as LinkIcon, MessageCircle, QrCode,
+  ScanLine, ShieldCheck, Wallet, Zap,
 } from 'lucide-react'
 import s from './_landing/landing.module.css'
 import Revelar from './_landing/Revelar'
@@ -14,12 +14,13 @@ import IconeInstagram from '@/components/ui/IconeInstagram'
  * Landing pública — a raiz do site. O painel continua em /admin; quem já
  * está logado chega lá pelo "Entrar" (o login redireciona) ou direto pela URL.
  *
- * Os textos, números e o preço são os aprovados no Claude Design. Os três
- * depoimentos ainda são PLACEHOLDER, propositalmente iguais ao desenho, pra
- * trocar quando o material chegar. A esteira de logos de clientes foi tirada
- * em 29/09/2026 (pedido do Juan) até ter logo de verdade pra mostrar — o
- * CSS dela (`.clientes`, `.esteira*`, `.clienteSlot`) continua no módulo,
- * sem uso, pra não perder o trabalho se ela voltar.
+ * Os textos, números e o preço são os aprovados no Claude Design. A esteira
+ * de logos de clientes e a seção de depoimentos foram tiradas em 29/09/2026
+ * (pedido do Juan) — eram PLACEHOLDER ("Logo cliente 1", "Nome do produtor"
+ * etc.) e ficavam mal até ter material de verdade pra mostrar. O CSS das
+ * duas (`.clientes`, `.esteira*`, `.clienteSlot`, `.depoimentos`,
+ * `.depoimento*`) continua no módulo, sem uso, pra não perder o trabalho
+ * quando o material chegar.
  *
  * O caminho comercial é o WhatsApp, pelo atalho /wa (que registra a origem).
  * Não existe formulário aqui, e não deve existir.
@@ -69,12 +70,6 @@ const BENEFICIOS = [
   { Icone: Zap, titulo: 'Praticidade', texto: 'Cadastro pelo link, credencial no WhatsApp, leitura em segundos. Sem planilha paralela, sem crachá refeito na hora.', num: '< 3s', numSub: 'por check-in' },
 ]
 
-const DEPOIMENTOS = [
-  { texto: '“Com 35 setores e mil pessoas, a gente sempre perdia a manhã do evento conferindo lista. Este ano o portão abriu e a fila simplesmente não existiu.”', nome: 'Nome do produtor', cargo: 'Diretor de produção · Festival' },
-  { texto: '“O relatório de presença acabou com a briga de pagamento com fornecedor. Quem não entrou, não aparece. Ponto final.”', nome: 'Nome da produtora', cargo: 'Sócia · Produtora de eventos' },
-  { texto: '“Mandei o link pros fornecedores na segunda, na quarta a equipe inteira já estava com QR no celular. Eu não digitei um nome.”', nome: 'Nome do gerente', cargo: 'Gerente de operações · Arena' },
-]
-
 export default async function Landing({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // Next 16: searchParams é Promise e precisa de await.
   const busca = await searchParams
@@ -93,7 +88,6 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
           <div className={s.navLinks}>
             <a href="#como" className={s.ativo}>Como funciona</a>
             <a href="#beneficios">Benefícios</a>
-            <a href="#prova">Clientes</a>
             <a href="#precos">Preços</a>
           </div>
           <div className={s.navAcoes}>
@@ -170,26 +164,6 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
               <p className={s.beneficioTexto}>{b.texto}</p>
               <div className={s.beneficioNumero}><p>{b.num}</p><p>{b.numSub}</p></div>
             </div>
-          ))}
-        </div>
-      </section>
-
-      {/* PROVA SOCIAL */}
-      <section id="prova" className={`${s.limite} ${s.secao}`}>
-        <div className={s.secaoTopo} data-revelar>
-          <p className={s.kicker}>Quem produz, aprova</p>
-          <h2 className={s.h2}>Produtores que trocaram a prancheta pelo QR.</h2>
-        </div>
-        <div className={s.depoimentos}>
-          {DEPOIMENTOS.map(d => (
-            <figure key={d.nome} className={`${s.cartao} ${s.depoimento}`} data-revelar>
-              <figcaption>
-                <span className={s.depoimentoFoto}><User size={26} /></span>
-                <div><p className={s.depoimentoNome}>{d.nome}</p><p className={s.depoimentoCargo}>{d.cargo}</p></div>
-                <Quote size={24} color="#FF4A0F" className={s.depoimentoAspas} />
-              </figcaption>
-              <blockquote>{d.texto}</blockquote>
-            </figure>
           ))}
         </div>
       </section>
