@@ -9,6 +9,7 @@ import Revelar from './_landing/Revelar'
 import Calculadora from './_landing/Calculadora'
 import AnimatedScanLoader from '@/components/ui/animated-scan-loader'
 import IconeInstagram from '@/components/ui/IconeInstagram'
+import VideoApp from './_landing/VideoApp'
 
 /*
  * Landing pública — a raiz do site. O painel continua em /admin; quem já
@@ -129,12 +130,12 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
       {/* APP — a mesma animação de abertura do aplicativo dos colaboradores. */}
       <section className={`${s.limite} ${s.secao}`} data-revelar>
         <div className={s.secaoTopo}>
-          <p className={s.kicker}>Também tem aplicativo</p>
-          <h2 className={s.h2}>Sua equipe leva a credencial no bolso.</h2>
-          <p className={s.lead}>Cada colaborador aprovado pode instalar o app Credenciei — credencial, histórico e pagamento sempre à mão, sem depender do link do WhatsApp.</p>
+          <p className={s.kicker}>Em breve</p>
+          <h2 className={s.h2}>Sua equipe vai levar a credencial no bolso.</h2>
+          <p className={s.lead}>Estamos lançando o app Credenciei pra colaboradores — credencial, histórico e pagamento sempre à mão, sem depender do link do WhatsApp.</p>
         </div>
         <div className={s.videoMoldura}>
-          <video className={s.video} src="/videos/abertura-app.mp4" autoPlay muted loop playsInline />
+          <VideoApp className={s.video} />
         </div>
       </section>
 
