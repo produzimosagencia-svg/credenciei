@@ -1,41 +1,69 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Play } from 'lucide-react'
 
 /**
- * O vídeo da seção "Em breve" (abertura do app). Client Component só por
- * causa disto: `autoPlay`/`muted` como atributo JSX não é suficiente no
- * celular — iOS/Android só deixam autoplay tocar quando `muted` é setado
- * como PROPRIEDADE do elemento de vídeo (não só o atributo HTML que o React
- * manda no SSR), e mesmo assim alguns navegadores recusam o autoplay
- * silenciosamente sem isto. Sem o `ref` + `play()` explícito, o vídeo
- * carregava mas nunca começava a rodar — no celular do Juan aparecia como
- * "não carrega" (30/09/2026).
+ * O vídeo da seção "Em breve" (abertura do app).
+ *
+ * ─── AUTOPLAY NEM SEMPRE FUNCIONA, E NÃO TEM COMO FORÇAR ────────────────────
+ *
+ * `autoPlay`/`muted` como atributo JSX não basta no celular — iOS/Android só
+ * deixam autoplay tocar quando `muted` é setado como PROPRIEDADE do elemento
+ * (não só o atributo HTML que o React manda no SSR), daí o `ref` + `.play()`
+ * explícito abaixo. Mas isso é só PARTE do problema: iOS com o Modo de Baixo
+ * Consumo ligado BLOQUEIA autoplay de vídeo de propósito, pra economizar
+ * bateria — mostra um ícone de play cortado no lugar do vídeo, e nenhum
+ * código de site consegue passar por cima disso (aconteceu no celular do
+ * Juan, 30/09/2026). Por isso: SEMPRE com `poster` (nunca uma tela preta
+ * enquanto não toca) e um botão de play visível por cima — quando o
+ * autoplay é bloqueado, a pessoa ainda vê do que se trata e pode tocar pra
+ * ver (toque de verdade sempre passa, mesmo com autoplay bloqueado).
  */
 export default function VideoApp({ className }: { className?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [tocando, setTocando] = useState(false)
 
   useEffect(() => {
     const v = videoRef.current
     if (!v) return
     v.muted = true
     v.defaultMuted = true
-    // `play()` devolve uma Promise que rejeita em silêncio quando o
-    // navegador bloqueia autoplay (ex.: economia de dados ligada) — sem
-    // pegar o erro, isso aparecia no console como "Unhandled Promise
-    // Rejection" à toa; o vídeo simplesmente fica parado no 1º quadro.
+    // Rejeita em silêncio quando o navegador bloqueia autoplay — o botão de
+    // play manual (abaixo) é o plano B nesse caso, não um erro pra tratar.
     v.play().catch(() => {})
   }, [])
 
+  const tocarManual = () => {
+    videoRef.current?.play().catch(() => {})
+  }
+
   return (
-    <video
-      ref={videoRef}
-      className={className}
-      src="/videos/abertura-app.mp4"
-      autoPlay
-      muted
-      loop
-      playsInline
-      preload="auto"
-    />
+    <div className="relative">
+      <video
+        ref={videoRef}
+        className={className}
+        src="/videos/abertura-app.mp4"
+        poster="/videos/abertura-app-poster.jpg"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="auto"
+        onPlaying={() => setTocando(true)}
+        onPause={() => setTocando(false)}
+      />
+      {!tocando && (
+        <button
+          type="button"
+          onClick={tocarManual}
+          aria-label="Tocar vídeo"
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <span className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+            <Play className="w-7 h-7 text-slate-900 translate-x-0.5" fill="currentColor" />
+          </span>
+        </button>
+      )}
+    </div>
   )
 }
