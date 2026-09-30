@@ -1221,7 +1221,7 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
  * sabe tratar "totem1" como usuário (não tem "@", não são 11 dígitos de
  * CPF), sem precisar mudar nada lá.
  */
-export async function criarTotem(eventoId: string) {
+export async function criarTotem(eventoId: string, portaoNome?: string) {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar totem')
 
@@ -1276,6 +1276,16 @@ export async function criarTotem(eventoId: string) {
       organizacao_id: organizacaoId,
       fornecedor_id: null,
       permissoes_usuario: {},
+      /*
+       * Preso a ESTE evento — antes só a organização, e um totem físico
+       * numa organização que roda dois eventos no mesmo dia acabava
+       * mostrando os dois pra escolher (pedido do Juan, 29/09/2026). Com
+       * isto preenchido, o seletor de evento nem aparece na tela do totem
+       * (ver `eventosEscaneaveisSemData`) — sempre este evento, sem chance
+       * de esquecer trocado.
+       */
+      evento_fixo_id: eventoId,
+      portao_nome: portaoNome?.trim() || null,
     }])
     if (erroPerfil) {
       await admin.auth.admin.deleteUser(user.user!.id).catch(() => {})
@@ -5131,6 +5141,13 @@ export type ResultadoScan = {
    * conferência pelo CPF.
    */
   faseErrada?: { doQR: string; deHoje: string }
+  /**
+   * Biometria: o rosto bateu com alguém, mas NÃO neste evento — a pessoa
+   * está credenciada em outro evento DA MESMA organização (nunca de outra:
+   * ver `validarLeituraFacial`). Nunca autoriza nada, só informa — quem
+   * está achando que reconheceu alguém precisa entender que é engano.
+   */
+  cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -5973,6 +5990,52 @@ async function validarLeituraFacial(
   const match = decidirMatch(candidatos)
   if (!match.encontrado) {
     /*
+     * SEGUNDA ETAPA — só roda quando a galeria deste evento não achou
+     * ninguém: "essa pessoa existe no sistema, só não está cadastrada
+     * AQUI?" (pedido do Juan, 29/09/2026 — identidade da pessoa e
+     * autorização no evento são perguntas separadas).
+     *
+     * Limitada à MESMA organização do evento atual, de propósito: comparar
+     * contra a plataforma inteira (1) aumentaria a chance de confundir duas
+     * pessoas parecidas numa galeria enorme, e (2) revelaria pra quem opera
+     * o portão de um cliente que uma pessoa trabalha pro evento de OUTRO
+     * cliente — o mesmo limite de isolamento por organização que o resto do
+     * sistema já respeita. Fora da organização, ou sem achar em lugar
+     * nenhum, a resposta continua a de sempre: "não identificado".
+     */
+    const organizacaoId = (evento as { organizacao_id?: string | null }).organizacao_id
+    if (organizacaoId) {
+      const { data: templatesOutroEvento } = await supabaseAdmin
+        .from('biometria_templates')
+        .select('funcionario_id, vetor, evento_id, eventos!inner(nome, local, data_inicio, organizacao_id)')
+        .eq('eventos.organizacao_id', organizacaoId)
+        .neq('evento_id', eventoId)
+
+      const candidatosFora: Candidato[] = (templatesOutroEvento ?? [])
+        .filter(t => descritorValido(t.vetor))
+        .map(t => ({ funcionarioId: t.funcionario_id as string, distancia: distanciaEuclidiana(descritor, t.vetor as number[]) }))
+      const matchFora = decidirMatch(candidatosFora)
+
+      if (matchFora.encontrado) {
+        const linha = templatesOutroEvento!.find(t => t.funcionario_id === matchFora.funcionarioId)
+        const eventoAlheio = linha?.eventos as unknown as { nome: string; local: string | null; data_inicio: string | null } | undefined
+        after(() => gravarTentativaBiometrica({
+          eventoId, perfilId: perfil.id as string, funcionarioId: matchFora.funcionarioId,
+          resultado: 'outro_evento', distancia: matchFora.distancia,
+        }))
+        return semLog({
+          success: false,
+          message: eventoAlheio
+            ? `Identificamos seu cadastro vinculado ao evento ${eventoAlheio.nome}${eventoAlheio.local ? ` — ${eventoAlheio.local}` : ''}${eventoAlheio.data_inicio ? `, ${formatarBR(eventoAlheio.data_inicio, 'curto')}` : ''}. Isso não autoriza a entrada neste evento — procure o credenciamento.`
+            : 'Identificamos seu cadastro em outro evento. Isso não autoriza a entrada neste evento — procure o credenciamento.',
+          cadastradoEmOutroEvento: eventoAlheio
+            ? { nome: eventoAlheio.nome, local: eventoAlheio.local, data: eventoAlheio.data_inicio }
+            : { nome: 'outro evento', local: null, data: null },
+        }, 'outro_evento', matchFora.distancia)
+      }
+    }
+
+    /*
      * NUNCA revela candidatos nem "quase achei fulano" — só que não achou.
      *
      * NÃO é uma recusa de acesso — na imensa maioria das vezes é a PRIMEIRA
@@ -6496,7 +6559,7 @@ async function resolverBiometriaNoCadastro(args: {
       const [, { error: erroTemplate }] = await Promise.all([
         gravarConsentimento(),
         supabaseAdmin.from('biometria_templates').upsert([{
-          funcionario_id: funcionarioId, evento_id: eventoId, vetor: descritor,
+          funcionario_id: funcionarioId, evento_id: eventoId, vetor: descritor, cpf,
         }], { onConflict: 'funcionario_id,evento_id' }),
       ])
       if (erroTemplate) { console.error('[biometria] template não gravado', erroTemplate.message); return semBiometria }
@@ -6519,7 +6582,7 @@ async function resolverBiometriaNoCadastro(args: {
     const [, { error: erroTemplate }] = await Promise.all([
       gravarConsentimento(),
       supabaseAdmin.from('biometria_templates').upsert([{
-        funcionario_id: funcionarioId, evento_id: eventoId, vetor: perfil.vetor,
+        funcionario_id: funcionarioId, evento_id: eventoId, vetor: perfil.vetor, cpf,
       }], { onConflict: 'funcionario_id,evento_id' }),
     ])
     if (erroTemplate) { console.error('[biometria] template reaproveitado não gravado', erroTemplate.message); return semBiometria }

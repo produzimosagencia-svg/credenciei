@@ -49,6 +49,8 @@ type ScanResult = {
   volta?: boolean
   naoIdentificado?: boolean
   previa?: boolean
+  /** O rosto bateu, mas com alguém credenciado em OUTRO evento — ver lib/actions.ts. */
+  cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
 }
 
 /*
@@ -72,11 +74,12 @@ const lerModoSalvo = (): string | null => {
  */
 const REPETIDO_MS = 15_000
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'naoIdentificado'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'naoIdentificado' | 'outroEvento'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.cadastradoEmOutroEvento) return 'outroEvento'
   if (r.naoIdentificado) return 'naoIdentificado'
   return 'negado'
 }
@@ -90,18 +93,23 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // de quem ainda não cadastrou o rosto. A biometria continua a prioridade;
   // o QR (rodapé) é só o plano B, nunca a sugestão principal.
   naoIdentificado: { fundo: 'bg-blue-600', icone: '👤', titulo: 'ROSTO AINDA NÃO CADASTRADO' },
+  // Âmbar: nem liberado, nem uma recusa por engano — a pessoa é conhecida do
+  // sistema, só não pertence a ESTE evento (pedido do Juan, 29/09/2026).
+  outroEvento: { fundo: 'bg-amber-600', icone: '📍', titulo: 'CADASTRADA EM OUTRO EVENTO' },
 }
 
 /** O que originou a leitura em confirmação — pra SALVAR repetir a chamada certa. */
 type Origem = { tipo: 'rosto'; descritor: number[] } | { tipo: 'qr'; texto: string }
 
 export default function FaceScannerView({
-  eventos, initialEventoId, aoTrocarParaQr,
+  eventos, initialEventoId, aoTrocarParaQr, portaoNome = null,
 }: {
   eventos: Evento[]
   initialEventoId?: string
   /** Pra resolver um caso na hora — o pai decide o que mostrar. */
   aoTrocarParaQr: (eventoId: string) => void
+  /** Nome do portão deste totem (ex.: "Entrada VIP") — ver `perfis.portao_nome`. */
+  portaoNome?: string | null
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
 
@@ -289,16 +297,29 @@ export default function FaceScannerView({
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
       <div className="w-full max-w-sm space-y-3">
-        <div>
-          <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
-          <select
-            value={eventoId}
-            onChange={e => { setEventoId(e.target.value); voltarAEscanear() }}
-            className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
-          >
-            {eventos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-          </select>
-        </div>
+        {/*
+          * Totem preso a um evento só (`perfis.evento_fixo_id`, pedido do
+          * Juan 29/09/2026) — `eventos` já chega com um item só nesse caso
+          * (ver `eventosEscaneaveisSemData`), então o seletor não faz mais
+          * sentido: só confundiria quem opera achando que dá pra trocar.
+          */}
+        {eventos.length > 1 ? (
+          <div>
+            <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
+            <select
+              value={eventoId}
+              onChange={e => { setEventoId(e.target.value); voltarAEscanear() }}
+              className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
+            >
+              {eventos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="text-white font-bold text-base">{eventos[0]?.nome}</p>
+            {portaoNome && <p className="text-slate-400 text-xs mt-0.5">{portaoNome}</p>}
+          </div>
+        )}
 
         {toggleEntradaSaida}
         <p className="text-slate-500 text-xs text-center">

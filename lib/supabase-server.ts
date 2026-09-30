@@ -232,6 +232,19 @@ export async function eventosEscaneaveis(perfil: Parameters<typeof eventosEscane
 async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: string; nome: string }[]> {
   if (!perfil || !podeAcompanhar(perfil)) return []
 
+  /*
+   * Totem preso a UM evento (pedido do Juan, 29/09/2026) — antes de
+   * qualquer outra régua de papel. Sem isto, uma organização que roda dois
+   * eventos no mesmo dia mostrava os dois no seletor do mesmo tablet físico,
+   * com risco real de escolher o errado. `evento_fixo_id` só existe em
+   * totens criados depois desta mudança (`criarTotem`) — sem ele, segue a
+   * régua de sempre, abaixo.
+   */
+  if (perfil.evento_fixo_id) {
+    const { data: evento } = await admin.from('eventos').select('id, nome, ativo').eq('id', perfil.evento_fixo_id).maybeSingle()
+    return evento?.ativo ? [{ id: evento.id, nome: evento.nome }] : []
+  }
+
   if (ehMaster(perfil.role)) {
     const { data } = await admin
       .from('eventos')

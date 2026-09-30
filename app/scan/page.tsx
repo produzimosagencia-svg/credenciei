@@ -103,7 +103,12 @@ export default async function ScanPage({
           <p className="text-slate-400 font-medium">Nenhum evento ativo disponível</p>
         </div>
       ) : (
-        <ScannerRouter eventos={eventos} initialEventoId={evento} metodosPorEvento={metodosPorEvento} />
+        <ScannerRouter
+          eventos={eventos}
+          initialEventoId={evento}
+          metodosPorEvento={metodosPorEvento}
+          portaoNome={(perfil as { portao_nome?: string | null }).portao_nome ?? null}
+        />
       )}
     </div>
     </TutorialProvider>

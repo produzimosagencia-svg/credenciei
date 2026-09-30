@@ -15,7 +15,7 @@ type Evento = { id: string; nome: string }
  * ou evento comum) — o padrão de sempre, sem biometria nenhuma na tela.
  */
 export default function ScannerRouter({
-  eventos, initialEventoId, metodosPorEvento, noPainel = false,
+  eventos, initialEventoId, metodosPorEvento, noPainel = false, portaoNome = null,
 }: {
   eventos: Evento[]
   initialEventoId?: string
@@ -23,6 +23,8 @@ export default function ScannerRouter({
   /** Dentro do painel (/admin/scanner) — só afeta o leitor de QR; o leitor de
    *  rosto continua em tela cheia escura (é assim que a câmera precisa ser mostrada). */
   noPainel?: boolean
+  /** Nome do portão deste totem (ex.: "Entrada VIP") — ver `perfis.portao_nome`. */
+  portaoNome?: string | null
 }) {
   const eventoInicial = initialEventoId ?? eventos[0]?.id ?? ''
   const metodoInicial = metodosPorEvento[eventoInicial] ?? 'qr'
@@ -40,6 +42,7 @@ export default function ScannerRouter({
         eventos={eventos}
         initialEventoId={eventoAtivo}
         aoTrocarParaQr={id => { setEventoAtivo(id); setUsarRosto(false) }}
+        portaoNome={portaoNome}
       />
     )
   }

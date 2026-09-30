@@ -55,7 +55,13 @@ export default async function ScannerNoPainelPage({
           />
         </Secao>
       ) : (
-        <ScannerRouter eventos={eventos} initialEventoId={evento} metodosPorEvento={metodosPorEvento} noPainel />
+        <ScannerRouter
+          eventos={eventos}
+          initialEventoId={evento}
+          metodosPorEvento={metodosPorEvento}
+          portaoNome={(perfil as { portao_nome?: string | null }).portao_nome ?? null}
+          noPainel
+        />
       )}
     </div>
   )

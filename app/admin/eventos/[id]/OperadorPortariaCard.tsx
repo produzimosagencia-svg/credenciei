@@ -278,13 +278,14 @@ function ModalTotem({ eventoId, onFechar }: { eventoId: string; onFechar: () => 
   const [erro, setErro] = useState<string | null>(null)
   const [criado, setCriado] = useState<{ nome: string; usuario: string; senha: string } | null>(null)
   const [copiado, setCopiado] = useState(false)
+  const [portaoNome, setPortaoNome] = useState('')
   const router = useRouter()
 
   const criar = () => {
     setErro(null)
     startTransition(async () => {
       try {
-        const r = await criarTotem(eventoId)
+        const r = await criarTotem(eventoId, portaoNome)
         setCriado(r)
         router.refresh()
       } catch (e: any) {
@@ -337,8 +338,20 @@ function ModalTotem({ eventoId, onFechar }: { eventoId: string; onFechar: () => 
           <div className="p-6 space-y-4">
             <p className="text-slate-600 text-sm">
               Cria um login pronto pra configurar num tablet ou celular fixo no portão — sem precisar de
-              nome, CPF ou telefone de ninguém. Login e senha já saem prontos (totem1, totem2...).
+              nome, CPF ou telefone de ninguém. Login e senha já saem prontos (totem1, totem2...). Este
+              totem fica preso a <strong>este evento</strong> — não mostra seletor pra trocar.
             </p>
+            <div>
+              <label className="text-slate-500 text-xs font-semibold block mb-1">Nome do portão (opcional)</label>
+              <input
+                type="text"
+                value={portaoNome}
+                onChange={e => setPortaoNome(e.target.value)}
+                placeholder="Ex.: Entrada VIP"
+                className="input w-full"
+                maxLength={60}
+              />
+            </div>
             {erro && <p className="text-red-500 text-xs">{erro}</p>}
             <button onClick={criar} disabled={isPending} className="btn btn-primario btn-lg w-full">
               {isPending ? 'Criando...' : 'Cadastrar totem'}
