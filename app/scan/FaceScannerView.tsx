@@ -51,6 +51,8 @@ type ScanResult = {
   previa?: boolean
   /** O rosto bateu, mas com alguém credenciado em OUTRO evento — ver lib/actions.ts. */
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
+  /** Entrada atrasada, fornecedor exige meio (Vital, 30/09/2026) — pede o motivo antes de salvar. */
+  precisaJustificativaAtraso?: boolean
 }
 
 /*
@@ -133,6 +135,8 @@ export default function FaceScannerView({
   // A prévia esperando SALVAR / CANCELAR — igual ao QR.
   const [confirmacao, setConfirmacao] = useState<{ origem: Origem; modo: Modo; r: ScanResult } | null>(null)
   const [salvando, setSalvando] = useState(false)
+  // Motivo do atraso — só aparece quando a prévia pede (fornecedor com meio ligado).
+  const [justificativaAtraso, setJustificativaAtraso] = useState('')
   // Força o FaceCapture a remontar (câmera + estado do liveness do zero) a
   // cada volta do loop — não pode ser ref: React não deixa ler `.current`
   // durante o render (é ele que decide a `key` abaixo).
@@ -161,6 +165,7 @@ export default function FaceScannerView({
     setValidando(false)
     setConfirmacao(null)
     setSalvando(false)
+    setJustificativaAtraso('')
     setCapturando(true)
   }
 
@@ -169,10 +174,10 @@ export default function FaceScannerView({
     message: 'Não foi possível validar agora. Confira a internet do aparelho e tente de novo.',
   })
 
-  const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean): Promise<ScanResult> =>
+  const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean, justificativa?: string): Promise<ScanResult> =>
     origem.tipo === 'rosto'
-      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoId: subeventoId || undefined }).catch(semRede)
-      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoId: subeventoId || undefined }).catch(semRede)
+      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoId: subeventoId || undefined, justificativaAtraso: justificativa }).catch(semRede)
+      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoId: subeventoId || undefined, justificativaAtraso: justificativa }).catch(semRede)
 
   /** Resultado final (gravado ou recusado) — fica na tela até "LER O PRÓXIMO". */
   const aplicarResultadoFinal = (r: ScanResult, m: Modo) => {
@@ -241,9 +246,10 @@ export default function FaceScannerView({
   const confirmar = async () => {
     const c = confirmacao
     if (!c || salvando) return
+    if (c.r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5) return
     const id = ++tentativaIdRef.current
     setSalvando(true)
-    const r = await chamarServidor(c.origem, c.modo, false)
+    const r = await chamarServidor(c.origem, c.modo, false, c.r.precisaJustificativaAtraso ? justificativaAtraso.trim() : undefined)
     setSalvando(false)
     if (tentativaIdRef.current !== id) return
     aplicarResultadoFinal(r, c.modo)
@@ -410,11 +416,26 @@ export default function FaceScannerView({
               )}
               <p className="text-base mt-4 opacity-90 leading-snug">{r.message}</p>
 
+              {r.precisaJustificativaAtraso && (
+                <div className="mt-5 text-left">
+                  <label className="text-white/80 text-sm font-semibold block mb-1.5">
+                    Motivo do atraso *
+                  </label>
+                  <textarea
+                    value={justificativaAtraso}
+                    onChange={e => setJustificativaAtraso(e.target.value)}
+                    placeholder="Ex: trânsito, ônibus atrasado..."
+                    rows={2}
+                    className="w-full rounded-xl px-3 py-2 text-sm bg-white/10 border border-white/30 text-white placeholder:text-white/40 outline-none focus:border-white/60"
+                  />
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={confirmar}
-                disabled={salvando}
-                className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-70 ${cor}`}
+                disabled={salvando || (r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5)}
+                className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50 ${cor}`}
               >
                 {salvando
                   ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>

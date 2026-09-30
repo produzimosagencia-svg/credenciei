@@ -185,6 +185,7 @@ export default async function EventoPage({
     { data: registrosDoDia },
     { data: operadoresRows },
     { data: setoresComMeioRows },
+    { data: entradaQualquerHorarioRows },
     { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
@@ -200,6 +201,11 @@ export default async function EventoPage({
       : Promise.resolve(vazio),
     fornecedorIds.length
       ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
+      : Promise.resolve(vazio),
+    // Item 5 (Vital) — coluna nova, em consulta separada e tolerante, mesmo
+    // motivo de `exige_meio` logo acima.
+    fornecedorIds.length
+      ? supabase.from('fornecedores').select('id, entrada_qualquer_horario').in('id', fornecedorIds)
       : Promise.resolve(vazio),
     /*
      * `link_ativo` em consulta SEPARADA, pelo mesmo motivo do `exige_meio`
@@ -250,6 +256,9 @@ export default async function EventoPage({
 
   const setoresComMeio = new Set(
     (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
+  )
+  const setoresComEntradaQualquerHorario = new Set(
+    (entradaQualquerHorarioRows ?? []).filter(f => f.entrada_qualquer_horario === true).map(f => f.id as string)
   )
   /*
    * Só os DESLIGADOS entram no conjunto. Assim, se a consulta acima falhar
@@ -554,6 +563,7 @@ export default async function EventoPage({
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}
+              setoresComEntradaQualquerHorario={setoresComEntradaQualquerHorario}
               setoresComLinkDesligado={setoresComLinkDesligado}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil)}

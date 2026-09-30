@@ -72,6 +72,25 @@ export default function FuncionalidadesForm({
         </div>
       </label>
 
+      <label className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors">
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="aviso_uniforme_habilitado"
+            defaultChecked={funcionalidades.avisoUniformeHabilitado}
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-slate-800 font-semibold text-sm">Aviso de uniforme/identificação</p>
+            <p className="text-slate-600 text-xs mt-1">
+              Libera, em Editar evento, um campo de texto fixo sobre a obrigação de uniforme ou
+              identificação — aparece como um banner permanente na credencial de cada pessoa da
+              equipe (diferente dos avisos comuns, que somem depois de vistos).
+            </p>
+          </div>
+        </div>
+      </label>
+
       {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
       <button type="submit" disabled={isPending} className="btn btn-primario btn-sm">

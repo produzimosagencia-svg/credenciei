@@ -5,6 +5,16 @@
 -- Nasce desligado: nenhum cliente existente muda de comportamento sozinho.
 alter table organizacoes add column if not exists subeventos_habilitado boolean not null default false;
 alter table organizacoes add column if not exists trava_cota_habilitada boolean not null default false;
+alter table organizacoes add column if not exists aviso_uniforme_habilitado boolean not null default false;
+
+-- Item 4 (aviso de uniforme/identificação) — texto livre por evento, mostrado
+-- como banner permanente na credencial quando preenchido.
+alter table eventos add column if not exists aviso_uniforme_texto text;
+
+-- Item 5 ("entrada em qualquer horário") — versão por-fornecedor do
+-- `batida_livre` que já existe por evento inteiro (bandas, postura e afins).
+-- Nasce desligado: nenhum fornecedor existente muda de comportamento.
+alter table fornecedores add column if not exists entrada_qualquer_horario boolean not null default false;
 
 -- Evento mãe → subeventos (portões/categorias de acesso do MESMO evento,
 -- sem data/local próprios — herdam tudo do evento "mãe").

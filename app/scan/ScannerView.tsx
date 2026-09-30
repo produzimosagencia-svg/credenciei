@@ -24,6 +24,8 @@ type ScanResult = {
   previa?: boolean
   volta?: boolean
   encerra?: boolean
+  /** Entrada atrasada, fornecedor exige meio (Vital, 30/09/2026) — pede o motivo antes de salvar. */
+  precisaJustificativaAtraso?: boolean
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
@@ -193,6 +195,8 @@ export default function ScannerView({
   // A prévia esperando SALVAR / CANCELAR.
   const [confirmacao, setConfirmacao] = useState<{ codigo: string; modo: Modo; r: ScanResult } | null>(null)
   const [salvando, setSalvando] = useState(false)
+  // Motivo do atraso — só aparece quando a prévia pede (fornecedor com meio ligado).
+  const [justificativaAtraso, setJustificativaAtraso] = useState('')
   const [conferindo, setConferindo] = useState(false)
   // Aviso discreto abaixo da câmera: o mesmo QR lido de novo logo em seguida.
   const [repetido, setRepetido] = useState<string | null>(null)
@@ -251,6 +255,7 @@ export default function ScannerView({
     setConfirmacao(null)
     setSalvando(false)
     setConferindo(false)
+    setJustificativaAtraso('')
     ocupadoRef.current = false
     retomarLeitura()
   }
@@ -313,9 +318,16 @@ export default function ScannerView({
   const confirmar = async () => {
     const c = confirmacao
     if (!c || salvando) return
+    if (c.r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5) return
     const id = ++leituraRef.current
     setSalvando(true)
-    const r = await aguardar(id, c.codigo, c.modo, registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, { subeventoId: subeventoIdRef.current || undefined }).catch(semRede))
+    const r = await aguardar(
+      id, c.codigo, c.modo,
+      registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, {
+        subeventoId: subeventoIdRef.current || undefined,
+        justificativaAtraso: c.r.precisaJustificativaAtraso ? justificativaAtraso.trim() : undefined,
+      }).catch(semRede),
+    )
     setSalvando(false)
     if (!r) return
     setConfirmacao(null)
@@ -652,11 +664,26 @@ export default function ScannerView({
               )}
               <p className="text-base mt-4 opacity-90 leading-snug">{r.message}</p>
 
+              {r.precisaJustificativaAtraso && (
+                <div className="mt-5 text-left">
+                  <label className="text-white/80 text-sm font-semibold block mb-1.5">
+                    Motivo do atraso *
+                  </label>
+                  <textarea
+                    value={justificativaAtraso}
+                    onChange={e => setJustificativaAtraso(e.target.value)}
+                    placeholder="Ex: trânsito, ônibus atrasado..."
+                    rows={2}
+                    className="w-full rounded-xl px-3 py-2 text-sm bg-white/10 border border-white/30 text-white placeholder:text-white/40 outline-none focus:border-white/60"
+                  />
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={confirmar}
-                disabled={salvando}
-                className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-70 ${cor}`}
+                disabled={salvando || (r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5)}
+                className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50 ${cor}`}
               >
                 {salvando
                   ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>

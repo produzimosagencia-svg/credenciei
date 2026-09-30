@@ -9,7 +9,7 @@ import { mensagemAmigavel } from '@/lib/erros'
 type Props =
   /** `podeCriarSupervisor` — ver o bloco do supervisor no formulário. */
   | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean; entrada_qualquer_horario?: boolean }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -26,6 +26,10 @@ export default function FornecedorModal(props: Props) {
   // Um id por instância: a tela mostra vários destes modais ao mesmo tempo
   // (um por setor), e `htmlFor` repetido faria o clique cair no cartão errado.
   const idExigeMeio = `exige_meio_${isEditar ? (props as any).fornecedorId : 'novo'}`
+  // "Entrada em qualquer horário" (Vital, item 5) — versão por-fornecedor do
+  // `batida_livre` do evento. Nasce desligado, igual ao meio.
+  const defaultEntradaQualquerHorario = isEditar ? (props as any).entrada_qualquer_horario === true : false
+  const idEntradaQualquerHorario = `entrada_qualquer_horario_${isEditar ? (props as any).fornecedorId : 'novo'}`
 
   /*
    * O erro do servidor precisa aparecer no formulário.
@@ -113,6 +117,32 @@ export default function FornecedorModal(props: Props) {
                     A selfie que comprova que a pessoa ficou no posto. Vem desligado: ligue só
                     em equipe paga por pessoa (segurança, limpeza, carregadores, bar…). Em
                     fornecedor de pacote fechado não muda pagamento e só gasta WhatsApp.
+                  </span>
+                </span>
+              </label>
+
+              {/*
+                * Entrada em qualquer horário (Vital, item 5) — isenta ESTE
+                * fornecedor da janela de horário do evento, mesmo que o
+                * evento não tenha "batida livre" ligada. Pra quem foge da
+                * escala combinada (banda, postura e afins).
+                */}
+              <label
+                htmlFor={idEntradaQualquerHorario}
+                className="flex items-start gap-2.5 cursor-pointer bg-slate-50 rounded-xl p-3"
+              >
+                <input
+                  type="checkbox"
+                  id={idEntradaQualquerHorario}
+                  name="entrada_qualquer_horario"
+                  defaultChecked={defaultEntradaQualquerHorario}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-slate-700">Entrada em qualquer horário</span>
+                  <span className="block text-slate-500 text-xs mt-0.5">
+                    Esta equipe não segue o horário de entrada configurado no evento — pra quem
+                    foge da escala combinada (banda, postura, atrações e afins).
                   </span>
                 </span>
               </label>

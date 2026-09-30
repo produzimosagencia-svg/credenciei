@@ -33,7 +33,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import {
   diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
-  somarDias, TETO_TURNO_H, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
+  somarDias, TETO_TURNO_H, horariosEsperados, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf } from './format'
 import { grafiaDaCidade } from './cidades'
@@ -2290,6 +2290,20 @@ export async function editarEvento(id: string, formData: FormData) {
     if (erroHora) console.error('[editarEvento] hora_aviso_dia_evento não gravado (migração pendente?)', erroHora.message)
   }
 
+  /*
+   * Aviso de uniforme/identificação (Vital, item 4, 30/09/2026) — coluna
+   * nova, à parte e tolerante, mesmo cuidado de `hora_aviso_dia_evento`
+   * acima. Só existe no form quando a organização ligou a funcionalidade;
+   * sem o campo no form, `has()` é falso e nada é sobrescrito.
+   */
+  if (formData.has('aviso_uniforme_texto')) {
+    const texto = ((formData.get('aviso_uniforme_texto') as string) || '').trim()
+    const { error: erroAviso } = await db.from('eventos')
+      .update({ aviso_uniforme_texto: texto || null })
+      .eq('id', id)
+    if (erroAviso) console.error('[editarEvento] aviso_uniforme_texto não gravado (migração pendente?)', erroAviso.message)
+  }
+
   await gravarMetodoIdentificacao(id, formData)
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
@@ -2617,6 +2631,11 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
     .eq('id', novo.id)
   if (erroMeio) console.error('[criarFornecedor] exige_meio não gravado (migração pendente?)', erroMeio.message)
 
+  const { error: erroHorario } = await db.from('fornecedores')
+    .update({ entrada_qualquer_horario: formData.get('entrada_qualquer_horario') === 'on' })
+    .eq('id', novo.id)
+  if (erroHorario) console.error('[criarFornecedor] entrada_qualquer_horario não gravado (migração pendente?)', erroHorario.message)
+
   if (exigeSupervisor) {
     const dadosSupervisor = new FormData()
     dadosSupervisor.set('nome', supNome)
@@ -2661,6 +2680,11 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
     .update({ exige_meio: formData.get('exige_meio') === 'on' })
     .eq('id', id)
   if (erroMeio) console.error('[editarFornecedor] exige_meio não gravado (migração pendente?)', erroMeio.message)
+
+  const { error: erroHorario } = await db.from('fornecedores')
+    .update({ entrada_qualquer_horario: formData.get('entrada_qualquer_horario') === 'on' })
+    .eq('id', id)
+  if (erroHorario) console.error('[editarFornecedor] entrada_qualquer_horario não gravado (migração pendente?)', erroHorario.message)
   /*
    * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
    * `sincronizarAgendamentos` recria a fila do evento, cancelando o que
@@ -4551,6 +4575,8 @@ async function resolverRegistro(
   agora = new Date(),
   /** Já buscados por quem chama (o scanner) — ver `inferirMomentoQR`. */
   pre?: { entrada?: Awaited<ReturnType<typeof entradaDoTurno>>; diaTurno?: string },
+  /** Fornecedor isento da janela de horário do evento (Vital, item 5) — pula `avaliarEntradaSaida`. */
+  entradaQualquerHorario = false,
 ): Promise<Resolucao> {
   // O dia do TURNO: quem chega à 01:00 na noite que vira a madrugada entra
   // na noite de ontem, não num dia novo (ver `diaDoTurno`).
@@ -4619,7 +4645,9 @@ async function resolverRegistro(
       }
     }
   } else {
-    const veredito = avaliarEntradaSaida(evento, dia, momento, dataRef, agora)
+    const veredito = (momento === 'entrada' && entradaQualquerHorario)
+      ? { ok: true as const }
+      : avaliarEntradaSaida(evento, dia, momento, dataRef, agora)
     if (!veredito.ok) return { ok: false, erro: veredito.erro }
 
     /*
@@ -5148,6 +5176,12 @@ export type ResultadoScan = {
    * está achando que reconheceu alguém precisa entender que é engano.
    */
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
+  /**
+   * Na prévia: esta ENTRADA está atrasada e o fornecedor exige justificativa
+   * (Vital, 30/09/2026 — só fornecedor com `exige_meio` ligado). O scanner
+   * precisa pedir o motivo antes de liberar o SALVAR.
+   */
+  precisaJustificativaAtraso?: boolean
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -5346,13 +5380,13 @@ export async function registrarPresencaQR(
    * o scanner mostra SALVAR / CANCELAR e só então chama de novo sem isto
    * (pedido do Juan, 26/09/2026). A confirmação refaz TODAS as checagens.
    */
-  opcoes?: { apenasConferir?: boolean; subeventoId?: string },
+  opcoes?: { apenasConferir?: boolean; subeventoId?: string; justificativaAtraso?: string },
 ): Promise<ResultadoScan> {
   const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
   const apenasConferir = opcoes?.apenasConferir === true
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoId)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoId, opcoes?.justificativaAtraso)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
@@ -5385,6 +5419,8 @@ async function validarLeituraQR(
   apenasConferir = false,
   /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
   subeventoId?: string,
+  /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
+  justificativaAtraso?: string,
 ): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
@@ -5425,7 +5461,7 @@ async function validarLeituraQR(
     podeEscanearEvento(perfil, eventoId),
     supabaseAdmin
       .from('funcionarios')
-      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome)')
+      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome, exige_meio)')
       .eq('qr_token', token)
       .single(),
     diaDoTurno(eventoId, agora),
@@ -5482,7 +5518,7 @@ async function validarLeituraQR(
   return autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'web', subeventoIdLido: subeventoId,
+    origem: 'web', subeventoIdLido: subeventoId, justificativaAtraso,
   })
 }
 
@@ -5528,8 +5564,14 @@ async function autorizarPresenca(args: {
    * sem subeventos, nenhuma checagem nova entra em jogo.
    */
   subeventoIdLido?: string
+  /**
+   * O motivo do atraso, já escrito pelo operador (Vital, 30/09/2026) — só é
+   * exigido quando `precisaJustificativaAtraso` veio `true` na prévia. Sem
+   * isso a entrada segue como antes, sem pedir nada.
+   */
+  justificativaAtraso?: string
 }): Promise<ResultadoScan> {
-  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdLido } = args
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdLido, justificativaAtraso } = args
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
@@ -5695,11 +5737,28 @@ async function autorizarPresenca(args: {
 
   const momento = decidido.momento
 
+  /*
+   * "Entrada em qualquer horário" (Vital, item 5, 30/09/2026) — versão POR
+   * FORNECEDOR do `batida_livre` que já existe por evento inteiro (bandas,
+   * postura e afins, que fogem da janela combinada com o cliente). Consulta
+   * À PARTE e tolerante (coluna nova) e só roda em 'entrada' — é a única
+   * etapa que essa isenção afeta.
+   */
+  let entradaQualquerHorario = false
+  if (momento === 'entrada') {
+    try {
+      const { data: fRow } = await supabaseAdmin
+        .from('fornecedores').select('entrada_qualquer_horario').eq('id', func.fornecedor_id).maybeSingle()
+      entradaQualquerHorario = (fRow as { entrada_qualquer_horario?: boolean } | null)?.entrada_qualquer_horario === true
+    } catch { /* migração pendente — segue com a janela normal */ }
+  }
+
   // A saída depois do fim do evento traz a entrada que ela fecha (ver
   // `turnoAbertoForaDoDiaDeTrabalho`) — é dela que sai o dia do registro.
   const resolucao = await resolverRegistro(
     evento, func.id, momento, agora,
     decidido.entrada ? { ...jaBuscado, entrada: decidido.entrada } : jaBuscado,
+    entradaQualquerHorario,
   )
   if (!resolucao.ok) return { success: false, message: resolucao.erro, funcionario: funcInfo }
 
@@ -5726,11 +5785,37 @@ async function autorizarPresenca(args: {
     }
   }
 
+  /*
+   * JUSTIFICATIVA DE ATRASO — pedido do Vital (30/09/2026), corrigido no
+   * mesmo dia: só para fornecedor com "confirmação de meio" ligada
+   * (`exige_meio`), não todo mundo. Reaproveita esse campo porque já marca
+   * quem é pago por pessoa/hora — o perfil que também costuma cobrar
+   * apontamento de atraso.
+   */
+  let precisaJustificativaAtraso = false
+  if (momento === 'entrada') {
+    const exigeMeioDoFornecedor = (func.fornecedores as unknown as { exige_meio?: boolean } | null)?.exige_meio === true
+    if (exigeMeioDoFornecedor) {
+      const diaDaJornada = await diaDeTrabalho(eventoId, resolucao.dataRef)
+      const esperado = horariosEsperados(evento, resolucao.dataRef, diaDaJornada)
+      if (esperado.entrada && agora.getTime() > new Date(esperado.entrada).getTime()) {
+        precisaJustificativaAtraso = true
+      }
+    }
+  }
+
   // Prévia: tudo conferido, nada gravado — o operador confirma antes.
   if (apenasConferir) {
     return {
-      success: true, previa: true, momento, funcionario: funcInfo,
+      success: true, previa: true, momento, funcionario: funcInfo, precisaJustificativaAtraso,
       message: momento === 'entrada' ? 'Confirme para registrar a ENTRADA.' : 'Confirme para registrar a SAÍDA.',
+    }
+  }
+
+  if (precisaJustificativaAtraso && (justificativaAtraso ?? '').trim().length < 5) {
+    return {
+      success: false, funcionario: funcInfo, precisaJustificativaAtraso,
+      message: 'Chegou atrasado — escreva o motivo antes de salvar.',
     }
   }
 
@@ -5738,6 +5823,7 @@ async function autorizarPresenca(args: {
     ...(perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}),
     origem,
     ...(typeof latitude === 'number' && typeof longitude === 'number' ? { latitude, longitude } : {}),
+    ...(precisaJustificativaAtraso ? { justificativa: justificativaAtraso!.trim() } : {}),
   }
   if (momento === 'fim') {
     const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
@@ -5939,7 +6025,7 @@ export async function cadastrarBiometria(
  */
 export async function registrarPresencaFacial(
   eventoId: string, descritor: number[], escolhido?: 'entrada' | 'fim',
-  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoId?: string },
+  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoId?: string; justificativaAtraso?: string },
 ): Promise<ResultadoScan> {
   const inicio = Date.now()
   let funcionarioIdParaLog: string | null = null
@@ -5950,7 +6036,7 @@ export async function registrarPresencaFacial(
   try {
     const r = await validarLeituraFacial(
       eventoId, descritor, escolhido, opcoes?.apenasConferir === true,
-      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoId,
+      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoId, opcoes?.justificativaAtraso,
     )
     resultado = r.resultado
     funcionarioIdParaLog = r.funcionarioId
@@ -5980,6 +6066,8 @@ async function validarLeituraFacial(
   latitude?: number, longitude?: number,
   /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
   subeventoId?: string,
+  /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
+  justificativaAtraso?: string,
 ): Promise<ResultadoValidacaoFacial> {
   const semLog = (resultado: ResultadoScan, logResultado: string, distancia?: number): ResultadoValidacaoFacial =>
     ({ resultado, funcionarioId: null, logResultado, distancia })
@@ -6096,14 +6184,14 @@ async function validarLeituraFacial(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome)')
+    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome, exige_meio)')
     .eq('id', match.funcionarioId)
     .single()
 
   const resultado = await autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'face', latitude, longitude, subeventoIdLido: subeventoId,
+    origem: 'face', latitude, longitude, subeventoIdLido: subeventoId, justificativaAtraso,
   })
   return { resultado, funcionarioId: match.funcionarioId, distancia: match.distancia, logResultado: resultado.success ? 'sucesso' : 'negado' }
 }
@@ -9175,6 +9263,8 @@ export async function salvarPermissao(
 export type FuncionalidadesOrganizacao = {
   subeventosHabilitado: boolean
   travaCotaHabilitada: boolean
+  /** Item 4 do pedido do Vital — libera o campo de aviso de uniforme/identificação em Editar evento. */
+  avisoUniformeHabilitado: boolean
 }
 
 /**
@@ -9182,7 +9272,7 @@ export type FuncionalidadesOrganizacao = {
  * colunas, tudo se comporta como hoje — nenhum recurso novo aparece.
  */
 export async function obterFuncionalidadesOrganizacao(organizacaoId: string | null): Promise<FuncionalidadesOrganizacao> {
-  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false }
+  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false }
   if (!organizacaoId) return vazio
   const { data, error } = await supabaseAdmin
     .from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
@@ -9190,6 +9280,7 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
   return {
     subeventosHabilitado: (data as { subeventos_habilitado?: boolean }).subeventos_habilitado === true,
     travaCotaHabilitada: (data as { trava_cota_habilitada?: boolean }).trava_cota_habilitada === true,
+    avisoUniformeHabilitado: (data as { aviso_uniforme_habilitado?: boolean }).aviso_uniforme_habilitado === true,
   }
 }
 
@@ -9201,6 +9292,7 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
   const { error } = await supabaseAdmin.from('organizacoes').update({
     subeventos_habilitado: formData.get('subeventos_habilitado') === 'on',
     trava_cota_habilitada: formData.get('trava_cota_habilitada') === 'on',
+    aviso_uniforme_habilitado: formData.get('aviso_uniforme_habilitado') === 'on',
   }).eq('id', organizacaoId)
   if (error) throw new Error(mensagemAmigavel(error))
 

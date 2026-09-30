@@ -1,6 +1,6 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, diasDoEvento, obterConfiguracaoDoMeio } from '@/lib/actions'
+import { editarEvento, diasDoEvento, obterConfiguracaoDoMeio, obterFuncionalidadesOrganizacao } from '@/lib/actions'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
@@ -72,7 +72,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const [dias, configMeio] = await Promise.all([diasDoEvento(id), obterConfiguracaoDoMeio(id)])
+  const [dias, configMeio, funcionalidades] = await Promise.all([
+    diasDoEvento(id), obterConfiguracaoDoMeio(id), obterFuncionalidadesOrganizacao(evento.organizacao_id),
+  ])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
   return (
@@ -98,6 +100,29 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           <Field label="Local" icon={MapPin}>
             <NomeInput name="local" defaultValue={evento.local ?? ''} className="input" />
           </Field>
+
+          {/*
+            * Aviso de uniforme/identificação (Vital, 30/09/2026) — texto FIXO,
+            * diferente do sistema de `avisos` (que é pontual e some quando
+            * visto). Regra de uniforme precisa aparecer toda vez que a pessoa
+            * abre a credencial, não só uma. Só aparece pra organização que
+            * ligou em Configurações → Funcionalidade do Sistema.
+            */}
+          {funcionalidades.avisoUniformeHabilitado && (
+            <Field label="Aviso de uniforme/identificação">
+              <textarea
+                name="aviso_uniforme_texto"
+                rows={2}
+                placeholder="Ex: uniforme completo obrigatório — camisa da empresa e crachá visível o tempo todo."
+                defaultValue={(evento as { aviso_uniforme_texto?: string | null }).aviso_uniforme_texto ?? ''}
+                className="input resize-none"
+              />
+              <p className="text-slate-400 text-2xs mt-1">
+                Aparece como um aviso fixo na credencial de cada pessoa da equipe — deixe em
+                branco pra não mostrar nada.
+              </p>
+            </Field>
+          )}
         </div>
 
         {/* Datas do evento */}

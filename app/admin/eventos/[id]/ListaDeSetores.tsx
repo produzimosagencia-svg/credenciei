@@ -62,6 +62,7 @@ export default function ListaDeSetores({
   funcionariosDoEvento,
   diasDoEvento,
   setoresComMeio,
+  setoresComEntradaQualquerHorario,
   setoresComLinkDesligado,
   podeGerenciarSupervisores,
   podeExcluir,
@@ -81,6 +82,8 @@ export default function ListaDeSetores({
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
+  /** Ids dos setores isentos da janela de horário do evento (Vital, item 5). */
+  setoresComEntradaQualquerHorario?: Set<string>
   /** Só os DESLIGADOS — ausente/vazio significa todos ligados. */
   setoresComLinkDesligado?: Set<string>
   /** Subeventos do evento — vazio = evento não usa (feature desligada). */
@@ -311,6 +314,7 @@ export default function ListaDeSetores({
               funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               exigeMeio={setoresComMeio.has(f.id)}
+              entradaQualquerHorario={!!setoresComEntradaQualquerHorario?.has(f.id)}
               linkAtivo={!setoresComLinkDesligado?.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}

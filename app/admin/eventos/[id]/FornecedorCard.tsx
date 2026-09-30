@@ -35,6 +35,7 @@ export default function FornecedorCard({
   funcionariosDoEvento = [],
   diasDoEvento = [],
   exigeMeio = false,
+  entradaQualquerHorario = false,
   linkAtivo = true,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
@@ -56,6 +57,8 @@ export default function FornecedorCard({
   diasDoEvento?: DiaDoEvento[]
   /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
   exigeMeio?: boolean
+  /** Este setor é isento da janela de horário do evento (Vital, item 5)? */
+  entradaQualquerHorario?: boolean
   /** Subeventos do evento — vazio = evento não usa (feature desligada). */
   subeventos?: Subevento[]
   /** Em quais subeventos ESTE fornecedor já está escalado, com a cota de cada um. */
@@ -196,6 +199,7 @@ export default function FornecedorCard({
             nome={f.nome}
             valor_combinado={f.valor_combinado}
             exige_meio={exigeMeio}
+            entrada_qualquer_horario={entradaQualquerHorario}
           />
           {podeExcluir && (
             <button
