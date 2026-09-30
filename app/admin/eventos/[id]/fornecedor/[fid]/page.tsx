@@ -85,7 +85,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       .in('tipo', ['entrada', 'meio', 'fim']),
     supabase
       .from('eventos')
-      .select('data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
+      .select('data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim, metodo_identificacao')
       .eq('id', id)
       .single(),
     /*
@@ -134,6 +134,20 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   if (perfilIds.length) {
     const { data: perfis } = await supabase.from('perfis').select('id, nome').in('id', perfilIds)
     for (const p of perfis ?? []) nomePorPerfil[p.id] = p.nome
+  }
+
+  /*
+   * Quem já tem rosto cadastrado NESTE evento — só pesquisa quando o evento
+   * usa biometria (a maioria não usa, e a tabela nem entra na consulta à
+   * toa). Pedido do Juan (29/09/2026): o supervisor precisa ver de relance
+   * quem falta cadastrar, pra correr atrás da pessoa antes do dia do evento.
+   */
+  const usaBiometria = evento?.metodo_identificacao === 'biometria' || evento?.metodo_identificacao === 'biometria_qr'
+  const comBiometria = new Set<string>()
+  if (usaBiometria && funcionarios?.length) {
+    const { data: templates } = await supabase
+      .from('biometria_templates').select('funcionario_id').eq('evento_id', id).in('funcionario_id', funcionarios.map(f => f.id))
+    for (const t of templates ?? []) comBiometria.add(t.funcionario_id as string)
   }
 
   // Assina as URLs das fotos em lote (bucket privado) — presença + avatares
@@ -207,6 +221,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       motivoNegacao: (f.motivo_negacao as string | null) ?? null,
       descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
+      temBiometria: comBiometria.has(f.id as string),
       entrada,
       meio,
       fim,
@@ -393,6 +408,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           eventoId={id}
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}
           setorNome={fornecedor.nome}
+          usaBiometria={usaBiometria}
           valorCombinado={fornecedor.valor_combinado ?? null}
           podeExcluir={podeExcluirDaEquipe(perfil)}
           /*

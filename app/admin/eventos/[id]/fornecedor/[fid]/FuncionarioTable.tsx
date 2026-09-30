@@ -51,6 +51,8 @@ type Funcionario = {
   motivoNegacao?: string | null
   /** Carimbo de quando saiu do evento. `null` = está na equipe. */
   descredenciadoEm?: string | null
+  /** Já tem rosto cadastrado NESTE evento — só importa quando `usaBiometria` (prop da tabela). */
+  temBiometria?: boolean
   fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
@@ -83,6 +85,7 @@ export default function FuncionarioTable({
   podeEditarCpf = false,
   podeEditarPonto = false,
   role,
+  usaBiometria = false,
 }: {
   funcionarios: Funcionario[]
   fornecedorId: string
@@ -90,6 +93,13 @@ export default function FuncionarioTable({
   /** Só para o cabeçalho do modal do funcionário — não muda nenhuma consulta. */
   eventoNome: string
   setorNome: string
+  /**
+   * O evento usa biometria (`biometria` ou `biometria_qr`) — liga o selo de
+   * "Biometria cadastrada"/"Falta biometria" por pessoa. Pedido do Juan
+   * (29/09/2026): o supervisor precisa ver de relance quem ainda falta
+   * cadastrar, pra correr atrás da pessoa antes do dia do evento.
+   */
+  usaBiometria?: boolean
   valorCombinado: number | null
   /** Os demais setores do evento, para o "mover para outro setor" do modal. */
   outrosSetores?: { id: string; nome: string }[]
@@ -415,6 +425,11 @@ export default function FuncionarioTable({
                   {f.statusCredenciamento === 'negado' && (
                     <span className="text-2xs font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">NEGADO</span>
                   )}
+                  {usaBiometria && (
+                    f.temBiometria
+                      ? <span className="text-2xs font-bold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">BIOMETRIA CADASTRADA</span>
+                      : <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">FALTA BIOMETRIA</span>
+                  )}
                   <EtapaChip label="Entrada" p={f.entrada} status={f.statusEntrada} />
                   <EtapaChip label="Meio" p={f.meio} status={f.statusMeio} />
                   <EtapaChip label="Saída" p={f.fim} status={f.statusFim} />
@@ -445,7 +460,7 @@ export default function FuncionarioTable({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50">
-                  {['Nome', 'CPF', 'Telefone', 'Cadastro', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ''].map(h => (
+                  {['Nome', 'CPF', 'Telefone', 'Cadastro', 'Valor a receber', 'Entrada', 'Meio', 'Fim', ...(usaBiometria ? ['Biometria'] : []), ''].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs text-slate-400 font-semibold uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -517,6 +532,15 @@ export default function FuncionarioTable({
                   <CelulaPresenca p={f.entrada} status={f.statusEntrada} />
                   <CelulaPresenca p={f.meio} status={f.statusMeio} />
                   <CelulaPresenca p={f.fim} status={f.statusFim} />
+                  {usaBiometria && (
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {f.temBiometria ? (
+                        <span className="text-2xs font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg whitespace-nowrap">Biometria cadastrada</span>
+                      ) : (
+                        <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg whitespace-nowrap">Falta biometria</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       {/* Só "ativar", pra quem já está desativado — ver a nota no card mobile. */}
