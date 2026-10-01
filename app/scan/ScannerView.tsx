@@ -200,6 +200,7 @@ export default function ScannerView({
   initialEventoId,
   noPainel = false,
   subeventosPorEvento = {},
+  aoTrocarEvento,
 }: {
   eventos: Evento[]
   initialEventoId?: string
@@ -208,8 +209,21 @@ export default function ScannerView({
   noPainel?: boolean
   /** Subeventos de cada evento (Vital, 30/09/2026) — vazio/ausente = evento sem subeventos. */
   subeventosPorEvento?: Record<string, { id: string; nome: string }[]>
+  /**
+   * Abre o modal "Qual evento você vai trabalhar?" lá no `ScannerRouter`
+   * pai — que agora é o único dono de QUAL evento está ativo (01/10/2026).
+   * Antes esta tela tinha seu próprio `<select>` de evento, e trocar aqui
+   * dentro não avisava ninguém: o leitor (QR/rosto) ficava preso ao
+   * método do evento errado, e a pergunta de área podia aparecer precoce,
+   * antes de o operador sequer ter escolhido o evento de verdade.
+   */
+  aoTrocarEvento?: () => void
 }) {
-  const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
+  // O `ScannerRouter` pai remonta este componente (via `key`) toda vez que
+  // o evento muda — então `eventoId` É o evento ativo, não só um palpite
+  // inicial. Mantido como estado (não como const) só porque o resto do
+  // arquivo já lê/escreve nele; na prática nunca muda durante esta instância.
+  const [eventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
 
   /*
@@ -563,23 +577,30 @@ export default function ScannerView({
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
       <div className="w-full max-w-sm space-y-3">
-        <div>
-          <label className="text-slate-400 text-sm block mb-1.5" data-tutorial="scan-evento">Evento</label>
-          <select
-            value={eventoId}
-            onChange={e => {
-              setEventoId(e.target.value)
-              setAreasOverride(null) // volta a ler a área salva DESTE evento, não a do anterior
-              setConfigurandoArea(false)
-            }}
-            className={noPainel
-              ? 'input w-full'
-              : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
-          >
-            {eventos.map(e => (
-              <option key={e.id} value={e.id}>{e.nome}</option>
-            ))}
-          </select>
+        {/*
+          * Evento — escolhido lá no "Qual evento você vai trabalhar?" do
+          * `ScannerRouter`, não aqui (01/10/2026). Aqui é só o resumo +
+          * "Trocar" (quando há mais de um evento pra escolher).
+          */}
+        <div
+          data-tutorial="scan-evento"
+          className={noPainel ? 'input w-full flex items-center justify-between gap-2' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2'}
+        >
+          <div className="min-w-0">
+            <p className="text-slate-400 text-2xs">Evento</p>
+            <p className={`text-sm font-semibold truncate ${noPainel ? 'text-slate-800' : 'text-white'}`}>
+              {eventos.find(e => e.id === eventoId)?.nome ?? '—'}
+            </p>
+          </div>
+          {eventos.length > 1 && aoTrocarEvento && (
+            <button
+              type="button"
+              onClick={aoTrocarEvento}
+              className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors"
+            >
+              Trocar
+            </button>
+          )}
         </div>
 
         {/*

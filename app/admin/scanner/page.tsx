@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { QrCode } from 'lucide-react'
 import { getPerfil, eventosEscaneaveis, supabaseAdmin } from '@/lib/supabase-server'
-import { podeEscanear } from '@/lib/permissions'
+import { podeEscanear, ehMaster } from '@/lib/permissions'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import ScannerRouter from '@/app/scan/ScannerRouter'
 
@@ -77,6 +77,7 @@ export default async function ScannerNoPainelPage({
           metodosPorEvento={metodosPorEvento}
           subeventosPorEvento={subeventosPorEvento}
           portaoNome={(perfil as { portao_nome?: string | null }).portao_nome ?? null}
+          ehMasterOperador={ehMaster(perfil.role)}
           noPainel
         />
       )}

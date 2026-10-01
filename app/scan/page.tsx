@@ -129,6 +129,7 @@ export default async function ScanPage({
           metodosPorEvento={metodosPorEvento}
           subeventosPorEvento={subeventosPorEvento}
           portaoNome={(perfil as { portao_nome?: string | null }).portao_nome ?? null}
+          ehMasterOperador={ehMaster(perfil.role)}
         />
       )}
     </div>

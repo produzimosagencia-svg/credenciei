@@ -134,18 +134,23 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
 type Origem = { tipo: 'rosto'; descritor: number[] } | { tipo: 'qr'; texto: string }
 
 export default function FaceScannerView({
-  eventos, initialEventoId, aoTrocarParaQr, portaoNome = null, subeventosPorEvento = {},
+  eventos, initialEventoId, aoTrocarParaQr, portaoNome = null, subeventosPorEvento = {}, aoTrocarEvento,
 }: {
   eventos: Evento[]
   initialEventoId?: string
-  /** Pra resolver um caso na hora — o pai decide o que mostrar. */
-  aoTrocarParaQr: (eventoId: string) => void
+  /** Pra resolver um caso na hora — o pai decide o que mostrar (volta pro QR, MESMO evento). */
+  aoTrocarParaQr: () => void
   /** Nome do portão deste totem (ex.: "Entrada VIP") — ver `perfis.portao_nome`. */
   portaoNome?: string | null
   /** Subeventos de cada evento (Vital, 30/09/2026) — vazio/ausente = evento sem subeventos. */
   subeventosPorEvento?: Record<string, { id: string; nome: string }[]>
+  /** Abre o modal "Qual evento você vai trabalhar?" lá no `ScannerRouter`
+   *  pai — ver o comentário completo em `ScannerView.tsx`. */
+  aoTrocarEvento?: () => void
 }) {
-  const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
+  // O `ScannerRouter` pai remonta este componente (via `key`) toda vez que
+  // o evento muda — ver o comentário completo em `ScannerView.tsx`.
+  const [eventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
 
   // "Qual área você vai atuar?" (Vital, 01/10/2026) — ver o comentário
@@ -371,26 +376,28 @@ export default function FaceScannerView({
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
       <div className="w-full max-w-sm space-y-3">
         {/*
-          * Totem preso a um evento só (`perfis.evento_fixo_id`, pedido do
-          * Juan 29/09/2026) — `eventos` já chega com um item só nesse caso
-          * (ver `eventosEscaneaveisSemData`), então o seletor não faz mais
-          * sentido: só confundiria quem opera achando que dá pra trocar.
+          * Evento — escolhido lá no "Qual evento você vai trabalhar?" do
+          * `ScannerRouter`, não aqui (01/10/2026). Totem preso a um evento
+          * só (`perfis.evento_fixo_id`, 29/09/2026) não mostra "Trocar" —
+          * `eventos` já chega com um item só nesse caso.
           */}
         {eventos.length > 1 ? (
-          <div>
-            <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
-            <select
-              value={eventoId}
-              onChange={e => {
-                setEventoId(e.target.value)
-                setAreasOverride(null) // volta a ler a área salva DESTE evento, não a do anterior
-                setConfigurandoArea(false)
-                voltarAEscanear()
-              }}
-              className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
-            >
-              {eventos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
-            </select>
+          <div className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-slate-400 text-2xs">Evento</p>
+              <p className="text-white text-sm font-semibold truncate">
+                {eventos.find(e => e.id === eventoId)?.nome ?? '—'}
+              </p>
+            </div>
+            {aoTrocarEvento && (
+              <button
+                type="button"
+                onClick={aoTrocarEvento}
+                className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors"
+              >
+                Trocar
+              </button>
+            )}
           </div>
         ) : (
           <div className="text-center">
@@ -432,7 +439,7 @@ export default function FaceScannerView({
             na hora um caso que a câmera não resolveu sozinha. */}
         <button
           type="button"
-          onClick={() => aoTrocarParaQr(eventoId)}
+          onClick={() => aoTrocarParaQr()}
           className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors"
         >
           <QrCode className="w-3.5 h-3.5" /> Validar por QR Code
@@ -602,7 +609,7 @@ export default function FaceScannerView({
             </button>
             {categoria === 'naoIdentificado' && (
               <button
-                onClick={() => aoTrocarParaQr(eventoId)}
+                onClick={() => aoTrocarParaQr()}
                 className="mt-3 flex items-center justify-center gap-1.5 mx-auto text-white/80 text-sm font-semibold rounded-2xl px-5 py-2 active:scale-95 transition-all"
               >
                 <QrCode className="w-3.5 h-3.5" /> Resolver agora pelo QR Code

@@ -4,18 +4,34 @@ import ScannerView from './ScannerView'
 import FaceScannerView from './FaceScannerView'
 
 type Evento = { id: string; nome: string }
+type Modo = 'qr' | 'rosto'
+
+/** O que o MÉTODO do evento manda abrir, por padrão. */
+function modoDoEvento(metodo: string | undefined): Modo {
+  return metodo === 'biometria' || metodo === 'biometria_qr' ? 'rosto' : 'qr'
+}
 
 /**
- * Decide qual leitor mostrar — QR ou rosto — e deixa o operador trocar a
- * qualquer momento. Nenhum dos dois componentes é tocado por dentro: o
- * roteador só escolhe qual montar, exatamente como pedido (reutilizar o
- * scanner de QR que já existe, nunca duplicar).
+ * Decide, em DOIS passos, o que o operador vê — nunca os dois ao mesmo
+ * tempo (bug relatado pelo Juan, 01/10/2026: com mais de um evento no
+ * acesso, "Qual área você vai atuar?" aparecia junto com o resto da tela,
+ * tudo empilhado, antes de o operador sequer ter escolhido o evento):
  *
- * `metodosPorEvento[id]` ausente = 'qr' (evento sem o campo migrado ainda,
- * ou evento comum) — o padrão de sempre, sem biometria nenhuma na tela.
+ *  1. QUAL EVENTO — só pergunta quando há mais de um disponível (ou nenhum
+ *     veio fixo por link/totem). Escolhido um evento sem subeventos, vai
+ *     direto pra câmera — exatamente o padrão de sempre.
+ *  2. QUAL ÁREA — só DEPOIS do passo 1, e só se O EVENTO ESCOLHIDO usar
+ *     subeventos (mora dentro de `ScannerView`/`FaceScannerView`, que só
+ *     montam depois que o passo 1 está resolvido).
+ *
+ * Dentro do passo 1 mora também QR-ou-rosto, pelo MÉTODO do evento
+ * escolhido (outro bug do mesmo relato: o leitor abria sempre em
+ * biometria, preso ao método do 1º evento da lista, mesmo trocando pra um
+ * evento de QR). Master (e sócios com o mesmo acesso) fogem dessa regra:
+ * veem as DUAS opções numa chave fixa em cima, pra qualquer evento.
  */
 export default function ScannerRouter({
-  eventos, initialEventoId, metodosPorEvento, subeventosPorEvento = {}, noPainel = false, portaoNome = null,
+  eventos, initialEventoId, metodosPorEvento, subeventosPorEvento = {}, noPainel = false, portaoNome = null, ehMasterOperador = false,
 }: {
   eventos: Evento[]
   initialEventoId?: string
@@ -27,53 +43,135 @@ export default function ScannerRouter({
   noPainel?: boolean
   /** Nome do portão deste totem (ex.: "Entrada VIP") — ver `perfis.portao_nome`. */
   portaoNome?: string | null
+  /** Master (e sócios com o mesmo acesso): ver o comentário acima. */
+  ehMasterOperador?: boolean
 }) {
-  const eventoInicial = initialEventoId ?? eventos[0]?.id ?? ''
-  const metodoInicial = metodosPorEvento[eventoInicial] ?? 'qr'
-  const biometriaLigada = metodoInicial === 'biometria' || metodoInicial === 'biometria_qr'
+  // Vazio = ainda não escolhido, força o passo 1. Só nasce já preenchido
+  // quando só existe UM evento possível, ou quando a navegação já veio
+  // amarrada a um evento específico (ex.: "Escanear QR" de dentro dele).
+  const eventoFixo = initialEventoId || (eventos.length === 1 ? eventos[0]?.id : '') || ''
+  const [eventoAtivo, setEventoAtivo] = useState(eventoFixo)
+  const [modo, setModo] = useState<Modo>(modoDoEvento(metodosPorEvento[eventoFixo]))
+  // Reabre o passo 1 por escolha do operador (botão "Trocar"), mesmo já
+  // tendo um evento ativo.
+  const [escolhendoEvento, setEscolhendoEvento] = useState(false)
 
-  // Começa no rosto quando o evento usa biometria; o operador troca à
-  // vontade — o toque em "Validar por QR Code" (ou o inverso) é sempre
-  // uma escolha da pessoa que está operando, nunca automático depois disso.
-  const [usarRosto, setUsarRosto] = useState(biometriaLigada)
-  const [eventoAtivo, setEventoAtivo] = useState(eventoInicial)
+  const precisaEscolherEvento = !eventoAtivo
+  const mostrarEscolhaEvento = precisaEscolherEvento || escolhendoEvento
 
-  if (usarRosto) {
+  /** Passo 1 resolvido: evento escolhido, modo recalculado pelo método DELE. */
+  const confirmarEvento = (id: string) => {
+    setEventoAtivo(id)
+    if (!ehMasterOperador) setModo(modoDoEvento(metodosPorEvento[id]))
+    setEscolhendoEvento(false)
+  }
+
+  if (mostrarEscolhaEvento) {
     return (
-      <FaceScannerView
-        eventos={eventos}
-        initialEventoId={eventoAtivo}
-        aoTrocarParaQr={id => { setEventoAtivo(id); setUsarRosto(false) }}
-        portaoNome={portaoNome}
-        subeventosPorEvento={subeventosPorEvento}
-      />
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 px-6">
+        <div className="w-full max-w-sm text-white">
+          <p className="text-lg font-bold text-center">Qual evento você vai trabalhar?</p>
+          <div className="mt-5 space-y-2 max-h-[55vh] overflow-y-auto">
+            {eventos.map(e => (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() => confirmarEvento(e.id)}
+                className={`w-full text-left rounded-xl px-4 py-3.5 border transition-colors ${
+                  e.id === eventoAtivo
+                    ? 'bg-brand-500 border-brand-500 text-white'
+                    : 'bg-white/5 border-white/10 hover:bg-white/10'
+                }`}
+              >
+                <span className="font-semibold">{e.nome}</span>
+              </button>
+            ))}
+          </div>
+          {!!eventoAtivo && (
+            <button
+              type="button"
+              onClick={() => setEscolhendoEvento(false)}
+              className="mt-4 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
+      </div>
     )
   }
 
-  /*
-   * `ScannerView` guarda o evento escolhido DENTRO dele (não avisa o pai
-   * quando o operador troca no `<select>` dele) — então este botão não sabe
-   * com certeza qual evento está ativo agora ali dentro. Em vez de confiar
-   * num `eventoAtivo` que pode estar desatualizado, mostra o botão sempre
-   * que QUALQUER evento da lista usar biometria: se a pessoa clicar e o
-   * evento escolhido no leitor de rosto for outro (QR-only), o servidor
-   * mesmo recusa de forma clara ("Este evento não usa biometria facial") —
-   * sem risco de segurança, só uma UX menos fina nesse caso raro (uma
-   * sessão de portão que mistura eventos de métodos diferentes).
-   */
-  const algumEventoTemBiometria = eventos.some(e => {
-    const m = metodosPorEvento[e.id]
-    return m === 'biometria' || m === 'biometria_qr'
-  })
+  const metodoAtual = metodosPorEvento[eventoAtivo] ?? 'qr'
+  const eventoUsaOsDois = metodoAtual === 'biometria_qr'
+  const abrirEscolhaEvento = eventos.length > 1 ? () => setEscolhendoEvento(true) : undefined
+
+  const chaveDeModoMaster = ehMasterOperador && (
+    <div className="px-4 pt-4 pb-1">
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#161b22] border border-[#30363d]">
+        <button
+          type="button"
+          onClick={() => setModo('qr')}
+          className={`rounded-lg py-2 text-xs font-bold tracking-wide transition-all ${
+            modo === 'qr' ? 'bg-brand-500 text-white shadow' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          QR CODE
+        </button>
+        <button
+          type="button"
+          onClick={() => setModo('rosto')}
+          className={`rounded-lg py-2 text-xs font-bold tracking-wide transition-all ${
+            modo === 'rosto' ? 'bg-brand-500 text-white shadow' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          BIOMETRIA
+        </button>
+      </div>
+    </div>
+  )
+
+  // `key={eventoAtivo}`: remonta o leitor do zero a cada evento diferente —
+  // câmera, estado de área, tudo começa limpo pro evento certo, sem precisar
+  // sincronizar nada entre as duas pontas.
+  if (modo === 'rosto') {
+    return (
+      <div className="flex-1 flex flex-col">
+        {chaveDeModoMaster}
+        <FaceScannerView
+          key={eventoAtivo}
+          eventos={eventos}
+          initialEventoId={eventoAtivo}
+          aoTrocarEvento={abrirEscolhaEvento}
+          aoTrocarParaQr={() => setModo('qr')}
+          portaoNome={portaoNome}
+          subeventosPorEvento={subeventosPorEvento}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="flex-1 flex flex-col">
-      <ScannerView eventos={eventos} initialEventoId={eventoAtivo} noPainel={noPainel} subeventosPorEvento={subeventosPorEvento} />
-      {algumEventoTemBiometria && (
+      {chaveDeModoMaster}
+      <ScannerView
+        key={eventoAtivo}
+        eventos={eventos}
+        initialEventoId={eventoAtivo}
+        aoTrocarEvento={abrirEscolhaEvento}
+        noPainel={noPainel}
+        subeventosPorEvento={subeventosPorEvento}
+      />
+      {/*
+        * "Usar reconhecimento facial" — só faz sentido oferecer aqui quando
+        * o PRÓPRIO evento aceita os dois formatos (senão seria oferecer
+        * biometria num evento que não é de biometria nenhuma). Master já
+        * tem a chave fixa acima, então este link ficaria duplicado.
+        */}
+      {eventoUsaOsDois && !ehMasterOperador && (
         <div className="px-4 pb-4">
           <button
             type="button"
-            onClick={() => setUsarRosto(true)}
+            onClick={() => setModo('rosto')}
             className="w-full text-xs font-semibold text-slate-400 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors"
           >
             Usar reconhecimento facial
