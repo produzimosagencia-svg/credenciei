@@ -130,7 +130,7 @@ export type BarraSetor = { setor: string; presentes: number; faltam: number; tot
  */
 export function PresencaPorSetor({ dados }: { dados: BarraSetor[] }) {
   if (!dados.length) {
-    return <p className="text-slate-500 text-sm text-center py-16">Nenhum setor com equipe cadastrada</p>
+    return <p className="text-slate-500 text-sm text-center py-16">Nenhum fornecedor com equipe cadastrada</p>
   }
   const altura = Math.max(160, dados.length * 38 + 24)
   return (

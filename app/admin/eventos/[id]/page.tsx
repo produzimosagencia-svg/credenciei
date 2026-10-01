@@ -37,10 +37,10 @@ const TUTORIAL: TutorialConfig = {
       descricao: 'Abre o leitor de QR Code. É por aqui que você (ou o supervisor) registra a entrada e a saída de cada pessoa no portão.' },
     { alvo: 'evt-stats', titulo: 'Números do evento', posicao: 'bottom',
       descricao: 'A situação agora: quantas pessoas o evento tem ao todo, quantas estão presentes neste momento, e quantas já passaram por cada etapa hoje (entrada, meio, saída) — como fração da equipe inteira.' },
-    { alvo: 'evt-setores', titulo: 'Fornecedores e setores', posicao: 'right',
-      descricao: 'Cadastre aqui cada setor ou fornecedor do evento. Cada um gera um link próprio de cadastro para a equipe se inscrever sozinha.' },
+    { alvo: 'evt-setores', titulo: 'Fornecedores', posicao: 'right',
+      descricao: 'Cadastre aqui cada fornecedor do evento. Cada um gera um link próprio de cadastro para a equipe se inscrever sozinha.' },
     { alvo: 'evt-atividade', titulo: 'Atividade ao vivo', posicao: 'left',
-      descricao: 'Cada leitura de QR ou check-in por foto aparece aqui na hora, com nome, setor e horário.' },
+      descricao: 'Cada leitura de QR ou check-in por foto aparece aqui na hora, com nome, fornecedor e horário.' },
   ],
 }
 
@@ -185,7 +185,6 @@ export default async function EventoPage({
     { data: registrosDoDia },
     { data: operadoresRows },
     { data: setoresComMeioRows },
-    { data: entradaQualquerHorarioRows },
     { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
@@ -201,11 +200,6 @@ export default async function EventoPage({
       : Promise.resolve(vazio),
     fornecedorIds.length
       ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)
-      : Promise.resolve(vazio),
-    // Item 5 (Vital) — coluna nova, em consulta separada e tolerante, mesmo
-    // motivo de `exige_meio` logo acima.
-    fornecedorIds.length
-      ? supabase.from('fornecedores').select('id, entrada_qualquer_horario').in('id', fornecedorIds)
       : Promise.resolve(vazio),
     /*
      * `link_ativo` em consulta SEPARADA, pelo mesmo motivo do `exige_meio`
@@ -256,9 +250,6 @@ export default async function EventoPage({
 
   const setoresComMeio = new Set(
     (setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string)
-  )
-  const setoresComEntradaQualquerHorario = new Set(
-    (entradaQualquerHorarioRows ?? []).filter(f => f.entrada_qualquer_horario === true).map(f => f.id as string)
   )
   /*
    * Só os DESLIGADOS entram no conjunto. Assim, se a consulta acima falhar
@@ -493,8 +484,8 @@ export default async function EventoPage({
         <Secao
           tom="acento"
           icone={<Users className="w-3.5 h-3.5" />}
-          titulo="Fornecedores e setores"
-          descricao="Cada setor gera um link próprio de cadastro para a equipe"
+          titulo="Fornecedores"
+          descricao="Cada fornecedor gera um link próprio de cadastro para a equipe"
           acoes={<FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'} />}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
@@ -563,7 +554,6 @@ export default async function EventoPage({
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}
-              setoresComEntradaQualquerHorario={setoresComEntradaQualquerHorario}
               setoresComLinkDesligado={setoresComLinkDesligado}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil)}

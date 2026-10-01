@@ -91,7 +91,7 @@ export default function PainelVeiculos({
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Consultar placa, modelo, condutor, CPF, empresa ou setor"
+            placeholder="Consultar placa, modelo, condutor, CPF, empresa ou fornecedor"
             className="input pl-9 pr-9"
             autoComplete="off"
           />
@@ -154,7 +154,7 @@ export default function PainelVeiculos({
                   <th>Placa</th>
                   <th>Veículo</th>
                   <th>Condutor</th>
-                  <th>Empresa/Setor</th>
+                  <th>Empresa/Fornecedor</th>
                   <th>Origem</th>
                   <th>Status</th>
                   <th>Entrada</th>

@@ -92,7 +92,7 @@ export async function confirmarConferencia(
     const { data: setor } = await supabaseAdmin
       .from('fornecedores').select('nome, eventos(nome, data_inicio, organizacao_id)').eq('id', fornecedorId).maybeSingle()
     const ev = setor?.eventos as unknown as { nome: string; data_inicio: string; organizacao_id: string | null } | null
-    if (!ev) return { ok: false, erro: 'Setor não encontrado.' }
+    if (!ev) return { ok: false, erro: 'Fornecedor não encontrado.' }
     if (!conferenciaAberta(ev.data_inicio)) {
       return { ok: false, erro: 'A conferência abre 1 dia antes do evento.' }
     }
@@ -120,7 +120,7 @@ export async function confirmarConferencia(
     after(() => registrarAuditoria({
       perfil,
       acao: 'DESCREDENCIAMENTO',
-      campoAlterado: `Conferência de equipe — setor ${setor?.nome ?? ''}`,
+      campoAlterado: `Conferência de equipe — fornecedor ${setor?.nome ?? ''}`,
       valorNovo: `${mantidos ?? 0} mantidos, ${removidos ?? 0} removidos`,
       eventoId,
       organizacaoId: ev.organizacao_id ?? undefined,

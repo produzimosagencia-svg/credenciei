@@ -45,7 +45,7 @@ export default async function CriarSenhaSupervisorPage({
               <p className="text-slate-400 text-sm mt-1.5">Olá, {convite.nome}. Finalize seu acesso de supervisor.</p>
               <div className="my-6 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
                 <p className="text-slate-200 font-medium">{convite.evento}</p>
-                <p className="text-slate-500 text-xs mt-1">Setor: {convite.setor}</p>
+                <p className="text-slate-500 text-xs mt-1">Fornecedor: {convite.setor}</p>
               </div>
 
               {/* O login vem ANTES do formulário, e destacado.

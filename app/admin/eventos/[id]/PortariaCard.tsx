@@ -77,7 +77,7 @@ export default function PortariaCard({
           </h3>
           <p className="text-slate-500 text-xs mt-1">
             Um QR impresso na entrada. Quem chega sem estar na lista escaneia, escolhe o
-            setor e se cadastra sozinho.
+            fornecedor e se cadastra sozinho.
           </p>
         </div>
 

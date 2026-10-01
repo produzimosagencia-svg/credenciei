@@ -174,8 +174,8 @@ export default function FiltrosAuditoria({
           className="w-auto text-sm"
           valor={setor}
           onChange={v => trocar('setor', v)}
-          placeholder="Setor: todos"
-          titulo="Setor"
+          placeholder="Fornecedor: todos"
+          titulo="Fornecedor"
           busca
           opcoes={[
             { valor: '', rotulo: 'Todos' },
@@ -263,13 +263,13 @@ const COLUNAS_AUDITORIA = [
   { titulo: 'Detalhe', largura: 24, quebraLinha: true },
   { titulo: 'Pessoa afetada', largura: 22 },
   { titulo: 'CPF', largura: 15 },
-  { titulo: 'Setor da pessoa', largura: 17 },
+  { titulo: 'Fornecedor da pessoa', largura: 17 },
   { titulo: 'De', largura: 26, quebraLinha: true },
   { titulo: 'Para', largura: 26, quebraLinha: true },
   { titulo: 'Motivo', largura: 22, quebraLinha: true },
   { titulo: 'Quem fez', largura: 22 },
   { titulo: 'Tipo de acesso', largura: 15 },
-  { titulo: 'Setor de quem fez', largura: 17 },
+  { titulo: 'Fornecedor de quem fez', largura: 17 },
   { titulo: 'Evento', largura: 22 },
   { titulo: 'Entrou no evento em', largura: 17 },
   { titulo: 'IP', largura: 14 },

@@ -14,9 +14,9 @@ const TUTORIAL: TutorialConfig = {
   versao: 2,
   passos: [
     { alvo: 'novo-acesso-funcao', titulo: 'A função', posicao: 'bottom', icone: 'ShieldCheck',
-      descricao: 'Escolha o que a pessoa é no sistema. Cada função pede um vínculo diferente: supervisor vai a um setor, gestor de credenciamento e suporte vão a um evento, admin vai a uma organização.' },
+      descricao: 'Escolha o que a pessoa é no sistema. Cada função pede um vínculo diferente: supervisor vai a um fornecedor, gestor de credenciamento e suporte vão a um evento, admin vai a uma organização.' },
     { alvo: 'novo-acesso-escopo', titulo: 'O vínculo', posicao: 'bottom', icone: 'Building2',
-      descricao: 'É o que a pessoa vai enxergar. O supervisor fica preso a um único setor; se ela cuida de dois, crie dois acessos.' },
+      descricao: 'É o que a pessoa vai enxergar. O supervisor fica preso a um único fornecedor; se ela cuida de dois, crie dois acessos.' },
     { alvo: 'novo-acesso-funcoes', titulo: 'Funções ligadas', posicao: 'top', icone: 'ShieldCheck',
       descricao: 'Cada função já vem com o conjunto padrão do papel. Aqui você desliga o que essa pessoa específica não deve ter — ou liga um extra.' },
     { alvo: 'novo-acesso-status', titulo: 'Status', posicao: 'top', icone: 'ShieldCheck',

@@ -55,7 +55,7 @@ export default async function PainelDeAvisos({ eventoId }: { eventoId: string })
     if (a.publico === 'supervisores') return 'Supervisores'
     if (a.publico === 'pessoa') return a.cpf_pessoa ? (nomeDaPessoa.get(a.cpf_pessoa) ?? 'Pessoa não encontrada') : '—'
     const setores = setoresPorAviso.get(id) ?? []
-    return setores.length ? setores.join(', ') : 'Nenhum setor'
+    return setores.length ? setores.join(', ') : 'Nenhum fornecedor'
   }
 
   const linhas: LinhaAviso[] = (avisos ?? []).map(a => ({

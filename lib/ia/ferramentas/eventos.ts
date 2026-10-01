@@ -303,7 +303,7 @@ export function ferramentasDeEvento(ctx: ContextoIA, pedirConfirmacao: PedirConf
 
         const { data: setores } = await supabaseAdmin.from('fornecedores').select('id').eq('evento_id', evento_id)
         const ids = (setores ?? []).map(s => s.id)
-        if (!ids.length) return 'Este evento ainda não tem setores, então não há QR Code para renovar.'
+        if (!ids.length) return 'Este evento ainda não tem fornecedores, então não há QR Code para renovar.'
 
         const novaValidade = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
         const { data } = await supabaseAdmin
@@ -436,7 +436,7 @@ export function ferramentasDeEvento(ctx: ContextoIA, pedirConfirmacao: PedirConf
         await registrarAuditoriaIA(perfil, 'excluir_evento', {
           evento_id, nome: evento.nome, setores: setores?.length ?? 0, pessoas, registros: registros ?? 0,
         })
-        return `Evento ${evento.nome} excluído, com ${setores?.length ?? 0} setor(es), ${pessoas} pessoa(s) e ${registros ?? 0} registro(s).`
+        return `Evento ${evento.nome} excluído, com ${setores?.length ?? 0} fornecedor(es), ${pessoas} pessoa(s) e ${registros ?? 0} registro(s).`
       },
     }),
   ]

@@ -54,7 +54,7 @@ export async function importarFuncionarios(
     .single()
 
   if (!fornecedor) {
-    return { ok: false, status: 404, error: 'Este setor não existe mais. Recarregue a página e tente de novo.' }
+    return { ok: false, status: 404, error: 'Este fornecedor não existe mais. Recarregue a página e tente de novo.' }
   }
 
   const evento = fornecedor.eventos as unknown as {
@@ -63,7 +63,7 @@ export async function importarFuncionarios(
 
   // Isolamento por organização: só master ou admin da mesma org do evento
   if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
-    return { ok: false, status: 403, error: 'Você não tem permissão para importar funcionários neste setor.' }
+    return { ok: false, status: 403, error: 'Você não tem permissão para importar funcionários neste fornecedor.' }
   }
   const spreadsheetId = evento?.spreadsheet_id
   const eventoId = evento?.id ?? fornecedor.evento_id

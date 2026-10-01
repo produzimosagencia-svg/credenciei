@@ -58,7 +58,7 @@ export default async function CartazPage({ params }: { params: Promise<{ id: str
         <ol className="text-slate-700 text-lg mt-4 space-y-2 text-left max-w-xs mx-auto">
           <li><strong>1.</strong> Aponte a câmera do celular para o código</li>
           <li><strong>2.</strong> Digite seu CPF</li>
-          <li><strong>3.</strong> Já cadastrado? Registra na hora. Novo? Escolhe o setor e preenche.</li>
+          <li><strong>3.</strong> Já cadastrado? Registra na hora. Novo? Escolhe o fornecedor e preenche.</li>
         </ol>
 
         <p className="text-slate-400 text-sm mt-8">

@@ -65,7 +65,7 @@ export default function FuncionalidadesForm({
             <p className="text-slate-600 text-xs mt-1">
               A cota máxima de pessoas (do fornecedor, ou da escala em cada subevento) passa a
               BLOQUEAR novo cadastro — por link e por planilha — em vez de só aparecer como
-              referência. Quem tentar se cadastrar acima do limite vê: &quot;Seu setor está com o
+              referência. Quem tentar se cadastrar acima do limite vê: &quot;Seu fornecedor está com o
               número máximo de pessoas. Contate seu supervisor.&quot;
             </p>
           </div>

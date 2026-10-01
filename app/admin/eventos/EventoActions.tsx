@@ -72,7 +72,7 @@ export default function EventoActions({ eventoId, ativo, podeExcluir = false }: 
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => executar(() => deletarEvento(eventoId))}
         isPending={isPending}
-        mensagem="Excluir o evento apaga setores, equipe e presenças, e não tem desfazer. Supervisores ligados aos setores perdem o vínculo, mas mantêm o acesso ao sistema."
+        mensagem="Excluir o evento apaga fornecedores, equipe e presenças, e não tem desfazer. Supervisores ligados aos fornecedores perdem o vínculo, mas mantêm o acesso ao sistema."
       />
     </div>
   )

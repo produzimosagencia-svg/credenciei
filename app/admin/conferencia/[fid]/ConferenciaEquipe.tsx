@@ -72,7 +72,7 @@ export default function ConferenciaEquipe({ estado }: { estado: ConferenciaSetor
         <p className="text-slate-700 font-semibold">A conferência abre 1 dia antes do evento</p>
         <p className="text-slate-500 text-sm">
           Disponível a partir de <strong>{formatarBR(estado.abreEm, 'completo')}</strong>. Volte nessa data para
-          conferir e confirmar a equipe do setor <strong>{estado.setorNome}</strong>.
+          conferir e confirmar a equipe do fornecedor <strong>{estado.setorNome}</strong>.
         </p>
       </div>
     )
@@ -111,7 +111,7 @@ export default function ConferenciaEquipe({ estado }: { estado: ConferenciaSetor
         </div>
 
         {!equipe.length ? (
-          <p className="px-4 py-10 text-center text-sm text-slate-400">Ninguém na equipe deste setor.</p>
+          <p className="px-4 py-10 text-center text-sm text-slate-400">Ninguém na equipe deste fornecedor.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {equipe.map(m => (
@@ -154,14 +154,14 @@ export default function ConferenciaEquipe({ estado }: { estado: ConferenciaSetor
         onClose={() => setARemover(null)}
         onConfirm={remover}
         isPending={pendente}
-        mensagem={`Tirar ${aRemover?.nome ?? ''} da equipe do setor ${estado.setorNome}? A pessoa sai da lista deste evento; o histórico dela fica.`}
+        mensagem={`Tirar ${aRemover?.nome ?? ''} da equipe do fornecedor ${estado.setorNome}? A pessoa sai da lista deste evento; o histórico dela fica.`}
       />
       <ConfirmModal
         open={confirmandoFinal}
         onClose={() => setConfirmandoFinal(false)}
         onConfirm={confirmar}
         isPending={pendente}
-        mensagem={`Confirmar que estas ${equipe.length} pessoas são a equipe do setor ${estado.setorNome} para o evento ${estado.eventoNome}?`}
+        mensagem={`Confirmar que estas ${equipe.length} pessoas são a equipe do fornecedor ${estado.setorNome} para o evento ${estado.eventoNome}?`}
       />
     </div>
   )

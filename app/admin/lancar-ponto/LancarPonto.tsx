@@ -120,14 +120,14 @@ export default function LancarPonto({
         tom="acento"
         icone={<ClipboardPen className="w-3.5 h-3.5" />}
         titulo="Quem perdeu a batida?"
-        descricao={`${pessoas.length.toLocaleString('pt-BR')} pessoas neste evento — busque por nome, CPF ou setor`}
+        descricao={`${pessoas.length.toLocaleString('pt-BR')} pessoas neste evento — busque por nome, CPF ou fornecedor`}
         corpoClassName={encontrados.length ? '' : 'p-4'}
       >
         <div className="relative px-4 pt-4 pb-2">
           <Search className="w-4 h-4 text-slate-400 absolute left-7 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             value={busca} onChange={e => setBusca(e.target.value)}
-            placeholder="Nome, CPF ou setor…" aria-label="Buscar pessoa" autoFocus
+            placeholder="Nome, CPF ou fornecedor…" aria-label="Buscar pessoa" autoFocus
             className="input pl-9 pr-9"
           />
           {busca && (

@@ -19,13 +19,13 @@ const TUTORIAL: TutorialConfig = {
   versao: 3,
   passos: [
     { alvo: 'scan-evento', titulo: 'Evento', posicao: 'bottom', icone: 'ListChecks',
-      descricao: 'Confirme que é o evento certo antes de começar. Se você é supervisor, só aparece o evento do seu setor — não tem como escanear no evento errado.' },
+      descricao: 'Confirme que é o evento certo antes de começar. Se você é supervisor, só aparece o evento do seu fornecedor — não tem como escanear no evento errado.' },
     { alvo: 'scan-modo', titulo: 'Entrada ou saída', posicao: 'bottom', icone: 'ScanLine',
       descricao: 'Escolha o que está registrando: ENTRADA (verde) ou SAÍDA (azul). Fica escolhido até você trocar. Quem saiu e está voltando: ENTRADA — a saída fica no histórico. Se escolher errado, nada é gravado errado: a tela avisa.' },
     { alvo: 'scan-camera', titulo: 'A leitura', posicao: 'top', icone: 'ScanLine',
       descricao: 'Aponte para o QR Code na tela do celular da pessoa. Aparece o nome e o que vai ser registrado: confira e toque em SALVAR (ou CANCELAR, se estiver errado). Depois de salvar, a tela fica VERDE na entrada e AZUL na saída.' },
     { alvo: 'scan-equipe', titulo: 'Sua equipe', posicao: 'bottom', icone: 'Users',
-      descricao: 'Atalho para o painel do seu setor, onde você vê quem já registrou cada etapa e quem ainda está pendente. Vale abrir de tempos em tempos durante o evento.' },
+      descricao: 'Atalho para o painel do seu fornecedor, onde você vê quem já registrou cada etapa e quem ainda está pendente. Vale abrir de tempos em tempos durante o evento.' },
   ],
 }
 

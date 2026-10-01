@@ -78,7 +78,7 @@ export default function TabelaPresenca({
             <thead>
               <tr className="text-slate-400 text-2xs uppercase tracking-wide border-b border-slate-100">
                 <th className="text-left font-semibold px-4 py-2.5">Nome</th>
-                {mostrarSetor && <th className="text-left font-semibold px-4 py-2.5">Setor</th>}
+                {mostrarSetor && <th className="text-left font-semibold px-4 py-2.5">Fornecedor</th>}
                 <th className="text-left font-semibold px-4 py-2.5">CPF</th>
                 <th className="text-left font-semibold px-4 py-2.5">{colunaHora}</th>
               </tr>

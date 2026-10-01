@@ -147,13 +147,13 @@ export default function ExportarRelatorio({
             tom="acento"
             icone={<FileSpreadsheet className="w-3.5 h-3.5" />}
             titulo="Relatório completo"
-            descricao="Todos os setores, numa planilha só — uma aba por setor"
+            descricao="Todos os fornecedores, numa planilha só — uma aba por fornecedor"
             corpoClassName="p-5 space-y-4"
           >
             <div className="flex items-center gap-4 text-sm text-slate-600">
               <span className="flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-slate-400" />
-                {setores.length} setores
+                {setores.length} fornecedores
               </span>
               <span className="flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-slate-400" />
@@ -182,16 +182,16 @@ export default function ExportarRelatorio({
         {!!setores.length && (
           <Secao
             icone={<Building2 className="w-3.5 h-3.5" />}
-            titulo="Relatório por setor"
-            descricao="Uma planilha só com a equipe do setor escolhido"
+            titulo="Relatório por fornecedor"
+            descricao="Uma planilha só com a equipe do fornecedor escolhido"
             corpoClassName="p-5 space-y-4"
           >
             <div>
-              <label className="text-slate-500 text-xs font-medium block mb-1.5">Selecione o setor</label>
+              <label className="text-slate-500 text-xs font-medium block mb-1.5">Selecione o fornecedor</label>
               <SeletorLista
                 valor={setorId}
                 onChange={setSetorId}
-                titulo="Escolha o setor"
+                titulo="Escolha o fornecedor"
                 busca
                 opcoes={setores.map(s => ({ valor: s.id, rotulo: s.nome }))}
               />
@@ -209,13 +209,13 @@ export default function ExportarRelatorio({
             >
               {gerandoSetor
                 ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
-                : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar setor'}</>}
+                : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar fornecedor'}</>}
             </button>
 
             {setores.length > 1 && (
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-slate-500 text-xs mb-2">
-                  Ou baixe <strong className="text-slate-700">todos os {setores.length} setores</strong> de uma vez, um arquivo por setor, num .zip — pronto pra mandar cada planilha pro seu fornecedor.
+                  Ou baixe <strong className="text-slate-700">todos os {setores.length} fornecedores</strong> de uma vez, um arquivo por fornecedor, num .zip — pronto pra mandar cada planilha pro seu fornecedor.
                 </p>
                 {erroTodos && (
                   <p className="flex items-start gap-1.5 text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
@@ -230,7 +230,7 @@ export default function ExportarRelatorio({
                 >
                   {gerandoTodos
                     ? <><LogoLoading tamanho="xs" /> Gerando {setores.length} planilhas...</>
-                    : <><FolderArchive className="w-4 h-4" /> Exportar todos os setores em arquivos separados</>}
+                    : <><FolderArchive className="w-4 h-4" /> Exportar todos os fornecedores em arquivos separados</>}
                 </button>
               </div>
             )}
@@ -239,7 +239,7 @@ export default function ExportarRelatorio({
 
         {!setores.length && (
           <p className="text-slate-400 text-sm lg:col-span-2">
-            Ainda não há setores com equipe cadastrada neste evento para gerar relatório.
+            Ainda não há fornecedores com equipe cadastrada neste evento para gerar relatório.
           </p>
         )}
       </div>

@@ -338,15 +338,15 @@ export default function FormDisparo({ eventos, setores, templates, numeros }: {
                   opcoes={eventos.map(e => ({ valor: e.id, rotulo: `${e.nome}${e.ativo ? '' : ' · encerrado'}` }))}
                 />
               </label>
-              {origem === 'equipe' && <label><span className="text-xs text-slate-500">Setor</span>
+              {origem === 'equipe' && <label><span className="text-xs text-slate-500">Fornecedor</span>
                 <SeletorLista
                   className="mt-1"
                   valor={setorId}
                   onChange={v => { setSetorId(v); invalidarPublico() }}
-                  placeholder="Todos os setores"
-                  titulo="Setor"
+                  placeholder="Todos os fornecedores"
+                  titulo="Fornecedor"
                   busca
-                  opcoes={[{ valor: '', rotulo: 'Todos os setores' }, ...setoresDoEvento.map(s => ({ valor: s.id, rotulo: s.nome }))]}
+                  opcoes={[{ valor: '', rotulo: 'Todos os fornecedores' }, ...setoresDoEvento.map(s => ({ valor: s.id, rotulo: s.nome }))]}
                 />
               </label>}
             </div>

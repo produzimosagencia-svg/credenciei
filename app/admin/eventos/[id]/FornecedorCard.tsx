@@ -35,7 +35,6 @@ export default function FornecedorCard({
   funcionariosDoEvento = [],
   diasDoEvento = [],
   exigeMeio = false,
-  entradaQualquerHorario = false,
   linkAtivo = true,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
@@ -57,8 +56,6 @@ export default function FornecedorCard({
   diasDoEvento?: DiaDoEvento[]
   /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
   exigeMeio?: boolean
-  /** Este setor é isento da janela de horário do evento (Vital, item 5)? */
-  entradaQualquerHorario?: boolean
   /** Subeventos do evento — vazio = evento não usa (feature desligada). */
   subeventos?: Subevento[]
   /** Em quais subeventos ESTE fornecedor já está escalado, com a cota de cada um. */
@@ -94,7 +91,7 @@ export default function FornecedorCard({
         await alternarLinkDoSetor(eventoId, f.id, linkDesligado)
         router.refresh()
       } catch (e) {
-        setErroLink(e instanceof Error ? e.message : 'Não foi possível mudar o link deste setor.')
+        setErroLink(e instanceof Error ? e.message : 'Não foi possível mudar o link deste fornecedor.')
       }
     })
   }
@@ -199,13 +196,12 @@ export default function FornecedorCard({
             nome={f.nome}
             valor_combinado={f.valor_combinado}
             exige_meio={exigeMeio}
-            entrada_qualquer_horario={entradaQualquerHorario}
           />
           {podeExcluir && (
             <button
               onClick={() => setConfirmOpen(true)}
               disabled={isPending}
-              aria-label={`Excluir setor ${f.nome}`}
+              aria-label={`Excluir fornecedor ${f.nome}`}
               className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-erro-600 hover:bg-erro-50 disabled:opacity-50"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -267,7 +263,7 @@ export default function FornecedorCard({
         <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
           <Link2Off className="w-3.5 h-3.5 text-amber-600 shrink-0" />
           <p className="text-amber-800 text-2xs font-semibold">
-            Link desligado — este setor não aceita cadastro novo
+            Link desligado — este fornecedor não aceita cadastro novo
           </p>
         </div>
       )}
@@ -283,7 +279,7 @@ export default function FornecedorCard({
         </Link>
         <button
           onClick={copyLink}
-          title="Copiar o link de cadastro deste setor"
+          title="Copiar o link de cadastro deste fornecedor"
           aria-label={copied ? 'Link copiado' : `Copiar link do formulário de ${f.nome}`}
           className={`btn btn-secundario btn-sm shrink-0 ${copied ? 'text-sucesso-700' : ''}`}
         >
@@ -297,7 +293,7 @@ export default function FornecedorCard({
         <button
           onClick={alternarLink}
           disabled={mudandoLink}
-          title={linkDesligado ? 'Ligar o link de cadastro deste setor' : 'Desligar o link de cadastro deste setor'}
+          title={linkDesligado ? 'Ligar o link de cadastro deste fornecedor' : 'Desligar o link de cadastro deste fornecedor'}
           aria-label={linkDesligado ? `Ligar link de ${f.nome}` : `Desligar link de ${f.nome}`}
           className={`btn btn-sm shrink-0 ${linkDesligado ? 'btn-primario' : 'btn-secundario'}`}
         >

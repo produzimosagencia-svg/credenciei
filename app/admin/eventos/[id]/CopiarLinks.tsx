@@ -101,7 +101,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
   const copiar = async (quais: SetorParaCopiar[]) => {
     const texto = montarTexto(quais, window.location.origin)
     if (!texto) {
-      setAviso('Nenhum setor selecionado tem link.')
+      setAviso('Nenhum fornecedor selecionado tem link.')
       return
     }
     try {
@@ -131,7 +131,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
       <button
         onClick={() => setAberto(true)}
         className="btn btn-primario btn-sm"
-        title="Copiar os links de cadastro de vários setores de uma vez"
+        title="Copiar os links de cadastro de vários fornecedores de uma vez"
       >
         <ClipboardList className="w-3.5 h-3.5 shrink-0" />
         Copiar links
@@ -159,7 +159,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
               <div className="min-w-0">
                 <h2 className="font-bold text-slate-900">Copiar links</h2>
                 <p className="text-slate-500 text-xs mt-0.5">
-                  Nome do setor em negrito, link embaixo, um bloco por setor
+                  Nome do fornecedor em negrito, link embaixo, um bloco por fornecedor
                 </p>
               </div>
               <button
@@ -180,7 +180,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
                   <input
                     value={busca}
                     onChange={e => setBusca(e.target.value)}
-                    placeholder="Filtrar setores…"
+                    placeholder="Filtrar fornecedores…"
                     className="input pl-9 text-sm"
                   />
                 </div>
@@ -224,14 +224,14 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
               })}
 
               {!visiveis.length && (
-                <p className="text-slate-400 text-sm text-center py-4">Nenhum setor com esse nome.</p>
+                <p className="text-slate-400 text-sm text-center py-4">Nenhum fornecedor com esse nome.</p>
               )}
             </div>
 
             <div className="px-5 py-4 border-t border-slate-100 space-y-2">
               {semLink > 0 && (
                 <p className="text-slate-400 text-2xs">
-                  {semLink} setor{semLink === 1 ? '' : 'es'} sem link de formulário {semLink === 1 ? 'fica' : 'ficam'} de fora.
+                  {semLink} fornecedor{semLink === 1 ? '' : 'es'} sem link de formulário {semLink === 1 ? 'fica' : 'ficam'} de fora.
                 </p>
               )}
               <button

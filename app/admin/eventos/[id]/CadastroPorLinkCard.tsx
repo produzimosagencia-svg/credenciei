@@ -51,7 +51,7 @@ export default function CadastroPorLinkCard({
     setLinkIndividual(null)
     setCopiado(false)
     if (!setorId) {
-      setErroIndividual('Escolha um setor para gerar o link individual.')
+      setErroIndividual('Escolha um fornecedor para gerar o link individual.')
       return
     }
 
@@ -77,8 +77,8 @@ export default function CadastroPorLinkCard({
           </p>
           <p className="text-slate-500 text-xs mt-0.5">
             {suspenso
-              ? 'Os links dos setores e o cartaz da portaria estão recusando cadastro novo. Quem já está na equipe continua normal.'
-              : 'Os links dos setores e o cartaz da portaria aceitam cadastro. Suspenda quando a lista fechar — os links continuam os mesmos.'}
+              ? 'Os links dos fornecedores e o cartaz da portaria estão recusando cadastro novo. Quem já está na equipe continua normal.'
+              : 'Os links dos fornecedores e o cartaz da portaria aceitam cadastro. Suspenda quando a lista fechar — os links continuam os mesmos.'}
           </p>
           {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
         </div>
@@ -122,7 +122,7 @@ export default function CadastroPorLinkCard({
             <div>
               <p className="text-slate-800 text-sm font-extrabold">Reabrir um cadastro individual</p>
               <p className="text-slate-500 text-xs mt-0.5">
-                Escolha o setor. O link geral continua fechado e o novo endereço aceita cadastros por 48 horas.
+                Escolha o fornecedor. O link geral continua fechado e o novo endereço aceita cadastros por 48 horas.
               </p>
             </div>
             <button type="button" onClick={() => setAbrindoIndividual(false)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
@@ -130,9 +130,9 @@ export default function CadastroPorLinkCard({
             </button>
           </div>
 
-          <p className="text-slate-500 text-xs font-semibold mb-1.5">Setores criados</p>
+          <p className="text-slate-500 text-xs font-semibold mb-1.5">Fornecedores criados</p>
           <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-            {!setores.length && <p className="px-3 py-4 text-center text-slate-400 text-xs">Nenhum setor disponível.</p>}
+            {!setores.length && <p className="px-3 py-4 text-center text-slate-400 text-xs">Nenhum fornecedor disponível.</p>}
             {setores.map(setor => {
               const selecionado = setor.id === setorId
               return (

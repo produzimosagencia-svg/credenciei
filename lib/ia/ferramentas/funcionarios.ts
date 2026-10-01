@@ -77,7 +77,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
 
         const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id)
         if (outroSetor) {
-          return `Este CPF já está cadastrado neste evento, no setor "${outroSetor}". Uma pessoa não pode estar em dois setores do mesmo evento — se ela mudou de setor, use mover_funcionario_de_setor.`
+          return `Este CPF já está cadastrado neste evento, no fornecedor "${outroSetor}". Uma pessoa não pode estar em dois fornecedores do mesmo evento — se ela mudou de fornecedor, use mover_funcionario_de_setor.`
         }
 
         // Ninguém entra inativo — ver o comentário no topo do arquivo.
@@ -96,7 +96,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           valor_receber: valorNumerico(valor_receber) ?? 0,
           ativo,
         }]).select('id, nome, qr_token').single()
-        if (error || !novo) return 'Não foi possível cadastrar. Tente pela tela do setor.'
+        if (error || !novo) return 'Não foi possível cadastrar. Tente pela tela do fornecedor.'
 
         // Lembretes e boas-vindas fora do caminho crítico: se o WhatsApp
         // estiver fora do ar, o cadastro não pode falhar por causa disso.
@@ -168,7 +168,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           const digitos = String(cpf).replace(/\D/g, '')
           if (!validarCpf(digitos)) return 'CPF inválido. Confira os 11 dígitos.'
           const outroSetor = await cpfJaNoEvento(digitos, r.func.evento_id, funcionario_id)
-          if (outroSetor) return `Já existe outra pessoa com este CPF neste evento, no setor "${outroSetor}".`
+          if (outroSetor) return `Já existe outra pessoa com este CPF neste evento, no fornecedor "${outroSetor}".`
           mudancas.cpf = digitos
         }
 
@@ -212,7 +212,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         required: ['funcionario_id', 'fornecedor_id_destino'],
       },
       executar: async ({ funcionario_id, fornecedor_id_destino }) => {
-        const barrado = exigirGestor(perfil, 'move pessoas entre setores')
+        const barrado = exigirGestor(perfil, 'move pessoas entre fornecedores')
         if (barrado) return barrado
 
         const r = await resolverFuncionario(perfil, funcionario_id)
@@ -221,10 +221,10 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (!destino.ok) return destino.erro
 
         if (destino.setor.id === r.func.fornecedor_id) {
-          return `${r.func.nome} já está no setor ${destino.setor.nome}. Nada a fazer.`
+          return `${r.func.nome} já está no fornecedor ${destino.setor.nome}. Nada a fazer.`
         }
         if (destino.setor.evento_id !== r.func.evento_id) {
-          return 'Os dois setores são de eventos diferentes. Só dá pra mover dentro do mesmo evento — para o outro evento, cadastre a pessoa lá.'
+          return 'Os dois fornecedores são de eventos diferentes. Só dá pra mover dentro do mesmo evento — para o outro evento, cadastre a pessoa lá.'
         }
 
         // Mover de setor não desativa: o teto do destino é referência, não trava.
@@ -294,7 +294,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         const r = await resolverFuncionario(perfil, funcionario_id)
         if (!r.ok) return r.erro
         if (pago && !r.func.ativo) {
-          return `${r.func.nome} não está ativada. Ative-a antes de marcar o pagamento — pagamento é só para quem foi selecionada dentro do teto do setor.`
+          return `${r.func.nome} não está ativada. Ative-a antes de marcar o pagamento — pagamento é só para quem foi selecionada dentro do teto do fornecedor.`
         }
 
         await supabaseAdmin.from('funcionarios').update({
@@ -342,7 +342,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
-            `Cadastrar ${linhas.length} pessoa${linhas.length !== 1 ? 's' : ''} da planilha no setor "${r.setor.nome}"${evento?.nome ? ` do evento ${evento.nome}` : ''}`,
+            `Cadastrar ${linhas.length} pessoa${linhas.length !== 1 ? 's' : ''} da planilha no fornecedor "${r.setor.nome}"${evento?.nome ? ` do evento ${evento.nome}` : ''}`,
             { ...resumo, setor: r.setor.nome, evento: evento?.nome ?? '' },
             'quantas pessoas vão entrar e em qual setor, avisando sobre linhas incompletas se houver',
             'criar'
@@ -394,7 +394,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
-            `Excluir ${r.func.nome} (${formatCpf(r.func.cpf)}) do setor ${r.func.setorNome}`,
+            `Excluir ${r.func.nome} (${formatCpf(r.func.cpf)}) do fornecedor ${r.func.setorNome}`,
             {
               registros_de_presenca_apagados: registros ?? 0,
               pagamento: pago?.pago ? `JÁ FOI PAGA (${brl(Number(pago.valor_receber ?? 0))}) — o registro do pagamento some junto` : 'não paga',

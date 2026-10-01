@@ -172,7 +172,7 @@ export default function LocalizarFuncionario() {
         tom="acento"
         icone={<UserSearch className="w-3.5 h-3.5" />}
         titulo="Buscar funcionário"
-        descricao="Você só localiza pessoas dos setores sob sua responsabilidade"
+        descricao="Você só localiza pessoas dos fornecedores sob sua responsabilidade"
         corpoClassName="p-5"
       >
         <form onSubmit={buscar} className="space-y-3" data-tutorial="loc-busca">
@@ -276,7 +276,7 @@ export default function LocalizarFuncionario() {
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs border-t border-slate-100 pt-3">
               <Dado icone={IdCard} rotulo="Cargo" valor={func.cargo || '—'} />
-              <Dado icone={Building2} rotulo="Setor" valor={func.setorNome} />
+              <Dado icone={Building2} rotulo="Fornecedor" valor={func.setorNome} />
               <Dado icone={ShieldCheck} rotulo="Supervisor" valor={func.supervisorNome || '—'} />
               <Dado
                 icone={Clock}
@@ -432,7 +432,7 @@ export default function LocalizarFuncionario() {
 
           {!func.ativo && (
             <p className="text-xs text-red-500 text-center">
-              Esta pessoa ainda não foi ativada no evento. Ative no painel do setor antes de registrar a presença.
+              Esta pessoa ainda não foi ativada no evento. Ative no painel do fornecedor antes de registrar a presença.
             </p>
           )}
         </>

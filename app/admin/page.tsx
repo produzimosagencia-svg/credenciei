@@ -33,7 +33,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'dash-novo-evento', titulo: 'Criar um evento', posicao: 'left',
       descricao: 'Cadastre um evento novo: nome, datas e as janelas de horário em que a equipe pode bater ponto. Você pode criar até o limite de licenças contratadas.' },
     { alvo: 'eventos-card', titulo: 'Seus eventos', posicao: 'top',
-      descricao: 'Clique no nome para gerenciar setores, equipe e presenças. A barra à direita mostra quantos da equipe já bateram entrada.' },
+      descricao: 'Clique no nome para gerenciar fornecedores, equipe e presenças. A barra à direita mostra quantos da equipe já bateram entrada.' },
     { alvo: 'eventos-acoes', titulo: 'Ações do evento', posicao: 'left',
       descricao: 'Encerre um evento quando ele acabar ou exclua se foi criado por engano. Evento encerrado para de aceitar novas presenças.' },
   ],
@@ -107,9 +107,9 @@ function SemSetorVinculado() {
         <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
           <AlertTriangle className="w-6 h-6 text-amber-600" />
         </div>
-        <h1 className="text-lg font-semibold text-slate-900">Seu acesso ainda não tem setor</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Seu acesso ainda não tem fornecedor</h1>
         <p className="text-sm text-slate-500 mt-2">
-          Peça ao organizador do evento para vincular você ao seu setor. Assim que
+          Peça ao organizador do evento para vincular você ao seu fornecedor. Assim que
           isso for feito, sua equipe aparece aqui.
         </p>
       </div>
@@ -565,7 +565,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
        lugar errado. */
     <Secao
       titulo={busca ? 'Busca de eventos' : 'Eventos'}
-      descricao={busca ? `Nenhum resultado para "${busca}"` : 'Cada evento reúne os setores, a equipe e as presenças do dia'}
+      descricao={busca ? `Nenhum resultado para "${busca}"` : 'Cada evento reúne os fornecedores, a equipe e as presenças do dia'}
       acoes={barraDeBusca}
     >
       {busca ? (
@@ -635,7 +635,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {/* Cabeçalho da grade — só no desktop; no celular a linha vira lista. */}
           <div className="hidden md:grid grid-cols-[2fr_1fr_1.6fr_.6fr_.6fr_.9fr_48px] px-5 py-2 text-[10px] font-extrabold tracking-[.14em] uppercase text-slate-400 border-b border-white/[.08]">
             <span>Evento</span><span>Data</span><span>Local</span>
-            <span className="text-right">Setores</span><span className="text-right">Equipe</span>
+            <span className="text-right">Fornecedores</span><span className="text-right">Equipe</span>
             <span className="pl-4">Status</span><span />
           </div>
           <div>
@@ -833,7 +833,7 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
         )}
         <dt className="text-slate-500">Equipe</dt>
         <dd className="text-slate-800 tabular-nums">
-          {evento.setores} setor{evento.setores !== 1 ? 'es' : ''} · {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
+          {evento.setores} fornecedor{evento.setores !== 1 ? 'es' : ''} · {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
         </dd>
       </dl>
 

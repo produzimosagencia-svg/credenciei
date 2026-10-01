@@ -9,7 +9,7 @@ import { mensagemAmigavel } from '@/lib/erros'
 type Props =
   /** `podeCriarSupervisor` — ver o bloco do supervisor no formulário. */
   | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean; entrada_qualquer_horario?: boolean }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -26,10 +26,6 @@ export default function FornecedorModal(props: Props) {
   // Um id por instância: a tela mostra vários destes modais ao mesmo tempo
   // (um por setor), e `htmlFor` repetido faria o clique cair no cartão errado.
   const idExigeMeio = `exige_meio_${isEditar ? (props as any).fornecedorId : 'novo'}`
-  // "Entrada em qualquer horário" (Vital, item 5) — versão por-fornecedor do
-  // `batida_livre` do evento. Nasce desligado, igual ao meio.
-  const defaultEntradaQualquerHorario = isEditar ? (props as any).entrada_qualquer_horario === true : false
-  const idEntradaQualquerHorario = `entrada_qualquer_horario_${isEditar ? (props as any).fornecedorId : 'novo'}`
 
   /*
    * O erro do servidor precisa aparecer no formulário.
@@ -59,13 +55,13 @@ export default function FornecedorModal(props: Props) {
   return (
     <>
       {isEditar ? (
-        <button onClick={() => setOpen(true)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor/setor">
+        <button onClick={() => setOpen(true)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor">
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
         <button onClick={() => setOpen(true)} className="btn btn-primario btn-sm">
           <Plus className="w-3.5 h-3.5 shrink-0" />
-          <span className="hidden sm:inline">Novo Fornecedor/Setor</span>
+          <span className="hidden sm:inline">Novo Fornecedor</span>
           <span className="sm:hidden">Novo</span>
         </button>
       )}
@@ -74,14 +70,14 @@ export default function FornecedorModal(props: Props) {
         <div className="overlay-fade-in fixed inset-0 bg-black/45 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setOpen(false)}>
           <div className="modal-pop-in bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-slate-800 font-bold text-base">{isEditar ? 'Editar Fornecedor/Setor' : 'Novo Fornecedor/Setor'}</h3>
+              <h3 className="text-slate-800 font-bold text-base">{isEditar ? 'Editar Fornecedor' : 'Novo Fornecedor'}</h3>
               <button onClick={() => setOpen(false)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <form action={handleAction} className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Setor *</label>
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Fornecedor *</label>
                 <NomeInput name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
               </div>
               <div>
@@ -122,32 +118,6 @@ export default function FornecedorModal(props: Props) {
               </label>
 
               {/*
-                * Entrada em qualquer horário (Vital, item 5) — isenta ESTE
-                * fornecedor da janela de horário do evento, mesmo que o
-                * evento não tenha "batida livre" ligada. Pra quem foge da
-                * escala combinada (banda, postura e afins).
-                */}
-              <label
-                htmlFor={idEntradaQualquerHorario}
-                className="flex items-start gap-2.5 cursor-pointer bg-slate-50 rounded-xl p-3"
-              >
-                <input
-                  type="checkbox"
-                  id={idEntradaQualquerHorario}
-                  name="entrada_qualquer_horario"
-                  defaultChecked={defaultEntradaQualquerHorario}
-                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-slate-700">Entrada em qualquer horário</span>
-                  <span className="block text-slate-500 text-xs mt-0.5">
-                    Esta equipe não segue o horário de entrada configurado no evento — pra quem
-                    foge da escala combinada (banda, postura, atrações e afins).
-                  </span>
-                </span>
-              </label>
-
-              {/*
                 * O SUPERVISOR VEM JUNTO, NÃO DEPOIS.
                 *
                 * Era outra tela, em outro menu — e por isso ficava pra depois:
@@ -165,7 +135,7 @@ export default function FornecedorModal(props: Props) {
                     <p className="text-slate-800 text-sm font-semibold">Supervisor responsável *</p>
                     <p className="text-slate-500 text-xs mt-0.5">
                       Ele recebe o acesso por WhatsApp e passa a cuidar desta equipe. Se a
-                      pessoa já for supervisora aqui, digite o mesmo CPF — este setor entra
+                      pessoa já for supervisora aqui, digite o mesmo CPF — este fornecedor entra
                       nos dela, sem criar login novo.
                     </p>
                   </div>
@@ -188,7 +158,7 @@ export default function FornecedorModal(props: Props) {
               {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
               <button type="submit" disabled={isPending} className="btn btn-primario w-full">
-                {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor/setor')}
+                {isPending ? 'Salvando...' : (isEditar ? 'Salvar alterações' : 'Cadastrar fornecedor')}
               </button>
             </form>
           </div>

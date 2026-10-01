@@ -146,7 +146,7 @@ export default function VeiculoWizard({ token }: { token: string }) {
           <Campo rotulo="Empresa">
             <input className="input" value={form.empresa} onChange={e => set('empresa', e.target.value)} placeholder="De quem é o veículo" />
           </Campo>
-          <Campo rotulo="Setor">
+          <Campo rotulo="Fornecedor">
             <input className="input" value={form.setor} onChange={e => set('setor', e.target.value)} placeholder="Ex.: Produção, Segurança" />
           </Campo>
         </div>
@@ -193,7 +193,7 @@ export default function VeiculoWizard({ token }: { token: string }) {
           <Linha rotulo="CPF" valor={form.cpf} />
           <Linha rotulo="Telefone" valor={form.telefone} />
           {form.empresa && <Linha rotulo="Empresa" valor={form.empresa} />}
-          {form.setor && <Linha rotulo="Setor" valor={form.setor} />}
+          {form.setor && <Linha rotulo="Fornecedor" valor={form.setor} />}
           <Linha rotulo="Placa" valor={normalizarPlaca(form.placa)} />
           <Linha rotulo="Modelo" valor={form.modelo} />
           {form.ano && <Linha rotulo="Ano" valor={form.ano} />}

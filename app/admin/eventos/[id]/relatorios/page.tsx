@@ -27,7 +27,7 @@ export default async function RelatoriosPage({ params }: { params: Promise<{ id:
     <div className="space-y-5">
       <PageHeader
         titulo="Relatórios do evento"
-        descricao={`${resumo.eventoNome} — entrada e saída da equipe, por setor e função`}
+        descricao={`${resumo.eventoNome} — entrada e saída da equipe, por fornecedor e função`}
       />
       <ExportarRelatorio
         eventoId={eventoId}

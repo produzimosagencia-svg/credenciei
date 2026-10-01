@@ -62,7 +62,6 @@ export default function ListaDeSetores({
   funcionariosDoEvento,
   diasDoEvento,
   setoresComMeio,
-  setoresComEntradaQualquerHorario,
   setoresComLinkDesligado,
   podeGerenciarSupervisores,
   podeExcluir,
@@ -82,8 +81,6 @@ export default function ListaDeSetores({
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
-  /** Ids dos setores isentos da janela de horário do evento (Vital, item 5). */
-  setoresComEntradaQualquerHorario?: Set<string>
   /** Só os DESLIGADOS — ausente/vazio significa todos ligados. */
   setoresComLinkDesligado?: Set<string>
   /** Subeventos do evento — vazio = evento não usa (feature desligada). */
@@ -179,8 +176,8 @@ export default function ListaDeSetores({
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Buscar setor, supervisor ou funcionário…"
-            aria-label="Buscar setor ou funcionário"
+            placeholder="Buscar fornecedor, supervisor ou funcionário…"
+            aria-label="Buscar fornecedor ou funcionário"
             className="input pl-9 pr-9 text-sm"
           />
           {busca && (
@@ -194,7 +191,7 @@ export default function ListaDeSetores({
           )}
         </div>
         <p className="text-slate-500 text-xs tabular-nums shrink-0 whitespace-nowrap">
-          <span className="font-semibold text-slate-700">{fornecedores.length}</span> setor{fornecedores.length === 1 ? '' : 'es'}
+          <span className="font-semibold text-slate-700">{fornecedores.length}</span> fornecedor{fornecedores.length === 1 ? '' : 'es'}
           {' · '}
           <span className="font-semibold text-slate-700">{totalEquipe}</span> na equipe
         </p>
@@ -314,7 +311,6 @@ export default function ListaDeSetores({
               funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               exigeMeio={setoresComMeio.has(f.id)}
-              entradaQualquerHorario={!!setoresComEntradaQualquerHorario?.has(f.id)}
               linkAtivo={!setoresComLinkDesligado?.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}

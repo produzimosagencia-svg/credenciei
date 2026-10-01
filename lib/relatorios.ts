@@ -294,14 +294,14 @@ export async function obterDadosRelatorioSetor(
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
   if (acesso.setoresPermitidos && !acesso.setoresPermitidos.has(fornecedorId)) {
-    return { erro: 'Sem permissão sobre este setor.' }
+    return { erro: 'Sem permissão sobre este fornecedor.' }
   }
 
   const periodo = await resolverPeriodo(eventoId, periodoPedido)
   const setor = await carregarSetor(fornecedorId, periodo)
-  if (!setor) return { erro: 'Setor não encontrado.' }
+  if (!setor) return { erro: 'Fornecedor não encontrado.' }
   const { data: confere } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
-  if (confere?.evento_id !== eventoId) return { erro: 'Este setor não pertence a este evento.' }
+  if (confere?.evento_id !== eventoId) return { erro: 'Este fornecedor não pertence a este evento.' }
 
   return {
     dados: {

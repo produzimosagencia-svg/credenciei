@@ -56,7 +56,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'enc-lista', titulo: 'Quem aparece primeiro', posicao: 'top', icone: 'ShieldCheck',
       descricao: 'Do cadastro mais recente para o mais antigo. Quem não autorizou aparecer aqui (a caixa de aceite do formulário) mostra a etiqueta "Sem autorização" — a ficha dela continua acessível do mesmo jeito, é só um aviso.' },
     { alvo: 'enc-chamar', titulo: 'Chamar e atribuir', posicao: 'left', icone: 'MessageCircle',
-      descricao: '"Chamar" abre o SEU WhatsApp com o número da pessoa — o Credenciei não manda convite automático, então combine função, valor e horário direto com ela. Fechado o combinado, "Atribuir" abre o perfil, onde você escolhe o evento e o setor do cliente. A pessoa entra na equipe dele e recebe o link da credencial.' },
+      descricao: '"Chamar" abre o SEU WhatsApp com o número da pessoa — o Credenciei não manda convite automático, então combine função, valor e horário direto com ela. Fechado o combinado, "Atribuir" abre o perfil, onde você escolhe o evento e o fornecedor do cliente. A pessoa entra na equipe dele e recebe o link da credencial.' },
   ],
 }
 

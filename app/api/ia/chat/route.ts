@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   if (planilha && planilha.length > MAX_LINHAS_PLANILHA) {
     return Response.json(
-      { error: `Esta planilha tem ${planilha.length} linhas — muita coisa para o chat. Importe pela tela do setor, dentro do evento.` },
+      { error: `Esta planilha tem ${planilha.length} linhas — muita coisa para o chat. Importe pela tela do fornecedor, dentro do evento.` },
       { status: 413 }
     )
   }

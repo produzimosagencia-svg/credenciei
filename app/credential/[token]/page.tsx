@@ -102,7 +102,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         : {
             Icone: XCircle, cor: 'bg-slate-500/15 text-slate-400',
             titulo: 'Sem acesso no momento',
-            texto: 'Fale com o responsável do seu setor.',
+            texto: 'Fale com o responsável do seu fornecedor.',
           }
     const { Icone } = selo
     return (
@@ -429,21 +429,6 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     : []
 
   /*
-   * Aviso de uniforme/identificação (Vital, item 4, 30/09/2026) — texto FIXO
-   * do evento, diferente do sistema de `avisos` acima (que é pontual e some
-   * quando a pessoa vê uma vez). Consulta À PARTE e tolerante: coluna nova,
-   * e esta é a tela mais visitada do sistema — uma migração pendente não
-   * pode derrubar a credencial inteira por causa de um campo extra.
-   */
-  let avisoUniformeTexto: string | null = null
-  if (evento?.id) {
-    try {
-      const { data } = await supabase.from('eventos').select('aviso_uniforme_texto').eq('id', evento.id).maybeSingle()
-      avisoUniformeTexto = (data as { aviso_uniforme_texto?: string | null } | null)?.aviso_uniforme_texto?.trim() || null
-    } catch { /* migração pendente */ }
-  }
-
-  /*
    * Biometria autoatendimento — consulta À PARTE e tolerante (mesmo padrão
    * de `metodoIdentificacaoDoEvento`): esta página já é grande e crítica
    * (é a credencial de todo mundo), e pedir uma coluna que ainda não existe
@@ -498,19 +483,6 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
               </div>
-
-              {/*
-                * Aviso de uniforme/identificação — banner FIXO, sempre
-                * visível (nunca dispensável como os `avisos` comuns acima),
-                * porque regra de uniforme precisa ser lembrada toda vez que
-                * a pessoa abre a credencial, não só a primeira.
-                */}
-              {avisoUniformeTexto && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-amber-800 text-sm font-semibold">Uniforme e identificação</p>
-                  <p className="text-amber-900/80 text-sm mt-1 leading-relaxed whitespace-pre-line">{avisoUniformeTexto}</p>
-                </div>
-              )}
 
               {/*
                 * Guia de acesso — só quando o evento roda biometria. O QR

@@ -103,7 +103,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
         {!disponiveis.length ? (
           <div className="bg-white rounded-2xl p-6 text-center">
             <Users className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-slate-700 font-semibold mt-3">Ainda não há setores abertos</p>
+            <p className="text-slate-700 font-semibold mt-3">Ainda não há fornecedores abertos</p>
             <p className="text-slate-500 text-sm mt-1">
               Procure o credenciamento do evento para fazer seu cadastro.
             </p>

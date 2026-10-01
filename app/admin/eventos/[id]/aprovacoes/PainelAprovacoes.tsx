@@ -92,7 +92,7 @@ export default function PainelAprovacoes({
           <input
             value={busca}
             onChange={e => setBusca(e.target.value)}
-            placeholder="Consultar nome, CPF, telefone, empresa ou setor"
+            placeholder="Consultar nome, CPF, telefone, empresa ou fornecedor"
             className="input pl-9 pr-9"
             autoComplete="off"
           />
@@ -141,7 +141,7 @@ export default function PainelAprovacoes({
                   <th>Nome</th>
                   <th>Contato</th>
                   <th>Empresa/Cargo</th>
-                  <th>Setor</th>
+                  <th>Fornecedor</th>
                   <th>Origem</th>
                   <th>Recebido em</th>
                   <th>Status</th>

@@ -61,7 +61,7 @@ export default function MeusSetores({
     <>
       <button onClick={() => setAberto(true)} className="menu-item w-full text-left">
         <Building2 className="w-4 h-4 shrink-0" />
-        Meus setores
+        Meus fornecedores
         <span className="ml-auto text-2xs opacity-60 tabular-nums">{setores.length}</span>
       </button>
 
@@ -77,9 +77,9 @@ export default function MeusSetores({
           >
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
               <div>
-                <h2 className="text-slate-800 font-bold">Meus setores</h2>
+                <h2 className="text-slate-800 font-bold">Meus fornecedores</h2>
                 <p className="text-slate-400 text-xs mt-0.5">
-                  Você supervisiona {setores.length} setores. Escolha qual quer ver.
+                  Você supervisiona {setores.length} fornecedores. Escolha qual quer ver.
                 </p>
               </div>
               <button

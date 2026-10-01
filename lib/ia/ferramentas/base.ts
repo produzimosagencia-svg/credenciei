@@ -112,7 +112,7 @@ export async function exigirEvento(perfil: PerfilIA, eventoId: string): Promise<
 /** Supervisor só mexe no próprio setor. */
 export function exigirSetor(perfil: PerfilIA, fornecedorId: string): string | null {
   if (perfil.role === 'supervisor' && perfil.fornecedor_id !== fornecedorId) {
-    return 'Este setor é de outro supervisor. Você só acessa o seu.'
+    return 'Este fornecedor é de outro supervisor. Você só acessa o seu.'
   }
   return null
 }
@@ -159,7 +159,7 @@ export async function resolverSetor(perfil: PerfilIA, fornecedorId: string): Pro
     .select('id, nome, evento_id, quantidade_estimada, valor_combinado, token_formulario')
     .eq('id', fornecedorId)
     .single()
-  if (!setor) return { ok: false, erro: 'Setor não encontrado.' }
+  if (!setor) return { ok: false, erro: 'Fornecedor não encontrado.' }
 
   const erro = await exigirEvento(perfil, setor.evento_id)
   if (erro) return { ok: false, erro }

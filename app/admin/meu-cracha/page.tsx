@@ -47,13 +47,13 @@ export default async function MeuCrachaPage({
   if (!eventoParam) {
     return (
       <div className="space-y-5">
-        <PageHeader titulo="Crachá Admin" descricao="Escolha o evento — o crachá é vinculado a um setor dele" />
+        <PageHeader titulo="Crachá Admin" descricao="Escolha o evento — o crachá é vinculado a um fornecedor dele" />
         <EscolherEvento
           eventos={await eventosQuePossoAbrir()}
           href={id => `/admin/meu-cracha?evento=${id}`}
           icone={<IdCard className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
-          descricao="Você vai escolher o setor a seguir"
+          descricao="Você vai escolher o fornecedor a seguir"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel antes de gerar seu crachá.' }}
           mostrarOrganizacao={veTodosEventos(perfil)}
         />
@@ -74,19 +74,19 @@ export default async function MeuCrachaPage({
       <div className="space-y-5">
         <PageHeader
           titulo="Crachá Admin"
-          descricao={`${evento.nome} — em qual setor você quer aparecer credenciado?`}
+          descricao={`${evento.nome} — em qual fornecedor você quer aparecer credenciado?`}
           acoes={
             <Link href="/admin/meu-cracha" className="btn btn-secundario">
               <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
             </Link>
           }
         />
-        <Secao tom="acento" icone={<Building2 className="w-3.5 h-3.5" />} titulo="Setores deste evento" corpoClassName={setores?.length ? 'p-0' : 'p-4'}>
+        <Secao tom="acento" icone={<Building2 className="w-3.5 h-3.5" />} titulo="Fornecedores deste evento" corpoClassName={setores?.length ? 'p-0' : 'p-4'}>
           {!setores?.length ? (
             <EmptyState
               icone={<Building2 className="w-7 h-7" />}
-              titulo="Nenhum setor ainda"
-              descricao="Crie um setor neste evento antes de gerar seu crachá."
+              titulo="Nenhum fornecedor ainda"
+              descricao="Crie um fornecedor neste evento antes de gerar seu crachá."
             />
           ) : (
             <div className="divide-y divide-slate-50">

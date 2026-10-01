@@ -22,9 +22,9 @@ export default async function PainelConferencias({ eventoId, dataInicio }: { eve
 
   return (
     <Secao tom={tudoConfirmado ? 'sucesso' : 'aviso'} icone={<ClipboardCheck className="w-3.5 h-3.5" />} titulo="Conferência de equipe (1 dia antes)"
-      descricao={aberta ? `${feitas} de ${comSupervisor.length} setores confirmaram a equipe` : `Abre ${formatarBR(new Date(new Date(dataInicio).getTime() - 86_400_000).toISOString(), 'completo')}`}>
+      descricao={aberta ? `${feitas} de ${comSupervisor.length} fornecedores confirmaram a equipe` : `Abre ${formatarBR(new Date(new Date(dataInicio).getTime() - 86_400_000).toISOString(), 'completo')}`}>
       <Link href={`/admin/eventos/${eventoId}/conferencias`} className="btn btn-secundario btn-sm inline-flex items-center gap-1">
-        Ver setores <ChevronRight className="w-3.5 h-3.5" />
+        Ver fornecedores <ChevronRight className="w-3.5 h-3.5" />
       </Link>
     </Secao>
   )

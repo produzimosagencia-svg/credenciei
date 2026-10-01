@@ -52,7 +52,7 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
         setFeito(
           r.setores === 0 || r.dias === 0
             ? 'O meio está desligado neste evento — ninguém vai receber lembrete nem aparecer como pendente.'
-            : `Meio ligado em ${r.setores} setor(es), em ${r.dias} dia(s).`,
+            : `Meio ligado em ${r.setores} fornecedor(es), em ${r.dias} dia(s).`,
         )
         router.refresh()
       } catch (e: unknown) {
@@ -78,7 +78,7 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
           </p>
           <p className="text-slate-500 text-2xs mt-1">
             Não tem horário pra configurar — a equipe não entra junta, e um horário fixo cobraria de
-            quem acabou de chegar. O que se escolhe aqui é <strong>quais setores</strong> pedem e{' '}
+            quem acabou de chegar. O que se escolhe aqui é <strong>quais fornecedores</strong> pedem e{' '}
             <strong>em quais dias</strong>.
           </p>
         </div>
@@ -87,7 +87,7 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
       {/* ── Setores ─────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-blue-100 p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-slate-700">Setores que pedem o meio</p>
+          <p className="text-xs font-semibold text-slate-700">Fornecedores que pedem o meio</p>
           {config.setores.length > 0 && (
             <button
               type="button"
@@ -106,7 +106,7 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
           * `.menu-item-ativo` em globals.css.
           */}
         {!config.setores.length ? (
-          <p className="text-slate-400 text-xs">Este evento ainda não tem setores cadastrados.</p>
+          <p className="text-slate-400 text-xs">Este evento ainda não tem fornecedores cadastrados.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-0.5 max-h-52 overflow-y-auto">
             {config.setores.map(s => {
@@ -176,14 +176,14 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
           <p className="text-amber-700 text-2xs">
             A escolha por dia só passa a valer depois que a migração{' '}
             <code>supabase/upgrade-meio-por-dia.sql</code> for aplicada no banco. Até lá, todo dia
-            pede o meio nos setores marcados acima.
+            pede o meio nos fornecedores marcados acima.
           </p>
         )}
       </div>
 
       <p className="text-slate-500 text-2xs">
         {ligado
-          ? <>O meio vai ser pedido a quem estiver nos <strong>{setores.size} setor(es)</strong> marcados, nos <strong>{dias.size} dia(s)</strong> marcados — e só neles.</>
+          ? <>O meio vai ser pedido a quem estiver nos <strong>{setores.size} fornecedor(es)</strong> marcados, nos <strong>{dias.size} dia(s)</strong> marcados — e só neles.</>
           : <>Nenhuma combinação marcada: o meio fica <strong>desligado</strong> neste evento. O cartão some da credencial, ninguém recebe lembrete e ninguém aparece como pendente do meio.</>}
         {' '}Batida já registrada continua no histórico de qualquer forma — desligar não apaga nada.
       </p>

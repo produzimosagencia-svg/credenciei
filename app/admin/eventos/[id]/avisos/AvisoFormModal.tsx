@@ -30,7 +30,7 @@ type Props =
 
 const PUBLICOS = [
   { valor: 'todos', label: 'Todos' },
-  { valor: 'setores', label: 'Setores' },
+  { valor: 'setores', label: 'Fornecedores' },
   { valor: 'pessoa', label: 'Pessoa específica' },
   { valor: 'supervisores', label: 'Supervisores' },
 ] as const
@@ -177,9 +177,9 @@ export default function AvisoFormModal(props: Props) {
               </Field>
 
               {publico === 'setores' && (
-                <Field label="Setores *">
+                <Field label="Fornecedores *">
                   {!props.fornecedores.length ? (
-                    <p className="text-slate-400 text-xs">Este evento ainda não tem setores cadastrados.</p>
+                    <p className="text-slate-400 text-xs">Este evento ainda não tem fornecedores cadastrados.</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto -mx-1 px-1">
                       {props.fornecedores.map(f => {

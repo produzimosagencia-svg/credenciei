@@ -604,7 +604,7 @@ export default function FuncionarioTable({
         isPending={isPending}
         titulo="Tirar da equipe"
         mensagem={paraTirar
-          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste setor? A pessoa sai das listas do evento e o QR dela deixa de ser aceito. O histórico de batidas dela não é apagado, e dá pra trazer de volta depois.`
+          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste fornecedor? A pessoa sai das listas do evento e o QR dela deixa de ser aceito. O histórico de batidas dela não é apagado, e dá pra trazer de volta depois.`
           : ''}
       />
 

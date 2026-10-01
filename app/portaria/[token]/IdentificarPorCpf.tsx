@@ -57,9 +57,9 @@ export default function IdentificarPorCpf({ eventoId, setores }: { eventoId: str
   if (naoEncontrado) {
     return (
       <>
-        <h2 className="text-slate-800 font-bold text-lg">Em qual setor você vai trabalhar?</h2>
+        <h2 className="text-slate-800 font-bold text-lg">Em qual fornecedor você vai trabalhar?</h2>
         <p className="text-slate-500 text-sm mt-1 mb-4">
-          Não achamos seu CPF neste evento — vamos te cadastrar. Escolha o seu setor; se
+          Não achamos seu CPF neste evento — vamos te cadastrar. Escolha o seu fornecedor; se
           não souber, pergunte a quem te chamou.
         </p>
 

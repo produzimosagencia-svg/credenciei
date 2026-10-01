@@ -44,7 +44,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         required: ['evento_id', 'nome'],
       },
       executar: async ({ evento_id, nome, quantidade_estimada, valor_combinado }) => {
-        const barrado = exigirGestor(perfil, 'cria setores')
+        const barrado = exigirGestor(perfil, 'cria fornecedores')
         if (barrado) return barrado
         const erro = await exigirEvento(perfil, evento_id)
         if (erro) return erro
@@ -55,7 +55,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
           quantidade_estimada: quantidade_estimada ?? null,
           valor_combinado: valorNumerico(valor_combinado),
         }]).select('id, nome, token_formulario').single()
-        if (error || !novo) return 'Não foi possível criar o setor.'
+        if (error || !novo) return 'Não foi possível criar o fornecedor.'
 
         // Aba na planilha do Google: espelho, não fonte — se falhar, o setor
         // continua criado.
@@ -72,7 +72,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
           fornecedor_id: novo.id,
           nome: novo.nome,
           link_de_cadastro: `${urlBase()}/form/${novo.token_formulario}`,
-          observacao: 'Mande este link no grupo do setor — a equipe se cadastra sozinha por ele.',
+          observacao: 'Mande este link no grupo do fornecedor — a equipe se cadastra sozinha por ele.',
         })
       },
     }),
@@ -97,7 +97,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         required: ['fornecedor_id'],
       },
       executar: async ({ fornecedor_id, nome, quantidade_estimada, valor_combinado, cpfs_autorizados }) => {
-        const barrado = exigirGestor(perfil, 'edita setores')
+        const barrado = exigirGestor(perfil, 'edita fornecedores')
         if (barrado) return barrado
         const r = await resolverSetor(perfil, fornecedor_id)
         if (!r.ok) return r.erro
@@ -124,7 +124,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
             .eq('ativo', true)
           const teto = Number(mudancas.quantidade_estimada)
           if ((count ?? 0) > teto) {
-            alerta = `O setor já tem ${count} pessoas ativas, acima do teto novo (${teto}). Ninguém foi desativado — o teto só vale para quem se cadastrar daqui pra frente.`
+            alerta = `O fornecedor já tem ${count} pessoas ativas, acima do teto novo (${teto}). Ninguém foi desativado — o teto só vale para quem se cadastrar daqui pra frente.`
           }
         }
         return JSON.stringify({ ok: true, alterado: Object.keys(mudancas), alerta })
@@ -177,10 +177,10 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
-            `Trocar o link de cadastro do setor ${r.setor.nome}`,
+            `Trocar o link de cadastro do fornecedor ${r.setor.nome}`,
             {
               link_atual: 'para de funcionar imediatamente',
-              quem_ja_se_cadastrou: 'continua no setor, nada é perdido',
+              quem_ja_se_cadastrou: 'continua no fornecedor, nada é perdido',
               atencao: 'quem tiver o link antigo (inclusive a própria equipe) precisa receber o novo',
             },
             'que o link atual morre na hora e a equipe precisa receber o novo'
@@ -195,7 +195,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
           ok: true,
           setor: r.setor.nome,
           novo_link: `${urlBase()}/form/${novo}`,
-          observacao: 'O link antigo foi derrubado. Mande este no grupo do setor.',
+          observacao: 'O link antigo foi derrubado. Mande este no grupo do fornecedor.',
         })
       },
     }),
@@ -210,7 +210,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         required: ['fornecedor_id'],
       },
       executar: async ({ fornecedor_id }) => {
-        const barrado = exigirGestor(perfil, 'exclui setores')
+        const barrado = exigirGestor(perfil, 'exclui fornecedores')
         if (barrado) return barrado
         const r = await resolverSetor(perfil, fornecedor_id)
         if (!r.ok) return r.erro
@@ -220,7 +220,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         const { data: supervisores } = await supabaseAdmin
           .from('perfis').select('id, nome').eq('fornecedor_id', fornecedor_id)
         if (supervisores?.length) {
-          return `Este setor tem supervisor vinculado (${supervisores.map(s => s.nome).join(', ')}). Remova ou realoque o supervisor antes de excluir o setor.`
+          return `Este fornecedor tem supervisor vinculado (${supervisores.map(s => s.nome).join(', ')}). Remova ou realoque o supervisor antes de excluir o fornecedor.`
         }
 
         const [{ count: pessoas }, { count: registros }] = await Promise.all([
@@ -233,7 +233,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
-            `Excluir o setor ${r.setor.nome}`,
+            `Excluir o fornecedor ${r.setor.nome}`,
             {
               pessoas_da_equipe_apagadas: pessoas ?? 0,
               registros_de_presenca_apagados: registros ?? 0,
@@ -246,7 +246,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         await registrarAuditoriaIA(perfil, 'excluir_setor', {
           fornecedor_id, nome: r.setor.nome, pessoas: pessoas ?? 0,
         })
-        return `Setor ${r.setor.nome} excluído, junto com ${pessoas ?? 0} pessoa(s) da equipe.`
+        return `Fornecedor ${r.setor.nome} excluído, junto com ${pessoas ?? 0} pessoa(s) da equipe.`
       },
     }),
   ]

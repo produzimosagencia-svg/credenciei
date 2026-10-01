@@ -842,7 +842,7 @@ export async function cancelarMeioDesligado(eventoId: string): Promise<number> {
   for (let i = 0; i < orfas.length; i += 200) {
     await supabase
       .from('mensagens_agendadas')
-      .update({ status: 'cancelado', erro: 'Cancelada: o meio foi desligado para este setor/dia.' })
+      .update({ status: 'cancelado', erro: 'Cancelada: o meio foi desligado para este fornecedor/dia.' })
       .in('id', orfas.slice(i, i + 200))
   }
   console.log(`[agendamentos] ${orfas.length} mensagens de meio canceladas (evento ${eventoId})`)
@@ -1570,7 +1570,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         func.nome,
         evento.nome,
         func.cargo?.trim() || 'não informada',
-        fornecedor?.nome ?? 'seu setor',
+        fornecedor?.nome ?? 'seu fornecedor',
         dataLocal,
         instrucoes,
         credencial,
@@ -1613,7 +1613,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       params: [
         func.nome,
         evento.nome,
-        fornecedor?.nome ?? 'seu setor',
+        fornecedor?.nome ?? 'seu fornecedor',
         evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar',
         evento.local?.trim() || 'a confirmar',
         credencial,
@@ -1768,7 +1768,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         func.nome,
         evento.nome,
         (func.motivo_negacao as string | null)?.trim() || 'não informado',
-        (supervisor?.nome as string | undefined) ?? 'responsável pelo setor',
+        (supervisor?.nome as string | undefined) ?? 'responsável pelo fornecedor',
       ],
     }
   }

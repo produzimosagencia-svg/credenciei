@@ -33,7 +33,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'evt-novo-janelas', titulo: 'E os dias de montagem?', posicao: 'right',
       descricao: 'Depois de criar o evento, abra "Editar evento" e marque os dias de preparação. Neles a entrada e a saída são livres, e o meio é contado 4 horas depois da entrada de cada pessoa.' },
     { alvo: 'evt-novo-submit', titulo: 'Criar o evento', posicao: 'top',
-      descricao: 'Depois de criar, o próximo passo é abrir o evento e cadastrar os setores (fornecedores). Cada setor gera um link próprio pra equipe se cadastrar sozinha.' },
+      descricao: 'Depois de criar, o próximo passo é abrir o evento e cadastrar os fornecedores. Cada fornecedor gera um link próprio pra equipe se cadastrar sozinha.' },
   ],
 }
 

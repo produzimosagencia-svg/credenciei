@@ -318,10 +318,10 @@ export default function FuncionarioDetalheModal({
           r.novo
             ? 'Supervisor criado e avisado por WhatsApp.'
             : r.avisado
-              ? 'Login de supervisor associado a este setor e pessoa avisada por WhatsApp.'
+              ? 'Login de supervisor associado a este fornecedor e pessoa avisada por WhatsApp.'
               // Já era supervisora deste evento: nada de WhatsApp de novo — ela
               // troca de setor no próprio acesso, em "Meus setores".
-              : 'Setor adicionado ao acesso dela. Não avisamos de novo por WhatsApp: ela já supervisiona este evento e troca de setor no próprio login.'
+              : 'Fornecedor adicionado ao acesso dela. Não avisamos de novo por WhatsApp: ela já supervisiona este evento e troca de fornecedor no próprio login.'
         )
         router.refresh()
       } catch (e: any) {
@@ -709,7 +709,7 @@ export default function FuncionarioDetalheModal({
                   */}
                 {podeMoverDeSetor && outrosSetores.length > 0 && (
                   <div className="border-t border-slate-100 pt-4">
-                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Setor</p>
+                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Fornecedor</p>
                     <p className="text-sm text-slate-700 mb-2">
                       Atualmente em <strong>{setorNome}</strong>
                     </p>
@@ -721,7 +721,7 @@ export default function FuncionarioDetalheModal({
                           valor={destino}
                           onChange={setDestino}
                           placeholder="Mover para…"
-                          titulo="Mover para qual setor?"
+                          titulo="Mover para qual fornecedor?"
                           busca
                           opcoes={outrosSetores.map(s => ({ valor: s.id, rotulo: s.nome }))}
                         />
@@ -739,7 +739,7 @@ export default function FuncionarioDetalheModal({
                           {f.nome} passa a fazer parte de{' '}
                           <strong>{outrosSetores.find(s => s.id === destino)?.nome}</strong>.
                           O QR code, o CPF e as batidas já feitas continuam os mesmos — só o
-                          setor muda.
+                          fornecedor muda.
                         </p>
                         {motivoObrigatorio && (
                           <input
@@ -747,7 +747,7 @@ export default function FuncionarioDetalheModal({
                             value={motivoMover}
                             onChange={e => setMotivoMover(e.target.value)}
                             className="input text-sm"
-                            placeholder="Motivo da mudança de setor (obrigatório)"
+                            placeholder="Motivo da mudança de fornecedor (obrigatório)"
                           />
                         )}
                         <div className="flex gap-2">
@@ -930,7 +930,7 @@ export default function FuncionarioDetalheModal({
                   </div>
                   {valorCombinado != null && (
                     <div className="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
-                      <span className="text-slate-500">Valor combinado (setor)</span>
+                      <span className="text-slate-500">Valor combinado (fornecedor)</span>
                       <span className="text-slate-700 font-semibold tabular-nums">{brl(valorCombinado)}</span>
                     </div>
                   )}
@@ -943,9 +943,9 @@ export default function FuncionarioDetalheModal({
                 </div>
 
                 <div className="border-t border-slate-100 pt-4">
-                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Valor a receber do setor</p>
+                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Valor a receber do fornecedor</p>
                   <p className="text-slate-400 text-xs mb-2">
-                    Quanto este funcionário deve receber dos demais integrantes de {f.empresa || 'seu setor'}.
+                    Quanto este funcionário deve receber dos demais integrantes de {f.empresa || 'seu fornecedor'}.
                   </p>
                   <div className="flex items-center gap-2">
                     <div className="relative flex-1">

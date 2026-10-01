@@ -338,7 +338,7 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
           supabaseAdmin.from('registros')
             .select('funcionario_id, tipo').eq('evento_id', evento_id),
         ])
-        if (!setores?.length) return 'Este evento ainda não tem setores.'
+        if (!setores?.length) return 'Este evento ainda não tem fornecedores.'
 
         const setorDe = new Map((pessoas ?? []).map(p => [p.id, p.fornecedor_id]))
         const registrosPorSetor = new Map<string, Record<string, Set<string>>>()

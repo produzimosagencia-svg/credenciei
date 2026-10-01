@@ -181,7 +181,7 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
         tom="acento"
         icone={<CalendarPlus className="w-3.5 h-3.5" />}
         titulo="Atribuir a um evento"
-        descricao="Coloca esta pessoa na equipe de um setor. O cliente passa a vê-la na tela do setor e fala com ela direto."
+        descricao="Coloca esta pessoa na equipe de um fornecedor. O cliente passa a vê-la na tela do fornecedor e fala com ela direto."
       >
         <AtribuirEvento
           cpf={cpf}

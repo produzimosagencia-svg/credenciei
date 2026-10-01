@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     for (const sup of sups ?? []) {
       const fid = sup.fornecedor_id as string
-      const setorNome = setorPorId.get(fid) ?? 'Setor'
+      const setorNome = setorPorId.get(fid) ?? 'Fornecedor'
 
       // 1) garante a linha
       const { error: erroUpsert } = await supabaseAdmin
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
           html: molduraEmail('Confira sua equipe antes do evento', `
             <p>Olá, ${sup.nome}.</p>
             <p>O evento <strong>${ev.nome}</strong> começa amanhã. Antes disso, confira no sistema
-            a lista de pessoas vinculadas ao setor <strong>${setorNome}</strong> e confirme quem
+            a lista de pessoas vinculadas ao fornecedor <strong>${setorNome}</strong> e confirme quem
             realmente faz parte da equipe — quem não for, você tira pela própria tela.</p>
             <p style="margin:20px 0"><a href="${link}" style="background:#FF4A0F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700;display:inline-block">Conferir a equipe</a></p>
             <p style="font-size:13px;color:#78716c">A planilha da equipe atual vai anexa a este email, para consulta.</p>

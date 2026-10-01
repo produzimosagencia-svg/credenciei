@@ -47,7 +47,7 @@ export default function AtribuirEvento({
       try {
         const r = await atribuirColaboradorAoEvento(cpf, setorId)
         setFeito(
-          `${nome} entrou em ${r.evento}, no setor ${r.setor}.` +
+          `${nome} entrou em ${r.evento}, no fornecedor ${r.setor}.` +
 
           (r.semTelefone ? ' Sem telefone cadastrado: ela não recebe o link da credencial.' : '')
         )
@@ -80,14 +80,14 @@ export default function AtribuirEvento({
         </label>
 
         <label className="block min-w-0">
-          <span className="text-slate-500 text-xs">Setor</span>
+          <span className="text-slate-500 text-xs">Fornecedor</span>
           <SeletorLista
             className="mt-1"
             valor={setorId}
             onChange={v => { setSetorId(v); setFeito(null); setErro(null) }}
             disabled={!eventoId || jaEsta}
-            placeholder={!eventoId ? 'Escolha o evento primeiro' : setoresDoEvento.length ? 'Escolha o setor…' : 'Este evento não tem setores'}
-            titulo="Escolha o setor"
+            placeholder={!eventoId ? 'Escolha o evento primeiro' : setoresDoEvento.length ? 'Escolha o fornecedor…' : 'Este evento não tem fornecedores'}
+            titulo="Escolha o fornecedor"
             busca
             opcoes={setoresDoEvento.map(s => ({ valor: s.id, rotulo: s.nome }))}
           />

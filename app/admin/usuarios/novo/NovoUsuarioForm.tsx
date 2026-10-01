@@ -16,13 +16,13 @@ type Funcao = 'supervisor' | 'operador_portao' | 'suporte' | 'admin' | 'produtor
 
 const FUNCOES: { valor: Funcao; rotulo: string; icone: React.ElementType; vinculo: string; ajuda: string; login: 'cpf' | 'email' }[] = [
   { valor: 'admin', rotulo: 'Admin', icone: Building2, vinculo: 'organização',
-    ajuda: 'Gerencia a organização inteira — eventos, setores, equipe e acessos. Entra por e-mail e senha.', login: 'email' },
-  { valor: 'supervisor', rotulo: 'Supervisor', icone: Users, vinculo: 'evento + setor',
-    ajuda: 'Fica preso a um único setor: enxerga só a equipe daquele setor. Se cuida de dois, crie dois acessos.', login: 'cpf' },
+    ajuda: 'Gerencia a organização inteira — eventos, fornecedores, equipe e acessos. Entra por e-mail e senha.', login: 'email' },
+  { valor: 'supervisor', rotulo: 'Supervisor', icone: Users, vinculo: 'evento + fornecedor',
+    ajuda: 'Fica preso a um único fornecedor: enxerga só a equipe daquele fornecedor. Se cuida de dois, crie dois acessos.', login: 'cpf' },
   { valor: 'operador_portao', rotulo: 'Gestor de credenciamento', icone: ShieldCheck, vinculo: 'evento',
     ajuda: 'Lê o QR no portão e registra ponto. Não gerencia evento nem equipe. Pertence à organização — cobre vários eventos do mesmo cliente.', login: 'cpf' },
   { valor: 'suporte', rotulo: 'Suporte de sistema', icone: UserCog, vinculo: 'evento',
-    ajuda: 'Apoio contratado pro dia do evento: conserta CPF, setor, ponto que não bateu. Nunca administra. Pode ter prazo de validade.', login: 'cpf' },
+    ajuda: 'Apoio contratado pro dia do evento: conserta CPF, fornecedor, ponto que não bateu. Nunca administra. Pode ter prazo de validade.', login: 'cpf' },
   { valor: 'produtor', rotulo: 'Produtor (Gastos)', icone: Building2, vinculo: 'organização + eventos',
     ajuda: 'Cliente do produto Gastos. Login próprio, entra SÓ no módulo Gastos, e só nos eventos vinculados. Não vê nada do credenciamento.', login: 'cpf' },
 ]
@@ -86,7 +86,7 @@ export default function NovoAcessoForm({
         if (funcao === 'supervisor') {
           const fornecedorId = (formData.get('fornecedor_id') as string) || ''
           if (!eventoId) return setErro('Escolha o evento.')
-          if (!fornecedorId) return setErro('Escolha o setor do supervisor.')
+          if (!fornecedorId) return setErro('Escolha o fornecedor do supervisor.')
           await criarSupervisor(fornecedorId, eventoId, formData)
         } else if (funcao === 'operador_portao') {
           if (!eventoId) return setErro('Escolha o evento.')
@@ -149,7 +149,7 @@ export default function NovoAcessoForm({
 
       {semEvento ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-          Nenhum evento ativo. Crie um evento (e um setor, pro supervisor) antes de criar este acesso.
+          Nenhum evento ativo. Crie um evento (e um fornecedor, pro supervisor) antes de criar este acesso.
         </div>
       ) : (
         <>
@@ -230,10 +230,10 @@ export default function NovoAcessoForm({
 
                 {funcao === 'supervisor' && (
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-slate-700">Setor *</label>
+                    <label className="text-sm font-medium text-slate-700">Fornecedor *</label>
                     {!setores.length ? (
                       <p className="text-xs text-slate-400 bg-slate-50 rounded-xl p-3">
-                        Este evento ainda não tem setores cadastrados.
+                        Este evento ainda não tem fornecedores cadastrados.
                       </p>
                     ) : (
                       <SeletorLista
@@ -241,7 +241,7 @@ export default function NovoAcessoForm({
                         name="fornecedor_id"
                         required
                         defaultValor=""
-                        titulo="Escolha o setor"
+                        titulo="Escolha o fornecedor"
                         busca
                         opcoes={setores.map(s => ({ valor: s.id, rotulo: s.nome }))}
                       />

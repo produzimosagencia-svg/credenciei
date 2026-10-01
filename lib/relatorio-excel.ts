@@ -65,7 +65,7 @@ const COLUNAS_TABELA_SETOR = [
 ] as const
 
 const COLUNAS_RESUMO_GERAL = [
-  { titulo: 'Setor', largura: 26 },
+  { titulo: 'Fornecedor', largura: 26 },
   { titulo: 'Função', largura: 22 },
   { titulo: 'Entradas', largura: 12 },
   { titulo: 'Saídas', largura: 12 },
@@ -229,7 +229,7 @@ function escreverAbaResumoGeral(
   escreverInfo(ws, linha++, 'Evento:', dados.eventoNome, nCol)
   if (dados.organizacaoNome) escreverInfo(ws, linha++, 'Organização:', dados.organizacaoNome, nCol)
   escreverInfo(ws, linha++, 'Período analisado:', textoPeriodo(dados.periodo), nCol)
-  escreverInfo(ws, linha++, 'Total de setores:', String(dados.setores.length), nCol)
+  escreverInfo(ws, linha++, 'Total de fornecedores:', String(dados.setores.length), nCol)
   linha++
 
   const linhaCabecalho = linha
@@ -291,7 +291,7 @@ function nomeDoArquivo(eventoNome: string, sufixo: string): string {
 
 /** Nome de aba válido pro Excel: até 31 caracteres, sem `\ / ? * [ ] :`, sem repetir. */
 function nomeDaAba(nomeSetor: string, usados: Set<string>): string {
-  const base = nomeSetor.replace(/[\\/?*[\]:]/g, '').trim().slice(0, 31) || 'Setor'
+  const base = nomeSetor.replace(/[\\/?*[\]:]/g, '').trim().slice(0, 31) || 'Fornecedor'
   if (!usados.has(base)) { usados.add(base); return base }
   for (let n = 2; n < 100; n++) {
     const sufixo = ` (${n})`
@@ -330,7 +330,7 @@ async function novaPlanilha(): Promise<import('exceljs').Workbook> {
 }
 
 const COLUNAS_AUSENTES = [
-  { titulo: 'Setor', largura: 26 },
+  { titulo: 'Fornecedor', largura: 26 },
   { titulo: 'Função', largura: 22 },
   { titulo: 'Nome', largura: 30 },
 ] as const
@@ -450,7 +450,7 @@ export async function gerarRelatoriosPorSetorZip(
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = nomeDoArquivo(dados.eventoNome, modo === 'ausentes' ? 'Por_setor_nao_credenciaram' : 'Por_setor').replace(/\.xlsx$/, '.zip')
+  a.download = nomeDoArquivo(dados.eventoNome, modo === 'ausentes' ? 'Por_fornecedor_nao_credenciaram' : 'Por_fornecedor').replace(/\.xlsx$/, '.zip')
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

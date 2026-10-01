@@ -79,7 +79,7 @@ const ACOES: Record<string, { rotulo: string; Icone: React.ElementType }> = {
   regenerar_qr: { rotulo: 'Gerar QR novo', Icone: RefreshCw },
   regenerar_link_setor: { rotulo: 'Trocar o link', Icone: RefreshCw },
   excluir_evento: { rotulo: 'Excluir evento', Icone: Trash2 },
-  excluir_setor: { rotulo: 'Excluir setor', Icone: Trash2 },
+  excluir_setor: { rotulo: 'Excluir fornecedor', Icone: Trash2 },
   excluir_funcionario: { rotulo: 'Excluir pessoa', Icone: Trash2 },
   excluir_usuario: { rotulo: 'Excluir acesso', Icone: Trash2 },
 }
@@ -395,7 +395,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   <Aviso tom="marca" icone={<Paperclip className="w-3.5 h-3.5" />}>
                     <span className="text-xs">
                       Anexe a planilha da equipe no clipe abaixo, o sistema lê e confere os dados.
-                      Eu cadastro todo mundo de uma vez, no setor certo.
+                      Eu cadastro todo mundo de uma vez, no fornecedor certo.
                     </span>
                   </Aviso>
                 </div>
@@ -448,7 +448,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   <div className="min-w-0 flex-1">
                     <p className="text-brand-700 text-xs font-semibold truncate">{anexo.nome}</p>
                     <p className="text-brand-500 text-2xs">
-                      {anexo.linhas.length} pessoa{anexo.linhas.length !== 1 ? 's' : ''} — diga em qual setor entram
+                      {anexo.linhas.length} pessoa{anexo.linhas.length !== 1 ? 's' : ''} — diga em qual fornecedor entram
                     </p>
                   </div>
                   <button
@@ -494,7 +494,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                     }
                   }}
                   rows={1}
-                  placeholder={anexo ? 'Em qual setor entram?' : 'Pergunte ou peça algo...'}
+                  placeholder={anexo ? 'Em qual fornecedor entram?' : 'Pergunte ou peça algo...'}
                   className="input resize-none max-h-32 text-sm"
                 />
                 <button

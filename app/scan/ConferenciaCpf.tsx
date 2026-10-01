@@ -123,13 +123,13 @@ export default function ConferenciaCpf({
               {res.inativo && (
                 <p className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs">
                   Cadastrada, mas <strong>ainda não ativada</strong> para trabalhar. O organizador
-                  precisa ativar no painel do setor antes de liberar.
+                  precisa ativar no painel do fornecedor antes de liberar.
                 </p>
               )}
               {res.descredenciadoEm && (
                 <p className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs">
                   Já foi <strong>descredenciada</strong> deste evento. Para voltar, o organizador
-                  precisa recredenciar no painel do setor.
+                  precisa recredenciar no painel do fornecedor.
                 </p>
               )}
 
@@ -146,7 +146,7 @@ export default function ConferenciaCpf({
                 */}
               <p className="text-slate-400 text-2xs text-center border-t border-slate-100 pt-3">
                 Isto é só uma conferência: o ponto não foi registrado. Peça para a pessoa
-                recarregar a credencial e mostrar o QR, ou registre pelo painel do setor.
+                recarregar a credencial e mostrar o QR, ou registre pelo painel do fornecedor.
               </p>
               <button onClick={recomecar} className="btn btn-secundario w-full">Conferir outro CPF</button>
             </div>

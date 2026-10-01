@@ -90,7 +90,7 @@ export default async function AprovacoesPontePage({
                   <tr>
                     <th>Nome</th>
                     <th>CPF</th>
-                    <th>Evento / Setor</th>
+                    <th>Evento / Fornecedor</th>
                     <th>Negado por</th>
                     <th>Quando</th>
                     <th>Motivo</th>

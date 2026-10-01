@@ -204,7 +204,7 @@ export default function FormVeiculo({
           />
         </div>
         <div>
-          <label className="text-slate-600 text-xs font-medium block mb-1">Setor</label>
+          <label className="text-slate-600 text-xs font-medium block mb-1">Fornecedor</label>
           <input name="setor" placeholder="Ex.: Produção, Segurança" className="input" autoComplete="off" />
         </div>
       </div>

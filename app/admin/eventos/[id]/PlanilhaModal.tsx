@@ -32,7 +32,7 @@ export default function PlanilhaModal({
     <>
       <button
         onClick={() => setOpen(true)}
-        aria-label={`Planilhas do setor ${setorNome}`}
+        aria-label={`Planilhas do fornecedor ${setorNome}`}
         title="Planilhas"
         className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-500 hover:bg-brand-50 transition-colors"
       >

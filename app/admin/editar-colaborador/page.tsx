@@ -48,7 +48,7 @@ export default async function EditarColaboradorPage({
           href={id => `/admin/editar-colaborador?evento=${id}`}
           icone={<UserCog className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
-          descricao="Mover de setor, corrigir CPF, ajustar valor e tornar supervisor"
+          descricao="Mover de fornecedor, corrigir CPF, ajustar valor e tornar supervisor"
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder editar a equipe dele.' }}
           mostrarOrganizacao={veTodosEventos(perfil)}
         />
@@ -182,7 +182,7 @@ export default async function EditarColaboradorPage({
     <div className="space-y-5">
       <PageHeader
         titulo="Editar colaborador"
-        descricao={`${evento.nome} — mover de setor, corrigir dados e ajustar valor`}
+        descricao={`${evento.nome} — mover de fornecedor, corrigir dados e ajustar valor`}
         acoes={
           <Link href="/admin/editar-colaborador" className="btn btn-secundario">
             <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento

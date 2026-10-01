@@ -47,7 +47,7 @@ export default function ExportarEquipe({
       const filtro = comFluxo && dia && tipos.length ? { dataRef: dia, tipos } : undefined
       const { setorNome, eventoNome, funcionarios } = await exportarFuncionariosDoSetor(fornecedorId, eventoId, filtro)
       if (!funcionarios.length) {
-        setErro('Este setor ainda não tem ninguém cadastrado.')
+        setErro('Este fornecedor ainda não tem ninguém cadastrado.')
         return
       }
       await exportarPlanilhaDeEquipe(eventoNome, setorNome, funcionarios, filtro
@@ -68,7 +68,7 @@ export default function ExportarEquipe({
           <FileDown className="w-4 h-4 shrink-0 text-brand-500" />
           <span className="min-w-0">
             <span className="block text-sm font-medium text-slate-800">Lista de funcionários</span>
-            <span className="block text-slate-400 text-xs">Baixa a equipe deste setor em planilha</span>
+            <span className="block text-slate-400 text-xs">Baixa a equipe deste fornecedor em planilha</span>
           </span>
         </button>
       ) : (

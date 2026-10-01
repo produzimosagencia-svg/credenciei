@@ -60,8 +60,8 @@ function atalhoWhatsApp(busca: Record<string, string | string[] | undefined>) {
 }
 
 const PASSOS = [
-  { n: '01', Icone: LinkIcon, titulo: 'Fornecedores cadastram a equipe por link', texto: 'Você cria o evento e os setores. Cada setor ganha um link de cadastro — o fornecedor manda pro time dele e a lista se preenche sozinha. Você aprova em lote.', quem: 'Produtor · antes do evento' },
-  { n: '02', Icone: QrCode, titulo: 'Cada pessoa recebe um QR único', texto: 'Função, setor e período de acesso já vão na credencial digital, direto no WhatsApp da pessoa. Nada pra imprimir na véspera.', quem: 'Equipe · no celular' },
+  { n: '01', Icone: LinkIcon, titulo: 'Fornecedores cadastram a equipe por link', texto: 'Você cria o evento e os fornecedores. Cada fornecedor ganha um link de cadastro — o fornecedor manda pro time dele e a lista se preenche sozinha. Você aprova em lote.', quem: 'Produtor · antes do evento' },
+  { n: '02', Icone: QrCode, titulo: 'Cada pessoa recebe um QR único', texto: 'Função, fornecedor e período de acesso já vão na credencial digital, direto no WhatsApp da pessoa. Nada pra imprimir na véspera.', quem: 'Equipe · no celular' },
   { n: '03', Icone: ScanLine, titulo: 'Check-in no portão, por QR ou reconhecimento facial', texto: 'Quem controla o acesso escaneia o QR — ou aponta a câmera e o sistema reconhece o rosto sozinho. Entrada, meio e saída ficam gravados por hora e por pessoa, e saem em relatório no fim do dia.', quem: 'Portaria · durante o evento' },
 ]
 
@@ -144,7 +144,7 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         <div className={s.secaoTopo} data-revelar>
           <p className={s.kicker}>Na prática</p>
           <h2 className={s.h2}>Três passos. Do cadastro ao portão.</h2>
-          <p className={s.lead}>Você cria o evento e os setores. O resto acontece no celular de quem trabalha e de quem controla a entrada.</p>
+          <p className={s.lead}>Você cria o evento e os fornecedores. O resto acontece no celular de quem trabalha e de quem controla a entrada.</p>
         </div>
         <div className={s.passos}>
           {PASSOS.map(p => (
@@ -185,7 +185,7 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         <div className={s.secaoTopo} data-revelar>
           <p className={s.kicker}>Preço simples</p>
           <h2 className={s.h2}>Um valor por evento. Um real por pessoa.</h2>
-          <p className={s.lead}>Sem mensalidade pra evento avulso, e sem licença por usuário. Setores, operadores, lembretes por WhatsApp e relatórios já estão inclusos.</p>
+          <p className={s.lead}>Sem mensalidade pra evento avulso, e sem licença por usuário. Fornecedores, operadores, lembretes por WhatsApp e relatórios já estão inclusos.</p>
         </div>
         <div className={s.precoCartao} data-revelar>
           <p className={s.precoRotulo}>Por evento · a partir de</p>

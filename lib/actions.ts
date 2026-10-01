@@ -246,7 +246,7 @@ async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) 
      * usava a régua certa, então as duas discordavam sobre o mesmo setor.
      */
     const meus = await meusSetores(perfil)
-    if (!meus.some(s => s.id === fornecedorId)) throw new Error('Sem permissão sobre este setor')
+    if (!meus.some(s => s.id === fornecedorId)) throw new Error('Sem permissão sobre este fornecedor')
     return perfil
   }
   if (!podeGerenciarEventos(perfil)) throw new Error('Sem permissão')
@@ -617,9 +617,9 @@ async function nomeDosSetores(perfilId: string, fornecedorIdNovo: string): Promi
     .from('fornecedores').select('nome').in('id', [...ids]).order('nome')
   const nomes = (setores ?? []).map(f => (f.nome as string).trim()).filter(Boolean)
 
-  if (nomes.length <= 1) return nomes[0] ?? 'seu setor'
+  if (nomes.length <= 1) return nomes[0] ?? 'seu fornecedor'
   if (nomes.length === 2) return `${nomes[0]} e ${nomes[1]}`
-  return 'vários setores'
+  return 'vários fornecedores'
 }
 
 /** Esta pessoa cobre algum setor de um evento desta organização? */
@@ -737,14 +737,14 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     .select('id, evento_id, nome, token_formulario, eventos(organizacao_id, nome, data_inicio, local)')
     .eq('id', fornecedorId)
     .single()
-  if (!fornecedor) throw new Error('Setor não encontrado')
-  if (fornecedor.evento_id !== eventoId) throw new Error('Este setor não pertence ao evento informado')
+  if (!fornecedor) throw new Error('Fornecedor não encontrado')
+  if (fornecedor.evento_id !== eventoId) throw new Error('Este fornecedor não pertence ao evento informado')
   const eventoDoFornecedor = fornecedor.eventos as any
   const organizacaoId = eventoDoFornecedor?.organizacao_id
 
   if (podeGerenciarUsuarios(perfil)) {
     if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) {
-      throw new Error('Sem permissão sobre este setor')
+      throw new Error('Sem permissão sobre este fornecedor')
     }
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
@@ -805,8 +805,8 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
       await vincularSupervisorAoSetor(existente.id, fornecedorId)
       after(() => registrarAuditoria({
         perfil, acao: 'ALTERACAO_SUPERVISOR',
-        campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
-        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou este setor)`,
+        campoAlterado: `Supervisor do fornecedor ${fornecedor.nome}`,
+        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou este fornecedor)`,
         eventoId, organizacaoId: organizacaoId ?? undefined,
       }))
       /*
@@ -862,8 +862,8 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
     after(() => registrarAuditoria({
       perfil, acao: 'ALTERACAO_SUPERVISOR',
-      campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
-      valorNovo: `${nome} — CPF ${formatCpf(cpf)} (já era supervisor, ganhou mais este setor)`,
+      campoAlterado: `Supervisor do fornecedor ${fornecedor.nome}`,
+      valorNovo: `${nome} — CPF ${formatCpf(cpf)} (já era supervisor, ganhou mais este fornecedor)`,
       eventoId, organizacaoId: organizacaoId ?? undefined,
     }))
 
@@ -959,7 +959,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     // O Auth fala em "e-mail"; aqui quem existe é o nome de usuário.
     const jaExiste = /already|exist|registered/i.test(error.message)
     throw new Error(jaExiste
-      ? `Já existe um supervisor com o CPF ${cpf}. Se for a mesma pessoa em outro setor, edite o acesso dela em vez de criar outro.`
+      ? `Já existe um supervisor com o CPF ${cpf}. Se for a mesma pessoa em outro fornecedor, edite o acesso dela em vez de criar outro.`
       : mensagemAuth(error.message))
   }
 
@@ -1002,7 +1002,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
   await vincularSupervisorAoSetor(user.user!.id, fornecedorId)
   after(() => registrarAuditoria({
     perfil, acao: 'ALTERACAO_SUPERVISOR',
-    campoAlterado: `Supervisor do setor ${fornecedor.nome}`,
+    campoAlterado: `Supervisor do fornecedor ${fornecedor.nome}`,
     valorNovo: `${nome} — CPF ${formatCpf(cpf)} (acesso novo)`,
     eventoId, organizacaoId: organizacaoId ?? undefined,
   }))
@@ -1921,7 +1921,7 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
     .from('perfis').select('id, nome, role').eq('cpf', cpf).neq('id', id).maybeSingle()
   if (outroComEsteCpf) {
     if (outroComEsteCpf.role === 'supervisor') {
-      throw new Error(`Este CPF já pertence a ${outroComEsteCpf.nome}, supervisor(a). Para reatribuir um supervisor já existente, use "Adicionar supervisor" no card do setor em vez de editar aqui.`)
+      throw new Error(`Este CPF já pertence a ${outroComEsteCpf.nome}, supervisor(a). Para reatribuir um supervisor já existente, use "Adicionar supervisor" no card do fornecedor em vez de editar aqui.`)
     }
     if (alvo.fornecedor_id) {
       await admin.from('supervisor_setores')
@@ -2602,7 +2602,7 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
   const supCpf = normalizarCpf((formData.get('supervisor_cpf') as string) ?? '')
   const supTelefone = ((formData.get('supervisor_telefone') as string) ?? '').replace(/\D/g, '')
   if (exigeSupervisor) {
-    if (!supNome) throw new Error('Informe o nome do supervisor deste setor.')
+    if (!supNome) throw new Error('Informe o nome do supervisor deste fornecedor.')
     if (supCpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
     if (supTelefone.length < 10 || supTelefone.length > 13) {
       throw new Error('Informe o WhatsApp do supervisor — é por ele que o acesso chega.')
@@ -2721,7 +2721,7 @@ export async function deletarFornecedor(id: string, eventoId: string): Promise<{
     // realocados ou removidos primeiro)
     const { data: supervisores } = await db.from('perfis').select('id').eq('fornecedor_id', id).limit(1)
     if (supervisores && supervisores.length) {
-      return { error: 'Este setor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o setor.' }
+      return { error: 'Este fornecedor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o fornecedor.' }
     }
 
     await db.from('fornecedores').delete().eq('id', id)
@@ -2772,12 +2772,12 @@ export async function moverFuncionarioDeSetor(
    */
   let setoresDoSupervisor: Set<string> | null = null
   if (!podeSempre) {
-    if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da mudança de setor.')
+    if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da mudança de fornecedor.')
     if (perfil.role === 'supervisor') {
       setoresDoSupervisor = new Set((await meusSetores(perfil)).map(s => s.id))
       // O DESTINO tem que ser um setor dele; a ORIGEM é conferida adiante.
       if (!setoresDoSupervisor.has(novoFornecedorId)) {
-        throw new Error('Você só pode mover para um setor que você também supervisiona.')
+        throw new Error('Você só pode mover para um fornecedor que você também supervisiona.')
       }
     } else if (perfil.role === 'suporte') {
       if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
@@ -2804,7 +2804,7 @@ export async function moverFuncionarioDeSetor(
   // Supervisor: a ORIGEM também tem que ser dele — só remaneja entre setores
   // que ele cobre, nunca puxa gente de um setor de outro supervisor.
   if (setoresDoSupervisor && !setoresDoSupervisor.has(func.fornecedor_id as string)) {
-    throw new Error('Você só pode mover pessoas de um setor que você supervisiona.')
+    throw new Error('Você só pode mover pessoas de um fornecedor que você supervisiona.')
   }
 
   if (func.fornecedor_id === novoFornecedorId) {
@@ -2816,12 +2816,12 @@ export async function moverFuncionarioDeSetor(
     .select('id, nome, evento_id')
     .eq('id', novoFornecedorId)
     .single()
-  if (!destino) throw new Error('Setor de destino não encontrado.')
+  if (!destino) throw new Error('Fornecedor de destino não encontrado.')
   // O destino precisa ser do MESMO evento — mover entre eventos é outra
   // operação (o funcionário pertenceria a duas credenciais, dois QR
   // diferentes), fora do que este botão resolve.
   if (destino.evento_id !== eventoId) {
-    throw new Error('O setor de destino não é deste evento.')
+    throw new Error('O fornecedor de destino não é deste evento.')
   }
 
   /*
@@ -2837,7 +2837,7 @@ export async function moverFuncionarioDeSetor(
     .eq('cpf', func.cpf)
     .limit(1)
   if (colisao && colisao.length) {
-    throw new Error(`Já existe um cadastro com este CPF no setor ${destino.nome}.`)
+    throw new Error(`Já existe um cadastro com este CPF no fornecedor ${destino.nome}.`)
   }
 
   const { error } = await db
@@ -2848,7 +2848,7 @@ export async function moverFuncionarioDeSetor(
 
   const setorAntigo = (func.fornecedores as unknown as { nome: string }).nome
   after(() => registrarAuditoria({
-    perfil, acao: 'ALTERACAO_SETOR', campoAlterado: 'setor',
+    perfil, acao: 'ALTERACAO_SETOR', campoAlterado: 'fornecedor',
     valorAnterior: setorAntigo, valorNovo: destino.nome, motivo: motivo ?? null,
     funcionarioId, eventoId, organizacaoId: evento.organizacao_id ?? undefined,
   }))
@@ -2900,8 +2900,8 @@ export async function exportarFuncionariosDoSetor(
     .select('id, nome, evento_id, eventos(nome)')
     .eq('id', fornecedorId)
     .single()
-  if (!fornecedor) throw new Error('Setor não encontrado')
-  if (fornecedor.evento_id !== eventoId) throw new Error('Este setor não pertence ao evento informado')
+  if (!fornecedor) throw new Error('Fornecedor não encontrado')
+  if (fornecedor.evento_id !== eventoId) throw new Error('Este fornecedor não pertence ao evento informado')
 
   const { data: funcionarios, error } = await supabaseAdmin
     .from('funcionarios')
@@ -3024,7 +3024,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
 
   const pessoa = base?.[0]
   if (!pessoa) throw new Error('Esta pessoa não está na base do Credenciei')
-  if (!setor) throw new Error('Setor não encontrado')
+  if (!setor) throw new Error('Fornecedor não encontrado')
 
   // Mesma trava do formulário público e da importação: um CPF por evento.
   const { data: jaNoEvento } = await db
@@ -3035,7 +3035,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
     .limit(1)
   if (jaNoEvento?.length) {
     const outro = (jaNoEvento[0].fornecedores as unknown as { nome: string }).nome
-    throw new Error(`${pessoa.nome} já está neste evento, no setor "${outro}".`)
+    throw new Error(`${pessoa.nome} já está neste evento, no fornecedor "${outro}".`)
   }
 
   const { data: novo, error } = await db.from('funcionarios').insert([{
@@ -3108,7 +3108,7 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
   if (!alvo) throw new Error('Esta pessoa já não está mais aqui. Recarregue a página.')
   // Segunda tranca: o id vem do cliente, e sem isto um id colado apagaria
   // gente de outro setor com a permissão deste.
-  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste setor.')
+  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
 
   const { error } = await db.from('funcionarios').delete().eq('id', id)
   if (error) throw new Error(mensagemAmigavel(error))
@@ -3182,7 +3182,7 @@ export async function editarCpfFuncionario(
   if (!validarCpf(novoCpf)) return { erro: 'CPF inválido. Confira os 11 dígitos.' }
 
   const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
 
   // Suporte só corrige dentro do próprio escopo — master passa direto.
   if (perfil!.role === 'suporte') {
@@ -3194,7 +3194,7 @@ export async function editarCpfFuncionario(
   }
 
   const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', funcionarioId).single()
-  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste setor.' }
+  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste fornecedor.' }
   if (atual.cpf === novoCpf) return { ok: true } // nada mudou
 
   /*
@@ -3215,9 +3215,9 @@ export async function editarCpfFuncionario(
     .limit(1)
   const conflito = conflitos?.[0]
   if (conflito) {
-    const setorConflito = (conflito.fornecedores as unknown as { nome: string })?.nome ?? 'outro setor'
+    const setorConflito = (conflito.fornecedores as unknown as { nome: string })?.nome ?? 'outro fornecedor'
     return {
-      erro: `Este CPF já é de "${conflito.nome}", no setor ${setorConflito}. `
+      erro: `Este CPF já é de "${conflito.nome}", no fornecedor ${setorConflito}. `
         + 'Se as duas linhas forem a mesma pessoa, apague a duplicada antes de corrigir o CPF aqui.',
     }
   }
@@ -3293,7 +3293,7 @@ export async function trocarSetorAtivo(fornecedorId: string) {
    * `error` conta como negativa também: se a tabela ainda não existe (migração
    * pendente), ninguém troca de setor, que é o comportamento de antes.
    */
-  if (error || !vinculo) throw new Error('Você não tem acesso a este setor.')
+  if (error || !vinculo) throw new Error('Você não tem acesso a este fornecedor.')
 
   const { error: erroTroca } = await supabaseAdmin
     .from('perfis').update({ fornecedor_id: fornecedorId }).eq('id', perfil.id)
@@ -3319,7 +3319,7 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
   if (!perfil) throw new Error('Sem permissão')
 
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este fornecedor')
   } else {
     const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
     if (!evento) throw new Error('Evento não encontrado')
@@ -3363,7 +3363,7 @@ async function exigirAcessoAAprovacao(fornecedorId: string, eventoId: string, mo
   if (!perfil) throw new Error('Sem permissão')
 
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este setor')
+    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este fornecedor')
   } else {
     const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
     if (!evento) throw new Error('Evento não encontrado')
@@ -3632,10 +3632,10 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
 
   let alvoFornecedorId: string
   if (perfil.role === 'supervisor') {
-    if (!perfil.fornecedor_id) return { error: 'Você ainda não está vinculado a um setor.' }
+    if (!perfil.fornecedor_id) return { error: 'Você ainda não está vinculado a um fornecedor.' }
     alvoFornecedorId = perfil.fornecedor_id
   } else if (perfil.role === 'admin' || ehMaster(perfil.role)) {
-    if (!fornecedorId) return { error: 'Escolha o setor.' }
+    if (!fornecedorId) return { error: 'Escolha o fornecedor.' }
     alvoFornecedorId = fornecedorId
   } else {
     return { error: 'Sem permissão.' }
@@ -3646,12 +3646,12 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
     .select('id, evento_id, eventos!inner(organizacao_id)')
     .eq('id', alvoFornecedorId)
     .single()
-  if (!fornecedor) return { error: 'Setor não encontrado.' }
+  if (!fornecedor) return { error: 'Fornecedor não encontrado.' }
 
   // Admin só num setor de evento da própria organização — o master, de qualquer uma.
   if (perfil.role === 'admin') {
     const orgDoEvento = (fornecedor.eventos as unknown as { organizacao_id: string }).organizacao_id
-    if (orgDoEvento !== perfil.organizacao_id) return { error: 'Sem permissão sobre este setor.' }
+    if (orgDoEvento !== perfil.organizacao_id) return { error: 'Sem permissão sobre este fornecedor.' }
   }
 
   return crachaNoEvento({
@@ -4852,7 +4852,7 @@ export async function descredenciarFuncionario(
   if (!alvo) throw new Error('Funcionário não encontrado.')
   // O id vem da tela, mas quem manda é o vínculo no banco: sem isto, um id
   // de outro setor colado na chamada passaria pela régua do setor de cima.
-  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste setor.')
+  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
   if (alvo.descredenciado_em) return { ok: true as const, nome: alvo.nome as string }
 
   const { error } = await supabaseAdmin
@@ -4942,7 +4942,7 @@ async function exigirAcessoABloqueio(eventoId: string) {
   if (perfil.role === 'supervisor') {
     const meus = await meusSetores(perfil)
     if (!meus.some(s => s.evento_id === eventoId)) {
-      throw new Error('Você não tem setor neste evento.')
+      throw new Error('Você não tem fornecedor neste evento.')
     }
     return perfil
   }
@@ -5241,7 +5241,7 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
   // Supervisor confere só a própria equipe, igual ao resto do sistema —
   // qualquer um dos setores dele, não só o que está aberto no painel.
   if (perfil.role === 'supervisor' && !(await meusSetores(perfil)).some(s => s.id === f.fornecedor_id)) {
-    return { credenciado: false, erro: `Esta pessoa é do setor ${setor ?? 'outro'}, fora do seu. Chame o credenciamento do evento.` }
+    return { credenciado: false, erro: `Esta pessoa é do fornecedor ${setor ?? 'outro'}, fora do seu. Chame o credenciamento do evento.` }
   }
 
   const { data: hoje } = await supabaseAdmin
@@ -5619,7 +5619,7 @@ async function autorizarPresenca(args: {
     return { success: false, message: 'Credenciamento não autorizado.', funcionario: funcInfo }
   }
   if (func.ativo === false) {
-    return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do setor antes de registrar.', funcionario: funcInfo }
+    return { success: false, message: 'Funcionário cadastrado mas NÃO ativado para trabalhar. Ative-o no painel do fornecedor antes de registrar.', funcionario: funcInfo }
   }
 
   /*
@@ -5641,7 +5641,7 @@ async function autorizarPresenca(args: {
   if (bloqueado) {
     return {
       success: false,
-      message: 'Esta pessoa está bloqueada neste setor. Não libere a entrada — procure o supervisor do setor.',
+      message: 'Esta pessoa está bloqueada neste fornecedor. Não libere a entrada — procure o supervisor do fornecedor.',
       funcionario: funcInfo,
     }
   }
@@ -5676,7 +5676,7 @@ async function autorizarPresenca(args: {
   if (func.descredenciado_em && !('reabrir' in decidido)) {
     return {
       success: false,
-      message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do setor.`,
+      message: `Já descredenciado deste evento em ${formatarBR(func.descredenciado_em as string, 'curto')}. Para voltar, o organizador precisa recredenciar no painel do fornecedor.`,
       funcionario: funcInfo,
     }
   }
@@ -5992,7 +5992,7 @@ export async function cadastrarBiometria(
   if (perfil.role === 'supervisor') {
     const meus = await meusSetores(perfil)
     if (!meus.some(s => s.id === func.fornecedor_id)) {
-      return { error: 'Esta pessoa é de outro setor. Você só cadastra biometria da sua equipe.' }
+      return { error: 'Esta pessoa é de outro fornecedor. Você só cadastra biometria da sua equipe.' }
     }
   }
 
@@ -6247,7 +6247,7 @@ export async function registrarPresencaFacialLivre(
   // Mesmo bloqueio que o portão respeita — sem operador olhando, esta
   // conferência é a única coisa que fecha a porta pra quem foi barrado.
   if (func.cpf && await cpfEstaBloqueado(eventoId, func.cpf as string, func.fornecedor_id as string)) {
-    return { error: 'Não é possível registrar sua presença agora. Procure o supervisor do seu setor.' }
+    return { error: 'Não é possível registrar sua presença agora. Procure o supervisor do seu fornecedor.' }
   }
 
   /*
@@ -6795,7 +6795,7 @@ export async function cadastrarFuncionarioPublico(
     return { error: 'O cadastro para este evento foi encerrado pela organização.' }
   }
   if (setorSuspenso && !excecaoIndividualValida) {
-    return { error: 'O cadastro para este setor foi encerrado. Fale com quem te contratou.' }
+    return { error: 'O cadastro para este fornecedor foi encerrado. Fale com quem te contratou.' }
   }
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
@@ -6815,7 +6815,7 @@ export async function cadastrarFuncionarioPublico(
    * a conversa sobre o motivo é com quem a contratou, não com uma tela.
    */
   if (await cpfEstaBloqueado(fornecedor.evento_id as string, cpf, fornecedorId)) {
-    return { error: 'Não é possível concluir o cadastro neste setor. Fale com quem te contratou.' }
+    return { error: 'Não é possível concluir o cadastro neste fornecedor. Fale com quem te contratou.' }
   }
 
   /*
@@ -6871,8 +6871,8 @@ export async function cadastrarFuncionarioPublico(
     if (existente.fornecedor_id === fornecedorId) {
       return { qrToken: existente.qr_token, status: statusCredenciamentoValido(existente.status_credenciamento) }
     }
-    const setorExistente = existente.fornecedores?.nome ?? 'outro setor'
-    return { error: `Este CPF já está credenciado neste evento pelo setor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
+    const setorExistente = existente.fornecedores?.nome ?? 'outro fornecedor'
+    return { error: `Este CPF já está credenciado neste evento pelo fornecedor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
   }
 
   /*
@@ -6894,7 +6894,7 @@ export async function cadastrarFuncionarioPublico(
     // Fornecedor ainda não escalado em NENHUM subevento — bloqueia em vez de
     // deixar a pessoa entrar sem subevento (quebraria a checagem no portão).
     if (lista.length === 0) {
-      return { error: 'Este setor ainda não foi escalado em nenhum subevento deste evento. Fale com o organizador.' }
+      return { error: 'Este fornecedor ainda não foi escalado em nenhum subevento deste evento. Fale com o organizador.' }
     }
     if (lista.length === 1) {
       subeventoIdResolvido = lista[0].subevento_id as string
@@ -6911,7 +6911,7 @@ export async function cadastrarFuncionarioPublico(
         const { count } = await supabaseAdmin
           .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', subeventoIdResolvido)
         if ((count ?? 0) >= cota) {
-          return { error: 'Seu setor está com o número máximo de pessoas. Contate seu supervisor.' }
+          return { error: 'Seu fornecedor está com o número máximo de pessoas. Contate seu supervisor.' }
         }
       }
     }
@@ -6925,7 +6925,7 @@ export async function cadastrarFuncionarioPublico(
       const { count } = await supabaseAdmin
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
       if ((count ?? 0) >= cota) {
-        return { error: 'Seu setor está com o número máximo de pessoas. Contate seu supervisor.' }
+        return { error: 'Seu fornecedor está com o número máximo de pessoas. Contate seu supervisor.' }
       }
     }
   }
@@ -7452,7 +7452,7 @@ export async function localizarFuncionario(
   }
 
   if (!visiveis.length) {
-    const onde = perfil.role === 'supervisor' ? 'no seu setor, no evento de hoje' : 'nos eventos acontecendo hoje'
+    const onde = perfil.role === 'supervisor' ? 'no seu fornecedor, no evento de hoje' : 'nos eventos acontecendo hoje'
     return {
       error: pareceCpf
         ? `Nenhuma pessoa com este CPF ${onde}. Confira o número ou tente pelo nome.`
@@ -7661,7 +7661,7 @@ export async function registrarPresencaAssistida(
   const evento = comEvento(func.fornecedores)?.eventos
 
   if (perfil.role === 'supervisor') {
-    if (func.fornecedor_id !== perfil.fornecedor_id) return { error: 'Esta pessoa é de outro setor. Você só registra a sua equipe.' }
+    if (func.fornecedor_id !== perfil.fornecedor_id) return { error: 'Esta pessoa é de outro fornecedor. Você só registra a sua equipe.' }
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento?.id, organizacaoId: evento?.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }
@@ -7681,7 +7681,7 @@ export async function registrarPresencaAssistida(
   if (statusCredAssistida !== 'aprovado') {
     return { error: statusCredAssistida === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }
   }
-  if (func.ativo === false) return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de registrar.' }
+  if (func.ativo === false) return { error: 'Esta pessoa não está ativada no evento. Ative no painel do fornecedor antes de registrar.' }
 
   /*
    * O dia é recalculado no servidor (o que a tela mostrou pode ter mudado),
@@ -7849,7 +7849,7 @@ export async function lancarPontoManual(
   if (perfil.role === 'supervisor') {
     const meus = await meusSetores(perfil)
     if (!meus.some(s => s.id === func.fornecedor_id)) {
-      return { error: 'Esta pessoa é de outro setor. Você só lança ponto da sua equipe.' }
+      return { error: 'Esta pessoa é de outro fornecedor. Você só lança ponto da sua equipe.' }
     }
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
@@ -7864,7 +7864,7 @@ export async function lancarPontoManual(
     return { error: statusCredManual === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }
   }
   if (func.ativo === false) {
-    return { error: 'Esta pessoa não está ativada no evento. Ative no painel do setor antes de lançar o ponto.' }
+    return { error: 'Esta pessoa não está ativada no evento. Ative no painel do fornecedor antes de lançar o ponto.' }
   }
 
   /*
@@ -8117,7 +8117,7 @@ export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId
     .single()
 
   if (!setor || setor.evento_id !== eventoId || !setor.token_formulario) {
-    throw new Error('Setor não encontrado neste evento.')
+    throw new Error('Fornecedor não encontrado neste evento.')
   }
 
   const { token, expiraEm } = await criarAutorizacaoCadastroIndividual({ eventoId, fornecedorId })
@@ -8154,16 +8154,16 @@ export async function alternarLinkDoSetor(eventoId: string, fornecedorId: string
   // colado na chamada mudaria o link dele.
   const { data: setor } = await supabaseAdmin
     .from('fornecedores').select('id, evento_id').eq('id', fornecedorId).single()
-  if (!setor || setor.evento_id !== eventoId) throw new Error('Setor não encontrado neste evento.')
+  if (!setor || setor.evento_id !== eventoId) throw new Error('Fornecedor não encontrado neste evento.')
 
   const { error } = await supabaseAdmin
     .from('fornecedores').update({ link_ativo: ativo }).eq('id', fornecedorId)
 
   if (error) {
     if (/link_ativo/.test(error.message)) {
-      throw new Error('O banco ainda não tem o campo do link por setor. Rode supabase/upgrade-link-do-setor.sql no SQL Editor.')
+      throw new Error('O banco ainda não tem o campo do link por fornecedor. Rode supabase/upgrade-link-do-setor.sql no SQL Editor.')
     }
-    throw new Error('Não foi possível mudar o link deste setor. Tente de novo.')
+    throw new Error('Não foi possível mudar o link deste fornecedor. Tente de novo.')
   }
 
   revalidatePath(`/admin/eventos/${eventoId}`)
@@ -8266,7 +8266,7 @@ export async function salvarConfiguracaoDoMeio(
     (ligados.length ? (await supabaseAdmin.from('fornecedores').update({ exige_meio: true }).in('id', ligados)).error : null)
     ?? (desligados.length ? (await supabaseAdmin.from('fornecedores').update({ exige_meio: false }).in('id', desligados)).error : null)
   )
-  if (erroSetor) throw new Error('A configuração por setor precisa da migração supabase/upgrade-meio-por-setor.sql aplicada no banco.')
+  if (erroSetor) throw new Error('A configuração por fornecedor precisa da migração supabase/upgrade-meio-por-setor.sql aplicada no banco.')
 
   const { data: diasDoEvento } = await supabaseAdmin
     .from('jornada_dias').select('data').eq('evento_id', eventoId)
@@ -8335,7 +8335,7 @@ function dadosAvisoDoForm(formData: FormData) {
   // enviada, então "veio marcado?" é a pergunta certa, não "qual o valor?".
   const fornecedorIds = publico === 'setores' ? formData.getAll('fornecedor_id').map(String).filter(Boolean) : []
   if (publico === 'setores' && !fornecedorIds.length) {
-    throw new Error('Escolha ao menos um setor pra este aviso.')
+    throw new Error('Escolha ao menos um fornecedor pra este aviso.')
   }
 
   return {
@@ -8356,7 +8356,7 @@ async function exigirDestinatariosDoEvento(eventoId: string, dados: ReturnType<t
     const { data: setoresDoEvento } = await supabaseAdmin
       .from('fornecedores').select('id').eq('evento_id', eventoId).in('id', dados.fornecedorIds)
     if (!setoresDoEvento || setoresDoEvento.length !== dados.fornecedorIds.length) {
-      throw new Error('Um dos setores escolhidos não pertence a este evento.')
+      throw new Error('Um dos fornecedores escolhidos não pertence a este evento.')
     }
   }
   if (dados.publico === 'pessoa') {
@@ -9453,7 +9453,7 @@ export async function editarTelefoneFuncionario(
   if (perfil.role === 'suporte') {
     const { data: forn } = await supabaseAdmin
       .from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-    if (!forn || forn.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+    if (!forn || forn.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
     if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
     const organizacaoId = (forn.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
     if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
@@ -9475,7 +9475,7 @@ export async function editarTelefoneFuncionario(
 
   const { data: atual } = await supabaseAdmin
     .from('funcionarios').select('id, nome, telefone, fornecedor_id').eq('id', funcionarioId).single()
-  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste setor.' }
+  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste fornecedor.' }
   if ((atual.telefone as string) === novo) return { ok: true, corrigidasNaFila: 0 }
 
   const { error } = await supabaseAdmin.from('funcionarios').update({ telefone: novo }).eq('id', funcionarioId)
@@ -9519,7 +9519,7 @@ export async function editarCargoFuncionario(
   if (perfil.role === 'suporte') {
     const { data: forn } = await supabaseAdmin
       .from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-    if (!forn || forn.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+    if (!forn || forn.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
     if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
     const organizacaoId = (forn.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
     if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
@@ -9540,7 +9540,7 @@ export async function editarCargoFuncionario(
   const { data: atual } = await supabaseAdmin
     .from('funcionarios').select('id, nome, cargo, fornecedor_id').eq('id', funcionarioId).single()
   if (!atual) return { erro: 'Pessoa não encontrada.' }
-  if (atual.fornecedor_id !== fornecedorId) return { erro: 'Esta pessoa não está neste setor.' }
+  if (atual.fornecedor_id !== fornecedorId) return { erro: 'Esta pessoa não está neste fornecedor.' }
   if ((atual.cargo ?? '') === novo) return { ok: true as const }
 
   const { error } = await supabaseAdmin

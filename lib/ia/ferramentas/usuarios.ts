@@ -114,11 +114,11 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
-            `Criar acesso de supervisor para ${nome} no setor ${r.setor.nome}`,
+            `Criar acesso de supervisor para ${nome} no fornecedor ${r.setor.nome}`,
             {
               cpf: cpfLimpo,
               setor: r.setor.nome,
-              acesso: 'ele passa a enxergar apenas a equipe deste setor',
+              acesso: 'ele passa a enxergar apenas a equipe deste fornecedor',
               WhatsApp: 'recebe o link de criação de senha ou, se a conta já existir, o aviso da escala',
             },
             'que uma conta será criada ou uma conta existente será escalada para este setor',
@@ -233,23 +233,23 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         required: ['perfil_id', 'fornecedor_id'],
       },
       executar: async ({ perfil_id, fornecedor_id }) => {
-        if (!gerencia) return 'Seu papel não muda o setor de um supervisor.'
+        if (!gerencia) return 'Seu papel não muda o fornecedor de um supervisor.'
         const r = await exigirMesmaOrganizacao(perfil, perfil_id)
         if (!r.ok) return r.erro
         if (r.alvo.role !== 'supervisor') {
-          return `${r.alvo.nome} é ${ROLE_LABELS[r.alvo.role as Role] ?? r.alvo.role}, não supervisor. Só supervisor fica preso a um setor.`
+          return `${r.alvo.nome} é ${ROLE_LABELS[r.alvo.role as Role] ?? r.alvo.role}, não supervisor. Só supervisor fica preso a um fornecedor.`
         }
         const destino = await resolverSetor(perfil, fornecedor_id)
         if (!destino.ok) return destino.erro
         if (r.alvo.fornecedor_id === fornecedor_id) {
-          return `${r.alvo.nome} já supervisiona o setor ${destino.setor.nome}. Nada a fazer.`
+          return `${r.alvo.nome} já supervisiona o fornecedor ${destino.setor.nome}. Nada a fazer.`
         }
 
         await supabaseAdmin.from('perfis').update({ fornecedor_id }).eq('id', perfil_id)
         await registrarAuditoriaIA(perfil, 'vincular_supervisor_ao_setor', {
           perfil_id, nome: r.alvo.nome, fornecedor_id, setor: destino.setor.nome,
         })
-        return `${r.alvo.nome} agora supervisiona o setor ${destino.setor.nome}. O acesso ao setor anterior foi encerrado.`
+        return `${r.alvo.nome} agora supervisiona o fornecedor ${destino.setor.nome}. O acesso ao fornecedor anterior foi encerrado.`
       },
     }),
 

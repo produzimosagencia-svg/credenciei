@@ -18,13 +18,13 @@ const TUTORIAL: TutorialConfig = {
   versao: 1,
   passos: [
     { alvo: 'usr-resumo', titulo: 'Quem tem acesso ao sistema', posicao: 'bottom', icone: 'Users',
-      descricao: 'Esta lista mostra todas as pessoas da sua organização que conseguem entrar no sistema. Não confunda com a equipe do evento: quem só trabalha no dia aparece dentro do setor, não aqui.' },
+      descricao: 'Esta lista mostra todas as pessoas da sua organização que conseguem entrar no sistema. Não confunda com a equipe do evento: quem só trabalha no dia aparece dentro do fornecedor, não aqui.' },
     { alvo: 'usr-novo', titulo: 'Criar um acesso', posicao: 'left', icone: 'Plus',
       descricao: 'Use para dar acesso a um supervisor. Se for novo, ele recebe um link seguro para criar a senha; se já existir, recebe apenas a nova escala.' },
     { alvo: 'usr-abas', titulo: 'Filtrar por situação', posicao: 'bottom', icone: 'Users',
       descricao: 'Ativo entra normalmente. Inativo é bloqueado no login sem perder o histórico — use quando alguém sai da equipe mas você quer manter os registros antigos.' },
     { alvo: 'usr-papel', titulo: 'Papel', posicao: 'bottom', icone: 'ShieldCheck',
-      descricao: 'O papel define o que a pessoa enxerga. Administrador gerencia toda a organização — eventos, setores e equipe. Supervisor enxerga só o próprio setor: a equipe dele, o scanner e as presenças daquele setor.' },
+      descricao: 'O papel define o que a pessoa enxerga. Administrador gerencia toda a organização — eventos, fornecedores e equipe. Supervisor enxerga só o próprio fornecedor: a equipe dele, o scanner e as presenças daquele fornecedor.' },
     { alvo: 'usr-acoes', titulo: 'Ações', posicao: 'left', icone: 'Plus',
       descricao: 'Aqui você edita os dados, bloqueia o acesso ou exclui de vez. Você nunca vê essas ações na sua própria linha — ninguém remove o próprio acesso por engano.' },
   ],
@@ -247,7 +247,7 @@ export default async function UsuariosPage({
                     <span className="flex items-center gap-1">
                       <Building2 className="w-3 h-3 shrink-0" />
                       {u.role === 'supervisor'
-                        ? (u.setorNome ?? 'sem setor')
+                        ? (u.setorNome ?? 'sem fornecedor')
                         : `${u.eventoCount} evento${u.eventoCount !== 1 ? 's' : ''}`}
                     </span>
                     <span className="flex items-center gap-1">

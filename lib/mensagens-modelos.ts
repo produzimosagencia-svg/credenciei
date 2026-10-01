@@ -30,7 +30,7 @@ const MODELOS: Record<string, (p: string[]) => string> = {
   boas_vindas_funcionario: ([nome, evento, setor, data, local, link, comoFunciona]) =>
 `Oi, ${nome}! 🎉 Seu cadastro no *${evento}* está confirmado.
 
-📋 Setor: ${setor}
+📋 Fornecedor: ${setor}
 📅 Data: ${data}
 📍 Local: ${local}
 
@@ -165,7 +165,7 @@ Obrigado pelo trabalho! 🙏`,
 `📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.
 
 👤 Função: ${funcao}
-🏷️ Setor: ${setor}
+🏷️ Fornecedor: ${setor}
 📅 Quando: ${quando}
 
 📌 ${instrucoes}
@@ -186,7 +186,7 @@ Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
   alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, evento, lista, link]) =>
 `🚨 ${nome}, atenção!
 
-*${quantidade} pessoa(s)* do setor *${setor}*: ${etapa}.
+*${quantidade} pessoa(s)* do fornecedor *${setor}*: ${etapa}.
 📅 Evento: ${evento}
 
 Quem está pendente:
@@ -217,7 +217,7 @@ ${link}`,
    * O endereço interno do banco de autenticação nunca aparece pra ele.
    */
   credenciais_supervisor: ([nome, setor, evento, data, usuario, senha, login, formulario]) =>
-`🔑 Olá, ${nome}! Você é o supervisor do setor *${setor}*, no evento *${evento}*, que acontece em *${data}*.
+`🔑 Olá, ${nome}! Você é o supervisor do fornecedor *${setor}*, no evento *${evento}*, que acontece em *${data}*.
 
 *Seu acesso ao sistema:*
 👤 Usuário: *${usuario}*
@@ -226,7 +226,7 @@ ${link}`,
 
 ⚠️ Entre com o USUÁRIO acima, não com e-mail.
 
-📲 Para sua equipe se cadastrar, mande este link no grupo do setor:
+📲 Para sua equipe se cadastrar, mande este link no grupo do fornecedor:
 ${formulario}
 
 No sistema você acompanha quem já se cadastrou ✅, escaneia o QR Code na entrada e na saída 📷, e vê quem está com presença pendente ⏰
@@ -283,7 +283,7 @@ Procure o seu supervisor ${supervisor} para resolver antes do evento.`,
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 
 Evento: *${evento}*
-Setor: ${setor}
+Fornecedor: ${setor}
 Data: ${data}
 Local: ${local}
 

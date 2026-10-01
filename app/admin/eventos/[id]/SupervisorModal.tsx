@@ -169,7 +169,7 @@ export default function SupervisorModal(props: Props) {
                 <h2 className="text-slate-800 font-bold">
                   {isEditar ? 'Editar supervisor' : mostrandoLista ? 'Quem vai supervisionar?' : 'Novo supervisor'}
                 </h2>
-                {!isEditar && <p className="text-slate-400 text-xs mt-0.5 truncate">Setor: {props.setorNome}</p>}
+                {!isEditar && <p className="text-slate-400 text-xs mt-0.5 truncate">Fornecedor: {props.setorNome}</p>}
               </div>
               <button
                 onClick={() => setOpen(false)}

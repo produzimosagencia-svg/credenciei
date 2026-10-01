@@ -136,7 +136,7 @@ function Explicacao() {
         Use quando você identificar alguém tentando entrar no evento{' '}
         <strong className="text-slate-800">sem estar escalado para trabalhar</strong>. Ao
         bloquear o CPF, essa pessoa não consegue mais se cadastrar por nenhum link deste
-        evento, nem em outro setor — e a leitura do QR Code dela é recusada no portão.
+        evento, nem em outro fornecedor — e a leitura do QR Code dela é recusada no portão.
       </p>
       <p>
         <strong className="text-slate-800">Vale só para este evento.</strong> O bloqueio
@@ -150,7 +150,7 @@ function Explicacao() {
       </p>
       <p className="text-slate-500">
         Bloquear não apaga quem já está cadastrado. Se a pessoa já está na equipe, tire
-        ela do setor primeiro — os pontos que ela bateu continuam no histórico.
+        ela do fornecedor primeiro — os pontos que ela bateu continuam no histórico.
       </p>
     </Secao>
   )

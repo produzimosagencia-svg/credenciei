@@ -48,7 +48,7 @@ export default function DetalhesVeiculoModal({
             {veiculo.ano && <Linha rotulo="Ano" valor={String(veiculo.ano)} />}
             {veiculo.tipo && <Linha rotulo="Tipo" valor={veiculo.tipo} />}
             {(veiculo.empresa || veiculo.setor) && (
-              <Linha rotulo="Empresa/Setor" valor={[veiculo.empresa, veiculo.setor].filter(Boolean).join(' · ')} />
+              <Linha rotulo="Empresa/Fornecedor" valor={[veiculo.empresa, veiculo.setor].filter(Boolean).join(' · ')} />
             )}
             <Linha rotulo="Origem" valor={ROTULO_TIPO_CADASTRO[veiculo.tipoCadastro]} />
             <Linha rotulo="Dias autorizados" valor={

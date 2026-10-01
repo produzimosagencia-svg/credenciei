@@ -34,12 +34,12 @@ export default async function ConferenciasDoEventoPage({ params }: { params: Pro
       <PageHeader
         voltarPara={`/admin/eventos/${id}`}
         titulo="Conferência de equipe"
-        descricao={`${evento.nome} — ${feitas} de ${linhas.length} setores confirmaram`}
+        descricao={`${evento.nome} — ${feitas} de ${linhas.length} fornecedores confirmaram`}
       />
 
       <Secao corpoClassName="p-0">
         {!linhas.length ? (
-          <p className="p-6 text-center text-sm text-slate-400">Nenhum setor com supervisor neste evento.</p>
+          <p className="p-6 text-center text-sm text-slate-400">Nenhum fornecedor com supervisor neste evento.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {linhas.map(l => (

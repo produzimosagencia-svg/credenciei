@@ -165,7 +165,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
           if (fornecedor_id) {
             const s = await resolverSetor(perfil, fornecedor_id)
             if (!s.ok) return s.erro
-            escopo = `setor ${s.setor.nome}`
+            escopo = `fornecedor ${s.setor.nome}`
           } else {
             escopo = 'evento inteiro'
           }
@@ -276,7 +276,7 @@ export function ferramentasDeWhatsapp(ctx: ContextoIA, pedirConfirmacao: PedirCo
           if (!s.ok) return s.erro
           const alvo = await alvoParaFuncionarios(perfil, evento_id, fornecedor_id)
           if (!alvo.ok) return alvo.erro
-          if (!alvo.ids.length) return 'Nenhuma pessoa ativa nesse setor.'
+          if (!alvo.ids.length) return 'Nenhuma pessoa ativa nesse fornecedor.'
           q.in('funcionario_id', alvo.ids)
         }
 

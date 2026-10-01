@@ -42,7 +42,7 @@ export default async function RelatoriosPage({
       <div className="space-y-5">
         <PageHeader
           titulo="Relatórios do evento"
-          descricao={`${resumo.eventoNome} — entrada e saída da equipe, por setor e função`}
+          descricao={`${resumo.eventoNome} — entrada e saída da equipe, por fornecedor e função`}
           acoes={
             <Link href="/admin/relatorios" className="btn btn-secundario">
               <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
@@ -70,7 +70,7 @@ export default async function RelatoriosPage({
         href={id => `/admin/relatorios?evento=${id}`}
         icone={<FileSpreadsheet className="w-3.5 h-3.5" />}
         titulo="De qual evento?"
-        descricao="Entrada e saída da equipe no período que você escolher, por setor e função"
+        descricao="Entrada e saída da equipe no período que você escolher, por fornecedor e função"
         vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder exportar o relatório dele.' }}
         mostrarOrganizacao={veTodosEventos(perfil)}
       />

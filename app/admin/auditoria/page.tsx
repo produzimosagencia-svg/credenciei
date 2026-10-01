@@ -108,7 +108,7 @@ export default async function AuditoriaPage({
     <div className="space-y-5">
       <PageHeader
         titulo="Auditoria"
-        descricao={perfil.role === 'suporte' ? 'As alterações que você fez' : 'Correção de cadastro, mudança de setor, ativação, ponto e senha'}
+        descricao={perfil.role === 'suporte' ? 'As alterações que você fez' : 'Correção de cadastro, mudança de fornecedor, ativação, ponto e senha'}
       />
 
       {/* Links, e não botões: o período fica na URL, então dá pra voltar,
