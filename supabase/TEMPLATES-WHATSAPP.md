@@ -131,23 +131,44 @@ Exemplos: `João Silva` · `Show da Virada 2026` · `13:00` · `15:00` · `https
 
 Enviado antes do evento, quando o organizador preenche a mensagem pré-evento.
 
-**Variáveis**: 1 nome · 2 evento · 3 função · 4 setor · 5 data e local · 6 instruções do organizador · 7 link
+> ⚠️ **PENDENTE DE REAPROVAÇÃO (30/09/2026, pedido do Vital, item 4)** — o
+> template em uso hoje na Meta tem 8 variáveis (sem a 9ª, `aviso de
+> uniforme`, abaixo). O código em `lib/mensagens-modelos.ts` e
+> `lib/mensagens.ts` JÁ está pronto para 9 variáveis, mas **fica fora do ar
+> até a Meta aprovar a versão nova** — mandar 9 parâmetros para o template
+> ainda aprovado com 8 derruba o envio pra TODO MUNDO, não só quem usa aviso
+> de uniforme. Depois de aprovado: nada a fazer no código, já está pronto.
+
+**Variáveis**: 1 nome · 2 evento · 3 função · 4 fornecedor · 5 data e local ·
+6 instruções do organizador · 7 link da credencial · 8 rótulo da credencial
+(varia com QR/biometria) · **9 aviso de uniforme/identificação (NOVO)**
 
 ```
-Olá, {{1}}! Confirmando sua escala no evento {{2}}.
+Oi, {{1}}! Confirmando sua escala no evento {{2}}.
 
 Função: {{3}}
-Setor: {{4}}
+Fornecedor: {{4}}
 Quando: {{5}}
 
 {{6}}
 
-Sua credencial com o QR Code: {{7}}
+{{9}}
+
+{{8}}
+{{7}}
 
 Qualquer impedimento, avise seu supervisor o quanto antes.
 ```
 
-Exemplos: `João Silva` · `Show da Virada 2026` · `Segurança` · `Equipe de Apoio` · `dia 31/12/2026, em Arena SP` · `Usar calça preta e sapato fechado.` · `https://credenciei.vercel.app/credential/abc123`
+Exemplos: `João Silva` · `Show da Virada 2026` · `Segurança` · `Equipe de
+Apoio` · `dia 31/12/2026, em Arena SP` · `Usar calça preta e sapato
+fechado.` · `https://credenciei.vercel.app/credential/abc123` · `Sua
+credencial com o QR Code` · `Uniforme completo obrigatório — camisa da
+empresa e crachá visível o tempo todo.`
+
+Se nenhum aviso de uniforme foi configurado no evento, a variável 9 chega
+como: `Consulte seu supervisor sobre uniforme ou identificação, se
+exigido.` — nunca vazia (a Meta rejeita parâmetro vazio).
 
 ---
 

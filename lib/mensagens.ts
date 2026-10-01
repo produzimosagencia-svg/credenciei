@@ -1564,6 +1564,18 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const credencial = linkDaCredencial(func.qr_token, 'confirmacao_escala')
     if (!credencial) return null
 
+    /*
+     * Aviso de uniforme/identificação (Vital, item 4, 30/09/2026) — 9º
+     * parâmetro do template, aguardando a Meta aprovar a nova versão com 9
+     * variáveis (era 8). NUNCA incluir este campo no array `params` abaixo
+     * antes dessa aprovação — ver o aviso em `lib/mensagens-modelos.ts`.
+     * Sem quebra de linha: a Meta rejeita parâmetro de template com `\n` em
+     * tempo de envio, e `aviso_uniforme_texto` é texto livre do organizador.
+     */
+    const avisoUniforme = (evento as unknown as { aviso_uniforme_texto?: string | null })
+      .aviso_uniforme_texto?.trim().replace(/\s*\n+\s*/g, ' ')
+      || 'Consulte seu supervisor sobre uniforme ou identificação, se exigido.'
+
     return {
       template,
       params: [
@@ -1575,6 +1587,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         instrucoes,
         credencial,
         instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial,
+        avisoUniforme,
       ],
     }
   }

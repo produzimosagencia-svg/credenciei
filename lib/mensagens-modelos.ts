@@ -161,7 +161,16 @@ ${link}
 
 Obrigado pelo trabalho! 🙏`,
 
-  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link, rotuloCredencial]) =>
+  /*
+   * `avisoUniforme` é o 9º parâmetro, ACRESCENTADO ao template já aprovado na
+   * Meta (Vital, item 4, 30/09/2026) — mudar a contagem de variáveis de um
+   * template em uso exige reaprovação. NÃO HABILITAR o envio deste parâmetro
+   * em `montarEnvioTemplate` (lib/mensagens.ts) antes de confirmar que a
+   * Meta aprovou a nova versão com 9 variáveis — mandar 9 params pra um
+   * template que a Meta ainda só conhece com 8 derruba o envio pra TODO
+   * mundo, não só quem usa aviso de uniforme.
+   */
+  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link, rotuloCredencial, avisoUniforme]) =>
 `📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.
 
 👤 Função: ${funcao}
@@ -169,6 +178,8 @@ Obrigado pelo trabalho! 🙏`,
 📅 Quando: ${quando}
 
 📌 ${instrucoes}
+
+👕 ${avisoUniforme}
 
 🔗 ${rotuloCredencial}
 ${link}
