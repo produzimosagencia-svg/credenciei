@@ -53,6 +53,16 @@ const QTD_VARIAVEIS_BODY: Record<string, number> = {
    */
   aviso_dia_evento: 9,
   boas_vindas_funcionario: 6,
+  /*
+   * MESMO BUG, achado 30/09/2026 ao conferir direto na API pra adicionar o
+   * aviso de uniforme (Vital, item 4): o código mandava 8 `params`
+   * (incluindo `rotuloCredencial`, só pro texto local) pro corpo de um
+   * template que na Meta tinha 7 variáveis de verdade — nunca 8. Corrigido
+   * junto com a edição que soma o aviso de uniforme como 8ª variável real;
+   * `rotuloCredencial` continua existindo no array, só que por último (9º),
+   * cortado daqui pra frente.
+   */
+  confirmacao_escala: 8,
 }
 
 export type ResultadoEnvio = {

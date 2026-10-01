@@ -162,15 +162,21 @@ ${link}
 Obrigado pelo trabalho! 🙏`,
 
   /*
-   * `avisoUniforme` é o 9º parâmetro, ACRESCENTADO ao template já aprovado na
-   * Meta (Vital, item 4, 30/09/2026) — mudar a contagem de variáveis de um
-   * template em uso exige reaprovação. NÃO HABILITAR o envio deste parâmetro
-   * em `montarEnvioTemplate` (lib/mensagens.ts) antes de confirmar que a
-   * Meta aprovou a nova versão com 9 variáveis — mandar 9 params pra um
-   * template que a Meta ainda só conhece com 8 derruba o envio pra TODO
-   * mundo, não só quem usa aviso de uniforme.
+   * ORDEM DOS PARÂMETROS — não é arbitrária, é a posição exata que a Meta
+   * espera (conferido direto na API, 30/09/2026 — o texto aprovado de
+   * verdade tinha só 7 variáveis, nem de perto o que o código antigo aqui
+   * supunha; ver `meta-verificar-direto-na-api` na memória do projeto:
+   * nunca confiar no código/comentário sobre o que está realmente aprovado).
+   *
+   * `avisoUniforme` é a 8ª variável, ACRESCENTADA ao template (Vital, item
+   * 4, 30/09/2026). `rotuloCredencial` fica por ÚLTIMO (9º) de propósito —
+   * ele só existe pro texto local (Evolution/log), NUNCA vai pro corpo
+   * aprovado na Meta (`QTD_VARIAVEIS_BODY.confirmacao_escala = 8` em
+   * lib/whatsapp-meta.ts corta exatamente nesse ponto). Mudar a ORDEM aqui
+   * sem mudar `montarEnvioTemplate` (lib/mensagens.ts) troca os valores de
+   * lugar silenciosamente no WhatsApp de verdade.
    */
-  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link, rotuloCredencial, avisoUniforme]) =>
+  confirmacao_escala: ([nome, evento, funcao, setor, quando, instrucoes, link, avisoUniforme, rotuloCredencial]) =>
 `📋 Oi, ${nome}! Confirmando sua escala no *${evento}*.
 
 👤 Função: ${funcao}

@@ -131,44 +131,80 @@ Exemplos: `João Silva` · `Show da Virada 2026` · `13:00` · `15:00` · `https
 
 Enviado antes do evento, quando o organizador preenche a mensagem pré-evento.
 
-> ⚠️ **PENDENTE DE REAPROVAÇÃO (30/09/2026, pedido do Vital, item 4)** — o
-> template em uso hoje na Meta tem 8 variáveis (sem a 9ª, `aviso de
-> uniforme`, abaixo). O código em `lib/mensagens-modelos.ts` e
-> `lib/mensagens.ts` JÁ está pronto para 9 variáveis, mas **fica fora do ar
-> até a Meta aprovar a versão nova** — mandar 9 parâmetros para o template
-> ainda aprovado com 8 derruba o envio pra TODO MUNDO, não só quem usa aviso
-> de uniforme. Depois de aprovado: nada a fazer no código, já está pronto.
+> ⚠️ **EDITADO VIA API em 30/09/2026 (Vital, item 4) — PENDENTE DE REVISÃO.**
+> Conferido direto na Graph API antes de mexer (ver
+> `meta-verificar-direto-na-api` na memória do projeto): o texto real
+> aprovado tinha só **7 variáveis**, não 8 como o código antigo aqui
+> supunha (`rotuloCredencial` era mandado pro corpo da Meta sem nunca ter
+> sido aprovado lá — o mesmo bug já achado em `aviso_dia_evento`/
+> `boas_vindas_funcionario` em 28/09/2026, ver `QTD_VARIAVEIS_BODY` em
+> `lib/whatsapp-meta.ts`).
+>
+> **Duas tentativas de edição falharam antes desta:** a 1ª (com negrito,
+> emoji e a frase "caso não possa comparecer...") foi REJEITADA pela Meta
+> com `INCORRECT_CATEGORY` — e o mesmo aconteceu até revertendo pro texto
+> ORIGINAL idêntico ao que já estava aprovado, o que sugere que o
+> classificador automático da Meta mudou de critério desde a aprovação
+> original. A 2ª tentativa (texto mais simples, sem negrito/emoji/frase
+> condicional) foi recusada por um motivo técnico claro, esse sim
+> corrigível: "as variáveis não podem estar no início ou no fim do
+> modelo" — o corpo começava com `{{1}}` e terminava com `{{7}}`,
+> violando a regra que já estava documentada aqui embaixo. Corrigido
+> (texto abaixo), o template ficou `PENDING` — passou da validação
+> automática, está na fila de revisão humana.
+>
+> Até a Meta aprovar esta edição, o texto ANTERIOR (7 variáveis, sem aviso
+> de uniforme) continua sendo o que chega de fato — `QTD_VARIAVEIS_BODY.
+> confirmacao_escala = 8` já está certo pro texto NOVO, então evite
+> reenviar por Meta Cloud API enquanto a aprovação não sai (Evolution não
+> usa isto, não é afetada).
 
-**Variáveis**: 1 nome · 2 evento · 3 função · 4 fornecedor · 5 data e local ·
-6 instruções do organizador · 7 link da credencial · 8 rótulo da credencial
-(varia com QR/biometria) · **9 aviso de uniforme/identificação (NOVO)**
+**Variáveis**: 1 nome · 2 evento · 3 função · 4 fornecedor · 5 data e
+horário · 6 instruções do organizador · 7 link da credencial ·
+**8 aviso de uniforme/identificação (NOVO)**
 
 ```
-Oi, {{1}}! Confirmando sua escala no evento {{2}}.
+Olá, {{1}}! Sua escala no evento {{2}} está confirmada.
 
 Função: {{3}}
 Fornecedor: {{4}}
-Quando: {{5}}
+Data e horário: {{5}}
 
-{{6}}
+Instruções: {{6}}
 
-{{9}}
+Uniforme ou identificação exigida: {{8}}
 
-{{8}}
-{{7}}
+Credencial com QR Code: {{7}}
 
-Qualquer impedimento, avise seu supervisor o quanto antes.
+Guarde este link.
 ```
 
-Exemplos: `João Silva` · `Show da Virada 2026` · `Segurança` · `Equipe de
-Apoio` · `dia 31/12/2026, em Arena SP` · `Usar calça preta e sapato
-fechado.` · `https://credenciei.vercel.app/credential/abc123` · `Sua
-credencial com o QR Code` · `Uniforme completo obrigatório — camisa da
-empresa e crachá visível o tempo todo.`
+Exemplos: `João Silva` · `Festival Exemplo` · `Assistente` · `Produção` ·
+`30/08/2026 às 14:00` · `Chegue com 30 minutos de antecedência.` ·
+`https://exemplo.com/credencial` · `Uniforme completo obrigatório, camisa
+da empresa e crachá visível o tempo todo.`
 
-Se nenhum aviso de uniforme foi configurado no evento, a variável 9 chega
+Se nenhum aviso de uniforme foi configurado no evento, a variável 8 chega
 como: `Consulte seu supervisor sobre uniforme ou identificação, se
 exigido.` — nunca vazia (a Meta rejeita parâmetro vazio).
+
+Texto anterior (7 variáveis, sem aviso de uniforme — o que de fato chega
+enquanto esta edição não é aprovada):
+
+```
+Olá, {{1}}. Sua escala de trabalho no evento *{{2}}* foi confirmada.
+
+👤 Função: {{3}}
+🏷️ Setor: {{4}}
+📅 Data e horário: {{5}}
+
+📌 Orientações da operação: {{6}}
+
+🔗 Acesse sua credencial pessoal com o QR Code:
+{{7}}
+
+Caso não possa comparecer, informe o supervisor responsável pela sua escala.
+```
 
 ---
 

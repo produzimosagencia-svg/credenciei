@@ -1565,12 +1565,15 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!credencial) return null
 
     /*
-     * Aviso de uniforme/identificação (Vital, item 4, 30/09/2026) — 9º
-     * parâmetro do template, aguardando a Meta aprovar a nova versão com 9
-     * variáveis (era 8). NUNCA incluir este campo no array `params` abaixo
-     * antes dessa aprovação — ver o aviso em `lib/mensagens-modelos.ts`.
+     * Aviso de uniforme/identificação (Vital, item 4, 30/09/2026) — 8º
+     * parâmetro do corpo aprovado na Meta (conferido direto na API: o
+     * template real tinha 7 variáveis, não 8 como o código antigo supunha).
      * Sem quebra de linha: a Meta rejeita parâmetro de template com `\n` em
      * tempo de envio, e `aviso_uniforme_texto` é texto livre do organizador.
+     *
+     * `rotuloCredencial` vai por ÚLTIMO (9º) de propósito — só serve ao
+     * texto local (Evolution/log), nunca ao corpo da Meta. Ver
+     * `QTD_VARIAVEIS_BODY.confirmacao_escala` em lib/whatsapp-meta.ts.
      */
     const avisoUniforme = (evento as unknown as { aviso_uniforme_texto?: string | null })
       .aviso_uniforme_texto?.trim().replace(/\s*\n+\s*/g, ' ')
@@ -1586,8 +1589,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         dataLocal,
         instrucoes,
         credencial,
-        instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial,
         avisoUniforme,
+        instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial,
       ],
     }
   }
