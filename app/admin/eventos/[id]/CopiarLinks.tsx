@@ -215,7 +215,7 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
                       disabled={!temLink}
                       checked={marcados.has(s.id)}
                       onChange={() => alternar(s.id)}
-                      className="w-4 h-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                      className="w-4 h-4 rounded border-slate-300 accent-brand-500 shrink-0"
                     />
                     <span className="text-slate-800 text-sm truncate flex-1">{s.nome}</span>
                     {!temLink && <span className="text-slate-400 text-2xs shrink-0">sem link</span>}

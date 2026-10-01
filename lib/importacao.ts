@@ -26,10 +26,10 @@ export type LinhaIgnorada = {
   setor: string | null
   /**
    * Por que ficou de fora — ausente ou `'duplicado'` é o caso de sempre (CPF
-   * repetido). Os outros dois só existem em evento com subeventos/cota
-   * ligados (Vital, 30/09/2026).
+   * repetido). `'cota_atingida'` só existe com a trava de cota ligada
+   * (Vital, 30/09/2026).
    */
-  motivo?: 'duplicado' | 'subevento_invalido' | 'cota_atingida'
+  motivo?: 'duplicado' | 'cota_atingida'
 }
 
 export type ResultadoImportacao =
@@ -69,27 +69,16 @@ export async function importarFuncionarios(
   const eventoId = evento?.id ?? fornecedor.evento_id
 
   /*
-   * SUBEVENTO — mesma régua do cadastro por link (`cadastrarFuncionarioPublico`
-   * em lib/actions.ts), pedido do Vital (30/09/2026). Resolvido AQUI, antes de
-   * preparar as linhas, porque com 0 escalas a importação inteira não tem
-   * como continuar — não faz sentido gastar tempo lendo a planilha primeiro.
+   * SUBEVENTO (Vital, 30/09/2026 — corrigido no mesmo dia: Evento →
+   * Subevento → Fornecedor, não "fornecedor escalado"). É simplesmente o
+   * subevento do fornecedor, fixo — toda a planilha entra nele, sem
+   * pergunta nenhuma. `fornecedor` já veio com `select('*')`, que nunca
+   * falha por coluna nova ausente (ao contrário de pedir a coluna pelo
+   * nome) — `subevento_id` fica `undefined` sozinho se a migração não
+   * tiver rodado ainda.
    */
+  const subeventoIdDoFornecedor = (fornecedor as { subevento_id?: string | null }).subevento_id ?? null
   const funcionalidades = await obterFuncionalidadesOrganizacao(evento?.organizacao_id ?? null)
-  let escalasDoFornecedor: { subevento_id: string; nome: string; cota: number | null }[] = []
-  if (funcionalidades.subeventosHabilitado) {
-    const { data: escalas } = await supabaseAdmin
-      .from('fornecedor_subeventos')
-      .select('subevento_id, cota, subeventos(nome)')
-      .eq('fornecedor_id', fornecedorId)
-    escalasDoFornecedor = (escalas ?? []).map(e => ({
-      subevento_id: e.subevento_id as string,
-      nome: ((e.subeventos as unknown as { nome?: string } | null)?.nome ?? '').trim(),
-      cota: e.cota as number | null,
-    }))
-    if (escalasDoFornecedor.length === 0) {
-      return { ok: false, status: 400, error: 'Este fornecedor ainda não foi escalado em nenhum subevento deste evento. Escale-o antes de importar.' }
-    }
-  }
 
   /*
    * NINGUÉM ENTRA INATIVO — nem acima do teto do setor.
@@ -127,7 +116,6 @@ export async function importarFuncionarios(
       cidade: f.cidade?.trim() || null,
       valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
       fornecedor_id: fornecedorId,
-      subevento: f.subevento?.trim() ?? '',
     }
   }).filter(f => f.nome && f.cpf)
 
@@ -196,29 +184,9 @@ export async function importarFuncionarios(
     return { ok: false, status: 400, error: motivo, ignorados }
   }
 
-  /*
-   * SUBEVENTO — cada linha entra no subevento certo. Com 1 escala só, é
-   * automático (a planilha nem precisa da coluna); com 2+, a coluna
-   * "Subevento" decide, e quem não bater com nenhuma escala fica de fora
-   * (reportado, não descartado em silêncio).
-   */
-  let comSubevento = payload.map(f => ({ ...f, subevento_id: null as string | null }))
-  if (funcionalidades.subeventosHabilitado) {
-    if (escalasDoFornecedor.length === 1) {
-      const unico = escalasDoFornecedor[0].subevento_id
-      comSubevento = comSubevento.map(f => ({ ...f, subevento_id: unico }))
-    } else {
-      comSubevento = comSubevento.filter(f => {
-        const achado = escalasDoFornecedor.find(e => e.nome.toLowerCase() === f.subevento.toLowerCase())
-        if (!achado) {
-          ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'subevento_invalido' })
-          return false
-        }
-        f.subevento_id = achado.subevento_id
-        return true
-      })
-    }
-  }
+  // SUBEVENTO — cada linha da planilha herda o subevento do fornecedor
+  // (fixo, igual em toda a planilha — ninguém escolhe nada).
+  const comSubevento = payload.map(f => ({ ...f, subevento_id: subeventoIdDoFornecedor }))
 
   /*
    * TRAVA DE COTA — insere só até a cota RESTANTE, na ordem da planilha.
@@ -227,41 +195,21 @@ export async function importarFuncionarios(
    */
   let finalPayload = comSubevento
   if (funcionalidades.travaCotaHabilitada) {
-    if (funcionalidades.subeventosHabilitado) {
-      const restantePorSubevento = new Map<string, number | null>()
-      for (const e of escalasDoFornecedor) {
-        if (e.cota === null) { restantePorSubevento.set(e.subevento_id, null); continue }
-        const { count } = await supabaseAdmin
-          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', e.subevento_id)
-        restantePorSubevento.set(e.subevento_id, Math.max(0, e.cota - (count ?? 0)))
-      }
+    const { data: forn } = await supabaseAdmin
+      .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).maybeSingle()
+    const cota = forn?.quantidade_estimada ?? null
+    if (cota) {
+      const { count } = await supabaseAdmin
+        .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+      let restante = Math.max(0, cota - (count ?? 0))
       finalPayload = finalPayload.filter(f => {
-        const restante = f.subevento_id ? restantePorSubevento.get(f.subevento_id) ?? null : null
-        if (restante === null) return true
         if (restante <= 0) {
           ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'cota_atingida' })
           return false
         }
-        restantePorSubevento.set(f.subevento_id as string, restante - 1)
+        restante--
         return true
       })
-    } else {
-      const { data: forn } = await supabaseAdmin
-        .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).maybeSingle()
-      const cota = forn?.quantidade_estimada ?? null
-      if (cota) {
-        const { count } = await supabaseAdmin
-          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
-        let restante = Math.max(0, cota - (count ?? 0))
-        finalPayload = finalPayload.filter(f => {
-          if (restante <= 0) {
-            ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'cota_atingida' })
-            return false
-          }
-          restante--
-          return true
-        })
-      }
     }
   }
 

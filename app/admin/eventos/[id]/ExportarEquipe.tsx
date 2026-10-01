@@ -101,7 +101,7 @@ export default function ExportarEquipe({
                   checked={comFluxo}
                   onChange={e => setComFluxo(e.target.checked)}
                   disabled={!dias.length}
-                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
                 />
                 <span className="text-sm text-slate-700">
                   <span className="flex items-center gap-1.5 font-medium"><CalendarClock className="w-3.5 h-3.5 text-slate-400" /> Incluir horário de presença de um dia</span>
@@ -134,7 +134,7 @@ export default function ExportarEquipe({
                             type="checkbox"
                             checked={tipos.includes(t)}
                             onChange={() => alternarTipo(t)}
-                            className="w-4 h-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400"
+                            className="w-4 h-4 rounded border-slate-300 accent-brand-500"
                           />
                           {ROTULO_TIPO[t]}
                         </label>

@@ -38,7 +38,7 @@ export default function FuncionalidadesForm({
             type="checkbox"
             name="subeventos_habilitado"
             defaultChecked={funcionalidades.subeventosHabilitado}
-            className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
           />
           <div className="min-w-0">
             <p className="text-slate-800 font-semibold text-sm">Subeventos</p>
@@ -58,7 +58,7 @@ export default function FuncionalidadesForm({
             type="checkbox"
             name="trava_cota_habilitada"
             defaultChecked={funcionalidades.travaCotaHabilitada}
-            className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
           />
           <div className="min-w-0">
             <p className="text-slate-800 font-semibold text-sm">Trava de cota</p>
@@ -78,7 +78,7 @@ export default function FuncionalidadesForm({
             type="checkbox"
             name="aviso_uniforme_habilitado"
             defaultChecked={funcionalidades.avisoUniformeHabilitado}
-            className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
           />
           <div className="min-w-0">
             <p className="text-slate-800 font-semibold text-sm">Aviso de uniforme/identificação</p>

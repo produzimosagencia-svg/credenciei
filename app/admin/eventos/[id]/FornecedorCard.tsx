@@ -7,7 +7,6 @@ import { deletarFornecedor, alternarLinkDoSetor } from '@/lib/actions'
 import FornecedorModal from './FornecedorModal'
 import PlanilhaModal from './PlanilhaModal'
 import SupervisorModal from './SupervisorModal'
-import EscalaSubeventoModal from './EscalaSubeventoModal'
 import ConfirmModal from '@/components/ConfirmModal'
 
 type Fornecedor = {
@@ -17,6 +16,7 @@ type Fornecedor = {
   quantidade_estimada: number | null
   valor_combinado: number | null
   cpfs_autorizados: string | null
+  subevento_id?: string | null
   funcionarios: { count: number }[]
 }
 
@@ -24,7 +24,6 @@ type Supervisor = { id: string; nome: string; email: string; cpf: string | null;
 type FuncionarioDoSetor = { id: string; nome: string; cpf: string; telefone: string }
 type DiaDoEvento = { data: string; tipo: string }
 type Subevento = { id: string; nome: string }
-type EscalaFornecedor = { subevento_id: string; cota: number | null }
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -35,11 +34,11 @@ export default function FornecedorCard({
   funcionariosDoEvento = [],
   diasDoEvento = [],
   exigeMeio = false,
+  entradaQualquerHorario = false,
   linkAtivo = true,
   podeGerenciarSupervisores = false,
   podeExcluir = false,
   subeventos = [],
-  escalasDoFornecedor = [],
 }: {
   fornecedor: Fornecedor
   eventoId: string
@@ -56,10 +55,14 @@ export default function FornecedorCard({
   diasDoEvento?: DiaDoEvento[]
   /** Este setor pede o meio? Vem de consulta própria — ver page.tsx. */
   exigeMeio?: boolean
-  /** Subeventos do evento — vazio = evento não usa (feature desligada). */
+  /** Este setor é isento da janela de horário do evento (Vital, item 5)? */
+  entradaQualquerHorario?: boolean
+  /**
+   * Subeventos do evento — vazio = evento não usa a funcionalidade (feature
+   * desligada) ou ainda não tem nenhum. Quando não vazio, o editar ganha um
+   * seletor "Subevento" (atribuir/mover/tirar este fornecedor de um).
+   */
   subeventos?: Subevento[]
-  /** Em quais subeventos ESTE fornecedor já está escalado, com a cota de cada um. */
-  escalasDoFornecedor?: EscalaFornecedor[]
   /**
    * O link de cadastro deste setor está ligado?
    *
@@ -180,15 +183,6 @@ export default function FornecedorCard({
             usa toda hora está na faixa de ações, abaixo. */}
         <div className="flex items-center gap-0.5 shrink-0 -mr-1.5 -mt-1">
           <PlanilhaModal fornecedorId={f.id} eventoId={eventoId} setorNome={f.nome} dias={diasDoEvento} />
-          {!!subeventos.length && (
-            <EscalaSubeventoModal
-              fornecedorId={f.id}
-              eventoId={eventoId}
-              fornecedorNome={f.nome}
-              subeventos={subeventos}
-              escalasAtuais={escalasDoFornecedor}
-            />
-          )}
           <FornecedorModal
             mode="editar"
             eventoId={eventoId}
@@ -196,6 +190,9 @@ export default function FornecedorCard({
             nome={f.nome}
             valor_combinado={f.valor_combinado}
             exige_meio={exigeMeio}
+            entrada_qualquer_horario={entradaQualquerHorario}
+            subeventos={subeventos}
+            subevento_id={f.subevento_id ?? null}
           />
           {podeExcluir && (
             <button

@@ -102,6 +102,41 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           </Field>
 
           {/*
+            * "Este evento possui subeventos" (correção 30/09/2026: Evento →
+            * Subevento → Fornecedor) — só aparece pra organização que ligou
+            * "Subeventos" em Configurações. Decide se ESTE evento, em
+            * específico, usa a estrutura nova (nem toda organização usa em
+            * todo evento — a Kiki pode ter o recurso liberado e mesmo assim
+            * rodar um evento simples, sem subevento nenhum).
+            */}
+          {funcionalidades.subeventosHabilitado && (
+            <label
+              htmlFor="tem_subeventos"
+              className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
+                         hover:border-brand-300 transition-colors"
+            >
+              <input type="hidden" name="tem_subeventos_presente" value="1" />
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="tem_subeventos"
+                  name="tem_subeventos"
+                  defaultChecked={(evento as { tem_subeventos?: boolean }).tem_subeventos === true}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-slate-800 font-semibold text-sm">Este evento possui subeventos</p>
+                  <p className="text-slate-600 text-xs mt-1">
+                    Portões/categorias de acesso diferentes no mesmo evento (ex.: Camarote,
+                    Arquibancada, Pista). Ligado, cada fornecedor passa a nascer DENTRO de um
+                    subevento, não mais direto no evento.
+                  </p>
+                </div>
+              </div>
+            </label>
+          )}
+
+          {/*
             * Aviso de uniforme/identificação (Vital, 30/09/2026) — texto FIXO,
             * diferente do sistema de `avisos` (que é pontual e some quando
             * visto). Regra de uniforme precisa aparecer toda vez que a pessoa
@@ -164,7 +199,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
                 id="batida_livre"
                 name="batida_livre"
                 defaultChecked={evento.batida_livre === true}
-                className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
               />
               <div className="min-w-0">
                 <p className="text-slate-800 font-semibold text-sm">Batida livre no dia do evento</p>
@@ -208,7 +243,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
                 id="checkin_autonomo"
                 name="checkin_autonomo"
                 defaultChecked={evento.checkin_autonomo === true}
-                className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
               />
               <div className="min-w-0">
                 <p className="text-slate-800 font-semibold text-sm">Auto-atendimento no dia principal</p>

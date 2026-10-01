@@ -25,6 +25,7 @@ type Fornecedor = {
   valor_combinado: number | null
   cpfs_autorizados: string | null
   exige_meio?: boolean | null
+  subevento_id?: string | null
   funcionarios: { count: number }[]
 }
 
@@ -42,7 +43,6 @@ type FuncionarioDoSetor = {
 }
 type DiaDoEvento = { data: string; tipo: string }
 type Subevento = { id: string; nome: string }
-type EscalaFornecedor = { subevento_id: string; cota: number | null }
 
 /*
  * A busca deixou de ter um teto de "a partir de quantos setores aparece".
@@ -62,6 +62,7 @@ export default function ListaDeSetores({
   funcionariosDoEvento,
   diasDoEvento,
   setoresComMeio,
+  setoresComEntradaQualquerHorario,
   setoresComLinkDesligado,
   podeGerenciarSupervisores,
   podeExcluir,
@@ -71,7 +72,6 @@ export default function ListaDeSetores({
   podeEditarPonto,
   role,
   subeventos = [],
-  escalasPorFornecedor = {},
 }: {
   fornecedores: Fornecedor[]
   eventoId: string
@@ -81,12 +81,12 @@ export default function ListaDeSetores({
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
+  /** Ids dos setores isentos da janela de horário do evento (Vital, item 5). */
+  setoresComEntradaQualquerHorario?: Set<string>
   /** Só os DESLIGADOS — ausente/vazio significa todos ligados. */
   setoresComLinkDesligado?: Set<string>
-  /** Subeventos do evento — vazio = evento não usa (feature desligada). */
+  /** Subeventos do evento — vazio = evento não usa a funcionalidade ou ainda não tem nenhum. */
   subeventos?: Subevento[]
-  /** Escalas de cada fornecedor, por id do fornecedor. */
-  escalasPorFornecedor?: Record<string, EscalaFornecedor[]>
   podeGerenciarSupervisores: boolean
   podeExcluir: boolean
   /** Só pro cabeçalho do modal de "pessoa encontrada" — não muda nenhuma consulta. */
@@ -311,11 +311,11 @@ export default function ListaDeSetores({
               funcionariosDoEvento={funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               exigeMeio={setoresComMeio.has(f.id)}
+              entradaQualquerHorario={!!setoresComEntradaQualquerHorario?.has(f.id)}
               linkAtivo={!setoresComLinkDesligado?.has(f.id)}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir}
               subeventos={subeventos}
-              escalasDoFornecedor={escalasPorFornecedor[f.id] ?? []}
             />
           ))}
         </div>

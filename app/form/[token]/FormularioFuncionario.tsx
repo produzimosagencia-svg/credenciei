@@ -58,7 +58,6 @@ function comprimir(file: File): Promise<string> {
 
 export default function FormularioFuncionario({
   fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual, biometriaHabilitada = false,
-  subeventosDisponiveis = [],
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
@@ -74,18 +73,10 @@ export default function FormularioFuncionario({
    * o cadastro normalmente e usa o QR Code sempre.
    */
   biometriaHabilitada?: boolean
-  /**
-   * Em quais subeventos este fornecedor está escalado (Vital, 30/09/2026) —
-   * vazio = evento não usa subeventos. Com exatamente 1, o servidor atribui
-   * sozinho (não pergunta nada aqui); com 2+, a pessoa escolhe.
-   */
-  subeventosDisponiveis?: { id: string; nome: string }[]
 }) {
   const router = useRouter()
   const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
   const [consentimento, setConsentimento] = useState(false)
-  const [subeventoId, setSubeventoId] = useState('')
-  const [erroSubevento, setErroSubevento] = useState<string | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -222,11 +213,6 @@ export default function FormularioFuncionario({
       setErroCpf('CPF inválido. Confira os números.')
       return
     }
-    if (subeventosDisponiveis.length > 1 && !subeventoId) {
-      setErroSubevento('Selecione em qual subevento você vai trabalhar.')
-      return
-    }
-    setErroSubevento(null)
     if (biometriaHabilitada && !jaPassouPelaBiometria && !biometriaJaCadastrada) {
       setEtapaBiometria('intro')
       return
@@ -256,7 +242,6 @@ export default function FormularioFuncionario({
         chavePix: form.chavePix,
         fotoBase64: foto ?? undefined,
         biometriaDescritor: descritorRosto ?? undefined,
-        subeventoId: subeventoId || undefined,
       }, autorizacaoIndividual)
 
       if (res.qrToken) {
@@ -530,22 +515,6 @@ export default function FormularioFuncionario({
           {FUNCOES_COMUNS.map(f => <option key={f} value={f} />)}
         </datalist>
       </Field>
-      {subeventosDisponiveis.length > 1 && (
-        <Field label="Em qual subevento você vai trabalhar? *">
-          <select
-            required
-            value={subeventoId}
-            onChange={e => { setSubeventoId(e.target.value); setErroSubevento(null) }}
-            className="input"
-          >
-            <option value="">Selecione...</option>
-            {subeventosDisponiveis.map(s => (
-              <option key={s.id} value={s.id}>{s.nome}</option>
-            ))}
-          </select>
-          {erroSubevento && <p className="text-red-500 text-xs mt-1">{erroSubevento}</p>}
-        </Field>
-      )}
       <Field label="Cidade onde você mora *">
         {/* Texto livre, com as cidades do ES como sugestão — mesmo jeito do
             Cargo. Era uma lista travada no ES (56 cadastros tinham virado 10

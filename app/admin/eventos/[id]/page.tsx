@@ -107,7 +107,10 @@ export default async function EventoPage({
 
   // Subeventos (Vital, 30/09/2026) — desligado por padrão; a organização liga
   // em Configurações → Funcionalidade do Sistema (ver obterFuncionalidadesOrganizacao).
+  // `evento.tem_subeventos` é quem decide se ESTE evento usa a estrutura
+  // nova (select('*') já trouxe — nunca falha por coluna nova ausente).
   const funcionalidades = await obterFuncionalidadesOrganizacao(evento.organizacao_id as string | null)
+  const usaSubeventos = funcionalidades.subeventosHabilitado && (evento as { tem_subeventos?: boolean }).tem_subeventos === true
 
   // Isolamento por organização: admin só acessa eventos da própria org
   if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil?.organizacao_id) notFound()
@@ -190,7 +193,8 @@ export default async function EventoPage({
     { data: supervisoresRows },
     { count: pendentesDeAprovacao },
     { data: subeventosRows },
-    { data: escalasRows },
+    { data: entradaQualquerHorarioRows },
+    { data: fornecedorSubeventoRows },
   ] = await Promise.all([
     supabase.from('registros').select('funcionario_id, tipo')
       .eq('evento_id', id).eq('data_ref', diaEscolhido),
@@ -243,8 +247,16 @@ export default async function EventoPage({
     funcionalidades.subeventosHabilitado
       ? supabase.from('subeventos').select('id, nome').eq('evento_id', id).order('nome')
       : Promise.resolve(vazio),
-    funcionalidades.subeventosHabilitado && fornecedorIds.length
-      ? supabase.from('fornecedor_subeventos').select('fornecedor_id, subevento_id, cota').in('fornecedor_id', fornecedorIds)
+    // Item 5 (Vital) — coluna nova, em consulta separada e tolerante, mesmo
+    // motivo de `exige_meio` logo acima.
+    fornecedorIds.length
+      ? supabase.from('fornecedores').select('id, entrada_qualquer_horario').in('id', fornecedorIds)
+      : Promise.resolve(vazio),
+    // A que subevento cada fornecedor pertence (correção 30/09/2026: Evento
+    // → Subevento → Fornecedor, 1:1 — não mais uma "escala" N:N). Coluna
+    // nova, consulta à parte e tolerante, mesmo motivo de sempre.
+    usaSubeventos && fornecedorIds.length
+      ? supabase.from('fornecedores').select('id, subevento_id').in('id', fornecedorIds)
       : Promise.resolve(vazio),
   ])
 
@@ -259,6 +271,9 @@ export default async function EventoPage({
    */
   const setoresComLinkDesligado = new Set(
     (linkDosSetoresRows ?? []).filter(f => f.link_ativo === false).map(f => f.id as string)
+  )
+  const setoresComEntradaQualquerHorario = new Set(
+    (entradaQualquerHorarioRows ?? []).filter(f => f.entrada_qualquer_horario === true).map(f => f.id as string)
   )
 
   type SupervisorDoCard = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
@@ -291,12 +306,32 @@ export default async function EventoPage({
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
 
   const subeventos = (subeventosRows ?? []) as { id: string; nome: string }[]
-  const escalasPorFornecedor: Record<string, { subevento_id: string; cota: number | null }[]> = {}
-  for (const e of escalasRows ?? []) {
-    const lista = (escalasPorFornecedor[e.fornecedor_id as string] ??= [])
-    lista.push({ subevento_id: e.subevento_id as string, cota: e.cota as number | null })
-  }
 
+  /*
+   * Evento → Subevento → Fornecedor (correção 30/09/2026) — mapa simples
+   * fornecedor → subevento (1:1, substitui a "escala" N:N da 1ª versão).
+   * `fornecedoresEnriquecidos` é o array de sempre com `subevento_id`
+   * misturado — base pra tudo que vem depois: a grade de subeventos (conta
+   * fornecedor/equipe por subevento) e a lista dos "sem subevento".
+   */
+  const subeventoPorFornecedor = new Map(
+    (fornecedorSubeventoRows ?? []).map(f => [f.id as string, f.subevento_id as string | null])
+  )
+  const fornecedoresEnriquecidos = (fornecedores ?? []).map(f => ({
+    ...f, subevento_id: subeventoPorFornecedor.get(f.id) ?? null,
+  }))
+  const fornecedoresSemSubevento = usaSubeventos
+    ? fornecedoresEnriquecidos.filter(f => !f.subevento_id)
+    : []
+  const contagensPorSubevento: Record<string, { fornecedores: number; equipe: number }> = {}
+  if (usaSubeventos) {
+    for (const f of fornecedoresEnriquecidos) {
+      if (!f.subevento_id) continue
+      const c = (contagensPorSubevento[f.subevento_id] ??= { fornecedores: 0, equipe: 0 })
+      c.fornecedores++
+      c.equipe += f.funcionarios?.[0]?.count ?? 0
+    }
+  }
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
@@ -484,9 +519,13 @@ export default async function EventoPage({
         <Secao
           tom="acento"
           icone={<Users className="w-3.5 h-3.5" />}
-          titulo="Fornecedores"
-          descricao="Cada fornecedor gera um link próprio de cadastro para a equipe"
-          acoes={<FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'} />}
+          titulo={usaSubeventos ? 'Subeventos' : 'Fornecedores'}
+          descricao={usaSubeventos
+            ? 'Cada subevento tem seus próprios fornecedores — abra um para gerenciar a equipe dele'
+            : 'Cada fornecedor gera um link próprio de cadastro para a equipe'}
+          acoes={!usaSubeventos && (
+            <FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'} />
+          )}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
           {/*
@@ -540,20 +579,54 @@ export default async function EventoPage({
             </div>
           )}
 
-          {funcionalidades.subeventosHabilitado && podeGerenciarEventos(perfil) && (
-            <SubeventosCard eventoId={id} subeventos={subeventos} />
-          )}
+          {usaSubeventos ? (
+            <>
+              <SubeventosCard eventoId={id} subeventos={subeventos} contagens={contagensPorSubevento} />
 
-          {!fornecedores?.length ? (
+              {/*
+                * Fornecedores sem subevento — o caso real do fornecedor
+                * "Teste" criado antes de o evento ligar "tem_subeventos"
+                * (Vital, 30/09/2026). Não some da tela: aparece aqui até
+                * alguém abrir e atribuir um subevento a ele (editar →
+                * seletor "Subevento").
+                */}
+              {!!fornecedoresSemSubevento.length && (
+                <div className="mt-4 pt-4 border-t border-slate-200">
+                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-2">
+                    Fornecedores sem subevento ainda
+                  </p>
+                  <ListaDeSetores
+                    fornecedores={fornecedoresSemSubevento}
+                    eventoId={id}
+                    supervisoresPorFornecedor={supervisoresPorFornecedor}
+                    funcionariosDoEvento={funcionariosDoEventoRows ?? []}
+                    diasDoEvento={diasTrabalho ?? []}
+                    setoresComMeio={setoresComMeio}
+                    setoresComEntradaQualquerHorario={setoresComEntradaQualquerHorario}
+                    setoresComLinkDesligado={setoresComLinkDesligado}
+                    podeGerenciarSupervisores={podeGerenciarSupervisores}
+                    podeExcluir={podeExcluir(perfil)}
+                    eventoNome={evento.nome}
+                    podeMoverDeSetor={podeGerenciarEventos(perfil)}
+                    podeEditarCpf={podeEditarIdentidade(perfil)}
+                    podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
+                    role={perfil?.role}
+                    subeventos={subeventos}
+                  />
+                </div>
+              )}
+            </>
+          ) : !fornecedores?.length ? (
             <EmptyState icone={<Users className="w-7 h-7" />} titulo="Nenhum fornecedor ainda" />
           ) : (
             <ListaDeSetores
-              fornecedores={fornecedores}
+              fornecedores={fornecedoresEnriquecidos}
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}
+              setoresComEntradaQualquerHorario={setoresComEntradaQualquerHorario}
               setoresComLinkDesligado={setoresComLinkDesligado}
               podeGerenciarSupervisores={podeGerenciarSupervisores}
               podeExcluir={podeExcluir(perfil)}
@@ -565,8 +638,7 @@ export default async function EventoPage({
                  basta cobrir gerente/admin/master/suporte. */
               podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
               role={perfil?.role}
-              subeventos={subeventos}
-              escalasPorFornecedor={escalasPorFornecedor}
+              subeventos={[]}
             />
           )}
         </Secao>

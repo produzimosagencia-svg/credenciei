@@ -27,19 +27,26 @@ create table if not exists subeventos (
 create index if not exists subeventos_por_evento on subeventos(evento_id);
 alter table subeventos enable row level security;
 
--- Escala do fornecedor em cada subevento — "ele só vê os subeventos em que
--- foi escalado", cada escala com cota própria (null = sem limite).
-create table if not exists fornecedor_subeventos (
-  id uuid primary key default gen_random_uuid(),
-  fornecedor_id uuid not null references fornecedores(id) on delete cascade,
-  subevento_id uuid not null references subeventos(id) on delete cascade,
-  cota integer,
-  created_at timestamptz not null default now(),
-  unique (fornecedor_id, subevento_id)
-);
-alter table fornecedor_subeventos enable row level security;
+/*
+ * Hierarquia corrigida (30/09/2026, teste ao vivo do Juan no Vital):
+ * Evento → Subevento → Fornecedor, uma árvore simples — não a "escala" N:N
+ * com cota própria da primeira versão (removida daqui antes de qualquer
+ * banco real chegar a ter a tabela `fornecedor_subeventos`). Um fornecedor
+ * pertence a NO MÁXIMO um subevento, do mesmo jeito que já pertence a um
+ * evento. Cota continua sendo só `fornecedores.quantidade_estimada`.
+ */
 
--- Funcionário pertence a um subevento — null = evento sem subeventos
--- (comportamento de hoje, sem mudança nenhuma).
+-- Cada evento decide, por si, se usa subeventos — visível em Editar evento
+-- só quando a organização já liberou "Subeventos" em Configurações.
+alter table eventos add column if not exists tem_subeventos boolean not null default false;
+
+-- Fornecedor pertence a um subevento — null = evento sem subevento (ou
+-- fornecedor ainda não movido pra dentro de um).
+alter table fornecedores add column if not exists subevento_id uuid references subeventos(id) on delete set null;
+create index if not exists fornecedores_por_subevento on fornecedores(subevento_id);
+
+-- Funcionário pertence a um subevento — copiado do fornecedor dele no
+-- cadastro; null = evento sem subeventos (comportamento de hoje, sem
+-- mudança nenhuma).
 alter table funcionarios add column if not exists subevento_id uuid references subeventos(id) on delete set null;
 create index if not exists funcionarios_por_subevento on funcionarios(subevento_id);

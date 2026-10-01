@@ -2304,6 +2304,21 @@ export async function editarEvento(id: string, formData: FormData) {
     if (erroAviso) console.error('[editarEvento] aviso_uniforme_texto não gravado (migração pendente?)', erroAviso.message)
   }
 
+  /*
+   * "Este evento possui subeventos" (correção 30/09/2026, teste ao vivo do
+   * Juan) — coluna nova, à parte e tolerante. Checkbox desmarcado não manda
+   * nada no FormData (mesmo problema de sempre), e o campo só existe na
+   * tela quando a organização já liberou a funcionalidade — por isso o
+   * sentinela `tem_subeventos_presente`: sem ele, não dá pra distinguir
+   * "campo não apareceu na tela" de "apareceu e foi desmarcado".
+   */
+  if (formData.has('tem_subeventos_presente')) {
+    const { error: erroSubeventos } = await db.from('eventos')
+      .update({ tem_subeventos: formData.get('tem_subeventos') === 'on' })
+      .eq('id', id)
+    if (erroSubeventos) console.error('[editarEvento] tem_subeventos não gravado (migração pendente?)', erroSubeventos.message)
+  }
+
   await gravarMetodoIdentificacao(id, formData)
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
@@ -2636,6 +2651,19 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
     .eq('id', novo.id)
   if (erroHorario) console.error('[criarFornecedor] entrada_qualquer_horario não gravado (migração pendente?)', erroHorario.message)
 
+  /*
+   * Subevento (correção 30/09/2026) — fixo (hidden) quando o fornecedor
+   * nasce dentro da página de um subevento; ausente quando nasce direto no
+   * evento (evento sem subeventos, ou fornecedor "sem subevento" legado).
+   */
+  const subeventoIdNovo = ((formData.get('subevento_id') as string) || '').trim() || null
+  if (subeventoIdNovo) {
+    const { error: erroSubevento } = await db.from('fornecedores')
+      .update({ subevento_id: subeventoIdNovo })
+      .eq('id', novo.id)
+    if (erroSubevento) console.error('[criarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
+  }
+
   if (exigeSupervisor) {
     const dadosSupervisor = new FormData()
     dadosSupervisor.set('nome', supNome)
@@ -2685,6 +2713,19 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
     .update({ entrada_qualquer_horario: formData.get('entrada_qualquer_horario') === 'on' })
     .eq('id', id)
   if (erroHorario) console.error('[editarFornecedor] entrada_qualquer_horario não gravado (migração pendente?)', erroHorario.message)
+
+  /*
+   * Subevento (correção 30/09/2026) — só mexe quando o campo veio na tela
+   * (seletor só aparece em evento com `tem_subeventos`). Vazio = "Nenhum",
+   * pra poder tirar um fornecedor de um subevento também, não só atribuir.
+   */
+  if (formData.has('subevento_id')) {
+    const subeventoIdEditado = ((formData.get('subevento_id') as string) || '').trim() || null
+    const { error: erroSubevento } = await db.from('fornecedores')
+      .update({ subevento_id: subeventoIdEditado })
+      .eq('id', id)
+    if (erroSubevento) console.error('[editarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
+  }
   /*
    * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
    * `sincronizarAgendamentos` recria a fila do evento, cancelando o que
@@ -2845,6 +2886,22 @@ export async function moverFuncionarioDeSetor(
     .update({ fornecedor_id: novoFornecedorId })
     .eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível mover o funcionário. Tente de novo.')
+
+  /*
+   * Leva o subevento junto (correção 30/09/2026) — consulta À PARTE e
+   * tolerante (coluna nova): sem isto, a pessoa ficaria com o subevento do
+   * fornecedor ANTIGO depois de mudar de fornecedor, e o scanner barraria
+   * ela no portão certo achando que é o errado.
+   */
+  try {
+    const { data: destinoSubevento } = await db
+      .from('fornecedores').select('subevento_id').eq('id', novoFornecedorId).maybeSingle()
+    await db.from('funcionarios')
+      .update({ subevento_id: (destinoSubevento as { subevento_id?: string | null } | null)?.subevento_id ?? null })
+      .eq('id', funcionarioId)
+  } catch (e) {
+    console.error('[moverFuncionarioDeSetor] subevento_id não atualizado (migração pendente?)', e)
+  }
 
   const setorAntigo = (func.fornecedores as unknown as { nome: string }).nome
   after(() => registrarAuditoria({
@@ -6744,12 +6801,6 @@ export async function cadastrarFuncionarioPublico(
      * acabou de ser gerado dentro desta própria função.
      */
     biometriaDescritor?: number[]
-    /**
-     * Qual subevento a pessoa vai trabalhar — só existe (e só é obrigatório)
-     * quando o fornecedor tem MAIS de uma escala neste evento (ver
-     * `fornecedor_subeventos`). Com 0 ou 1 escala, a tela nem pergunta.
-     */
-    subeventoId?: string
   },
   autorizacaoIndividual?: string,
 ): Promise<{
@@ -6876,51 +6927,23 @@ export async function cadastrarFuncionarioPublico(
   }
 
   /*
-   * SUBEVENTO + TRAVA DE COTA — pedido do Vital (30/09/2026). Só roda quando
-   * a organização ligou a funcionalidade (nasce desligada em
-   * `organizacoes.subeventos_habilitado`/`trava_cota_habilitada`) — pra
-   * qualquer outro cliente isto é como se não existisse.
+   * SUBEVENTO + TRAVA DE COTA (Vital, 30/09/2026 — corrigido no mesmo dia
+   * depois de um teste ao vivo: a hierarquia é Evento → Subevento →
+   * Fornecedor, não "fornecedor escalado em vários subeventos"). O
+   * subevento do funcionário é simplesmente o do fornecedor — fixo desde
+   * que o fornecedor foi criado, a pessoa não escolhe nada. Cota continua
+   * sendo sempre `fornecedores.quantidade_estimada`, com ou sem subevento;
+   * só passa a bloquear quando a organização ligou `trava_cota_habilitada`
+   * (nasce desligada — pra qualquer outro cliente isto não existe).
    */
+  const { data: fornecedorCompleto } = await supabaseAdmin
+    .from('fornecedores').select('subevento_id, quantidade_estimada').eq('id', fornecedorId).maybeSingle()
+  const subeventoIdResolvido = (fornecedorCompleto as { subevento_id?: string | null } | null)?.subevento_id ?? null
+
   const organizacaoIdDoEvento = (fornecedor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
-  const funcionalidades = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
-  let subeventoIdResolvido: string | null = null
-
-  if (funcionalidades.subeventosHabilitado) {
-    const { data: escalas } = await supabaseAdmin
-      .from('fornecedor_subeventos')
-      .select('subevento_id, cota')
-      .eq('fornecedor_id', fornecedorId)
-    const lista = escalas ?? []
-    // Fornecedor ainda não escalado em NENHUM subevento — bloqueia em vez de
-    // deixar a pessoa entrar sem subevento (quebraria a checagem no portão).
-    if (lista.length === 0) {
-      return { error: 'Este fornecedor ainda não foi escalado em nenhum subevento deste evento. Fale com o organizador.' }
-    }
-    if (lista.length === 1) {
-      subeventoIdResolvido = lista[0].subevento_id as string
-    } else {
-      if (!dados.subeventoId || !lista.some(e => e.subevento_id === dados.subeventoId)) {
-        return { error: 'Selecione em qual subevento você vai trabalhar.' }
-      }
-      subeventoIdResolvido = dados.subeventoId
-    }
-
-    if (funcionalidades.travaCotaHabilitada) {
-      const cota = lista.find(e => e.subevento_id === subeventoIdResolvido)?.cota ?? null
-      if (cota !== null) {
-        const { count } = await supabaseAdmin
-          .from('funcionarios').select('id', { count: 'exact', head: true }).eq('subevento_id', subeventoIdResolvido)
-        if ((count ?? 0) >= cota) {
-          return { error: 'Seu fornecedor está com o número máximo de pessoas. Contate seu supervisor.' }
-        }
-      }
-    }
-  } else if (funcionalidades.travaCotaHabilitada) {
-    // Sem subevento: a cota é a do fornecedor inteiro (`quantidade_estimada`,
-    // hoje só decorativa — aqui, com o toggle ligado, passa a valer de verdade).
-    const { data: forn } = await supabaseAdmin
-      .from('fornecedores').select('quantidade_estimada').eq('id', fornecedorId).maybeSingle()
-    const cota = forn?.quantidade_estimada ?? null
+  const { travaCotaHabilitada } = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
+  if (travaCotaHabilitada) {
+    const cota = fornecedorCompleto?.quantidade_estimada ?? null
     if (cota) {
       const { count } = await supabaseAdmin
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
@@ -9356,41 +9379,6 @@ export async function excluirSubevento(id: string, eventoId: string): Promise<{ 
   }
 }
 
-/**
- * Salva de uma vez todas as escalas de um fornecedor — um checkbox (escalado
- * ou não) + uma cota por subevento do evento. Faz o diff contra o que já
- * existe em `fornecedor_subeventos` (upsert dos marcados, remove os
- * desmarcados) em vez de apagar tudo e reinserir, pra não perder o
- * `created_at` original de uma escala que só teve a cota mudada.
- */
-export async function salvarEscalasDoFornecedor(
-  fornecedorId: string, eventoId: string,
-  escalas: { subeventoId: string; escalado: boolean; cota: number | null }[],
-): Promise<{ error?: string }> {
-  try {
-    await exigirEventoDaOrg(eventoId)
-
-    const marcados = escalas.filter(e => e.escalado)
-    const desmarcadosIds = escalas.filter(e => !e.escalado).map(e => e.subeventoId)
-
-    if (desmarcadosIds.length) {
-      const { error } = await supabaseAdmin.from('fornecedor_subeventos')
-        .delete().eq('fornecedor_id', fornecedorId).in('subevento_id', desmarcadosIds)
-      if (error) throw new Error(mensagemAmigavel(error))
-    }
-    if (marcados.length) {
-      const { error } = await supabaseAdmin.from('fornecedor_subeventos').upsert(
-        marcados.map(e => ({ fornecedor_id: fornecedorId, subevento_id: e.subeventoId, cota: e.cota })),
-        { onConflict: 'fornecedor_id,subevento_id' },
-      )
-      if (error) throw new Error(mensagemAmigavel(error))
-    }
-    revalidatePath(`/admin/eventos/${eventoId}`)
-    return {}
-  } catch (e) {
-    return { error: mensagemAmigavel(e) }
-  }
-}
 
 /**
  * Desde quando esta pessoa está na base do Credenciei.

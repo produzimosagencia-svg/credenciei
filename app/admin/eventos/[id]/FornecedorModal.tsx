@@ -6,10 +6,24 @@ import { criarFornecedor, editarFornecedor } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { mensagemAmigavel } from '@/lib/erros'
 
+type Subevento = { id: string; nome: string }
+
 type Props =
-  /** `podeCriarSupervisor` — ver o bloco do supervisor no formulário. */
-  | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean }
-  | { mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null; exige_meio?: boolean }
+  /**
+   * `podeCriarSupervisor` — ver o bloco do supervisor no formulário.
+   * `subeventoId` — fixo (sem seletor), quando o fornecedor nasce dentro da
+   * página de um subevento (correção 30/09/2026: Evento → Subevento →
+   * Fornecedor). Ausente = nasce direto no evento, como sempre foi.
+   */
+  | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean; subeventoId?: string }
+  | {
+      mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null
+      exige_meio?: boolean; entrada_qualquer_horario?: boolean
+      /** Lista de subeventos do evento — vazia = evento não usa, sem seletor. */
+      subeventos?: Subevento[]
+      /** O subevento ATUAL deste fornecedor, se houver. */
+      subevento_id?: string | null
+    }
 
 export default function FornecedorModal(props: Props) {
   const [open, setOpen] = useState(false)
@@ -23,9 +37,14 @@ export default function FornecedorModal(props: Props) {
   // Setor novo nasce SEM o meio, a pedido: ele só importa em equipe paga por
   // pessoa, que é a minoria. Quem precisa liga — e paga o WhatsApp só ali.
   const defaultExigeMeio = isEditar ? (props as any).exige_meio === true : false
+  const defaultEntradaQualquerHorario = isEditar ? (props as any).entrada_qualquer_horario === true : false
+  const subeventosDoEditar: Subevento[] = isEditar ? ((props as any).subeventos ?? []) : []
+  const defaultSubeventoId = isEditar ? ((props as any).subevento_id ?? '') : ''
   // Um id por instância: a tela mostra vários destes modais ao mesmo tempo
   // (um por setor), e `htmlFor` repetido faria o clique cair no cartão errado.
-  const idExigeMeio = `exige_meio_${isEditar ? (props as any).fornecedorId : 'novo'}`
+  const sufixoId = isEditar ? (props as any).fornecedorId : 'novo'
+  const idExigeMeio = `exige_meio_${sufixoId}`
+  const idEntradaQualquerHorario = `entrada_qualquer_horario_${sufixoId}`
 
   /*
    * O erro do servidor precisa aparecer no formulário.
@@ -76,6 +95,10 @@ export default function FornecedorModal(props: Props) {
               </button>
             </div>
             <form action={handleAction} className="space-y-4">
+              {/* Nasce dentro de um subevento, fixo — sem pergunta nenhuma. */}
+              {!isEditar && props.subeventoId && (
+                <input type="hidden" name="subevento_id" value={props.subeventoId} />
+              )}
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Fornecedor *</label>
                 <NomeInput name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
@@ -87,6 +110,24 @@ export default function FornecedorModal(props: Props) {
                   <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9 tabular-nums" />
                 </div>
               </div>
+
+              {/*
+                * Mover/atribuir subevento — só no editar, e só quando o evento
+                * tem subeventos cadastrados (correção 30/09/2026). Vazio =
+                * "Nenhum" — tira o fornecedor de dentro de um subevento, volta
+                * a ficar direto no evento.
+                */}
+              {isEditar && !!subeventosDoEditar.length && (
+                <div>
+                  <label className="text-sm font-medium text-slate-700 block mb-1.5">Subevento</label>
+                  <select name="subevento_id" defaultValue={defaultSubeventoId ?? ''} className="input">
+                    <option value="">Nenhum (direto no evento)</option>
+                    {subeventosDoEditar.map(s => (
+                      <option key={s.id} value={s.id}>{s.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/*
                 * Confirmação do meio — só faz sentido em equipe paga POR PESSOA.
@@ -105,7 +146,7 @@ export default function FornecedorModal(props: Props) {
                   id={idExigeMeio}
                   name="exige_meio"
                   defaultChecked={defaultExigeMeio}
-                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-brand-500 focus:ring-brand-400 shrink-0"
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
                 />
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-slate-700">Pedir confirmação no meio do turno</span>
@@ -113,6 +154,32 @@ export default function FornecedorModal(props: Props) {
                     A selfie que comprova que a pessoa ficou no posto. Vem desligado: ligue só
                     em equipe paga por pessoa (segurança, limpeza, carregadores, bar…). Em
                     fornecedor de pacote fechado não muda pagamento e só gasta WhatsApp.
+                  </span>
+                </span>
+              </label>
+
+              {/*
+                * Entrada em qualquer horário (Vital, item 5) — isenta ESTE
+                * fornecedor da janela de horário do evento, mesmo que o
+                * evento não tenha "batida livre" ligada. Pra quem foge da
+                * escala combinada (banda, postura e afins).
+                */}
+              <label
+                htmlFor={idEntradaQualquerHorario}
+                className="flex items-start gap-2.5 cursor-pointer bg-slate-50 rounded-xl p-3"
+              >
+                <input
+                  type="checkbox"
+                  id={idEntradaQualquerHorario}
+                  name="entrada_qualquer_horario"
+                  defaultChecked={defaultEntradaQualquerHorario}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-slate-700">Entrada em qualquer horário</span>
+                  <span className="block text-slate-500 text-xs mt-0.5">
+                    Esta equipe não segue o horário de entrada configurado no evento — pra quem
+                    foge da escala combinada (banda, postura, atrações e afins).
                   </span>
                 </span>
               </label>
