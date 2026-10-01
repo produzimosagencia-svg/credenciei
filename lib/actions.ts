@@ -5239,6 +5239,14 @@ export type ResultadoScan = {
    * precisa pedir o motivo antes de liberar o SALVAR.
    */
   precisaJustificativaAtraso?: boolean
+  /**
+   * Scanner multi-área (Vital, 01/10/2026): a credencial é válida, mas
+   * pertence a um subevento que ESTE leitor não está autorizado a ler — bem
+   * diferente de `jaRegistrado` (já foi usado) ou `qrInvalido` (nem é uma
+   * credencial de verdade). Categoria visual própria, pra quem opera a
+   * portaria mandar a pessoa pro portão certo em vez de achar que é fraude.
+   */
+  areaErrada?: boolean
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -5437,13 +5445,13 @@ export async function registrarPresencaQR(
    * o scanner mostra SALVAR / CANCELAR e só então chama de novo sem isto
    * (pedido do Juan, 26/09/2026). A confirmação refaz TODAS as checagens.
    */
-  opcoes?: { apenasConferir?: boolean; subeventoId?: string; justificativaAtraso?: string },
+  opcoes?: { apenasConferir?: boolean; subeventoIds?: string[]; justificativaAtraso?: string },
 ): Promise<ResultadoScan> {
   const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
   const apenasConferir = opcoes?.apenasConferir === true
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoId, opcoes?.justificativaAtraso)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoIds, opcoes?.justificativaAtraso)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
@@ -5474,8 +5482,8 @@ async function validarLeituraQR(
   eventoId: string, qrData: string, escolhido?: 'entrada' | 'fim',
   /** Só confere e devolve a PRÉVIA — não grava nada (ver `ResultadoScan.previa`). */
   apenasConferir = false,
-  /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
-  subeventoId?: string,
+  /** Para quais áreas/subeventos este portão está configurado — ver `autorizarPresenca`. */
+  subeventoIds?: string[],
   /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
   justificativaAtraso?: string,
 ): Promise<ResultadoScan> {
@@ -5575,7 +5583,7 @@ async function validarLeituraQR(
   return autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'web', subeventoIdLido: subeventoId, justificativaAtraso,
+    origem: 'web', subeventoIdsLidos: subeventoIds, justificativaAtraso,
   })
 }
 
@@ -5616,11 +5624,12 @@ async function autorizarPresenca(args: {
   latitude?: number
   longitude?: number
   /**
-   * Qual subevento o operador escolheu ler neste portão (Vital, 30/09/2026) —
-   * só vem preenchido em eventos que usam subeventos. `undefined` = evento
-   * sem subeventos, nenhuma checagem nova entra em jogo.
+   * Para quais áreas/subeventos este portão está configurado (Vital,
+   * 01/10/2026 — várias portarias no mesmo evento, cada uma cobrindo uma ou
+   * mais áreas). Vazio/ausente = evento sem subeventos, ou portão ainda sem
+   * configurar área nenhuma — nenhuma checagem nova entra em jogo.
    */
-  subeventoIdLido?: string
+  subeventoIdsLidos?: string[]
   /**
    * O motivo do atraso, já escrito pelo operador (Vital, 30/09/2026) — só é
    * exigido quando `precisaJustificativaAtraso` veio `true` na prévia. Sem
@@ -5628,7 +5637,7 @@ async function autorizarPresenca(args: {
    */
   justificativaAtraso?: string
 }): Promise<ResultadoScan> {
-  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdLido, justificativaAtraso } = args
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdsLidos, justificativaAtraso } = args
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
@@ -5641,32 +5650,37 @@ async function autorizarPresenca(args: {
   }
 
   /*
-   * SUBEVENTO — a credencial precisa ser do MESMO subevento que este portão
-   * está lendo (Vital, 30/09/2026: "ao entrar, o operador escolhe qual
-   * subevento vai ler"). Consulta À PARTE e tolerante (mesmo padrão de
-   * `exige_meio`/`link_ativo`): só roda quando o portão de fato escolheu um
-   * subevento — na imensa maioria dos eventos (sem a feature) isto não pesa
-   * leitura nenhuma. É controle de acesso de verdade, por isso BLOQUEIA (não
-   * é só um aviso como o "cadastrado em outro evento" da biometria).
+   * ÁREA/SUBEVENTO — a credencial precisa ser de uma das áreas que ESTE
+   * portão está autorizado a ler (Vital, 01/10/2026: várias portarias no
+   * mesmo evento, cada uma cobrindo uma ou mais áreas — "Portaria 2 lê
+   * Arquibancada + Camarote"). Consulta À PARTE e tolerante (mesmo padrão de
+   * `exige_meio`/`link_ativo`): só roda quando o portão de fato já configurou
+   * pelo menos uma área — na imensa maioria dos eventos (sem a feature) isto
+   * não pesa leitura nenhuma. É controle de acesso de verdade, por isso
+   * BLOQUEIA (não é só um aviso como o "cadastrado em outro evento" da
+   * biometria) — e ganha categoria visual PRÓPRIA (`areaErrada`), nem "já
+   * validado" nem "QR inválido" nem o "negado" genérico: a credencial é
+   * válida, só pertence a outro portão.
    */
-  if (subeventoIdLido) {
+  if (subeventoIdsLidos?.length) {
     try {
       const { data: funcSub } = await supabaseAdmin
         .from('funcionarios').select('subevento_id, subeventos(nome)').eq('id', func.id).maybeSingle()
       const subeventoDaCredencial = (funcSub as { subevento_id?: string | null } | null)?.subevento_id ?? null
-      if (subeventoDaCredencial !== subeventoIdLido) {
+      if (!subeventoDaCredencial || !subeventoIdsLidos.includes(subeventoDaCredencial)) {
         const nomeCorreto = (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
-        const { data: subeventoAqui } = await supabaseAdmin.from('subeventos').select('nome').eq('id', subeventoIdLido).maybeSingle()
-        const nomeAqui = subeventoAqui?.nome ?? 'este subevento'
+        const { data: areasAqui } = await supabaseAdmin.from('subeventos').select('nome').in('id', subeventoIdsLidos)
+        const nomesAqui = (areasAqui ?? []).map(s => s.nome as string).join(' / ') || 'nenhuma área cadastrada'
         return {
           success: false,
+          areaErrada: true,
           funcionario: funcInfo,
           message: nomeCorreto
-            ? `Esta credencial é do subevento ${nomeCorreto}. Aqui está lendo ${nomeAqui} — não autoriza a entrada.`
-            : `Esta credencial não está vinculada a nenhum subevento. Aqui está lendo ${nomeAqui} — não autoriza a entrada.`,
+            ? `Esta credencial é da área ${nomeCorreto}. Este leitor está autorizado só para: ${nomesAqui}. Procure a portaria certa.`
+            : `Esta credencial não está vinculada a nenhuma área. Este leitor exige uma destas: ${nomesAqui}.`,
         }
       }
-    } catch { /* migração pendente — sem checagem de subevento */ }
+    } catch { /* migração pendente — sem checagem de área */ }
   }
   const statusCred = statusCredenciamentoValido(func.status_credenciamento as string)
   if (statusCred === 'pendente') {
@@ -6082,7 +6096,7 @@ export async function cadastrarBiometria(
  */
 export async function registrarPresencaFacial(
   eventoId: string, descritor: number[], escolhido?: 'entrada' | 'fim',
-  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoId?: string; justificativaAtraso?: string },
+  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoIds?: string[]; justificativaAtraso?: string },
 ): Promise<ResultadoScan> {
   const inicio = Date.now()
   let funcionarioIdParaLog: string | null = null
@@ -6093,7 +6107,7 @@ export async function registrarPresencaFacial(
   try {
     const r = await validarLeituraFacial(
       eventoId, descritor, escolhido, opcoes?.apenasConferir === true,
-      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoId, opcoes?.justificativaAtraso,
+      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoIds, opcoes?.justificativaAtraso,
     )
     resultado = r.resultado
     funcionarioIdParaLog = r.funcionarioId
@@ -6121,8 +6135,8 @@ type ResultadoValidacaoFacial = { resultado: ResultadoScan; funcionarioId: strin
 async function validarLeituraFacial(
   eventoId: string, descritor: number[], escolhido: 'entrada' | 'fim' | undefined, apenasConferir: boolean,
   latitude?: number, longitude?: number,
-  /** Qual subevento o operador escolheu ler neste portão — ver `autorizarPresenca`. */
-  subeventoId?: string,
+  /** Para quais áreas/subeventos este portão está configurado — ver `autorizarPresenca`. */
+  subeventoIds?: string[],
   /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
   justificativaAtraso?: string,
 ): Promise<ResultadoValidacaoFacial> {
@@ -6248,7 +6262,7 @@ async function validarLeituraFacial(
   const resultado = await autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'face', latitude, longitude, subeventoIdLido: subeventoId, justificativaAtraso,
+    origem: 'face', latitude, longitude, subeventoIdsLidos: subeventoIds, justificativaAtraso,
   })
   return { resultado, funcionarioId: match.funcionarioId, distancia: match.distancia, logResultado: resultado.success ? 'sucesso' : 'negado' }
 }

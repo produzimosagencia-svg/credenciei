@@ -18,6 +18,8 @@ type ScanResult = {
   /** Leitura repetida: já estava registrado, nada foi gravado agora. */
   jaRegistrado?: boolean
   qrInvalido?: boolean
+  /** Credencial válida, mas de uma área que este portão não está lendo (Vital, 01/10/2026). */
+  areaErrada?: boolean
   /** Só da tela: a resposta não chegou no tempo — ver `TEMPO_SEM_RESPOSTA_MS`. */
   semResposta?: boolean
   /** Prévia: conferido, nada gravado — espera SALVAR / CANCELAR. */
@@ -76,6 +78,34 @@ const lerModoSalvo = (): string | null => {
   try { return localStorage.getItem(CHAVE_MODO) } catch { return null }
 }
 
+/*
+ * ÁREA DE ATUAÇÃO (Vital, 01/10/2026) — "várias portarias trabalhando ao
+ * mesmo tempo no mesmo evento, cada uma lendo só determinadas áreas"
+ * (Arquibancada, Camarote...). Ao contrário do MODO (entrada/saída), que é
+ * da pessoa que está ali agora, a área é do APARELHO/PORTÃO — fica salva
+ * neste navegador, por evento, pra não perguntar de novo a cada turno.
+ * Guardado como JSON cru (string) de propósito: `useSyncExternalStore`
+ * precisa que a mesma leitura devolva o mesmo valor (Object.is) quando nada
+ * mudou — um array novo a cada leitura quebraria isso; uma string não.
+ */
+const CHAVE_AREAS = 'credenciei:scanner-areas'
+const lerAreasSalvasRaw = (): string => {
+  try { return localStorage.getItem(CHAVE_AREAS) ?? '{}' } catch { return '{}' }
+}
+const areasDoEvento = (raw: string, eventoId: string): string[] => {
+  try {
+    const todas = JSON.parse(raw) as Record<string, string[]>
+    return Array.isArray(todas[eventoId]) ? todas[eventoId] : []
+  } catch { return [] }
+}
+const salvarAreasDoEvento = (eventoId: string, ids: string[]) => {
+  try {
+    const todas = JSON.parse(lerAreasSalvasRaw()) as Record<string, string[]>
+    todas[eventoId] = ids
+    localStorage.setItem(CHAVE_AREAS, JSON.stringify(todas))
+  } catch { /* aba anônima */ }
+}
+
 // O html5-qrcode rejeita às vezes com Error, às vezes com string
 // ("Error getting userMedia, error = NotReadableError: ...") — lê os dois.
 const textoDoErro = (e: unknown): string => {
@@ -103,12 +133,13 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'invalido' | 'semResposta'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'negado' | 'invalido' | 'semResposta'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.semResposta) return 'semResposta'
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.areaErrada) return 'areaErrada'
   return r.qrInvalido ? 'invalido' : 'negado'
 }
 
@@ -118,6 +149,9 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // confundir o que acabou de fazer (pedido do Juan, 26/09/2026).
   saida:       { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado:  { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
+  // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
+  // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
+  areaErrada:  { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   negado:      { fundo: 'bg-red-600',   icone: '✕', titulo: 'ACESSO NEGADO' },
   invalido:    { fundo: 'bg-red-600',   icone: '✕', titulo: 'QR CODE INVÁLIDO' },
   semResposta: { fundo: 'bg-amber-600', icone: '⏳', titulo: 'SEM RESPOSTA AINDA' },
@@ -177,11 +211,38 @@ export default function ScannerView({
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
-  // "Ao entrar, o operador escolhe qual subevento vai ler" (Vital, 30/09/2026)
-  // — escolha da SESSÃO, não fica salva no aparelho: portão muda de gente.
-  const [subeventoId, setSubeventoId] = useState('')
-  const subeventoIdRef = useRef('')
-  useEffect(() => { subeventoIdRef.current = subeventoId }, [subeventoId])
+
+  /*
+   * "Qual área você vai atuar?" (Vital, 01/10/2026) — multi-seleção, salva
+   * NO APARELHO por evento (ao contrário da 1ª versão, que era um <select>
+   * de UM subevento só e não ficava salva — pedido explícito do Juan: "essa
+   * configuração deve permanecer salva para aquele dispositivo/scanner").
+   * `areasOverride` é a escolha feita NESTA sessão, que tem prioridade sobre
+   * o que está salvo (evita esperar o próximo render pra refletir o clique).
+   */
+  const areasSalvasRaw = useSyncExternalStore(semAssinatura, lerAreasSalvasRaw, () => '{}')
+  const [areasOverride, setAreasOverride] = useState<string[] | null>(null)
+  const subeventoIds = areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)
+  const subeventoIdsRef = useRef<string[]>([])
+  useEffect(() => { subeventoIdsRef.current = subeventoIds }, [subeventoIds])
+  const confirmarAreas = (ids: string[]) => {
+    salvarAreasDoEvento(eventoId, ids)
+    setAreasOverride(ids)
+  }
+  // Pede a configuração sempre que o evento tem área e nenhuma foi escolhida
+  // ainda neste aparelho; "Alterar" (abaixo) reabre por escolha do operador.
+  const [configurandoArea, setConfigurandoArea] = useState(false)
+  const precisaConfigurarArea = !!subeventosDoEvento.length && subeventoIds.length === 0
+  // `processQR` só é recriado na câmera uma vez, no mount (ver `useEffect`
+  // abaixo) — sem este ref ele travaria pra sempre no valor do 1º render.
+  const precisaConfigurarAreaRef = useRef(precisaConfigurarArea)
+  useEffect(() => { precisaConfigurarAreaRef.current = precisaConfigurarArea }, [precisaConfigurarArea])
+  const mostrarConfigArea = precisaConfigurarArea || configurandoArea
+  // Começa vazio — é exatamente o que vale na 1ª vez (`precisaConfigurarArea`
+  // = ninguém escolheu nada ainda). Reabrir pra EDITAR uma área já salva
+  // ("Alterar", no botão abaixo) é que precisa copiar `subeventoIds` pro
+  // rascunho — e isso é feito ali mesmo, no clique, não aqui num efeito.
+  const [rascunhoAreas, setRascunhoAreas] = useState<string[]>([])
   // O modo salvo vem do aparelho sem piscar a tela (mesmo padrão do menu).
   const modoSalvo = useSyncExternalStore(semAssinatura, lerModoSalvo, () => null)
   const [modoEscolhido, setModoEscolhido] = useState<Modo | null>(null)
@@ -324,7 +385,7 @@ export default function ScannerView({
     const r = await aguardar(
       id, c.codigo, c.modo,
       registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, {
-        subeventoId: subeventoIdRef.current || undefined,
+        subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
         justificativaAtraso: c.r.precisaJustificativaAtraso ? justificativaAtraso.trim() : undefined,
       }).catch(semRede),
     )
@@ -349,6 +410,9 @@ export default function ScannerView({
   const processQR = async (bruto: string) => {
     const codigo = (bruto ?? '').trim()
     if (!codigo || ocupadoRef.current) return
+    // Evento com áreas, mas este portão ainda não escolheu nenhuma: a tela de
+    // configuração está cobrindo a câmera — não é pra validar nada ainda.
+    if (precisaConfigurarAreaRef.current) return
 
     /*
      * O mesmo QR logo depois do resultado dele: é o celular da pessoa que
@@ -384,7 +448,10 @@ export default function ScannerView({
     // Primeiro a PRÉVIA (nada é gravado); o operador confirma na tela.
     const previa = await aguardar(
       id, codigo, modoDaLeitura,
-      registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, { apenasConferir: true, subeventoId: subeventoIdRef.current || undefined }).catch(semRede),
+      registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, {
+        apenasConferir: true,
+        subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
+      }).catch(semRede),
     )
     if (!previa) return
     if (previa.previa) {
@@ -500,7 +567,11 @@ export default function ScannerView({
           <label className="text-slate-400 text-sm block mb-1.5" data-tutorial="scan-evento">Evento</label>
           <select
             value={eventoId}
-            onChange={e => { setEventoId(e.target.value); setSubeventoId('') }}
+            onChange={e => {
+              setEventoId(e.target.value)
+              setAreasOverride(null) // volta a ler a área salva DESTE evento, não a do anterior
+              setConfigurandoArea(false)
+            }}
             className={noPainel
               ? 'input w-full'
               : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
@@ -512,23 +583,28 @@ export default function ScannerView({
         </div>
 
         {/*
-          * Subevento — "ao entrar, o operador escolhe qual subevento vai
-          * ler" (Vital, 30/09/2026). Só aparece em evento que tem subevento
-          * cadastrado; sem isso, ~99% dos eventos nem veem este campo.
+          * Área de atuação deste portão (Vital, 01/10/2026) — várias
+          * portarias lendo cada uma só determinadas áreas do mesmo evento.
+          * Só aparece em evento com subevento cadastrado; sem isso, ~99% dos
+          * eventos nem veem este campo. A configuração em si (checkboxes)
+          * mora no overlay `mostrarConfigArea`, mais abaixo — aqui é só o
+          * resumo + o botão pra reabrir.
           */}
-        {!!subeventosDoEvento.length && (
-          <div>
-            <label className="text-slate-400 text-sm block mb-1.5">Subevento (este portão)</label>
-            <select
-              value={subeventoId}
-              onChange={e => setSubeventoId(e.target.value)}
-              className={noPainel ? 'input w-full' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none'}
+        {!!subeventosDoEvento.length && !mostrarConfigArea && (
+          <div className={noPainel ? 'input w-full flex items-center justify-between gap-2' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2'}>
+            <div className="min-w-0">
+              <p className="text-slate-400 text-2xs">Área de atuação deste portão</p>
+              <p className={`text-sm font-semibold truncate ${noPainel ? 'text-slate-800' : 'text-white'}`}>
+                {subeventosDoEvento.filter(s => subeventoIds.includes(s.id)).map(s => s.nome).join(' + ')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setRascunhoAreas(subeventoIds); setConfigurandoArea(true) }}
+              className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors"
             >
-              <option value="">Selecione...</option>
-              {subeventosDoEvento.map(s => (
-                <option key={s.id} value={s.id}>{s.nome}</option>
-              ))}
-            </select>
+              Alterar
+            </button>
           </div>
         )}
 
@@ -635,6 +711,58 @@ export default function ScannerView({
             Aponte a câmera para o QR da credencial ou do veículo
           </p>
         )
+      )}
+
+      {/*
+        * "QUAL ÁREA VOCÊ VAI ATUAR?" (Vital, 01/10/2026) — antes de ler
+        * qualquer QR, o portão escolhe uma ou mais áreas. Cobre a câmera
+        * (que continua ligada por baixo, só não lê nada — ver o guard no
+        * início de `processQR`) até confirmar; "Cancelar" só existe quando
+        * já havia uma área salva (senão o operador ficaria sem jeito de
+        * sair e nunca escanear nada).
+        */}
+      {mostrarConfigArea && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
+          <div className="w-full max-w-sm text-white">
+            <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
+            <p className="text-slate-400 text-sm text-center mt-1.5">
+              Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas.
+            </p>
+            <div className="mt-5 space-y-2 max-h-[45vh] overflow-y-auto">
+              {subeventosDoEvento.map(s => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 cursor-pointer hover:bg-white/10 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={rascunhoAreas.includes(s.id)}
+                    onChange={() => setRascunhoAreas(ids => ids.includes(s.id) ? ids.filter(x => x !== s.id) : [...ids, s.id])}
+                    className="w-5 h-5 rounded border-white/30 accent-brand-500 shrink-0"
+                  />
+                  <span className="font-medium">{s.nome}</span>
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => { confirmarAreas(rascunhoAreas); setConfigurandoArea(false) }}
+              disabled={!rascunhoAreas.length}
+              className="mt-6 w-full rounded-2xl py-4 text-lg font-extrabold text-white bg-brand-500 disabled:opacity-40 active:scale-95 transition-all"
+            >
+              Confirmar e começar a escanear
+            </button>
+            {!!subeventoIds.length && (
+              <button
+                type="button"
+                onClick={() => setConfigurandoArea(false)}
+                className="mt-3 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/*

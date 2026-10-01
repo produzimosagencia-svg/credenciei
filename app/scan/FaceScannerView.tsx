@@ -48,6 +48,8 @@ type ScanResult = {
   jaRegistrado?: boolean
   volta?: boolean
   naoIdentificado?: boolean
+  /** Credencial válida, mas de uma área que este portão não está lendo (Vital, 01/10/2026). */
+  areaErrada?: boolean
   previa?: boolean
   /** O rosto bateu, mas com alguém credenciado em OUTRO evento — ver lib/actions.ts. */
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
@@ -67,6 +69,30 @@ const lerModoSalvo = (): string | null => {
   try { return localStorage.getItem(CHAVE_MODO) } catch { return null }
 }
 
+/*
+ * ÁREA DE ATUAÇÃO (Vital, 01/10/2026) — mesma chave do leitor de QR
+ * (`ScannerView.tsx`), de propósito: é o MESMO aparelho, e trocar pra
+ * biometria no meio do turno não deveria pedir a área nova. Ver o
+ * comentário completo em `ScannerView.tsx`.
+ */
+const CHAVE_AREAS = 'credenciei:scanner-areas'
+const lerAreasSalvasRaw = (): string => {
+  try { return localStorage.getItem(CHAVE_AREAS) ?? '{}' } catch { return '{}' }
+}
+const areasDoEvento = (raw: string, eventoId: string): string[] => {
+  try {
+    const todas = JSON.parse(raw) as Record<string, string[]>
+    return Array.isArray(todas[eventoId]) ? todas[eventoId] : []
+  } catch { return [] }
+}
+const salvarAreasDoEvento = (eventoId: string, ids: string[]) => {
+  try {
+    const todas = JSON.parse(lerAreasSalvasRaw()) as Record<string, string[]>
+    todas[eventoId] = ids
+    localStorage.setItem(CHAVE_AREAS, JSON.stringify(todas))
+  } catch { /* aba anônima */ }
+}
+
 /**
  * O mesmo nome, dentro deste tempo depois do resultado, não abre confirmação
  * de novo — é o rosto dela ainda na frente da câmera, não uma segunda visita.
@@ -76,11 +102,12 @@ const lerModoSalvo = (): string | null => {
  */
 const REPETIDO_MS = 15_000
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'negado' | 'naoIdentificado' | 'outroEvento'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'negado' | 'naoIdentificado' | 'outroEvento'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.areaErrada) return 'areaErrada'
   if (r.cadastradoEmOutroEvento) return 'outroEvento'
   if (r.naoIdentificado) return 'naoIdentificado'
   return 'negado'
@@ -90,6 +117,9 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   liberado:   { fundo: 'bg-green-600', icone: '✓', titulo: 'ACESSO LIBERADO' },
   saida:      { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado: { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
+  // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
+  // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
+  areaErrada: { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   negado:     { fundo: 'bg-red-600', icone: '✕', titulo: 'ACESSO NEGADO' },
   // Azul, não vermelho: não é um erro nem uma rejeição — é o caminho normal
   // de quem ainda não cadastrou o rosto. A biometria continua a prioridade;
@@ -117,8 +147,34 @@ export default function FaceScannerView({
 }) {
   const [eventoId, setEventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
-  // "Ao entrar, o operador escolhe qual subevento vai ler" (Vital, 30/09/2026).
-  const [subeventoId, setSubeventoId] = useState('')
+
+  // "Qual área você vai atuar?" (Vital, 01/10/2026) — ver o comentário
+  // completo em `ScannerView.tsx`; mesma chave de aparelho, mesma lógica.
+  const areasSalvasRaw = useSyncExternalStore(semAssinatura, lerAreasSalvasRaw, () => '{}')
+  const [areasOverride, setAreasOverride] = useState<string[] | null>(null)
+  const subeventoIds = areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)
+  const confirmarAreas = (ids: string[]) => {
+    salvarAreasDoEvento(eventoId, ids)
+    setAreasOverride(ids)
+  }
+  const [configurandoArea, setConfigurandoArea] = useState(false)
+  const precisaConfigurarArea = !!subeventosDoEvento.length && subeventoIds.length === 0
+  const mostrarConfigArea = precisaConfigurarArea || configurandoArea
+  // Começa vazio (é o que vale na 1ª vez); reabrir pra EDITAR uma área já
+  // salva ("Alterar", no botão abaixo) copia `subeventoIds` pro rascunho ali
+  // mesmo, no clique — não aqui num efeito.
+  const [rascunhoAreas, setRascunhoAreas] = useState<string[]>([])
+  /*
+   * `FaceCapture` captura `onCaptura`/`onQrDetectado` UMA VEZ (o próprio
+   * `useEffect` de lá tem `[camera]` como única dependência) e os chama de
+   * dentro de um `setInterval` — sem refs aqui, `aoCapturar`/`aoLerQr`
+   * ficariam presos pra sempre com o `subeventoIds`/config do momento em que
+   * a câmera abriu, mesmo depois do operador confirmar a área.
+   */
+  const subeventoIdsRef = useRef<string[]>([])
+  useEffect(() => { subeventoIdsRef.current = subeventoIds }, [subeventoIds])
+  const precisaConfigurarAreaRef = useRef(precisaConfigurarArea)
+  useEffect(() => { precisaConfigurarAreaRef.current = precisaConfigurarArea }, [precisaConfigurarArea])
 
   // O modo salvo vem do aparelho sem piscar a tela (mesmo padrão do QR).
   const modoSalvo = useSyncExternalStore(semAssinatura, lerModoSalvo, () => null)
@@ -174,10 +230,12 @@ export default function FaceScannerView({
     message: 'Não foi possível validar agora. Confira a internet do aparelho e tente de novo.',
   })
 
-  const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean, justificativa?: string): Promise<ScanResult> =>
-    origem.tipo === 'rosto'
-      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoId: subeventoId || undefined, justificativaAtraso: justificativa }).catch(semRede)
-      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoId: subeventoId || undefined, justificativaAtraso: justificativa }).catch(semRede)
+  const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean, justificativa?: string): Promise<ScanResult> => {
+    const subeventoIds = subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined
+    return origem.tipo === 'rosto'
+      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoIds, justificativaAtraso: justificativa }).catch(semRede)
+      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoIds, justificativaAtraso: justificativa }).catch(semRede)
+  }
 
   /** Resultado final (gravado ou recusado) — fica na tela até "LER O PRÓXIMO". */
   const aplicarResultadoFinal = (r: ScanResult, m: Modo) => {
@@ -220,6 +278,9 @@ export default function FaceScannerView({
   }
 
   const aoCapturar = async ({ descritor }: ResultadoCaptura) => {
+    // Evento com áreas, mas este portão ainda não escolheu nenhuma: a tela
+    // de configuração está cobrindo a câmera — não é pra validar nada ainda.
+    if (precisaConfigurarAreaRef.current) return
     const minhaTentativa = tentativaIdRef.current
     const origem: Origem = { tipo: 'rosto', descritor }
     setCapturando(false)
@@ -234,6 +295,7 @@ export default function FaceScannerView({
    * servidor.
    */
   const aoLerQr = async (texto: string) => {
+    if (precisaConfigurarAreaRef.current) return
     const minhaTentativa = tentativaIdRef.current
     const origem: Origem = { tipo: 'qr', texto }
     setCapturando(false)
@@ -319,7 +381,12 @@ export default function FaceScannerView({
             <label className="text-slate-400 text-sm block mb-1.5">Evento</label>
             <select
               value={eventoId}
-              onChange={e => { setEventoId(e.target.value); setSubeventoId(''); voltarAEscanear() }}
+              onChange={e => {
+                setEventoId(e.target.value)
+                setAreasOverride(null) // volta a ler a área salva DESTE evento, não a do anterior
+                setConfigurandoArea(false)
+                voltarAEscanear()
+              }}
               className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
             >
               {eventos.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
@@ -332,19 +399,26 @@ export default function FaceScannerView({
           </div>
         )}
 
-        {/* Subevento — "ao entrar, o operador escolhe qual subevento vai
-            ler" (Vital, 30/09/2026). Só aparece em evento com subevento. */}
-        {!!subeventosDoEvento.length && (
-          <div>
-            <label className="text-slate-400 text-sm block mb-1.5">Subevento (este portão)</label>
-            <select
-              value={subeventoId}
-              onChange={e => setSubeventoId(e.target.value)}
-              className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 text-white text-sm outline-none"
+        {/*
+          * Área de atuação deste portão (Vital, 01/10/2026) — mesma régua do
+          * QR (`ScannerView.tsx`): resumo + botão "Alterar" aqui; a
+          * configuração (checkboxes) mora no overlay logo abaixo.
+          */}
+        {!!subeventosDoEvento.length && !mostrarConfigArea && (
+          <div className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-slate-400 text-2xs">Área de atuação deste portão</p>
+              <p className="text-white text-sm font-semibold truncate">
+                {subeventosDoEvento.filter(s => subeventoIds.includes(s.id)).map(s => s.nome).join(' + ')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setRascunhoAreas(subeventoIds); setConfigurandoArea(true) }}
+              className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors"
             >
-              <option value="">Selecione...</option>
-              {subeventosDoEvento.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-            </select>
+              Alterar
+            </button>
           </div>
         )}
 
@@ -386,6 +460,55 @@ export default function FaceScannerView({
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 text-white text-center px-8">
           <Loader2 className="w-16 h-16 animate-spin mb-6" />
           <p className="text-3xl font-bold">Identificando…</p>
+        </div>
+      )}
+
+      {/*
+        * "QUAL ÁREA VOCÊ VAI ATUAR?" (Vital, 01/10/2026) — mesmo overlay do
+        * leitor de QR (`ScannerView.tsx`). Cobre a câmera (que continua
+        * ligada por baixo — ver o guard no início de `aoCapturar`/`aoLerQr`).
+        */}
+      {mostrarConfigArea && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
+          <div className="w-full max-w-sm text-white">
+            <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
+            <p className="text-slate-400 text-sm text-center mt-1.5">
+              Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas.
+            </p>
+            <div className="mt-5 space-y-2 max-h-[45vh] overflow-y-auto">
+              {subeventosDoEvento.map(s => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 cursor-pointer hover:bg-white/10 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={rascunhoAreas.includes(s.id)}
+                    onChange={() => setRascunhoAreas(ids => ids.includes(s.id) ? ids.filter(x => x !== s.id) : [...ids, s.id])}
+                    className="w-5 h-5 rounded border-white/30 accent-brand-500 shrink-0"
+                  />
+                  <span className="font-medium">{s.nome}</span>
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => { confirmarAreas(rascunhoAreas); setConfigurandoArea(false) }}
+              disabled={!rascunhoAreas.length}
+              className="mt-6 w-full rounded-2xl py-4 text-lg font-extrabold text-white bg-brand-500 disabled:opacity-40 active:scale-95 transition-all"
+            >
+              Confirmar e começar a escanear
+            </button>
+            {!!subeventoIds.length && (
+              <button
+                type="button"
+                onClick={() => setConfigurandoArea(false)}
+                className="mt-3 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
         </div>
       )}
 
