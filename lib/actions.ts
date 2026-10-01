@@ -2236,6 +2236,20 @@ export async function criarEvento(formData: FormData) {
   const { data: novo, error } = await db.from('eventos').insert([data]).select('id').single()
   if (error) throw new Error('Não foi possível criar o evento. Confira os dados e tente de novo.')
 
+  /*
+   * "Este evento possui subeventos" (Vital, 01/10/2026) — já nasce ligado
+   * em vez de precisar de um 2º passo em Editar evento. Mesmo padrão
+   * tolerante de `editarEvento`: sentinela `tem_subeventos_presente` porque
+   * checkbox desmarcado não manda nada no FormData, e o campo só existe na
+   * tela quando a organização (escolhida ou fixa) já liberou o recurso.
+   */
+  if (formData.has('tem_subeventos_presente')) {
+    const { error: erroSubeventos } = await db.from('eventos')
+      .update({ tem_subeventos: formData.get('tem_subeventos') === 'on' })
+      .eq('id', novo.id)
+    if (erroSubeventos) console.error('[criarEvento] tem_subeventos não gravado (migração pendente?)', erroSubeventos.message)
+  }
+
   await gravarMetodoIdentificacao(novo.id, formData)
 
   // Antes da planilha e de qualquer outra coisa: sem o dia principal, o evento
@@ -2569,6 +2583,14 @@ function parseValor(v: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** A cota do fornecedor (Vital, 01/10/2026 — campo que faltava no modal, só existia via planilha). */
+function parseQuantidade(v: FormDataEntryValue | null): number | null {
+  const s = ((v as string) || '').trim()
+  if (!s) return null
+  const n = parseInt(s, 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 /**
  * Cria um setor — com supervisor, sempre.
  *
@@ -2627,6 +2649,7 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
     evento_id: eventoId,
     nome: nomeFornecedor,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    quantidade_estimada: parseQuantidade(formData.get('quantidade_estimada')),
   }
   /*
    * Caixa desmarcada não é enviada pelo navegador — por isso a leitura é
@@ -2699,6 +2722,7 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
   const { error } = await db.from('fornecedores').update({
     nome: formData.get('nome') as string,
     valor_combinado: parseValor(formData.get('valor_combinado')),
+    quantidade_estimada: parseQuantidade(formData.get('quantidade_estimada')),
   }).eq('id', id)
   if (error) throw new Error(mensagemAmigavel(error))
 

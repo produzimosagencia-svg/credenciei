@@ -1,8 +1,7 @@
-import { criarEvento } from '@/lib/actions'
+import { criarEvento, obterFuncionalidadesOrganizacao } from '@/lib/actions'
 import ConferenciaDeHorarios from '../ConferenciaDeHorarios'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
-import SeletorLista from '@/components/SeletorLista'
 import { getPerfil, licencasDeEventoRestantes, supabaseAdmin } from '@/lib/supabase-server'
 import { NomeInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -13,6 +12,7 @@ import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
 import DiasPrincipaisExtrasNovo from './DiasPrincipaisExtrasNovo'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
+import OrganizacaoComSubevento from './OrganizacaoComSubevento'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-novo',
@@ -52,6 +52,28 @@ export default async function NovoEventoPage() {
     ? (await supabaseAdmin.from('organizacoes').select('id, nome, ativo').order('nome')).data ?? []
     : []
 
+  /*
+   * "Este evento possui subeventos" (pedido do Juan, 01/10/2026) — antes só
+   * dava pra ligar DEPOIS de criar, em Editar evento. Agora já nasce ligado.
+   *
+   * Pro master, a organização dona só é escolhida DENTRO do formulário (um
+   * `<select>` client), então o checkbox precisa reagir à escolha — por
+   * isso manda o MAPA de todas (`organizacoesComSubeventos`), não um booleano
+   * só. Pro admin comum, a organização já é fixa (a própria) e dá pra
+   * decidir aqui mesmo, no servidor.
+   */
+  let organizacoesComSubeventos: Record<string, boolean> = {}
+  if (organizacoes.length) {
+    try {
+      const { data } = await supabaseAdmin
+        .from('organizacoes').select('id, subeventos_habilitado').in('id', organizacoes.map(o => o.id))
+      organizacoesComSubeventos = Object.fromEntries((data ?? []).map(o => [o.id as string, o.subeventos_habilitado === true]))
+    } catch { /* migração pendente — nenhuma organização mostra o checkbox */ }
+  }
+  const funcionalidades = !ehMaster(perfil?.role)
+    ? await obterFuncionalidadesOrganizacao(perfil?.organizacao_id ?? null)
+    : null
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
       <div className="max-w-xl mx-auto space-y-6">
@@ -61,7 +83,13 @@ export default async function NovoEventoPage() {
           descricao="Preencha os dados do evento"
           acoes={<TutorialButton />}
         />
-        <EventoForm action={criarEvento} submitLabel="Criar Evento" organizacoes={organizacoes} />
+        <EventoForm
+          action={criarEvento}
+          submitLabel="Criar Evento"
+          organizacoes={organizacoes}
+          organizacoesComSubeventos={organizacoesComSubeventos}
+          subeventosHabilitadoPadrao={funcionalidades?.subeventosHabilitado === true}
+        />
       </div>
     </TutorialProvider>
   )
@@ -75,34 +103,52 @@ type EventoDefaults = {
   metodo_identificacao?: string
 }
 
-function EventoForm({ action, submitLabel, defaults, organizacoes = [] }: {
+function EventoForm({
+  action, submitLabel, defaults, organizacoes = [], organizacoesComSubeventos = {}, subeventosHabilitadoPadrao = false,
+}: {
   action: (formData: FormData) => Promise<void>
   submitLabel: string
   defaults?: EventoDefaults
   /** Só o master recebe a lista; vazia esconde o campo. */
   organizacoes?: { id: string; nome: string; ativo: boolean }[]
+  /** Quais organizações (da lista acima) já ligaram "Subeventos" — só importa pro master. */
+  organizacoesComSubeventos?: Record<string, boolean>
+  /** Pro admin comum (sem seletor de organização): a própria já liberou "Subeventos"? */
+  subeventosHabilitadoPadrao?: boolean
 }) {
   return (
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       {!!organizacoes.length && (
-        <Field label="Organização dona do evento *">
-          <SeletorLista
-            name="organizacao_id"
-            required
-            defaultValor=""
-            placeholder="Escolha o cliente…"
-            titulo="Organização"
-            opcoes={organizacoes.map(o => ({
-              valor: o.id,
-              rotulo: o.nome,
-              detalhe: o.ativo ? undefined : 'Suspensa',
-              desabilitada: !o.ativo,
-            }))}
-          />
-          <p className="text-slate-500 text-xs mt-1.5">
-            É quem vai enxergar e operar este evento. Sem dono, o evento não aparece pra nenhum administrador.
-          </p>
-        </Field>
+        <OrganizacaoComSubevento organizacoes={organizacoes} organizacoesComSubeventos={organizacoesComSubeventos} />
+      )}
+      {/*
+        * "Este evento possui subeventos" pro admin comum — a organização já
+        * é fixa (a própria), então não precisa de reatividade nenhuma: ou
+        * ela já liberou o recurso, ou este bloco nem aparece.
+        */}
+      {!organizacoes.length && subeventosHabilitadoPadrao && (
+        <label
+          htmlFor="tem_subeventos"
+          className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors"
+        >
+          <input type="hidden" name="tem_subeventos_presente" value="1" />
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="tem_subeventos"
+              name="tem_subeventos"
+              className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+            />
+            <div className="min-w-0">
+              <p className="text-slate-800 font-semibold text-sm">Este evento possui subeventos</p>
+              <p className="text-slate-600 text-xs mt-1">
+                Portões/categorias de acesso diferentes no mesmo evento (ex.: Camarote,
+                Arquibancada, Pista). Ligado, cada fornecedor nasce DENTRO de um subevento, não
+                mais direto no evento.
+              </p>
+            </div>
+          </div>
+        </label>
       )}
       <Field label="Nome do evento *" tutorial="evt-novo-nome">
         <NomeInput name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />

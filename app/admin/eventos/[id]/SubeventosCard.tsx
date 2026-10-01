@@ -59,7 +59,11 @@ export default function SubeventosCard({
   }
 
   return (
-    <div className="space-y-3">
+    // Mais espaço que o space-y-3 de costume: a aura laranja do cartão
+    // "ao vivo" pulsa até 64px pra fora dele (globals.css, @keyframes aura) e
+    // tingia o botão "+ Novo subevento" de laranja quando os dois ficavam
+    // colados (reportado pelo Juan, 01/10/2026).
+    <div className="space-y-6">
       <div className="flex items-center justify-end">
         <SubeventoModal mode="criar" eventoId={eventoId} />
       </div>

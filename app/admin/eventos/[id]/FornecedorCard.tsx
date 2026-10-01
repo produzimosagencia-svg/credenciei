@@ -189,6 +189,7 @@ export default function FornecedorCard({
             fornecedorId={f.id}
             nome={f.nome}
             valor_combinado={f.valor_combinado}
+            quantidade_estimada={f.quantidade_estimada}
             exige_meio={exigeMeio}
             entrada_qualquer_horario={entradaQualquerHorario}
             subeventos={subeventos}

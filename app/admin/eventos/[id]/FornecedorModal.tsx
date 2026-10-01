@@ -18,6 +18,8 @@ type Props =
   | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean; subeventoId?: string }
   | {
       mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null
+      /** Cota/teto de pessoas nesta equipe — ver a trava de cota em Configurações. */
+      quantidade_estimada?: number | null
       exige_meio?: boolean; entrada_qualquer_horario?: boolean
       /** Lista de subeventos do evento — vazia = evento não usa, sem seletor. */
       subeventos?: Subevento[]
@@ -34,6 +36,7 @@ export default function FornecedorModal(props: Props) {
   const isEditar = props.mode === 'editar'
   const defaultNome = isEditar ? (props as any).nome : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
+  const defaultQuantidade = isEditar ? (props as any).quantidade_estimada ?? '' : ''
   // Setor novo nasce SEM o meio, a pedido: ele só importa em equipe paga por
   // pessoa, que é a minoria. Quem precisa liga — e paga o WhatsApp só ali.
   const defaultExigeMeio = isEditar ? (props as any).exige_meio === true : false
@@ -109,6 +112,29 @@ export default function FornecedorModal(props: Props) {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
                   <input name="valor_combinado" type="number" min="0" step="0.01" defaultValue={defaultValor} placeholder="0,00" className="input pl-9 tabular-nums" />
                 </div>
+              </div>
+
+              {/*
+                * Cota da equipe — a trava de cota (Vital, item 3) lê esse
+                * número pra bloquear cadastro acima do teto, mas até agora só
+                * dava pra preencher via planilha. Em branco = sem teto (só
+                * referência nenhuma, nem bloqueia nem mostra progresso).
+                */}
+              <div>
+                <label className="text-sm font-medium text-slate-700 block mb-1.5">Quantidade de colaboradores</label>
+                <input
+                  name="quantidade_estimada"
+                  type="number"
+                  min="1"
+                  step="1"
+                  defaultValue={defaultQuantidade}
+                  placeholder="Ex: 20"
+                  className="input tabular-nums"
+                />
+                <p className="text-slate-500 text-xs mt-1">
+                  Teto da equipe. Com a trava de cota ligada (Configurações → Funcionalidade do
+                  Sistema), cadastro por link ou planilha acima deste número é bloqueado.
+                </p>
               </div>
 
               {/*
