@@ -67,9 +67,18 @@ export default function ScannerRouter({
   }
 
   if (mostrarEscolhaEvento) {
+    /*
+     * `fixed inset-0`, não `flex-1` — dentro do /admin/scanner (painel,
+     * tema claro) esta tela não tem um pai `flex` de altura cheia por trás
+     * (só um `<div className="space-y-5">`), então `flex-1` não tinha pra
+     * onde crescer e a caixa só abraçava o próprio conteúdo, deixando um
+     * vazio enorme embaixo (reportado pelo Juan, 01/10/2026: "que porra de
+     * layout é esse"). Fixo cobre a tela inteira sempre, não importa a
+     * página por trás.
+     */
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 px-6">
-        <div className="w-full max-w-sm text-white">
+      <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-slate-900 px-6 overflow-y-auto">
+        <div className="w-full max-w-sm text-white py-8">
           <p className="text-lg font-bold text-center">Qual evento você vai trabalhar?</p>
           <div className="mt-5 space-y-2 max-h-[55vh] overflow-y-auto">
             {eventos.map(e => (

@@ -742,8 +742,17 @@ export default function ScannerView({
         * já havia uma área salva (senão o operador ficaria sem jeito de
         * sair e nunca escanear nada).
         */}
+      {/*
+        * `bg-slate-900` sólido, não `/95` — este overlay é o PRIMEIRO
+        * conteúdo da tela (não cobre uma câmera já escura por baixo).
+        * Dentro do /admin/scanner (painel, fundo claro), os 5% de
+        * transparência deixavam o título "Scanner" e o resto do painel
+        * "vazando" por trás, um efeito fantasma feio (relatado pelo Juan,
+        * 01/10/2026). As telas de confirmação/resultado abaixo continuam
+        * com `/95` de propósito — essas sim cobrem a câmera, já escura.
+        */}
       {mostrarConfigArea && (
-        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
           <div className="w-full max-w-sm text-white">
             <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
             <p className="text-slate-400 text-sm text-center mt-1.5">

@@ -341,6 +341,23 @@ export default function FaceScannerView({
    * ou seja, na prática nunca apareciam (bug relatado pelo Juan, 28/09/2026,
    * com print mostrando a câmera sem botão nenhum em cima).
    */
+  /*
+   * O botão de voltar pro QR precisa vir JUNTO do `extraTopo` — mesmo
+   * motivo do ENTRADA/SAÍDA logo abaixo: como SIBLING normal, ele ficava
+   * atrás da câmera em tela cheia assim que `FaceCapture` montava (mesma
+   * classe de bug relatada pelo Juan em 28/09/2026 pro toggle, agora
+   * encontrada de novo neste botão em 01/10/2026 — "quando clico na
+   * biometria, não tem botão de voltar ou trocar pra câmera de QR Code").
+   */
+  const botaoVoltarParaQr = (
+    <button
+      type="button"
+      onClick={() => aoTrocarParaQr()}
+      className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors bg-black/40"
+    >
+      <QrCode className="w-3.5 h-3.5" /> Validar por QR Code
+    </button>
+  )
   const toggleEntradaSaida = (
     <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Registrar">
       <button
@@ -369,6 +386,12 @@ export default function FaceScannerView({
       >
         SAÍDA
       </button>
+    </div>
+  )
+  const extraTopoCompleto = (
+    <div className="space-y-2">
+      {toggleEntradaSaida}
+      {botaoVoltarParaQr}
     </div>
   )
 
@@ -436,14 +459,10 @@ export default function FaceScannerView({
         </p>
 
         {/* O QR nunca fica escondido — pra quem estiver por perto resolver
-            na hora um caso que a câmera não resolveu sozinha. */}
-        <button
-          type="button"
-          onClick={() => aoTrocarParaQr()}
-          className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors"
-        >
-          <QrCode className="w-3.5 h-3.5" /> Validar por QR Code
-        </button>
+            na hora um caso que a câmera não resolveu sozinha. Só aparece
+            aqui quando a câmera NÃO está aberta (`!capturando`): com ela
+            aberta, o mesmo botão vai junto no `extraTopo`, abaixo. */}
+        {!capturando && botaoVoltarParaQr}
       </div>
 
       {capturando && (
@@ -453,7 +472,7 @@ export default function FaceScannerView({
           onCaptura={aoCapturar}
           onQrDetectado={aoLerQr}
           onCancelar={voltarAEscanear}
-          extraTopo={toggleEntradaSaida}
+          extraTopo={extraTopoCompleto}
         />
       )}
 
@@ -475,8 +494,10 @@ export default function FaceScannerView({
         * leitor de QR (`ScannerView.tsx`). Cobre a câmera (que continua
         * ligada por baixo — ver o guard no início de `aoCapturar`/`aoLerQr`).
         */}
+      {/* `bg-slate-900` sólido, não `/95` — ver o comentário completo em
+          `ScannerView.tsx`. */}
       {mostrarConfigArea && (
-        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
           <div className="w-full max-w-sm text-white">
             <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
             <p className="text-slate-400 text-sm text-center mt-1.5">
