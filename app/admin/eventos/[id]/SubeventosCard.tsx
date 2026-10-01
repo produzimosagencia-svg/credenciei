@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, X, Pencil, Trash2, Users, ArrowRight, CalendarRange } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange } from 'lucide-react'
 import { criarSubevento, editarSubevento, excluirSubevento } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { EmptyState } from '@/components/ui/Superficie'
@@ -71,34 +71,44 @@ export default function SubeventosCard({
           descricao="Crie o primeiro subevento (ex.: Camarote, Arquibancada, Pista) pra começar a escalar fornecedores."
         />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
+        /*
+         * Mesmo cartão "ao vivo" da lista de eventos (app/admin/page.tsx,
+         * `EventoAoVivo`) — pedido do Juan (30/09/2026): dentro de um evento
+         * com subeventos, cada subevento usa o MESMO template visual do
+         * painel de eventos. Reaproveita as classes globais `.evento-vivo`/
+         * `.evento-vivo-selo`/`.ponto-vivo` (app/globals.css), não duplica CSS.
+         */
+        <div className={`grid gap-4 ${subeventos.length > 1 ? 'lg:grid-cols-2' : ''}`}>
           {subeventos.map(s => {
             const c = contagens[s.id] ?? { fornecedores: 0, equipe: 0 }
             return (
-              <div key={s.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:border-slate-300 transition-colors">
-                <div className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-2.5">
-                  <Link href={`/admin/eventos/${eventoId}/subevento/${s.id}`} className="min-w-0 group flex-1">
-                    <h3 className="text-slate-800 font-bold text-lg leading-tight truncate group-hover:text-brand-500 transition-colors">
-                      {s.nome}
-                    </h3>
-                    <p className="flex items-center gap-1 text-slate-500 text-xs mt-1 tabular-nums">
-                      <Users className="w-3 h-3 shrink-0" />
-                      {c.fornecedores} fornecedor{c.fornecedores !== 1 ? 'es' : ''} · {c.equipe} funcionário{c.equipe !== 1 ? 's' : ''}
-                    </p>
+              <div key={s.id} className="evento-vivo flex flex-col">
+                <span className="evento-vivo-selo">
+                  <span className="ponto-vivo" aria-hidden="true" />
+                  Ao vivo
+                </span>
+                <Link href={`/admin/eventos/${eventoId}/subevento/${s.id}`} className="block mt-2.5">
+                  <h3 className="text-white text-[22px] md:text-[26px] leading-[1.1] hover:text-brand-300 transition-colors">
+                    {s.nome}
+                  </h3>
+                </Link>
+
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 mt-4 text-[13px]">
+                  <dt className="text-slate-500">Equipe</dt>
+                  <dd className="text-slate-800 tabular-nums">
+                    {c.fornecedores} fornecedor{c.fornecedores !== 1 ? 'es' : ''} · {c.equipe} funcionário{c.equipe !== 1 ? 's' : ''}
+                  </dd>
+                </dl>
+
+                <div className="flex items-center gap-2 mt-5">
+                  <Link href={`/admin/eventos/${eventoId}/subevento/${s.id}`} className="btn btn-primario flex-1 sm:flex-none sm:min-w-[170px] justify-start">
+                    Abrir subevento
+                    <ArrowRight className="w-3.5 h-3.5 ml-auto" />
                   </Link>
-                  <div className="flex items-center gap-0.5 shrink-0 -mr-1.5 -mt-1">
+                  <div className="acoes-no-escuro shrink-0 flex items-center gap-0.5 justify-center rounded-[10px] bg-white/[.06] border border-white/[.12] px-1">
                     <SubeventoModal mode="editar" eventoId={eventoId} subeventoId={s.id} nome={s.nome} />
                     <ExcluirSubeventoButton eventoId={eventoId} subeventoId={s.id} nome={s.nome} />
                   </div>
-                </div>
-                <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
-                  <Link
-                    href={`/admin/eventos/${eventoId}/subevento/${s.id}`}
-                    className="btn btn-primario btn-sm w-full justify-center"
-                  >
-                    Abrir subevento
-                    <ArrowRight className="w-3 h-3 shrink-0 opacity-60" />
-                  </Link>
                 </div>
               </div>
             )

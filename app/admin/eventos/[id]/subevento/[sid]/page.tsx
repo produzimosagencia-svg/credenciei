@@ -1,11 +1,13 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
-import { Users, ChevronLeft } from 'lucide-react'
+import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
+import SeletorDeDia from '@/components/SeletorDeDia'
+import StatCard from '@/components/StatCard'
 
 export const revalidate = 0
 
@@ -15,13 +17,21 @@ export const revalidate = 0
  * fornecedores direto nele — só que filtrada a este subevento. Portaria,
  * operadores, cadastro por link e avisos continuam só na página do evento
  * (são do evento inteiro, não duplicam por subevento).
+ *
+ * Os KPIs do topo (30/09/2026, pedido do Juan) são os MESMOS 5 cartões da
+ * página do evento, mas contando só quem está neste subevento — a página do
+ * evento mostra o total geral, esta mostra só a fatia dele. Sem `href`: a
+ * lista de presença (`/presenca`) é do evento inteiro, não tem filtro por
+ * subevento, então um link levaria pra números maiores que os daqui.
  */
 export default async function SubeventoPage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ id: string; sid: string }>
+  searchParams: Promise<{ dia?: string }>
 }) {
   const { id: eventoId, sid } = await params
+  const { dia: diaParam } = await searchParams
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
 
@@ -42,6 +52,16 @@ export default async function SubeventoPage({
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
   const vazio = { data: [] as never[] }
 
+  // O dia que os KPIs abaixo descrevem — mesma regra da página do evento.
+  const diasDaOperacao = (diasTrabalho ?? []).map(d => d.data as string)
+  const hojeBRT = await diaDoTurno(eventoId)
+  const diaEscolhido =
+    (diaParam && diasDaOperacao.includes(diaParam) ? diaParam : null)
+    ?? (diasDaOperacao.includes(hojeBRT) ? hojeBRT : null)
+    ?? [...diasDaOperacao].reverse().find(d => d <= hojeBRT)
+    ?? diasDaOperacao[0]
+    ?? hojeBRT
+
   const buscarTodosOsFuncionarios = async () => {
     if (!fornecedorIds.length) return vazio
     const consultar = (inicio: number) => supabase.from('funcionarios')
@@ -61,12 +81,22 @@ export default async function SubeventoPage({
   }
 
   const [
+    { data: registrosDoDia },
     { data: setoresComMeioRows },
     { data: entradaQualquerHorarioRows },
     { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
   ] = await Promise.all([
+    // Registros DESTE subevento só, no dia escolhido — por isso o join com
+    // `funcionarios!inner(fornecedor_id)` em vez do `eq('evento_id', ...)`
+    // puro que a página do evento usa (ali o total É o evento inteiro).
+    fornecedorIds.length
+      ? supabase.from('registros')
+          .select('funcionario_id, tipo, funcionarios!inner(fornecedor_id)')
+          .eq('evento_id', eventoId).eq('data_ref', diaEscolhido)
+          .in('funcionarios.fornecedor_id', fornecedorIds)
+      : Promise.resolve(vazio),
     fornecedorIds.length ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds) : Promise.resolve(vazio),
     fornecedorIds.length ? supabase.from('fornecedores').select('id, entrada_qualquer_horario').in('id', fornecedorIds) : Promise.resolve(vazio),
     fornecedorIds.length ? supabase.from('fornecedores').select('id, link_ativo').in('id', fornecedorIds) : Promise.resolve(vazio),
@@ -94,6 +124,17 @@ export default async function SubeventoPage({
 
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
 
+  const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
+  const quemFez = (t: string) =>
+    new Set((registrosDoDia ?? []).filter(r => r.tipo === t).map(r => r.funcionario_id))
+  const entraram = quemFez('entrada')
+  const sairam = quemFez('fim')
+  const totEntrada = entraram.size
+  const totMeio = quemFez('meio').size
+  const totFim = sairam.size
+  const presentesAgora = [...entraram].filter(fid => !sairam.has(fid)).length
+  const pct = (v: number) => (totalFuncionarios > 0 ? Math.round((v / totalFuncionarios) * 100) : 0)
+
   return (
     <div className="space-y-5">
       <Link
@@ -104,6 +145,33 @@ export default async function SubeventoPage({
       </Link>
 
       <PageHeader titulo={subevento.nome} descricao="Fornecedores escalados neste subevento" />
+
+      {diasDaOperacao.length > 1 && (
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-2xs uppercase tracking-wide font-semibold">Dia</span>
+          <SeletorDeDia
+            dias={diasDaOperacao} diaEscolhido={diaEscolhido} hoje={hojeBRT}
+            hrefBase={`/admin/eventos/${eventoId}/subevento/${sid}`}
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <StatCard label="Funcionários do subevento" value={totalFuncionarios} icon={UserCheck} tom="neutro" />
+        <StatCard label="Presentes no momento" value={presentesAgora} icon={Clock} tom="sucesso" />
+        <StatCard
+          label="Entradas hoje" value={`${totEntrada}/${totalFuncionarios}`} sub={`${pct(totEntrada)}% da equipe`}
+          icon={LogIn} tom="acento"
+        />
+        <StatCard
+          label="Batida do meio hoje" value={`${totMeio}/${totalFuncionarios}`} sub={`${pct(totMeio)}% da equipe`}
+          icon={Camera} tom="info"
+        />
+        <StatCard
+          label="Saídas hoje" value={`${totFim}/${totalFuncionarios}`} sub={`${pct(totFim)}% da equipe`}
+          icon={LogOut} tom="aviso"
+        />
+      </div>
 
       <Secao
         tom="acento"
