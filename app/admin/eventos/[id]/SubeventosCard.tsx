@@ -161,7 +161,7 @@ function SubeventoModal(
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="btn btn-secundario btn-sm shrink-0">
+        <button onClick={() => setOpen(true)} className="btn btn-primario btn-sm shrink-0">
           <Plus className="w-3.5 h-3.5 shrink-0" />
           <span className="hidden sm:inline">Novo subevento</span>
           <span className="sm:hidden">Novo</span>

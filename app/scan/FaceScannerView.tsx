@@ -407,7 +407,7 @@ export default function FaceScannerView({
         {eventos.length > 1 ? (
           <div className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-slate-400 text-2xs">Evento</p>
+              <p className="text-white/50 text-2xs">Evento</p>
               <p className="text-white text-sm font-semibold truncate">
                 {eventos.find(e => e.id === eventoId)?.nome ?? '—'}
               </p>
@@ -425,7 +425,7 @@ export default function FaceScannerView({
         ) : (
           <div className="text-center">
             <p className="text-white font-bold text-base">{eventos[0]?.nome}</p>
-            {portaoNome && <p className="text-slate-400 text-xs mt-0.5">{portaoNome}</p>}
+            {portaoNome && <p className="text-white/50 text-xs mt-0.5">{portaoNome}</p>}
           </div>
         )}
 
@@ -437,7 +437,7 @@ export default function FaceScannerView({
         {!!subeventosDoEvento.length && !mostrarConfigArea && (
           <div className="w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-slate-400 text-2xs">Área de atuação deste portão</p>
+              <p className="text-white/50 text-2xs">Área de atuação deste portão</p>
               <p className="text-white text-sm font-semibold truncate">
                 {subeventosDoEvento.filter(s => subeventoIds.includes(s.id)).map(s => s.nome).join(' + ')}
               </p>
@@ -500,7 +500,7 @@ export default function FaceScannerView({
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
           <div className="w-full max-w-sm text-white">
             <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
-            <p className="text-slate-400 text-sm text-center mt-1.5">
+            <p className="text-white/50 text-sm text-center mt-1.5">
               Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas.
             </p>
             <div className="mt-5 space-y-2 max-h-[45vh] overflow-y-auto">
@@ -531,7 +531,7 @@ export default function FaceScannerView({
               <button
                 type="button"
                 onClick={() => setConfigurandoArea(false)}
-                className="mt-3 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+                className="mt-3 w-full text-center text-white/50 text-sm font-semibold hover:text-white transition-colors"
               >
                 Cancelar
               </button>

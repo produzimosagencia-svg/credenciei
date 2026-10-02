@@ -100,7 +100,7 @@ export default function ScannerRouter({
             <button
               type="button"
               onClick={() => setEscolhendoEvento(false)}
-              className="mt-4 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+              className="mt-4 w-full text-center text-white/50 text-sm font-semibold hover:text-white transition-colors"
             >
               Cancelar
             </button>
@@ -114,6 +114,16 @@ export default function ScannerRouter({
   const eventoUsaOsDois = metodoAtual === 'biometria_qr'
   const abrirEscolhaEvento = eventos.length > 1 ? () => setEscolhendoEvento(true) : undefined
 
+  /*
+   * `text-white/50`, NÃO `text-slate-400` — dentro do /admin/scanner
+   * (painel no tema claro), `--color-slate-400` vira quase preto (pensado
+   * pra texto sutil sobre fundo CLARO — ver globals.css,
+   * `html[data-tema="claro"]`). Este pill continua escuro-fixo em
+   * qualquer tema (`bg-[#161b22]`, não adapta), então texto quase preto
+   * em cima dele ficava invisível — "BIOMETRIA" sumia por completo
+   * (reportado pelo Juan, 01/10/2026). `white/50` não depende de tema
+   * nenhum.
+   */
   const chaveDeModoMaster = ehMasterOperador && (
     <div className="px-4 pt-4 pb-1">
       <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#161b22] border border-[#30363d]">
@@ -121,7 +131,7 @@ export default function ScannerRouter({
           type="button"
           onClick={() => setModo('qr')}
           className={`rounded-lg py-2 text-xs font-bold tracking-wide transition-all ${
-            modo === 'qr' ? 'bg-brand-500 text-white shadow' : 'text-slate-400 hover:text-white'
+            modo === 'qr' ? 'bg-brand-500 text-white shadow' : 'text-white/50 hover:text-white'
           }`}
         >
           QR CODE
@@ -130,7 +140,7 @@ export default function ScannerRouter({
           type="button"
           onClick={() => setModo('rosto')}
           className={`rounded-lg py-2 text-xs font-bold tracking-wide transition-all ${
-            modo === 'rosto' ? 'bg-brand-500 text-white shadow' : 'text-slate-400 hover:text-white'
+            modo === 'rosto' ? 'bg-brand-500 text-white shadow' : 'text-white/50 hover:text-white'
           }`}
         >
           BIOMETRIA

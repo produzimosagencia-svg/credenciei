@@ -755,7 +755,7 @@ export default function ScannerView({
         <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900 px-6" role="dialog" aria-modal="true" aria-label="Qual área você vai atuar?">
           <div className="w-full max-w-sm text-white">
             <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
-            <p className="text-slate-400 text-sm text-center mt-1.5">
+            <p className="text-white/50 text-sm text-center mt-1.5">
               Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas.
             </p>
             <div className="mt-5 space-y-2 max-h-[45vh] overflow-y-auto">
@@ -786,7 +786,7 @@ export default function ScannerView({
               <button
                 type="button"
                 onClick={() => setConfigurandoArea(false)}
-                className="mt-3 w-full text-center text-slate-400 text-sm font-semibold hover:text-white transition-colors"
+                className="mt-3 w-full text-center text-white/50 text-sm font-semibold hover:text-white transition-colors"
               >
                 Cancelar
               </button>
