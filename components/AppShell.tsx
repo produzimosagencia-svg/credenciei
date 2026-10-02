@@ -106,14 +106,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean): Grupo[] {
   /*
    * "Meu Crachá" — pedido do Juan, 24/09/2026: quem trabalha o evento
    * também se credencia nele, mesmo QR e mesma `/credential/[token]` de
-   * todo mundo. Supervisor vai direto (já tem setor fixo); admin escolhe
-   * evento e setor antes (`garantirMeuCracha`), por isso o rótulo muda —
-   * "Crachá Admin" pra deixar claro que é ele mesmo escolhendo onde entra.
+   * todo mundo. Só supervisor (já tem setor fixo) — "Crachá Admin" saiu do
+   * menu do admin a pedido do Juan, 02/10/2026 (`/admin/meu-cracha` e
+   * `garantirMeuCracha` continuam existindo, só não tem mais entrada no
+   * menu pra esse papel).
    */
   if (role === 'supervisor') {
     doEvento.push({ href: '/admin/meu-cracha', label: 'Meu Crachá', icon: IdCard })
-  } else if (role === 'admin') {
-    doEvento.push({ href: '/admin/meu-cracha', label: 'Crachá Admin', icon: IdCard })
   }
   /*
    * "Criar porteiro" é o acesso que o sistema chama de operador de portão —

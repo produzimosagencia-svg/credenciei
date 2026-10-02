@@ -19,6 +19,12 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 
+const METODO_LABEL: Record<string, string> = {
+  qr: 'QR Code',
+  biometria: 'Biometria Facial',
+  biometria_qr: 'Biometria Facial + QR Code',
+}
+
 const TUTORIAL: TutorialConfig = {
   tela: 'evento-editar',
   versao: 1,
@@ -343,11 +349,27 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
 
-          <MetodoIdentificacao
-            defaultValue={(evento.metodo_identificacao as string | null) ?? 'qr'}
-            defaultTotem={(evento.biometria_totem as boolean | null) ?? true}
-            defaultAutoatendimento={(evento.biometria_autoatendimento as boolean | null) ?? false}
-          />
+          {ehMaster(perfil.role) ? (
+            <MetodoIdentificacao
+              defaultValue={(evento.metodo_identificacao as string | null) ?? 'qr'}
+              defaultTotem={(evento.biometria_totem as boolean | null) ?? true}
+              defaultAutoatendimento={(evento.biometria_autoatendimento as boolean | null) ?? false}
+            />
+          ) : (
+            /*
+             * Admin só vê, não troca (pedido do Juan, 02/10/2026): biometria x
+             * QR Code não é decisão de quem administra a organização. A
+             * action `editarEvento` também recusa o campo vindo de fora —
+             * isto aqui é só a tela não oferecer o que o servidor já recusa.
+             */
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-sm font-semibold text-slate-700">Método de identificação</p>
+              <p className="text-xs text-slate-400 mt-1">
+                {METODO_LABEL[(evento.metodo_identificacao as string | null) ?? 'qr'] ?? 'QR Code'}
+                {' — '}só o Credenciei pode alterar este método.
+              </p>
+            </div>
+          )}
         </div>
 
         {/*

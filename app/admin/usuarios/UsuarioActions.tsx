@@ -1,5 +1,6 @@
 'use client'
-import { useTransition, useState } from 'react'
+import { useTransition, useState, useRef, useLayoutEffect, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Trash2, KeyRound, Check, AlertCircle, X, Pencil, Power } from 'lucide-react'
 import { deletarUsuario, redefinirSenha, alternarAtivoUsuario, editarUsuario } from '@/lib/actions'
@@ -34,6 +35,39 @@ export default function UsuarioActions({
   const [feito, setFeito] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+
+  /*
+   * O popover de "Nova senha" (e os avisos de erro/sucesso logo abaixo)
+   * ficavam `absolute right-0 top-full` dentro desta linha da tabela — e a
+   * tabela de Acessos tem rolagem horizontal, então a caixa nascia cortada
+   * na borda direita (achado do Juan, 02/10/2026, tentando redefinir a
+   * senha do Pablo). Mesmo defeito que o menu "..." já tinha e resolveu via
+   * portal com posição `fixed` medida do botão — ver `MenuAcoes`; aqui é o
+   * mesmo remédio, aplicado ao wrapper inteiro em vez de só o botão.
+   */
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+  const algumFlutuanteAberto = senhaAberta || !!erro || !!feito || (isPending && !editar)
+
+  const medir = () => {
+    const r = wrapperRef.current?.getBoundingClientRect()
+    if (!r) return
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+  }
+
+  useLayoutEffect(() => {
+    if (algumFlutuanteAberto) medir()
+  }, [algumFlutuanteAberto])
+
+  useEffect(() => {
+    if (!algumFlutuanteAberto) return
+    window.addEventListener('scroll', medir, true)
+    window.addEventListener('resize', medir)
+    return () => {
+      window.removeEventListener('scroll', medir, true)
+      window.removeEventListener('resize', medir)
+    }
+  }, [algumFlutuanteAberto])
 
   const capacidades = capacidadesDoPapel(usuarioRole)
   // Estado atual de cada função (override do acesso, ou o padrão do papel).
@@ -110,7 +144,7 @@ export default function UsuarioActions({
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapperRef}>
       <MenuAcoes disabled={isPending} rotulo={`Ações de ${usuarioNome}`}>
         {fechar => (
           <>
@@ -210,38 +244,59 @@ export default function UsuarioActions({
         </div>
       )}
 
-      {/* ─── Senha nova ────────────────────────────────────────────────── */}
-      {senhaAberta && (
-        <div className="modal-pop-in absolute right-0 top-full mt-1.5 w-72 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-slate-800 text-sm font-medium truncate">Nova senha</p>
-            <button onClick={() => { setSenhaAberta(false); setSenha(''); setErro(null) }} aria-label="Fechar" className="btn-press w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <p className="text-slate-500 text-xs">Para {usuarioNome}. Mínimo 6 caracteres.</p>
-          <input type="text" value={senha} onChange={e => setSenha(e.target.value)} placeholder="Digite a nova senha" autoComplete="off" className="input" />
-          <button onClick={trocarSenha} disabled={senha.length < 6 || isPending} className="btn btn-primario btn-sm w-full">
-            {isPending ? 'Salvando…' : 'Trocar senha'}
-          </button>
-          <p className="text-slate-400 text-2xs">A senha aparece em texto para você conseguir copiar e enviar.</p>
-        </div>
-      )}
+      {/*
+        * Os quatro blocos abaixo (senha nova, erro, sucesso, carregando) vão
+        * de portal pro <body>, em posição `fixed` medida do wrapper — a
+        * tabela de Acessos tem rolagem horizontal, e `absolute` cortava a
+        * caixa na borda (ver comentário em `medir`, acima).
+        */}
+      {algumFlutuanteAberto && pos && createPortal(
+        <>
+          {senhaAberta && (
+            <div
+              style={{ top: pos.top, right: pos.right }}
+              className="modal-pop-in fixed z-[61] w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-slate-800 text-sm font-medium truncate">Nova senha</p>
+                <button onClick={() => { setSenhaAberta(false); setSenha(''); setErro(null) }} aria-label="Fechar" className="btn-press w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-slate-500 text-xs">Para {usuarioNome}. Mínimo 6 caracteres.</p>
+              <input type="text" value={senha} onChange={e => setSenha(e.target.value)} placeholder="Digite a nova senha" autoComplete="off" className="input" />
+              <button onClick={trocarSenha} disabled={senha.length < 6 || isPending} className="btn btn-primario btn-sm w-full">
+                {isPending ? 'Salvando…' : 'Trocar senha'}
+              </button>
+              <p className="text-slate-400 text-2xs">A senha aparece em texto para você conseguir copiar e enviar.</p>
+            </div>
+          )}
 
-      {erro && !editar && (
-        <div className="absolute right-0 top-full mt-1 w-64 z-30 bg-erro-50 border border-erro-200 text-erro-600 text-xs rounded-lg px-3 py-2 shadow-lg">
-          <span className="flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />{erro}</span>
-          <button onClick={() => setErro(null)} className="block mt-1 underline">fechar</button>
-        </div>
-      )}
-      {feito && (
-        <div className="absolute right-0 top-full mt-1 w-64 z-30 bg-sucesso-50 border border-sucesso-200 text-sucesso-700 text-xs rounded-lg px-3 py-2 shadow-lg">
-          <span className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 shrink-0 mt-px" />{feito}</span>
-          <button onClick={() => setFeito(null)} className="block mt-1 underline">fechar</button>
-        </div>
-      )}
-      {isPending && !editar && !senhaAberta && (
-        <div className="absolute right-0 top-full mt-1 z-30"><LogoLoading tamanho="sm" rotulo="Processando" /></div>
+          {erro && !editar && (
+            <div
+              style={{ top: pos.top, right: pos.right }}
+              className="fixed z-[61] w-64 bg-erro-50 border border-erro-200 text-erro-600 text-xs rounded-lg px-3 py-2 shadow-lg"
+            >
+              <span className="flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />{erro}</span>
+              <button onClick={() => setErro(null)} className="block mt-1 underline">fechar</button>
+            </div>
+          )}
+          {feito && (
+            <div
+              style={{ top: pos.top, right: pos.right }}
+              className="fixed z-[61] w-64 bg-sucesso-50 border border-sucesso-200 text-sucesso-700 text-xs rounded-lg px-3 py-2 shadow-lg"
+            >
+              <span className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 shrink-0 mt-px" />{feito}</span>
+              <button onClick={() => setFeito(null)} className="block mt-1 underline">fechar</button>
+            </div>
+          )}
+          {isPending && !editar && !senhaAberta && (
+            <div style={{ top: pos.top, right: pos.right }} className="fixed z-[61]">
+              <LogoLoading tamanho="sm" rotulo="Processando" />
+            </div>
+          )}
+        </>,
+        document.body
       )}
 
       <ConfirmModal

@@ -2299,7 +2299,7 @@ export async function criarEvento(formData: FormData) {
 }
 
 export async function editarEvento(id: string, formData: FormData) {
-  await exigirEventoDaOrg(id)
+  const perfil = await exigirEventoDaOrg(id)
   const db = supabaseAdmin
   const data = {
     nome: formData.get('nome') as string,
@@ -2367,7 +2367,15 @@ export async function editarEvento(id: string, formData: FormData) {
     }
   }
 
-  await gravarMetodoIdentificacao(id, formData)
+  /*
+   * Método de identificação (QR / Biometria) — só o master troca (pedido do
+   * Juan, 02/10/2026): admin não deve poder ligar biometria sozinho no
+   * próprio evento. Trava aqui também, não só escondendo o campo na tela —
+   * uma Server Action é alcançável por POST direto, sem passar pela UI.
+   */
+  if (ehMaster(perfil.role)) {
+    await gravarMetodoIdentificacao(id, formData)
+  }
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
   after(() => sincronizarAgendamentos(id).catch(console.error))
