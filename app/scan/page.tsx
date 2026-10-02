@@ -81,6 +81,19 @@ export default async function ScanPage({
     } catch { /* subeventos ainda não migrado — nenhum evento mostra seletor */ }
   }
 
+  /*
+   * Pra onde a setinha de voltar manda (pedido do Juan, 02/10/2026: "TODAS
+   * AS TELAS PRECISAM TER BOTAO DE VOLTAR", repetido duas vezes — o /scan
+   * era a que mais causava problema, por não ter NENHUMA saída clara: esta
+   * tela fica fora do layout do admin (sem o menu lateral), então sem isto
+   * o operador de portão não tinha como sair dela a não ser pelo botão
+   * "voltar" do próprio navegador.
+   */
+  const voltarHref =
+    perfil.role === 'operador_portao' ? '/admin/bem-vindo'
+    : perfil.role === 'supervisor' ? '/admin/meus-eventos'
+    : '/admin'
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="min-h-screen bg-slate-900 flex flex-col">
@@ -94,6 +107,15 @@ export default async function ScanPage({
        */}
       <div className="px-4 py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-2.5">
+          <Link
+            href={voltarHref}
+            aria-label="Voltar"
+            className="w-8 h-8 -ml-1 flex items-center justify-center rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </Link>
           <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
             <QrCode className="w-4 h-4 text-white" />
           </div>
