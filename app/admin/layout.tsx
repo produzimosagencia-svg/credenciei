@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getPerfil, meusSetores, supabaseAdmin } from '@/lib/supabase-server'
+import { getPerfil, meusSetoresDoEventoAtual, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos } from '@/lib/permissions'
 import AppShell from '@/components/AppShell'
 
@@ -22,7 +22,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           .eq('id', perfil.organizacao_id)
           .single()
       : Promise.resolve({ data: null }),
-    meusSetores(perfil),
+    meusSetoresDoEventoAtual(perfil),
     organizacaoUsaBiometria(perfil.organizacao_id as string | null, podeGerenciarEventos(perfil)),
   ])
 

@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard, ScanFace,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -65,6 +65,16 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean): Grupo[] {
   // Na ordem do trabalho de um dia de evento: abre o painel, escaneia,
   // ajusta o evento, regulariza quem perdeu a batida, confere as atividades.
   const doEvento: NavItem[] = [{ href: '/admin', label: 'Painel', icon: Home }]
+  /*
+   * "Meus eventos" — pedido do Juan, 02/10/2026: o supervisor trabalha em
+   * mais de um evento ao longo do tempo (atual + encerrados), e precisa de
+   * um jeito de VOLTAR pra escolher outro sem precisar sair e entrar de
+   * novo. "Meus fornecedores", logo abaixo, só troca de setor DENTRO do
+   * evento já escolhido.
+   */
+  if (role === 'supervisor') {
+    doEvento.push({ href: '/admin/meus-eventos', label: 'Meus eventos', icon: CalendarDays })
+  }
   /*
    * O scanner fica com quem credencia. O supervisor só tem se for ligado em
    * Configurações (e aí escaneia só a própria equipe). Abre DENTRO do painel,

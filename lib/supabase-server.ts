@@ -221,6 +221,29 @@ export async function meusSetores(perfil: any): Promise<{ id: string; nome: stri
   return (data ?? []).map(f => ({ id: f.id as string, nome: f.nome as string, evento_id: f.evento_id as string }))
 }
 
+/**
+ * Os setores do supervisor DENTRO DO EVENTO ATUAL — só o que alimenta o
+ * dropdown "Meus fornecedores" (`MeusSetores.tsx`).
+ *
+ * `meusSetores` (acima) continua ampla de propósito: é usada como régua de
+ * AUTORIZAÇÃO em ~15 lugares ("este supervisor pode tocar neste fornecedor,
+ * mesmo que seja de um evento que não é o aberto agora"). O dropdown é outra
+ * coisa — pedido do Juan, 02/10/2026 ("Meus eventos"): trocar de setor pelo
+ * menu NUNCA pode pular de evento sem a pessoa escolher isso explicitamente
+ * em `/admin/meus-eventos`. Sem este filtro, um supervisor com setor em dois
+ * eventos via `supervisor_setores` veria os dois juntos no mesmo menu, e
+ * trocar ali já seria trocar de evento sem perceber.
+ */
+export async function meusSetoresDoEventoAtual(perfil: any): Promise<{ id: string; nome: string; evento_id: string }[]> {
+  if (!perfil || perfil.role !== 'supervisor' || !perfil.fornecedor_id) return []
+  const { data: atual } = await admin.from('fornecedores').select('evento_id').eq('id', perfil.fornecedor_id).maybeSingle()
+  const eventoAtualId = (atual as { evento_id?: string } | null)?.evento_id
+  if (!eventoAtualId) return []
+
+  const todos = await meusSetores(perfil)
+  return todos.filter(s => s.evento_id === eventoAtualId)
+}
+
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 /** Os eventos que este usuário pode operar no portão — só os acontecendo hoje. */
 export async function eventosEscaneaveis(perfil: Parameters<typeof eventosEscaneaveisSemData>[0]): Promise<{ id: string; nome: string }[]> {

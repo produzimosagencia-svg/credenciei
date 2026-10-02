@@ -2417,23 +2417,21 @@ export async function toggleAtivoEvento(id: string, ativo: boolean) {
 }
 
 /**
- * Quais acessos são "deste evento": supervisor ligado a um setor do evento, e
- * suporte cujo escopo é SÓ este evento (nenhuma organização inteira, nenhum
- * outro evento). Operador de portão fica de fora — é da organização.
+ * Quais acessos são "deste evento": suporte cujo escopo é SÓ este evento
+ * (nenhuma organização inteira, nenhum outro evento). Operador de portão
+ * fica de fora — é da organização.
+ *
+ * Supervisor SAIU daqui em 02/10/2026 (pedido do Juan, "Meus eventos"):
+ * encerrar um evento não derruba mais o login dele — o evento vira "passado"
+ * na tela `/admin/meus-eventos`, e `meusSetores`/`eventosQuePossoAbrir` já
+ * devolvem o histórico inteiro sozinhos (via `supervisor_setores`, que nunca
+ * é apagado). Inativar a CONTA do supervisor junto seria perder o próprio
+ * acesso que a nova tela existe para mostrar.
  */
 async function acessosDoEvento(eventoId: string): Promise<string[]> {
   const db = supabaseAdmin
 
-  const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', eventoId)
-  const idsSetores = (setores ?? []).map(s => s.id as string)
-
   const alvos = new Set<string>()
-
-  if (idsSetores.length) {
-    const { data: sups } = await db
-      .from('perfis').select('id').eq('role', 'supervisor').in('fornecedor_id', idsSetores)
-    for (const s of sups ?? []) alvos.add(s.id as string)
-  }
 
   // Suporte: candidatos = quem tem escopo neste evento; entra só quem NÃO tem
   // nenhum outro escopo (org ou outro evento).
@@ -3427,6 +3425,33 @@ export async function trocarSetorAtivo(fornecedorId: string) {
 
   revalidatePath('/admin', 'layout')
   return { ok: true as const, eventoId: setor?.evento_id as string | undefined }
+}
+
+/**
+ * "Meus eventos" (pedido do Juan, 02/10/2026) — o supervisor escolhe QUAL
+ * EVENTO quer abrir agora, não só qual setor dentro do mesmo evento de
+ * sempre. Grava o setor dele NAQUELE evento como ativo — mesma escrita de
+ * `trocarSetorAtivo`, logo acima, só que a entrada é um evento (podem existir
+ * vários setores dele dentro do mesmo evento; entra no primeiro, e a partir
+ * daí "Meus fornecedores" troca entre eles como sempre).
+ *
+ * Funciona IGUAL para evento atual ou encerrado: `meusSetores` já devolve o
+ * histórico inteiro, current ou não — ver o comentário em `acessosDoEvento`
+ * sobre por que encerrar um evento não derruba mais o login do supervisor.
+ */
+export async function entrarNoEventoSupervisor(eventoId: string) {
+  const perfil = await getPerfil()
+  if (!perfil || perfil.role !== 'supervisor') throw new Error('Sem permissão')
+
+  const meus = await meusSetores(perfil)
+  const setor = meus.find(s => s.evento_id === eventoId)
+  if (!setor) throw new Error('Você não tem acesso a este evento.')
+
+  const { error } = await supabaseAdmin.from('perfis').update({ fornecedor_id: setor.id }).eq('id', perfil.id)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  revalidatePath('/admin', 'layout')
+  return { ok: true as const, fornecedorId: setor.id, eventoId }
 }
 
 /**

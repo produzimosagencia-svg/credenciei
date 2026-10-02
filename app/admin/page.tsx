@@ -224,6 +224,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // `suporte_escopo`. "Sem setor vinculado" seria a tela errada pra ele;
     // manda direto pra ferramenta que ele de fato usa.
     if (perfil.role === 'suporte') redirect('/admin/editar-colaborador')
+    /*
+     * "Meus eventos" (pedido do Juan, 02/10/2026) — o supervisor trabalha em
+     * mais de um evento ao longo do tempo, e ir direto pro último setor
+     * ativo escondia isso: testando o acesso antes do evento novo abrir, ele
+     * caía sem perceber dentro do evento ANTIGO, se este ainda estivesse no
+     * sistema. Pedir a escolha aqui, sempre, deixa explícito em qual evento
+     * ele está entrando — `/admin/meus-eventos` já separa atual de passado.
+     */
+    if (perfil.role === 'supervisor') redirect('/admin/meus-eventos')
     const setor = await meuSetor(perfil)
     if (!setor) {
       /*

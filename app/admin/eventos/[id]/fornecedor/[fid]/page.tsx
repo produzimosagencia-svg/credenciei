@@ -418,18 +418,27 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            */
           outrosSetores={
             perfil.role === 'supervisor'
-              ? setoresDoSupervisor.filter(s => s.id !== fid).map(s => ({ id: s.id, nome: s.nome }))
+              /*
+               * Só os DESTE evento — `meusSetores` devolve o histórico
+               * inteiro (todo evento em que ele já teve setor, pra "Meus
+               * eventos" funcionar), mas oferecer aqui um setor de outro
+               * evento ofereceria um destino que o servidor sempre vai
+               * recusar (`moverFuncionarioDeSetor` já barra isso), e pior:
+               * ia contra o isolamento entre eventos que a tela promete.
+               */
+              ? setoresDoSupervisor.filter(s => s.id !== fid && s.evento_id === id).map(s => ({ id: s.id, nome: s.nome }))
               : (outrosSetores ?? [])
           }
           /*
            * Admin/master move qualquer um. O supervisor também — mas só quando
-           * cobre 2+ setores, e só entre os dele (mexe na PRÓPRIA equipe dos
-           * dois lados, então não pega outro supervisor de surpresa). O
-           * servidor (`moverFuncionarioDeSetor`) reforça isso e exige motivo.
+           * cobre 2+ setores NESTE evento, e só entre os dele (mexe na PRÓPRIA
+           * equipe dos dois lados, então não pega outro supervisor de
+           * surpresa). O servidor (`moverFuncionarioDeSetor`) reforça isso e
+           * exige motivo.
            */
           podeMoverDeSetor={
             podeGerenciarEventos(perfil) ||
-            (perfil.role === 'supervisor' && setoresDoSupervisor.length >= 2)
+            (perfil.role === 'supervisor' && setoresDoSupervisor.filter(s => s.evento_id === id).length >= 2)
           }
           /*
            * A mesma permissão que `criarSupervisor` já exige no servidor —
