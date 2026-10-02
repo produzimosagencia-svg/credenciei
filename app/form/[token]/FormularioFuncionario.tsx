@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock, ScanFace } from 'lucide-react'
+import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock, ScanFace, AlertTriangle } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
@@ -583,8 +583,35 @@ export default function FormularioFuncionario({
         </details>
       </div>
 
+      {/*
+        * Modal, não mais caixa inline — pedido do Juan (01/10/2026): a caixa
+        * vermelha embutida no meio do formulário ("ficou feio") passava
+        * batido, principalmente o erro de cota ("número máximo de pessoas").
+        * Como erro de ENVIO (não de campo — esses continuam inline, perto
+        * do campo: erroFoto/erroCpf), merece a atenção de um modal.
+        */}
       {erroEnvio && (
-        <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-xl p-3">{erroEnvio}</p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setErroEnvio(null)}
+        >
+          <div
+            className="bg-[#1a1a1a] border border-red-900/40 rounded-2xl p-6 w-full max-w-sm text-center"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-xl bg-red-500/15 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <p className="text-white font-semibold text-sm leading-relaxed">{erroEnvio}</p>
+            <button
+              type="button"
+              onClick={() => setErroEnvio(null)}
+              className="mt-5 w-full btn btn-primario"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
       )}
 
       <button

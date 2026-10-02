@@ -8,17 +8,21 @@ import SeletorLista from '@/components/SeletorLista'
  * pra ligar subeventos DEPOIS de criar o evento, em Editar evento. Aqui já
  * nasce ligado, sem o passo extra.
  *
- * Precisa ser client porque o checkbox só faz sentido pra organizações que
- * já liberaram "Subeventos" em Configurações — e, pro master, a organização
- * só é conhecida depois de escolhida neste `<select>` (o admin comum nem
- * vê este campo: a organização dele já é fixa, ver `page.tsx`).
+ * O checkbox aparece pra QUALQUER organização, não só as que já ligaram
+ * "Subeventos" em Configurações (01/10/2026, 2ª volta: "faz mais sentido
+ * esse botão aparecer de cara... se eu marcar, já habilita automaticamente
+ * lá nas configurações") — marcar aqui ativa o recurso pra organização
+ * inteira sozinho (`criarEvento`, tolerante). Só precisa de um dono
+ * escolhido primeiro — sem isso não tem organização pra ligar o recurso.
+ *
+ * Precisa ser client porque, pro master, a organização só é conhecida
+ * depois de escolhida neste `<select>` (o admin comum nem vê este campo:
+ * a organização dele já é fixa, ver `page.tsx`).
  */
 export default function OrganizacaoComSubevento({
-  organizacoes, organizacoesComSubeventos,
+  organizacoes,
 }: {
   organizacoes: { id: string; nome: string; ativo: boolean }[]
-  /** Quais organizações já ligaram "Subeventos" em Configurações. */
-  organizacoesComSubeventos: Record<string, boolean>
 }) {
   const [orgId, setOrgId] = useState('')
 
@@ -45,7 +49,7 @@ export default function OrganizacaoComSubevento({
         </p>
       </div>
 
-      {!!organizacoesComSubeventos[orgId] && (
+      {!!orgId && (
         <label
           htmlFor="tem_subeventos"
           className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors"

@@ -59,12 +59,18 @@ export default function SubeventosCard({
   }
 
   return (
-    // Mais espaço que o space-y-3 de costume: a aura laranja do cartão
-    // "ao vivo" pulsa até 64px pra fora dele (globals.css, @keyframes aura) e
-    // tingia o botão "+ Novo subevento" de laranja quando os dois ficavam
-    // colados (reportado pelo Juan, 01/10/2026).
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      {/*
+        * `relative z-10`: a aura laranja do cartão "ao vivo" logo abaixo é
+        * um `box-shadow` (globals.css, @keyframes aura), que NÃO respeita
+        * o `overflow:hidden` do próprio cartão — ele pinta por cima de
+        * quem estiver depois dele na pilha de empilhamento, mais espaço ou
+        * menos. Só mais `space-y` (tentativa anterior) reduzia o tingimento
+        * sem eliminar; com stacking próprio o botão fica garantidamente
+        * por cima, não importa a distância (reportado pelo Juan, 01/10/2026,
+        * persistindo mesmo depois do espaçamento maior).
+        */}
+      <div className="relative z-10 flex items-center justify-end">
         <SubeventoModal mode="criar" eventoId={eventoId} />
       </div>
 

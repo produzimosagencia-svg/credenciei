@@ -1,4 +1,4 @@
-import { criarEvento, obterFuncionalidadesOrganizacao } from '@/lib/actions'
+import { criarEvento } from '@/lib/actions'
 import ConferenciaDeHorarios from '../ConferenciaDeHorarios'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
@@ -52,28 +52,6 @@ export default async function NovoEventoPage() {
     ? (await supabaseAdmin.from('organizacoes').select('id, nome, ativo').order('nome')).data ?? []
     : []
 
-  /*
-   * "Este evento possui subeventos" (pedido do Juan, 01/10/2026) — antes só
-   * dava pra ligar DEPOIS de criar, em Editar evento. Agora já nasce ligado.
-   *
-   * Pro master, a organização dona só é escolhida DENTRO do formulário (um
-   * `<select>` client), então o checkbox precisa reagir à escolha — por
-   * isso manda o MAPA de todas (`organizacoesComSubeventos`), não um booleano
-   * só. Pro admin comum, a organização já é fixa (a própria) e dá pra
-   * decidir aqui mesmo, no servidor.
-   */
-  let organizacoesComSubeventos: Record<string, boolean> = {}
-  if (organizacoes.length) {
-    try {
-      const { data } = await supabaseAdmin
-        .from('organizacoes').select('id, subeventos_habilitado').in('id', organizacoes.map(o => o.id))
-      organizacoesComSubeventos = Object.fromEntries((data ?? []).map(o => [o.id as string, o.subeventos_habilitado === true]))
-    } catch { /* migração pendente — nenhuma organização mostra o checkbox */ }
-  }
-  const funcionalidades = !ehMaster(perfil?.role)
-    ? await obterFuncionalidadesOrganizacao(perfil?.organizacao_id ?? null)
-    : null
-
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
       <div className="max-w-xl mx-auto space-y-6">
@@ -83,13 +61,7 @@ export default async function NovoEventoPage() {
           descricao="Preencha os dados do evento"
           acoes={<TutorialButton />}
         />
-        <EventoForm
-          action={criarEvento}
-          submitLabel="Criar Evento"
-          organizacoes={organizacoes}
-          organizacoesComSubeventos={organizacoesComSubeventos}
-          subeventosHabilitadoPadrao={funcionalidades?.subeventosHabilitado === true}
-        />
+        <EventoForm action={criarEvento} submitLabel="Criar Evento" organizacoes={organizacoes} />
       </div>
     </TutorialProvider>
   )
@@ -104,29 +76,26 @@ type EventoDefaults = {
 }
 
 function EventoForm({
-  action, submitLabel, defaults, organizacoes = [], organizacoesComSubeventos = {}, subeventosHabilitadoPadrao = false,
+  action, submitLabel, defaults, organizacoes = [],
 }: {
   action: (formData: FormData) => Promise<void>
   submitLabel: string
   defaults?: EventoDefaults
   /** Só o master recebe a lista; vazia esconde o campo. */
   organizacoes?: { id: string; nome: string; ativo: boolean }[]
-  /** Quais organizações (da lista acima) já ligaram "Subeventos" — só importa pro master. */
-  organizacoesComSubeventos?: Record<string, boolean>
-  /** Pro admin comum (sem seletor de organização): a própria já liberou "Subeventos"? */
-  subeventosHabilitadoPadrao?: boolean
 }) {
   return (
     <form action={action} className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm">
       {!!organizacoes.length && (
-        <OrganizacaoComSubevento organizacoes={organizacoes} organizacoesComSubeventos={organizacoesComSubeventos} />
+        <OrganizacaoComSubevento organizacoes={organizacoes} />
       )}
       {/*
-        * "Este evento possui subeventos" pro admin comum — a organização já
-        * é fixa (a própria), então não precisa de reatividade nenhuma: ou
-        * ela já liberou o recurso, ou este bloco nem aparece.
+        * "Este evento possui subeventos" pro admin comum — sempre visível
+        * (01/10/2026): a organização já é fixa (a própria), e marcar aqui
+        * liga o recurso pra ela automaticamente (`criarEvento`, tolerante) —
+        * não precisa mais passar por Configurações antes.
         */}
-      {!organizacoes.length && subeventosHabilitadoPadrao && (
+      {!organizacoes.length && (
         <label
           htmlFor="tem_subeventos"
           className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors"

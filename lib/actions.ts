@@ -2244,10 +2244,12 @@ export async function criarEvento(formData: FormData) {
    * tela quando a organização (escolhida ou fixa) já liberou o recurso.
    */
   if (formData.has('tem_subeventos_presente')) {
+    const temSubeventos = formData.get('tem_subeventos') === 'on'
     const { error: erroSubeventos } = await db.from('eventos')
-      .update({ tem_subeventos: formData.get('tem_subeventos') === 'on' })
+      .update({ tem_subeventos: temSubeventos })
       .eq('id', novo.id)
     if (erroSubeventos) console.error('[criarEvento] tem_subeventos não gravado (migração pendente?)', erroSubeventos.message)
+    if (temSubeventos) await garantirSubeventosHabilitadoNaOrg(organizacaoId)
   }
 
   await gravarMetodoIdentificacao(novo.id, formData)
@@ -2321,16 +2323,24 @@ export async function editarEvento(id: string, formData: FormData) {
   /*
    * "Este evento possui subeventos" (correção 30/09/2026, teste ao vivo do
    * Juan) — coluna nova, à parte e tolerante. Checkbox desmarcado não manda
-   * nada no FormData (mesmo problema de sempre), e o campo só existe na
-   * tela quando a organização já liberou a funcionalidade — por isso o
-   * sentinela `tem_subeventos_presente`: sem ele, não dá pra distinguir
-   * "campo não apareceu na tela" de "apareceu e foi desmarcado".
+   * nada no FormData (mesmo problema de sempre); o sentinela
+   * `tem_subeventos_presente` distingue isso de "campo nem existe na tela"
+   * (não existe mais essa 2ª hipótese desde 01/10/2026 — o campo agora é
+   * sempre visível — mas o sentinela não atrapalha, só deixou de ser
+   * estritamente necessário). Marcar ATIVA o recurso pra organização
+   * inteira também (`garantirSubeventosHabilitadoNaOrg`) — não é mais
+   * pré-requisito ligar antes em Configurações.
    */
   if (formData.has('tem_subeventos_presente')) {
+    const temSubeventos = formData.get('tem_subeventos') === 'on'
     const { error: erroSubeventos } = await db.from('eventos')
-      .update({ tem_subeventos: formData.get('tem_subeventos') === 'on' })
+      .update({ tem_subeventos: temSubeventos })
       .eq('id', id)
     if (erroSubeventos) console.error('[editarEvento] tem_subeventos não gravado (migração pendente?)', erroSubeventos.message)
+    if (temSubeventos) {
+      const { data: eventoOrg } = await db.from('eventos').select('organizacao_id').eq('id', id).maybeSingle()
+      await garantirSubeventosHabilitadoNaOrg((eventoOrg as { organizacao_id?: string | null } | null)?.organizacao_id ?? null)
+    }
   }
 
   await gravarMetodoIdentificacao(id, formData)
@@ -9326,6 +9336,20 @@ export type FuncionalidadesOrganizacao = {
   travaCotaHabilitada: boolean
   /** Item 4 do pedido do Vital — libera o campo de aviso de uniforme/identificação em Editar evento. */
   avisoUniformeHabilitado: boolean
+}
+
+/**
+ * Marcar "Este evento possui subeventos" (em criarEvento/editarEvento) liga
+ * o recurso pra organização INTEIRA sozinho (Vital, 01/10/2026, 2ª volta —
+ * "faz mais sentido" não exigir passar por Configurações antes de usar).
+ * Só ACENDE, nunca apaga: desligar num evento específico não deveria tirar
+ * o recurso de outro evento da mesma organização que também o use.
+ */
+async function garantirSubeventosHabilitadoNaOrg(organizacaoId: string | null) {
+  if (!organizacaoId) return
+  try {
+    await supabaseAdmin.from('organizacoes').update({ subeventos_habilitado: true }).eq('id', organizacaoId)
+  } catch (e) { console.error('[garantirSubeventosHabilitadoNaOrg] não gravado (migração pendente?)', e) }
 }
 
 /**

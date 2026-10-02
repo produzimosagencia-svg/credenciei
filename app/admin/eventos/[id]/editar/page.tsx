@@ -102,39 +102,38 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           </Field>
 
           {/*
-            * "Este evento possui subeventos" (correção 30/09/2026: Evento →
-            * Subevento → Fornecedor) — só aparece pra organização que ligou
-            * "Subeventos" em Configurações. Decide se ESTE evento, em
-            * específico, usa a estrutura nova (nem toda organização usa em
-            * todo evento — a Kiki pode ter o recurso liberado e mesmo assim
-            * rodar um evento simples, sem subevento nenhum).
+            * "Este evento possui subeventos" (correção 30/09/2026) — sempre
+            * visível (01/10/2026: antes só aparecia pra organização que já
+            * tinha ligado "Subeventos" em Configurações, exigindo um passo
+            * antes — "faz mais sentido" marcar aqui e já liberar direto,
+            * pedido do Juan). Marcar isto AUTOMATICAMENTE liga o recurso pra
+            * organização inteira também (`editarEvento`, tolerante) — ela só
+            * nasce desligada pra quem nunca usou.
             */}
-          {funcionalidades.subeventosHabilitado && (
-            <label
-              htmlFor="tem_subeventos"
-              className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
-                         hover:border-brand-300 transition-colors"
-            >
-              <input type="hidden" name="tem_subeventos_presente" value="1" />
-              <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  id="tem_subeventos"
-                  name="tem_subeventos"
-                  defaultChecked={(evento as { tem_subeventos?: boolean }).tem_subeventos === true}
-                  className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
-                />
-                <div className="min-w-0">
-                  <p className="text-slate-800 font-semibold text-sm">Este evento possui subeventos</p>
-                  <p className="text-slate-600 text-xs mt-1">
-                    Portões/categorias de acesso diferentes no mesmo evento (ex.: Camarote,
-                    Arquibancada, Pista). Ligado, cada fornecedor passa a nascer DENTRO de um
-                    subevento, não mais direto no evento.
-                  </p>
-                </div>
+          <label
+            htmlFor="tem_subeventos"
+            className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
+                       hover:border-brand-300 transition-colors"
+          >
+            <input type="hidden" name="tem_subeventos_presente" value="1" />
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="tem_subeventos"
+                name="tem_subeventos"
+                defaultChecked={(evento as { tem_subeventos?: boolean }).tem_subeventos === true}
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-slate-800 font-semibold text-sm">Este evento possui subeventos</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  Portões/categorias de acesso diferentes no mesmo evento (ex.: Camarote,
+                  Arquibancada, Pista). Ligado, cada fornecedor passa a nascer DENTRO de um
+                  subevento, não mais direto no evento.
+                </p>
               </div>
-            </label>
-          )}
+            </div>
+          </label>
 
           {/*
             * Aviso de uniforme/identificação (Vital, 30/09/2026) — texto FIXO,
