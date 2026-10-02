@@ -163,7 +163,7 @@ export async function dispararEmMassa(
 
   // Teto por master: um clique repetido sem querer não pode virar dois
   // disparos para a mesma lista.
-  if (!podePassar(`disparo:${perfil.id}`, 5, 60 * 60 * 1000)) {
+  if (!await podePassar(`disparo:${perfil.id}`, 5, 60 * 60 * 1000)) {
     throw new Error('Muitos disparos seguidos. Espere alguns minutos.')
   }
 

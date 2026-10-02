@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
 import { Camera as CameraIcon, X, Sparkles, Download, ExternalLink, Copy, Check, Clock, ScanFace, AlertTriangle } from 'lucide-react'
 import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
@@ -22,6 +23,15 @@ import IconeInstagram from '@/components/ui/IconeInstagram'
  */
 const LINK_APP_ANDROID: string | null = null
 const LINK_APP_IOS: string | null = null
+
+/**
+ * Captcha (Cloudflare Turnstile) — vazio enquanto o Juan não cria a conta em
+ * dash.cloudflare.com e cola a chave pública em `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+ * na Vercel. Com a variável vazia o widget nem é renderizado — ver
+ * `verificarTurnstile` (lib/turnstile.ts) pro lado do servidor da mesma
+ * tolerância.
+ */
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''
 
 const initialForm = {
   nome: '',
@@ -122,6 +132,21 @@ export default function FormularioFuncionario({
   const [linkCopiado, setLinkCopiado] = useState(false)
   useEffect(() => { setEmbutido(emNavegadorEmbutido()) }, [])
 
+  /*
+   * Captcha (Cloudflare Turnstile) — item "Bot protection" da auditoria de
+   * segurança de 01/10/2026. Tolerante: sem `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+   * configurada (o Juan ainda não criou a conta em dash.cloudflare.com),
+   * `TURNSTILE_SITE_KEY` fica vazia, o widget nem aparece, e o servidor
+   * (`verificarTurnstile`, lib/turnstile.ts) também não exige nada — o
+   * cadastro continua funcionando exatamente como hoje.
+   */
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return
+    (window as unknown as { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess = setTurnstileToken
+    return () => { delete (window as unknown as { onTurnstileSuccess?: (token: string) => void }).onTurnstileSuccess }
+  }, [])
+
   const set = (field: keyof typeof form, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
 
@@ -213,6 +238,10 @@ export default function FormularioFuncionario({
       setErroCpf('CPF inválido. Confira os números.')
       return
     }
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      setErroEnvio('Confirme que você não é um robô (logo acima do botão de enviar) antes de continuar.')
+      return
+    }
     if (biometriaHabilitada && !jaPassouPelaBiometria && !biometriaJaCadastrada) {
       setEtapaBiometria('intro')
       return
@@ -242,6 +271,7 @@ export default function FormularioFuncionario({
         chavePix: form.chavePix,
         fotoBase64: foto ?? undefined,
         biometriaDescritor: descritorRosto ?? undefined,
+        turnstileToken: turnstileToken ?? undefined,
       }, autorizacaoIndividual)
 
       if (res.qrToken) {
@@ -614,10 +644,25 @@ export default function FormularioFuncionario({
         </div>
       )}
 
+      {/*
+        * Captcha (Cloudflare Turnstile) — some inteiro quando a chave pública
+        * não está configurada (`TURNSTILE_SITE_KEY` vazia): o Juan ainda não
+        * criou a conta, e o cadastro não pode ficar bloqueado esperando isso.
+        * `data-callback` chama `window.onTurnstileSuccess`, registrada no
+        * efeito lá em cima — é assim que o token sai do widget (que o
+        * Cloudflare desenha sozinho) e entra no estado do React.
+        */}
+      {!!TURNSTILE_SITE_KEY && (
+        <>
+          <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+          <div className="cf-turnstile flex justify-center" data-sitekey={TURNSTILE_SITE_KEY} data-callback="onTurnstileSuccess" data-theme="dark" />
+        </>
+      )}
+
       <button
         type="submit"
         data-tutorial="form-enviar"
-        disabled={loading || !consentimento}
+        disabled={loading || !consentimento || (!!TURNSTILE_SITE_KEY && !turnstileToken)}
         className="w-full btn btn-primario btn-lg"
       >
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}

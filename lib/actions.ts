@@ -42,6 +42,7 @@ import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
 import { podePassar } from './limite'
+import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
@@ -6324,7 +6325,7 @@ export async function registrarPresencaFacialLivre(
   token: string, descritor: number[], latitude: number | null, longitude: number | null,
 ): Promise<{ ok?: boolean; error?: string; nome?: string }> {
   // Mesmo teto de `registrarPresencaLivre`: ação pública, só o token protege.
-  if (!podePassar(`livre-face:${token}`, 20, 10 * 60 * 1000)) {
+  if (!await podePassar(`livre-face:${token}`, 20, 10 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
   if (!descritorValido(descritor)) return { error: 'Rosto não capturado corretamente. Tente de novo.' }
@@ -6426,7 +6427,7 @@ export async function registrarPresencaFacialLivre(
 export async function completarBiometriaPublica(
   token: string, descritor: number[],
 ): Promise<{ ok?: boolean; reaproveitada?: boolean; error?: string }> {
-  if (!podePassar(`completar-biometria:${token}`, 10, 10 * 60 * 1000)) {
+  if (!await podePassar(`completar-biometria:${token}`, 10, 10 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
   if (!descritorValido(descritor)) return { error: 'Rosto não capturado corretamente. Tente de novo.' }
@@ -6502,7 +6503,7 @@ export async function registrarPresencaFoto(
 
   // Ação pública (o qr_token é o segredo). Sem teto, um token vazado vira
   // upload ilimitado no Storage — a pessoa legítima bate uma vez, não vinte.
-  if (!podePassar(`foto:${token}`, 20, 10 * 60 * 1000)) {
+  if (!await podePassar(`foto:${token}`, 20, 10 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
 
@@ -6647,7 +6648,7 @@ export async function registrarPresencaLivre(
   }
 
   // Mesmo teto da foto do meio: ação pública, protegida só pelo token.
-  if (!podePassar(`livre:${token}`, 20, 10 * 60 * 1000)) {
+  if (!await podePassar(`livre:${token}`, 20, 10 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
 
@@ -6849,6 +6850,8 @@ export async function cadastrarFuncionarioPublico(
      * acabou de ser gerado dentro desta própria função.
      */
     biometriaDescritor?: number[]
+    /** Token do widget Cloudflare Turnstile — ver `lib/turnstile.ts`. Ausente/undefined quando o captcha ainda não está configurado (tolerante). */
+    turnstileToken?: string
   },
   autorizacaoIndividual?: string,
 ): Promise<{
@@ -6858,6 +6861,16 @@ export async function cadastrarFuncionarioPublico(
   /** `true` quando o rosto veio de um cadastro anterior (outro evento), sem passar pela câmera agora. */
   biometriaReaproveitada?: boolean
 }> {
+  /*
+   * Captcha — item "Bot protection" da auditoria de 01/10/2026. Tolerante:
+   * `verificarTurnstile` só exige o token quando `TURNSTILE_SECRET_KEY` já
+   * está configurada na Vercel (ver lib/turnstile.ts). Antes de QUALQUER
+   * consulta ao banco, pra não gastar nada com um script automatizado.
+   */
+  if (!(await verificarTurnstile(dados.turnstileToken))) {
+    return { error: 'Não foi possível confirmar que você não é um robô. Recarregue a página e tente de novo.' }
+  }
+
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
     .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso, organizacao_id)')
@@ -6899,7 +6912,7 @@ export async function cadastrarFuncionarioPublico(
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
   // enche o setor de cadastros falsos e trava a operação no dia do evento.
-  if (!excecaoIndividualValida && !podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
+  if (!excecaoIndividualValida && !await podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
     return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
   }
 
@@ -7153,7 +7166,7 @@ export async function buscarCadastroPorCpf(
    * porque é o único identificador estável que existe aqui — não há sessão, e
    * IP em serverless atrás de CDN não é confiável.
    */
-  if (!podePassar(`cpf:${fornecedorId}`, 40, 60 * 60 * 1000)) return null
+  if (!await podePassar(`cpf:${fornecedorId}`, 40, 60 * 60 * 1000)) return null
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
@@ -7240,7 +7253,7 @@ export async function identificarNaPortaria(
 
   // Mesmo teto do resto do fluxo público: protege um QR fixo, impresso e
   // exposto, de virar varredura de CPF.
-  if (!podePassar(`portaria-cpf:${eventoId}`, 60, 60 * 60 * 1000)) {
+  if (!await podePassar(`portaria-cpf:${eventoId}`, 60, 60 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
 
@@ -9023,7 +9036,7 @@ export async function cadastrarVeiculoPublico(token: string, formData: FormData)
 
   // Chave por TOKEN, não por IP — mesmo motivo de cadastrarFuncionarioPublico:
   // IP em serverless atrás de CDN não é confiável.
-  if (!podePassar(`veiculo-link:${token}`, 30, 60 * 60 * 1000)) {
+  if (!await podePassar(`veiculo-link:${token}`, 30, 60 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas por aqui. Aguarde um pouco e tente de novo.' }
   }
 
