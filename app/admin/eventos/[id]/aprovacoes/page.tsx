@@ -76,6 +76,18 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
       <PageHeader
         titulo="Aprovações"
         descricao={`${evento.nome} — credenciamentos aguardando decisão`}
+        /*
+         * Supervisor não pode abrir `/admin/eventos/${eventoId}` (vira loop —
+         * essa página sempre o manda de volta pro próprio fornecedor, ver
+         * app/admin/eventos/[id]/page.tsx). Volta pro MESMO fornecedor dele
+         * neste evento, não pro seletor de eventos — é de lá que ele veio.
+         * Mesmo ajuste já feito na tela do fornecedor, 02/10/2026.
+         */
+        voltarPara={
+          perfil.role === 'supervisor'
+            ? (fornecedorIdsPermitidos?.[0] ? `/admin/eventos/${eventoId}/fornecedor/${fornecedorIdsPermitidos[0]}` : '/admin/meus-eventos')
+            : `/admin/eventos/${eventoId}`
+        }
         acoes={
           <Link href="/admin/aprovacoes?aba=negados" className="btn btn-secundario">
             <Ban className="w-3.5 h-3.5 shrink-0" /> Histórico de negados

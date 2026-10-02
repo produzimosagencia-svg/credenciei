@@ -24,6 +24,7 @@ export default async function BiometriaRelatorioPage({ params }: { params: Promi
       <PageHeader
         titulo="Biometria — tentativas de reconhecimento"
         descricao={`${relatorio.eventoNome} — o quanto o reconhecimento facial está acertando`}
+        voltarPara={`/admin/eventos/${eventoId}`}
       />
       <RelatorioBiometriaView relatorio={relatorio} />
     </div>

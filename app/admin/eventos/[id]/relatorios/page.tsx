@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { getPerfil } from '@/lib/supabase-server'
 import { obterResumoParaTelaDeRelatorios } from '@/lib/relatorios'
 import { PageHeader } from '@/components/ui/Superficie'
 import ExportarRelatorio from './ExportarRelatorio'
@@ -20,7 +21,7 @@ export const revalidate = 0
  */
 export default async function RelatoriosPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventoId } = await params
-  const resumo = await obterResumoParaTelaDeRelatorios(eventoId)
+  const [perfil, resumo] = await Promise.all([getPerfil(), obterResumoParaTelaDeRelatorios(eventoId)])
   if ('erro' in resumo) redirect('/admin')
 
   return (
@@ -28,6 +29,18 @@ export default async function RelatoriosPage({ params }: { params: Promise<{ id:
       <PageHeader
         titulo="Relatórios do evento"
         descricao={`${resumo.eventoNome} — entrada e saída da equipe, por fornecedor e função`}
+        /*
+         * Supervisor não pode abrir `/admin/eventos/${eventoId}` (vira loop
+         * — ver o mesmo ajuste em aprovacoes/page.tsx e fornecedor/[fid]
+         * /page.tsx, 02/10/2026). `resumo.setores` já vem filtrado pro
+         * supervisor (só os dele neste evento), então o primeiro É o setor
+         * de onde ele veio.
+         */
+        voltarPara={
+          perfil?.role === 'supervisor'
+            ? (resumo.setores[0] ? `/admin/eventos/${eventoId}/fornecedor/${resumo.setores[0].id}` : '/admin/meus-eventos')
+            : `/admin/eventos/${eventoId}`
+        }
       />
       <ExportarRelatorio
         eventoId={eventoId}
