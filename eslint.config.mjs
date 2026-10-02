@@ -12,6 +12,16 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    /*
+     * `.claude/**` — a pasta de scratch de sessões do Claude Code às vezes
+     * guarda uma cópia inteira de worktree (branch de agente paralelo) lá
+     * dentro. Sem isto, `eslint .` (sem lista de arquivos) varre esse
+     * worktree também — foi o que já causou `JavaScript heap out of
+     * memory` nesta sessão (01/10/2026), silenciosamente devolvendo exit
+     * code 0 apesar do crash. Precisa estar aqui, não só em `.gitignore`,
+     * porque o ESLint não lê `.gitignore` sozinho.
+     */
+    ".claude/**",
   ]),
 ]);
 

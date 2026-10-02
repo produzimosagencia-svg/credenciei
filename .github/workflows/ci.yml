@@ -1,0 +1,52 @@
+name: CI
+
+# Fase 1 da análise de infraestrutura (02/10/2026) — antes disto, o
+# `tsc`/`eslint`/`next build`/`testes/*.mjs` só rodavam quando alguém
+# lembrava de rodar à mão antes do `git push`. Isso trava merge no `main`
+# sem esses 4 passos passarem — nenhum deles toca banco/rede de verdade.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Tipos
+        run: npx tsc --noEmit
+
+      - name: Lint
+        # --max-old-space-size: eslint sem lista de arquivos já crashou
+        # localmente com "JavaScript heap out of memory" nesta sessão
+        # (01/10/2026) — o runner do GitHub tem mais memória que o ambiente
+        # onde isso aconteceu, mas a margem evita flakiness.
+        run: node --max-old-space-size=4096 node_modules/.bin/eslint .
+
+      - name: Build
+        # Vars falsas de propósito — este app é quase todo renderização
+        # dinâmica (revalidate = 0), o build não precisa falar com o
+        # Supabase de verdade pra compilar. Se algum dia um módulo passar
+        # a exigir um valor real em tempo de build, troque por secrets do
+        # repositório (Settings → Secrets and variables → Actions).
+        run: npx next build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+
+      - name: Coerência (regra × texto que fala dela)
+        run: node testes/coerencia.mjs
+
+      - name: Matriz de autorização
+        run: node testes/autorizacao.mjs
