@@ -57,7 +57,7 @@ type Grupo = { titulo?: string; itens: NavItem[] }
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
  * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
-function gruposPara(perfil: Perfil): Grupo[] {
+function gruposPara(perfil: Perfil, temEventoComBiometria: boolean): Grupo[] {
   const role = perfil.role
   const grupos: Grupo[] = []
 
@@ -176,9 +176,12 @@ function gruposPara(perfil: Perfil): Grupo[] {
   }
   /*
    * Biometria não é dividida por setor (é config do evento inteiro), por
-   * isso sem supervisor aqui, diferente de Relatórios logo acima.
+   * isso sem supervisor aqui, diferente de Relatórios logo acima. Some do
+   * menu quando a organização não tem nenhum evento configurado pra usar
+   * (pedido do Juan, 02/10/2026) — `temEventoComBiometria` já veio calculado
+   * de cima, sempre `true` pro master.
    */
-  if (podeGerenciarEventos(perfil)) {
+  if (podeGerenciarEventos(perfil) && temEventoComBiometria) {
     administrativo.push({ href: '/admin/biometria', label: 'Biometria', icon: ScanFace })
   }
   if (podeGerenciarUsuarios(perfil)) {
@@ -544,7 +547,8 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
  * é o que faz o cabeçalho ser do sistema, e não do conteúdo.
  */
 export default function AppShell({
-  perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null, children,
+  perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null,
+  temEventoComBiometria = true, children,
 }: {
   perfil: Perfil
   fotoOrgUrl?: string | null
@@ -552,12 +556,14 @@ export default function AppShell({
   /** Setores que este supervisor pode acessar. Vazio para os outros papéis. */
   setores?: SetorDoSupervisor[]
   setorAtualId?: string | null
+  /** Se a organização tem algum evento configurado pra biometria — esconde "Biometria" do menu quando não. */
+  temEventoComBiometria?: boolean
   children: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
-  const grupos = gruposPara(perfil)
+  const grupos = gruposPara(perfil, temEventoComBiometria)
 
   // O master não pertence a organização nenhuma — pra ele o contexto é a
   // plataforma inteira, e dizer isso é mais honesto que repetir a marca.

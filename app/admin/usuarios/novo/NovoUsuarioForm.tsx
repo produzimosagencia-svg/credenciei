@@ -87,10 +87,12 @@ export default function NovoAcessoForm({
           const fornecedorId = (formData.get('fornecedor_id') as string) || ''
           if (!eventoId) return setErro('Escolha o evento.')
           if (!fornecedorId) return setErro('Escolha o fornecedor do supervisor.')
-          await criarSupervisor(fornecedorId, eventoId, formData)
+          const rSupervisor = await criarSupervisor(fornecedorId, eventoId, formData)
+          if ('error' in rSupervisor) return setErro(rSupervisor.error as string)
         } else if (funcao === 'operador_portao') {
           if (!eventoId) return setErro('Escolha o evento.')
-          await criarOperadorPortaria(eventoId, formData)
+          const rOperador = await criarOperadorPortaria(eventoId, formData)
+          if ('error' in rOperador) return setErro(rOperador.error as string)
         } else if (funcao === 'suporte') {
           if (!eventoId) return setErro('Escolha o evento de atendimento.')
           formData.append('escopo_evento_id', eventoId)

@@ -286,6 +286,7 @@ function ModalTotem({ eventoId, onFechar }: { eventoId: string; onFechar: () => 
     startTransition(async () => {
       try {
         const r = await criarTotem(eventoId, portaoNome)
+        if ('error' in r) { setErro(r.error as string); return }
         setCriado(r)
         router.refresh()
       } catch (e: any) {
@@ -414,6 +415,7 @@ function ModalOperador({
           onFechar()
         } else {
           const r = await criarOperadorPortaria(eventoId, formData)
+          if ('error' in r) { setErro(r.error as string); return }
           setLinkSenha(r.linkSenha)
           router.refresh()
         }

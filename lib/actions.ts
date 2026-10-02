@@ -1076,6 +1076,20 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
  * também volta na resposta desta action, pra tela mostrar como reforço.
  */
 export async function criarOperadorPortaria(eventoId: string, formData: FormData) {
+  try {
+    return await criarOperadorPortariaOuLanca(eventoId, formData)
+  } catch (e) {
+    // Mesmo cuidado de criarSupervisor: em produção o Next mascara a mensagem
+    // de toda exceção que sai de uma Server Action, e quem chama via
+    // formulário via um "página desatualizada" genérico em vez do motivo de
+    // verdade — foi exatamente o que aconteceu criando a operadora Lais
+    // (02/10/2026): o erro de verdade (provavelmente CPF já cadastrado, ou
+    // outro motivo de validação) nunca chegava na tela.
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar operadores de portão')
 
@@ -1223,6 +1237,15 @@ export async function criarOperadorPortaria(eventoId: string, formData: FormData
  * CPF), sem precisar mudar nada lá.
  */
 export async function criarTotem(eventoId: string, portaoNome?: string) {
+  try {
+    return await criarTotemOuLanca(eventoId, portaoNome)
+  } catch (e) {
+    // Mesmo cuidado de criarOperadorPortaria/criarSupervisor logo acima.
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function criarTotemOuLanca(eventoId: string, portaoNome?: string) {
   const perfil = await getPerfil()
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão para criar totem')
 
