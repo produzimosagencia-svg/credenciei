@@ -229,7 +229,7 @@ export async function eventosEscaneaveis(perfil: Parameters<typeof eventosEscane
   return candidatos.filter(e => hoje.has(e.id))
 }
 
-async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: string; nome: string }[]> {
+export async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: string; nome: string }[]> {
   if (!perfil || !podeAcompanhar(perfil)) return []
 
   /*

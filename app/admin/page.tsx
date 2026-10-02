@@ -226,7 +226,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     if (perfil.role === 'suporte') redirect('/admin/editar-colaborador')
     const setor = await meuSetor(perfil)
     if (!setor) {
-      if (perfil.role === 'operador_portao') redirect('/scan')
+      /*
+       * Tela de boas-vindas, não direto pro scanner — pedido do Juan,
+       * 02/10/2026: ir direto pro `/scan` fazia o operador cair em "Nenhum
+       * evento ativo disponível" (sem filtro de data, o próprio scanner
+       * só lista o que está acontecendo HOJE) sempre que testado antes do
+       * dia do evento, sem nome de evento nem orientação nenhuma — "muito
+       * feia" pra quem vê o sistema pela primeira vez. `/admin/bem-vindo`
+       * mostra o evento e aponta pro Scanner/Registro de ponto no menu.
+       */
+      if (perfil.role === 'operador_portao') redirect('/admin/bem-vindo')
       return <SemSetorVinculado />
     }
     redirect(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
