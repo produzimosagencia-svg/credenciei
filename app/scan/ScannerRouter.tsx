@@ -191,7 +191,7 @@ export default function ScannerRouter({
           <button
             type="button"
             onClick={() => setModo('rosto')}
-            className="w-full text-xs font-semibold text-slate-400 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors"
+            className="w-full text-xs font-semibold text-white/60 border border-white/20 rounded-lg py-2 hover:bg-white/10 transition-colors"
           >
             Usar reconhecimento facial
           </button>

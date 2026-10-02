@@ -84,7 +84,15 @@ export default async function ScanPage({
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="min-h-screen bg-slate-900 flex flex-col">
-      <div className="px-4 py-4 flex items-center justify-between border-b border-slate-800">
+      {/*
+       * Esta tela é SEMPRE escura (fundo fixo, não participa do tema) — mas
+       * `text-slate-400`/`border-slate-800` SÃO temáticos: no tema claro,
+       * `--color-slate-400` vira quase preto e os links somem em cima do
+       * fundo escuro (achado do Juan, 02/10/2026 — "Registrar ponto" e
+       * companhia ilegíveis na tela cheia do operador). Branco translúcido
+       * não depende de tema nenhum — mesmo remédio do resto deste arquivo.
+       */}
+      <div className="px-4 py-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
             <QrCode className="w-4 h-4 text-white" />
@@ -97,20 +105,20 @@ export default async function ScanPage({
             <Link
               href={`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`}
               data-tutorial="scan-equipe"
-              className="flex items-center gap-1.5 text-slate-400 text-sm hover:text-white font-medium transition-colors"
+              className="flex items-center gap-1.5 text-white/60 text-sm hover:text-white font-medium transition-colors"
             >
               <Users className="w-3.5 h-3.5" />
               Minha equipe: {setor.nome}
             </Link>
           ) : podeGerenciarEventos(perfil) ? (
-            <Link href="/admin" className="text-slate-400 text-sm hover:text-white font-medium transition-colors">
+            <Link href="/admin" className="text-white/60 text-sm hover:text-white font-medium transition-colors">
               Voltar ao painel
             </Link>
           ) : podeAcompanhar(perfil) ? (
             // Sem setor e sem gerenciar evento: é o operador de portão — o
             // link dele é o registro manual, não "voltar ao painel" (que ele
             // não tem) nem "minha equipe" (que ele também não tem).
-            <Link href="/admin/localizar" className="flex items-center gap-1.5 text-slate-400 text-sm hover:text-white font-medium transition-colors">
+            <Link href="/admin/localizar" className="flex items-center gap-1.5 text-white/60 text-sm hover:text-white font-medium transition-colors">
               <ClipboardCheck className="w-3.5 h-3.5" />
               Registrar ponto
             </Link>
@@ -119,8 +127,8 @@ export default async function ScanPage({
       </div>
       {!eventos?.length ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
-          <QrCode className="w-10 h-10 text-slate-700" />
-          <p className="text-slate-400 font-medium">Nenhum evento ativo disponível</p>
+          <QrCode className="w-10 h-10 text-white/30" />
+          <p className="text-white/60 font-medium">Nenhum evento ativo disponível</p>
         </div>
       ) : (
         <ScannerRouter

@@ -587,7 +587,7 @@ export default function ScannerView({
           className={noPainel ? 'input w-full flex items-center justify-between gap-2' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2'}
         >
           <div className="min-w-0">
-            <p className="text-slate-400 text-2xs">Evento</p>
+            <p className={`text-2xs ${noPainel ? 'text-slate-400' : 'text-white/50'}`}>Evento</p>
             <p className={`text-sm font-semibold truncate ${noPainel ? 'text-slate-800' : 'text-white'}`}>
               {eventos.find(e => e.id === eventoId)?.nome ?? '—'}
             </p>
@@ -614,7 +614,7 @@ export default function ScannerView({
         {!!subeventosDoEvento.length && !mostrarConfigArea && (
           <div className={noPainel ? 'input w-full flex items-center justify-between gap-2' : 'w-full bg-[#161b22] border border-[#30363d] rounded-lg px-3 py-2 flex items-center justify-between gap-2'}>
             <div className="min-w-0">
-              <p className="text-slate-400 text-2xs">Área de atuação deste portão</p>
+              <p className={`text-2xs ${noPainel ? 'text-slate-400' : 'text-white/50'}`}>Área de atuação deste portão</p>
               <p className={`text-sm font-semibold truncate ${noPainel ? 'text-slate-800' : 'text-white'}`}>
                 {subeventosDoEvento.filter(s => subeventoIds.includes(s.id)).map(s => s.nome).join(' + ')}
               </p>
@@ -639,7 +639,17 @@ export default function ScannerView({
             className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
               modo === 'entrada'
                 ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-300'
-                : 'border-2 border-slate-600 text-slate-400'
+                /*
+                 * `border-slate-600 text-slate-400` só fica legível dentro
+                 * do painel (`noPainel`, tema normal) — no `/scan` cheio,
+                 * fundo sempre escuro (`bg-[#161b22]`, nunca participa do
+                 * tema), slate-400 vira quase preto no tema claro e some
+                 * sobre o preto (achado do Juan, 02/10/2026: "o de entrar
+                 * fica preto"). Mesmo remédio já usado no resto deste
+                 * arquivo pro mesmo motivo — branco translúcido, que não
+                 * depende de tema nenhum.
+                 */
+                : noPainel ? 'border-2 border-slate-600 text-slate-400' : 'border-2 border-white/30 text-white/70'
             }`}
           >
             ENTRADA
@@ -652,13 +662,13 @@ export default function ScannerView({
             className={`rounded-xl py-3.5 font-extrabold text-base tracking-wide transition-all active:scale-95 ${
               modo === 'fim'
                 ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-300'
-                : 'border-2 border-slate-600 text-slate-400'
+                : noPainel ? 'border-2 border-slate-600 text-slate-400' : 'border-2 border-white/30 text-white/70'
             }`}
           >
             SAÍDA
           </button>
         </div>
-        <p className="text-slate-500 text-xs text-center">
+        <p className={`text-xs text-center ${noPainel ? 'text-slate-500' : 'text-white/50'}`}>
           Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-blue-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
           O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
@@ -727,7 +737,7 @@ export default function ScannerView({
             {repetido}
           </p>
         ) : (
-          <p className="text-slate-500 text-sm flex items-center gap-2">
+          <p className={`text-sm flex items-center gap-2 ${noPainel ? 'text-slate-500' : 'text-white/50'}`}>
             <ScanLine className="w-4 h-4" />
             Aponte a câmera para o QR da credencial ou do veículo
           </p>

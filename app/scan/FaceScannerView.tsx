@@ -353,7 +353,7 @@ export default function FaceScannerView({
     <button
       type="button"
       onClick={() => aoTrocarParaQr()}
-      className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-300 border border-slate-700 rounded-lg py-2 hover:bg-slate-800 transition-colors bg-black/40"
+      className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-white/70 border border-white/20 rounded-lg py-2 hover:bg-white/10 transition-colors bg-black/40"
     >
       <QrCode className="w-3.5 h-3.5" /> Validar por QR Code
     </button>
@@ -453,7 +453,7 @@ export default function FaceScannerView({
         )}
 
         {toggleEntradaSaida}
-        <p className="text-slate-500 text-xs text-center">
+        <p className="text-white/50 text-xs text-center">
           Registrando <strong className={modo === 'entrada' ? 'text-green-500' : 'text-blue-400'}>{modo === 'entrada' ? 'ENTRADAS' : 'SAÍDAS'}</strong>.
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
         </p>
