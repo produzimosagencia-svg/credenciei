@@ -2659,6 +2659,27 @@ function parseQuantidade(v: FormDataEntryValue | null): number | null {
  * primeiro CPF digitado errado deixaria na tela exatamente o que esta
  * mudança existe pra impedir: um setor sem ninguém respondendo por ele.
  */
+/**
+ * Acha um supervisor já cadastrado pelo CPF — pra preencher nome/WhatsApp
+ * sozinho no formulário de "Novo Fornecedor" (pedido do Juan, 02/10/2026):
+ * digitar o CPF de quem já é supervisor aqui não devia pedir nome e telefone
+ * de novo, já que o sistema já tem os dois. `null` tanto pra "não achou"
+ * quanto pra "sem permissão" — a tela não precisa distinguir os dois casos,
+ * só decide se preenche ou deixa em branco.
+ */
+export async function buscarSupervisorPorCpf(cpfBruto: string): Promise<{ nome: string; telefone: string | null } | null> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeGerenciarEventos(perfil)) return null
+  const cpf = normalizarCpf(cpfBruto)
+  if (cpf.length !== 11) return null
+
+  let query = supabaseAdmin.from('perfis').select('nome, telefone, organizacao_id').eq('role', 'supervisor').eq('cpf', cpf)
+  if (!ehMaster(perfil.role)) query = query.eq('organizacao_id', perfil.organizacao_id)
+  const { data } = await query.maybeSingle()
+  if (!data) return null
+  return { nome: data.nome as string, telefone: (data.telefone as string | null) ?? null }
+}
+
 export async function criarFornecedor(eventoId: string, formData: FormData): Promise<{ error?: string }> {
   try {
     await criarFornecedorOuLanca(eventoId, formData)

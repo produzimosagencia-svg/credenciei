@@ -1,8 +1,8 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, X, Pencil } from 'lucide-react'
-import { criarFornecedor, editarFornecedor } from '@/lib/actions'
+import { Plus, X, Pencil, Check } from 'lucide-react'
+import { criarFornecedor, editarFornecedor, buscarSupervisorPorCpf } from '@/lib/actions'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -48,6 +48,26 @@ export default function FornecedorModal(props: Props) {
   const sufixoId = isEditar ? (props as any).fornecedorId : 'novo'
   const idExigeMeio = `exige_meio_${sufixoId}`
   const idEntradaQualquerHorario = `entrada_qualquer_horario_${sufixoId}`
+
+  /*
+   * Achar supervisor existente pelo CPF (pedido do Juan, 02/10/2026): quem
+   * já é supervisor aqui não devia ter que digitar de novo nome e WhatsApp
+   * que o sistema já tem. `nome`/`telefone` ficam vazios até o CPF completar
+   * 11 dígitos E achar alguém — aí preenchem sozinhos via `key` (força os
+   * inputs formatados a remontar com o novo `defaultValue`, já que eles só
+   * leem `defaultValue` na montagem).
+   */
+  const [supervisorEncontrado, setSupervisorEncontrado] = useState<{ nome: string; telefone: string | null } | null>(null)
+  const [buscandoSupervisor, setBuscandoSupervisor] = useState(false)
+  const aoDigitarSupervisorCpf = (cpfFormatado: string) => {
+    setSupervisorEncontrado(null)
+    const digitos = cpfFormatado.replace(/\D/g, '')
+    if (digitos.length !== 11) return
+    setBuscandoSupervisor(true)
+    buscarSupervisorPorCpf(digitos)
+      .then(r => setSupervisorEncontrado(r))
+      .finally(() => setBuscandoSupervisor(false))
+  }
 
   /*
    * O erro do servidor precisa aparecer no formulário.
@@ -228,22 +248,50 @@ export default function FornecedorModal(props: Props) {
                     <p className="text-slate-800 text-sm font-semibold">Supervisor responsável *</p>
                     <p className="text-slate-500 text-xs mt-0.5">
                       Ele recebe o acesso por WhatsApp e passa a cuidar desta equipe. Se a
-                      pessoa já for supervisora aqui, digite o mesmo CPF — este fornecedor entra
-                      nos dela, sem criar login novo.
+                      pessoa já for supervisora aqui, digite o CPF dela — o sistema acha
+                      sozinho e completa nome e WhatsApp, sem criar login novo.
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome *</label>
-                    <NomeInput name="supervisor_nome" required placeholder="Nome da pessoa" className="input" />
+                    <label className="text-sm font-medium text-slate-700 block mb-1.5">CPF *</label>
+                    <CpfInput
+                      name="supervisor_cpf"
+                      required
+                      placeholder="000.000.000-00"
+                      className="input"
+                      onValueChange={aoDigitarSupervisorCpf}
+                    />
+                    {buscandoSupervisor ? (
+                      <p className="text-slate-500 text-xs mt-1">Procurando...</p>
+                    ) : supervisorEncontrado ? (
+                      <p className="text-sucesso-700 text-xs mt-1 flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5 shrink-0" /> Já é supervisor(a) aqui — nome e WhatsApp preenchidos.
+                      </p>
+                    ) : (
+                      <p className="text-slate-500 text-xs mt-1">É com ele que o supervisor entra no sistema.</p>
+                    )}
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-slate-700 block mb-1.5">CPF *</label>
-                    <CpfInput name="supervisor_cpf" required placeholder="000.000.000-00" className="input" />
-                    <p className="text-slate-500 text-xs mt-1">É com ele que o supervisor entra no sistema.</p>
+                    <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome *</label>
+                    <NomeInput
+                      key={supervisorEncontrado?.nome ?? 'vazio'}
+                      name="supervisor_nome"
+                      required
+                      defaultValue={supervisorEncontrado?.nome ?? ''}
+                      placeholder="Nome da pessoa"
+                      className="input"
+                    />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-slate-700 block mb-1.5">WhatsApp *</label>
-                    <TelefoneInput name="supervisor_telefone" required placeholder="(11) 99999-9999" className="input" />
+                    <TelefoneInput
+                      key={supervisorEncontrado?.telefone ?? 'vazio'}
+                      name="supervisor_telefone"
+                      required
+                      defaultValue={supervisorEncontrado?.telefone ?? ''}
+                      placeholder="(11) 99999-9999"
+                      className="input"
+                    />
                   </div>
                 </div>
               )}
