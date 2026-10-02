@@ -6939,6 +6939,23 @@ export async function cadastrarFuncionarioPublico(
   }
 
   /*
+   * Tamanho dos campos de texto livre (auditoria de segurança, 01/10/2026
+   * — item "Validação dos Inputs"). O `required`/`maxLength` do HTML some
+   * numa chamada direta à action; sem este teto, dava pra mandar um nome
+   * ou cargo gigante e sujar banco, PDF, planilha e a mensagem de WhatsApp
+   * que sai pra essa pessoa. Mesma régua de telefone já usada no resto do
+   * sistema (10-13 dígitos, com DDD e o 9 do celular).
+   */
+  const nome = dados.nome.trim()
+  if (nome.length < 2 || nome.length > 120) return { error: 'Informe um nome válido.' }
+  const telefone = dados.telefone.replace(/\D/g, '')
+  if (telefone.length < 10 || telefone.length > 13) return { error: 'Informe um WhatsApp válido, com DDD.' }
+  const cargo = dados.cargo.trim()
+  if (cargo.length < 2 || cargo.length > 120) return { error: 'Informe a função que você vai exercer.' }
+  const chavePix = dados.chavePix?.trim() || null
+  if (chavePix && chavePix.length > 140) return { error: 'Chave PIX inválida — confira o que foi digitado.' }
+
+  /*
    * Consentimento da base regional.
    *
    * Checado no servidor pelo mesmo motivo da cidade: `required` no HTML some
@@ -7003,11 +7020,11 @@ export async function cadastrarFuncionarioPublico(
 
   const { data, error } = await supabaseAdmin.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
-    nome: dados.nome.trim(),
+    nome,
     cpf,
-    telefone: dados.telefone.replace(/\D/g, ''),
-    cargo: dados.cargo.trim(),
-    chave_pix: dados.chavePix?.trim() || null,
+    telefone,
+    cargo,
+    chave_pix: chavePix,
     cidade,
     consentimento_base: true,
     consentimento_em: new Date().toISOString(),

@@ -2,6 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { getPerfil, supabaseAdmin } from './supabase-server'
 import { podeGerenciarBacklog } from './permissions'
+import { mensagemAmigavel } from './erros'
 import {
   STATUS_INICIAL, STATUS_GANHOS, rotuloDoStatus, rotuloDaPrioridade,
   type TipoItem, type Prioridade,
@@ -142,7 +143,7 @@ export async function criarItemBacklog(formData: FormData): Promise<Resultado> {
 
     if (error) {
       console.error('[backlog] insert recusado', { erro: error.message, codigo: error.code, detalhe: error.details })
-      return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+      return { ok: false, erro: mensagemAmigavel(error) }
     }
 
     await registrar(data.id as string, 'CRIACAO', perfil.id as string, null, campos.titulo)
@@ -171,7 +172,7 @@ export async function editarItemBacklog(id: string, formData: FormData): Promise
   const { error } = await supabaseAdmin.from('backlog_itens')
     .update({ ...campos, atualizado_em: new Date().toISOString() })
     .eq('id', id)
-  if (error) return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+  if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
   /*
    * Uma linha de histórico por CAMPO que realmente mudou, não uma linha
@@ -224,7 +225,7 @@ export async function moverItemBacklog(id: string, status: string): Promise<Resu
   const { error } = await supabaseAdmin.from('backlog_itens')
     .update({ status, atualizado_em: new Date().toISOString() })
     .eq('id', id)
-  if (error) return { ok: false, erro: `Não consegui mover: ${error.message}` }
+  if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
   const autor = perfil.id as string
   await registrar(id, 'STATUS', autor, rotuloDoStatus(antes.tipo, antes.status), rotuloDoStatus(antes.tipo, status))
@@ -281,7 +282,7 @@ export async function converterEmCliente(id: string, organizacaoId: string): Pro
     status: 'fechado',
     atualizado_em: new Date().toISOString(),
   }).eq('id', id)
-  if (error) return { ok: false, erro: `Não consegui converter: ${error.message}` }
+  if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
   const autor = perfil.id as string
   await registrar(id, 'CONVERSAO', autor, antes.titulo, org.nome as string)
@@ -302,7 +303,7 @@ export async function excluirItemBacklog(id: string): Promise<Resultado> {
   // O histórico vai junto por `on delete cascade` — é a única exclusão de
   // verdade do módulo, e por isso a tela pede confirmação antes.
   const { error } = await supabaseAdmin.from('backlog_itens').delete().eq('id', id)
-  if (error) return { ok: false, erro: `Não consegui excluir: ${error.message}` }
+  if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
   atualizarTelas()
   return { ok: true }
@@ -393,7 +394,7 @@ export async function anexarFotoBacklog(itemId: string, formData: FormData): Pro
     atualizarTelas()
     return { ok: true }
   } catch (e) {
-    return { ok: false, erro: e instanceof Error ? e.message : 'Não consegui anexar o arquivo.' }
+    return { ok: false, erro: mensagemAmigavel(e) }
   }
 }
 
@@ -413,7 +414,7 @@ export async function removerAnexoBacklog(anexoId: string): Promise<Resultado> {
     atualizarTelas()
     return { ok: true }
   } catch (e) {
-    return { ok: false, erro: e instanceof Error ? e.message : 'Não consegui remover o anexo.' }
+    return { ok: false, erro: mensagemAmigavel(e) }
   }
 }
 

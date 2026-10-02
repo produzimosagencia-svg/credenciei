@@ -132,7 +132,7 @@ export async function criarGasto(formData: FormData): Promise<ResultadoGasto> {
     }).select('id').single()
     if (error) {
       console.error('[gastos] insert recusado', { erro: error.message, codigo: error.code })
-      return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+      return { ok: false, erro: mensagemAmigavel(error) }
     }
 
     // Comprovante depois do insert: se o upload falhar (formato, rede), o
@@ -183,7 +183,7 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
       atualizado_em: new Date().toISOString(),
       ...(novoComprovante ? { comprovante_path: novoComprovante.path, comprovante_nome: novoComprovante.nome } : {}),
     }).eq('id', id)
-    if (error) return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+    if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
     if (novoComprovante && atual.comprovante_path) {
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])
@@ -208,7 +208,7 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
     if (!atual) return { ok: false, erro: 'Este gasto já não existe.' }
 
     const { error } = await supabaseAdmin.from('gastos_evento').delete().eq('id', id)
-    if (error) return { ok: false, erro: `Não consegui excluir: ${error.message}` }
+    if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
     if (atual.comprovante_path) {
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])

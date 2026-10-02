@@ -123,7 +123,7 @@ export async function criarOrcamento(dados: OrcamentoInput): Promise<Resultado> 
     }).select('id').single()
     if (error) {
       console.error('[orcamentos] insert recusado', { erro: error.message, codigo: error.code })
-      return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+      return { ok: false, erro: mensagemAmigavel(error) }
     }
 
     await gravarItens(data.id as string, campos.itens)
@@ -163,7 +163,7 @@ export async function editarOrcamento(id: string, dados: OrcamentoInput): Promis
     }).eq('id', id)
     if (error) {
       console.error('[orcamentos] update recusado', { erro: error.message, codigo: error.code })
-      return { ok: false, erro: `Não consegui salvar: ${error.message}` }
+      return { ok: false, erro: mensagemAmigavel(error) }
     }
 
     // Itens não têm identidade própria fora do orçamento — apagar e regravar
@@ -187,7 +187,7 @@ export async function excluirOrcamento(id: string): Promise<Resultado> {
     if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
     const { error } = await supabaseAdmin.from('orcamentos').delete().eq('id', id)
-    if (error) return { ok: false, erro: `Não consegui excluir: ${error.message}` }
+    if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
     revalidatePath('/admin/orcamentos')
     return { ok: true }
@@ -223,7 +223,7 @@ export async function duplicarOrcamento(id: string): Promise<Resultado> {
       status: 'rascunho',
       created_by: perfil.id,
     }).select('id').single()
-    if (error) return { ok: false, erro: `Não consegui duplicar: ${error.message}` }
+    if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
     await gravarItens(data.id as string, original.itens.map(i => ({ descricao: i.descricao, valor: i.valor })))
 

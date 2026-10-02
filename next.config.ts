@@ -33,6 +33,35 @@ const nextConfig: NextConfig = {
      */
     staleTimes: { dynamic: 30, static: 180 },
   },
+  /*
+   * Headers de segurança (auditoria de 01/10/2026 — item "Add security
+   * headers", único dos 20 que era uma lacuna real de config, não de
+   * arquitetura). Deliberadamente SEM Content-Security-Policy aqui: uma CSP
+   * mal calibrada quebra o site inteiro (login, scanner, formulário
+   * público) pra todo mundo na hora, e calibrar uma direito pede testar ao
+   * vivo contra cada recurso externo que o app carrega — fica pra uma
+   * passada dedicada, não pra mexer "de passagem".
+   *
+   * Permissions-Policy libera câmera/microfone/geolocalização só pra
+   * `self`: o scanner de QR, a biometria facial (câmera), o check-in do
+   * meio do turno (geolocalização) e a transcrição de áudio de gastos
+   * (microfone) são tudo PRÓPRIO do site — a política só fecha a porta pra
+   * um iframe de terceiro tentar usar essas APIs às custas do Credenciei.
+   */
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+        ],
+      },
+    ]
+  },
 };
 
 export default nextConfig;
