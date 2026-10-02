@@ -3125,6 +3125,19 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 
   if (error) throw new Error(mensagemAmigavel(error))
 
+  /*
+   * Subevento (Vital, 02/10/2026) — cadastro feito direto pelo supervisor/
+   * admin (não pelo formulário público) nascia sem o subevento do
+   * fornecedor, e o scanner com área configurada barrava a pessoa como
+   * "área diferente" mesmo estando no fornecedor certo. Mesmo achado do
+   * crachá de supervisor — consulta à parte e tolerante, de sempre.
+   */
+  try {
+    const { data: forn } = await db.from('fornecedores').select('subevento_id').eq('id', fornecedorId).maybeSingle()
+    const subeventoId = (forn as { subevento_id?: string | null } | null)?.subevento_id ?? null
+    if (subeventoId) await db.from('funcionarios').update({ subevento_id: subeventoId }).eq('id', novo.id)
+  } catch { /* migração pendente */ }
+
   // Sincroniza com a planilha e agenda os lembretes de WhatsApp depois da
   // resposta (não bloqueia; sobrevive ao serverless)
   after(() => sincronizarFuncionarioNaPlanilha(novo.id).catch(console.error))
@@ -3205,6 +3218,13 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   }]).select('id, ativo').single()
 
   if (error || !novo) throw new Error(mensagemAmigavel(error))
+
+  // Subevento (Vital, 02/10/2026) — mesmo achado/conserto de `criarFuncionario`.
+  try {
+    const { data: forn } = await db.from('fornecedores').select('subevento_id').eq('id', fornecedorId).maybeSingle()
+    const subeventoId = (forn as { subevento_id?: string | null } | null)?.subevento_id ?? null
+    if (subeventoId) await db.from('funcionarios').update({ subevento_id: subeventoId }).eq('id', novo.id)
+  } catch { /* migração pendente */ }
 
   // Fora do caminho crítico: WhatsApp fora do ar não pode derrubar a atribuição.
   if (pessoa.telefone) {
@@ -3870,7 +3890,7 @@ async function crachaNoEvento(p: {
 }): Promise<{ qrToken: string; criado: boolean } | { error: string }> {
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, qr_token, status_credenciamento, fornecedores!inner(evento_id)')
+    .select('id, qr_token, status_credenciamento, fornecedor_id, subevento_id, fornecedores!inner(evento_id)')
     .eq('cpf', p.cpf)
     .eq('fornecedores.evento_id', p.eventoId)
     .limit(1)
@@ -3880,6 +3900,19 @@ async function crachaNoEvento(p: {
       await supabaseAdmin.from('funcionarios')
         .update({ status_credenciamento: 'aprovado', decidido_em: new Date().toISOString() })
         .eq('id', existente.id)
+    }
+    /*
+     * Autocorrige um crachá antigo (de antes do fix acima) sem subevento —
+     * só quando o fornecedor do crachá é o mesmo que ele supervisiona
+     * agora: fornecedor diferente é outra história (ver o comentário da
+     * função) e não é este fix que decide pra qual subevento ele vai.
+     */
+    if (!existente.subevento_id && existente.fornecedor_id === p.fornecedorId) {
+      try {
+        const { data: forn } = await supabaseAdmin.from('fornecedores').select('subevento_id').eq('id', p.fornecedorId).maybeSingle()
+        const subeventoId = (forn as { subevento_id?: string | null } | null)?.subevento_id ?? null
+        if (subeventoId) await supabaseAdmin.from('funcionarios').update({ subevento_id: subeventoId }).eq('id', existente.id)
+      } catch { /* migração pendente */ }
     }
     return { qrToken: existente.qr_token as string, criado: false }
   }
@@ -3896,6 +3929,20 @@ async function crachaNoEvento(p: {
     origem: 'supervisor',
   }]).select('id, qr_token').single()
   if (error || !novo) return { error: mensagemAmigavel(error) }
+
+  /*
+   * Subevento (Vital, 02/10/2026) — achado validando o fluxo de ponta a
+   * ponta (pedido do Juan): o crachá do supervisor nascia SEM o subevento
+   * do fornecedor dele, então o scanner com área configurada barrava o
+   * PRÓPRIO supervisor como "área diferente", mesmo estando no fornecedor
+   * certo. Consulta à parte e tolerante, mesmo padrão de sempre — coluna
+   * nova, não pode derrubar a criação do crachá.
+   */
+  try {
+    const { data: forn } = await supabaseAdmin.from('fornecedores').select('subevento_id').eq('id', p.fornecedorId).maybeSingle()
+    const subeventoId = (forn as { subevento_id?: string | null } | null)?.subevento_id ?? null
+    if (subeventoId) await supabaseAdmin.from('funcionarios').update({ subevento_id: subeventoId }).eq('id', novo.id)
+  } catch { /* migração pendente */ }
 
   after(() => registrarCadastroFuncionario({
     funcionarioId: novo.id,
@@ -7080,7 +7127,7 @@ export async function cadastrarFuncionarioPublico(
   // onde vai trabalhar.
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedor_id, status_credenciamento, fornecedores!inner(evento_id, nome)')
+    .select('qr_token, fornecedor_id, status_credenciamento, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
     .limit(1)
@@ -7089,8 +7136,18 @@ export async function cadastrarFuncionarioPublico(
     if (existente.fornecedor_id === fornecedorId) {
       return { qrToken: existente.qr_token, status: statusCredenciamentoValido(existente.status_credenciamento) }
     }
+    /*
+     * Evento com subevento (Vital, 02/10/2026): a mensagem fala do
+     * SUBGRUPO, não do fornecedor — é o que faz sentido pra quem está na
+     * fila errada decidir pra onde ir. Evento sem subevento mantém a
+     * mensagem de sempre, por fornecedor.
+     */
+    const nomeSubevento = (existente.subeventos as { nome?: string } | null)?.nome ?? null
     const setorExistente = existente.fornecedores?.nome ?? 'outro fornecedor'
-    return { error: `Este CPF já está credenciado neste evento pelo fornecedor ${setorExistente}. Não é permitido se cadastrar em duas empresas ou funções no mesmo evento.` }
+    const mensagem = nomeSubevento
+      ? `Você já está cadastrado(a) no subgrupo ${nomeSubevento}. Procure o supervisor da sua equipe — não é permitido se cadastrar em outro subgrupo do mesmo evento.`
+      : `Este CPF já está credenciado neste evento pelo fornecedor ${setorExistente}. Procure o supervisor da sua equipe — não é permitido se cadastrar em duas empresas ou funções no mesmo evento.`
+    return { error: mensagem }
   }
 
   /*

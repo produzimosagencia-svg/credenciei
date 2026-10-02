@@ -444,6 +444,26 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   }
 
   /*
+   * Subgrupo/subevento (Vital, 02/10/2026) — mesmo padrão tolerante de
+   * `avisoUniformeTexto` acima: consulta À PARTE, coluna nova. Só mostra
+   * quando o evento de fato usa subeventos — pra não exibir "SUBGRUPO: —"
+   * nos ~99% dos eventos que nunca ligaram essa funcionalidade. Vem sempre
+   * do vínculo ATUAL (`funcionarios.subevento_id`), então uma pessoa
+   * movida de subgrupo já aparece com o novo na próxima vez que abrir a
+   * credencial — não precisa de nada especial além de ler de novo.
+   */
+  let subeventoNome: string | null = null
+  if (evento?.id) {
+    try {
+      const { data: eventoUsaSubeventos } = await supabase.from('eventos').select('tem_subeventos').eq('id', evento.id).maybeSingle()
+      if ((eventoUsaSubeventos as { tem_subeventos?: boolean } | null)?.tem_subeventos === true) {
+        const { data } = await supabase.from('funcionarios').select('subeventos(nome)').eq('id', funcionario.id).maybeSingle()
+        subeventoNome = (data as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
+      }
+    } catch { /* migração pendente */ }
+  }
+
+  /*
    * Biometria autoatendimento — consulta À PARTE e tolerante (mesmo padrão
    * de `metodoIdentificacaoDoEvento`): esta página já é grande e crítica
    * (é a credencial de todo mundo), e pedir uma coluna que ainda não existe
@@ -497,6 +517,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                 <p className="text-slate-800 font-bold text-lg leading-tight">{funcionario.nome}</p>
                 <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
+                {subeventoNome && (
+                  <p className="text-slate-500 text-xs font-semibold mt-1 uppercase tracking-wide">
+                    Subgrupo: {subeventoNome}
+                  </p>
+                )}
               </div>
 
               {/*
