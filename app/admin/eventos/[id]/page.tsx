@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
 import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck } from 'lucide-react'
@@ -572,7 +572,7 @@ export default async function EventoPage({
                   eventoId={id}
                   operadores={operadoresRows ?? []}
                   funcionariosDoEvento={funcionariosDoEventoRows ?? []}
-                  podeExcluir={podeExcluir(perfil)}
+                  podeExcluir={podeExcluirOperadorPortao(perfil?.role)}
                   metodoIdentificacao={(evento as { metodo_identificacao?: string } | null)?.metodo_identificacao ?? 'qr'}
                 />
               )}

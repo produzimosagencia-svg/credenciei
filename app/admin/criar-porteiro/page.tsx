@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, KeyRound } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeExcluir as podeExcluirDeVerdade } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
 import OperadorPortariaCard from '../eventos/[id]/OperadorPortariaCard'
@@ -94,7 +94,7 @@ export default async function CriarPorteiroPage({
         eventoId={eventoParam}
         operadores={(operadores ?? []) as { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]}
         funcionariosDoEvento={(funcionarios ?? []) as { id: string; nome: string; cpf: string; telefone: string }[]}
-        podeExcluir={podeExcluirDeVerdade(perfil.role)}
+        podeExcluir={podeExcluirOperadorPortao(perfil.role)}
         metodoIdentificacao={metodoIdentificacao}
       />
     </div>

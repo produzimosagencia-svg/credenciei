@@ -20,6 +20,7 @@ import {
   podeGerenciarOrganizacoes,
   podeExcluir,
   podeExcluirDaEquipe,
+  podeExcluirOperadorPortao,
   CAPACIDADES,
   PAPEIS_CONFIGURAVEIS,
   capacidadesDoPapel,
@@ -1997,17 +1998,28 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
 
 export async function deletarUsuario(id: string) {
   const perfil = await getPerfil()
-  if (!podeExcluir(perfil)) {
-    throw new Error('Apenas o master pode excluir acessos. Você pode desativar o usuário, que bloqueia o login sem perder o histórico.')
-  }
-  if (perfil!.id === id) throw new Error('Você não pode excluir a si mesmo')
+  if (!perfil) throw new Error('Sem permissão')
+  if (perfil.id === id) throw new Error('Você não pode excluir a si mesmo')
 
   const admin = getAdminSupabase()
+  const { data: alvo } = await admin.from('perfis').select('role, organizacao_id').eq('id', id).single()
+  if (!alvo) throw new Error('Este acesso não existe mais.')
+
+  /*
+   * Exceção pontual: admin também exclui operador de portão (pedido do
+   * Juan, 02/10/2026 — é o acesso mais simples do sistema, sem dado
+   * sensível, e o admin é quem contrata/demite essas pessoas no dia a dia).
+   * Qualquer outro tipo de acesso (supervisor, outro admin...) continua
+   * exigindo master — ver `podeExcluir`.
+   */
+  const podeViaOperadorPortao = alvo.role === 'operador_portao' && podeExcluirOperadorPortao(perfil.role)
+  if (!podeViaOperadorPortao && !podeExcluir(perfil)) {
+    throw new Error('Apenas o master pode excluir acessos. Você pode desativar o usuário, que bloqueia o login sem perder o histórico.')
+  }
 
   // Admin só pode excluir membros da própria organização
-  if (!ehMaster(perfil!.role)) {
-    const { data: alvo } = await admin.from('perfis').select('organizacao_id').eq('id', id).single()
-    if (!alvo || alvo.organizacao_id !== perfil!.organizacao_id) throw new Error('Sem permissão sobre este usuário')
+  if (!ehMaster(perfil.role) && alvo.organizacao_id !== perfil.organizacao_id) {
+    throw new Error('Sem permissão sobre este usuário')
   }
 
   await admin.auth.admin.deleteUser(id)

@@ -147,6 +147,20 @@ export const podeExcluirDaEquipe = capacidade('excluir_da_equipe', role =>
   role === 'master' || role === 'admin' || role === 'supervisor' || role === 'suporte')
 
 /**
+ * Pode EXCLUIR um operador de portão (ou totem — mesmo papel por baixo).
+ *
+ * Exceção pontual a `podeExcluir` (só master): pedido do Juan, 02/10/2026 —
+ * operador de portão é o acesso mais simples do sistema (só lê QR/bate
+ * ponto, nenhum dado sensível), e o admin da organização é quem contrata e
+ * demite essas pessoas no dia a dia. Não é `capacidade()` (sem override por
+ * organização) de propósito: é só master+admin, sempre, sem Configurações
+ * no meio.
+ */
+export function podeExcluirOperadorPortao(role?: string): boolean {
+  return role === 'master' || role === 'admin'
+}
+
+/**
  * Pode ver e mexer no Backlog Operacional — o pipeline comercial e as tarefas
  * internas do Credenciei.
  *

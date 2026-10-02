@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
-import { CalendarDays } from 'lucide-react'
-import { getPerfil } from '@/lib/supabase-server'
+import { CalendarDays, PartyPopper } from 'lucide-react'
+import { getPerfil, meusSetores } from '@/lib/supabase-server'
 import { eventosQuePossoAbrir } from '../EscolherEvento'
-import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
+import { Secao, EmptyState } from '@/components/ui/Superficie'
 import EscolherMeuEvento from './EscolherMeuEvento'
 
 export const revalidate = 0
@@ -14,25 +14,60 @@ export const revalidate = 0
  * antes do Stoked abrir, ele caía sem perceber dentro do Pontal, se o evento
  * antigo ainda estivesse no sistema. Esta tela separa EVENTOS ATUAIS (acesso
  * ativo) de EVENTOS PASSADOS (encerrados, mas sem apagar o histórico) e pede
- * a escolha explicitamente, toda vez.
+ * a escolha explicitamente, toda vez — é a tela de entrada do supervisor,
+ * mesmo papel que `/admin/bem-vindo` cumpre pro operador de portão (mesmo
+ * tom de boas-vindas aqui, pedido do Juan, 02/10/2026 à tarde: "ficou legal,
+ * quero igual pro supervisor").
  *
  * Os dados vêm de `eventosQuePossoAbrir` (já existente, usado por Avisos e
  * Relatórios) — pra este perfil ela já devolve só os eventos onde o
- * supervisor tem (ou teve) um fornecedor, com o `ativo` do evento junto. Zero
- * consulta nova: só esta tela + a escolha (`EscolherMeuEvento`) são novas.
+ * supervisor tem (ou teve) um fornecedor, com o `ativo` do evento junto.
+ * `meusSetores` entra só pra enriquecer cada cartão com O NOME DO SETOR DELE
+ * naquele evento — sem isso o cartão dizia só o nome do evento, e quem cobre
+ * dois fornecedores no mesmo evento não sabia qual dos dois ia abrir.
  */
 export default async function MeusEventosPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (perfil.role !== 'supervisor') redirect('/admin')
 
-  const eventos = await eventosQuePossoAbrir()
+  const [eventos, setores] = await Promise.all([eventosQuePossoAbrir(), meusSetores(perfil)])
   const atuais = eventos.filter(e => e.ativo)
   const passados = eventos.filter(e => !e.ativo)
 
+  const setoresPorEvento = new Map<string, string[]>()
+  for (const s of setores) {
+    const lista = setoresPorEvento.get(s.evento_id) ?? []
+    lista.push(s.nome)
+    setoresPorEvento.set(s.evento_id, lista)
+  }
+
   return (
     <div className="space-y-5">
-      <PageHeader titulo="Meus eventos" descricao="Escolha o evento que você quer acessar agora." />
+      <div className="text-center pt-2 pb-1">
+        <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
+          <PartyPopper className="w-7 h-7 text-brand-500" />
+        </div>
+        {atuais.length === 1 ? (
+          <>
+            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao</h1>
+            <p className="text-brand-500 font-extrabold text-3xl mt-1">{atuais[0].nome}</p>
+          </>
+        ) : atuais.length > 1 ? (
+          <>
+            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo!</h1>
+            <p className="text-slate-500 text-sm mt-2">Você pode atuar nestes eventos agora:</p>
+            <p className="text-brand-500 font-bold text-lg mt-1">{atuais.map(e => e.nome).join(' · ')}</p>
+          </>
+        ) : (
+          <>
+            <h1 className="text-slate-800 font-bold text-2xl">Meus eventos</h1>
+            <p className="text-slate-500 text-sm mt-2">
+              {passados.length ? 'Nenhum evento ativo agora — mas seu histórico continua abaixo.' : 'Escolha o evento que você quer acessar.'}
+            </p>
+          </>
+        )}
+      </div>
 
       {!eventos.length && (
         <Secao tom="acento" icone={<CalendarDays className="w-4 h-4" />} titulo="Meus eventos">
@@ -52,7 +87,7 @@ export default async function MeusEventosPage() {
           descricao="Onde você tem acesso ativo agora."
           corpoClassName=""
         >
-          <EscolherMeuEvento eventos={atuais} />
+          <EscolherMeuEvento eventos={atuais} setoresPorEvento={setoresPorEvento} />
         </Secao>
       )}
 
@@ -63,7 +98,7 @@ export default async function MeusEventosPage() {
           descricao="Eventos encerrados em que você já trabalhou — ainda dá pra abrir e consultar."
           corpoClassName=""
         >
-          <EscolherMeuEvento eventos={passados} />
+          <EscolherMeuEvento eventos={passados} setoresPorEvento={setoresPorEvento} />
         </Secao>
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, CalendarDays, MapPin } from 'lucide-react'
+import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
 import { formatarBR } from '@/lib/tz'
 import { entrarNoEventoSupervisor } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -16,7 +16,11 @@ import type { EventoEscolhivel } from '../EscolherEvento'
  * telas (que leem só `perfis.fornecedor_id`) não saberiam que ele trocou.
  * Ver `MeusSetores.tsx` — mesmo padrão de "navega primeiro, grava atrás".
  */
-export default function EscolherMeuEvento({ eventos }: { eventos: EventoEscolhivel[] }) {
+export default function EscolherMeuEvento({ eventos, setoresPorEvento }: {
+  eventos: EventoEscolhivel[]
+  /** O(s) fornecedor(es) do supervisor DENTRO de cada evento — quem cobre dois no mesmo evento precisa saber qual vai abrir. */
+  setoresPorEvento: Map<string, string[]>
+}) {
   const [isPending, startTransition] = useTransition()
   const [carregando, setCarregando] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -70,6 +74,12 @@ export default function EscolherMeuEvento({ eventos }: { eventos: EventoEscolhiv
                 <span className="inline-flex items-center gap-1 min-w-0">
                   <MapPin className="w-3 h-3 shrink-0 text-slate-300" />
                   <span className="truncate">{e.local}</span>
+                </span>
+              )}
+              {!!setoresPorEvento.get(e.id)?.length && (
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <Building2 className="w-3 h-3 shrink-0 text-slate-300" />
+                  <span className="truncate">{setoresPorEvento.get(e.id)!.join(', ')}</span>
                 </span>
               )}
             </p>

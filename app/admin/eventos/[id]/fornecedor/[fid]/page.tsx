@@ -322,7 +322,17 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       <PageHeader
         titulo={fornecedor.nome}
         descricao={(fornecedor.eventos as any)?.nome}
-        voltarPara={`/admin/eventos/${id}`}
+        /*
+         * O supervisor NUNCA pode abrir `/admin/eventos/${id}` (é a tela de
+         * quem administra o evento inteiro) — essa página o manda de volta
+         * pra cá na hora (`redirect` em app/admin/eventos/[id]/page.tsx).
+         * Mandar o "voltar" dele pra lá virava um loop: clicava e nada
+         * parecia acontecer, porque voltava direto pro mesmo lugar. Pedido
+         * do Juan, 02/10/2026 ("toda tela precisa ter a setinha de voltar
+         * FUNCIONANDO") — pra ele, `/admin/meus-eventos` é o destino que
+         * faz sentido.
+         */
+        voltarPara={perfil.role === 'supervisor' ? '/admin/meus-eventos' : `/admin/eventos/${id}`}
         /* Só o que se usa no dia do evento. Localizar funcionário, cadastro
            manual e cópia do link saíram daqui a pedido: cinco botões na mesma
            fileira quebravam a linha e escondiam o Escanear QR, que é a ação
