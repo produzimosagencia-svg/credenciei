@@ -2,8 +2,8 @@
 import { useTransition, useState, useRef, useLayoutEffect, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { Trash2, KeyRound, Check, AlertCircle, X, Pencil, Power } from 'lucide-react'
-import { deletarUsuario, redefinirSenha, alternarAtivoUsuario, editarUsuario } from '@/lib/actions'
+import { Trash2, KeyRound, Check, AlertCircle, X, Pencil, Power, Building2 } from 'lucide-react'
+import { deletarUsuario, redefinirSenha, alternarAtivoUsuario, editarUsuario, listarOrganizacoesAtivas, moverDeOrganizacao } from '@/lib/actions'
 import { capacidadesDoPapel } from '@/lib/permissions'
 import { mensagemAmigavel } from '@/lib/erros'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -37,6 +37,37 @@ export default function UsuarioActions({
   const router = useRouter()
 
   /*
+   * "Mover de organização" — conserto pra quando a organização errada foi
+   * escolhida na criação do admin (achado ao vivo, 03/10/2026: admin
+   * apontando pra "Homologação" em vez da organização do cliente de
+   * verdade, e não existia como corrigir sem excluir e recriar o acesso).
+   */
+  const [movendoOrg, setMovendoOrg] = useState(false)
+  const [organizacoes, setOrganizacoes] = useState<{ id: string; nome: string }[] | null>(null)
+  const [orgEscolhida, setOrgEscolhida] = useState('')
+  const abrirMoverOrg = () => {
+    setErro(null); setFeito(null)
+    setMovendoOrg(true)
+    if (!organizacoes) {
+      listarOrganizacoesAtivas().then(setOrganizacoes).catch(() => setOrganizacoes([]))
+    }
+  }
+  const confirmarMoverOrg = () => {
+    if (!orgEscolhida) return
+    setErro(null); setFeito(null)
+    startTransition(async () => {
+      try {
+        const r = await moverDeOrganizacao(usuarioId, orgEscolhida)
+        setFeito(`Movido para ${r.organizacaoNome}.`)
+        setMovendoOrg(false)
+        router.refresh()
+      } catch (e: unknown) {
+        setErro(mensagemAmigavel(e))
+      }
+    })
+  }
+
+  /*
    * O popover de "Nova senha" (e os avisos de erro/sucesso logo abaixo)
    * ficavam `absolute right-0 top-full` dentro desta linha da tabela — e a
    * tabela de Acessos tem rolagem horizontal, então a caixa nascia cortada
@@ -47,7 +78,7 @@ export default function UsuarioActions({
    */
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
-  const algumFlutuanteAberto = senhaAberta || !!erro || !!feito || (isPending && !editar)
+  const algumFlutuanteAberto = senhaAberta || movendoOrg || !!erro || !!feito || (isPending && !editar)
 
   const medir = () => {
     const r = wrapperRef.current?.getBoundingClientRect()
@@ -157,6 +188,11 @@ export default function UsuarioActions({
             <ItemMenu onClick={() => { fechar(); alternarAtivo() }}>
               <Power className="w-3.5 h-3.5" /> {usuarioAtivo ? 'Inativar usuário' : 'Ativar usuário'}
             </ItemMenu>
+            {podeExcluir && usuarioRole === 'admin' && (
+              <ItemMenu onClick={() => { fechar(); abrirMoverOrg() }}>
+                <Building2 className="w-3.5 h-3.5" /> Mover de organização
+              </ItemMenu>
+            )}
             {podeExcluir && (
               <ItemMenu tom="perigo" onClick={() => { fechar(); setConfirmOpen(true) }}>
                 <Trash2 className="w-3.5 h-3.5" /> Excluir
@@ -272,6 +308,36 @@ export default function UsuarioActions({
             </div>
           )}
 
+          {movendoOrg && (
+            <div
+              style={{ top: pos.top, right: pos.right }}
+              className="modal-pop-in fixed z-[61] w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-slate-800 text-sm font-medium truncate">Mover de organização</p>
+                <button onClick={() => setMovendoOrg(false)} aria-label="Fechar" className="btn-press w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-slate-500 text-xs">Pra qual organização {usuarioNome} deveria estar?</p>
+              {organizacoes === null ? (
+                <p className="text-slate-400 text-xs">Carregando organizações...</p>
+              ) : (
+                <select
+                  value={orgEscolhida}
+                  onChange={e => setOrgEscolhida(e.target.value)}
+                  className="input"
+                >
+                  <option value="">Escolha a organização...</option>
+                  {organizacoes.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              )}
+              <button onClick={confirmarMoverOrg} disabled={!orgEscolhida || isPending} className="btn btn-primario btn-sm w-full">
+                {isPending ? 'Movendo…' : 'Mover'}
+              </button>
+            </div>
+          )}
+
           {erro && !editar && (
             <div
               style={{ top: pos.top, right: pos.right }}
@@ -290,7 +356,7 @@ export default function UsuarioActions({
               <button onClick={() => setFeito(null)} className="block mt-1 underline">fechar</button>
             </div>
           )}
-          {isPending && !editar && !senhaAberta && (
+          {isPending && !editar && !senhaAberta && !movendoOrg && (
             <div style={{ top: pos.top, right: pos.right }} className="fixed z-[61]">
               <LogoLoading tamanho="sm" rotulo="Processando" />
             </div>

@@ -2199,6 +2199,57 @@ export async function adicionarAdmin(formData: FormData) {
   return { ok: true as const }
 }
 
+/** Organizações ativas, pro seletor de "mover de organização" (só master vê). */
+export async function listarOrganizacoesAtivas(): Promise<{ id: string; nome: string }[]> {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) return []
+  const { data } = await supabaseAdmin.from('organizacoes').select('id, nome').eq('ativo', true).order('nome')
+  return (data ?? []) as { id: string; nome: string }[]
+}
+
+/**
+ * Move um admin pra outra organização — conserto pra quando a organização
+ * errada foi escolhida na criação (achado ao vivo, 03/10/2026: admin criado
+ * apontando pra "Homologação" em vez da organização certa do cliente, e até
+ * agora não existia como editar isso depois de criado, só excluir e
+ * recriar).
+ *
+ * Só ADMIN por enquanto — supervisor/operador/suporte têm a organização
+ * DERIVADA de outro vínculo (fornecedor, escopo de suporte); mover só o
+ * campo `organizacao_id` deles deixaria esse vínculo inconsistente. Se
+ * precisar mover um desses outros papéis, é outro problema, com outro
+ * conserto.
+ */
+export async function moverDeOrganizacao(perfilId: string, novaOrganizacaoId: string) {
+  const perfil = await getPerfil()
+  if (!ehMaster(perfil?.role)) throw new Error('Só o master move acessos entre organizações.')
+
+  const { data: alvo } = await supabaseAdmin.from('perfis').select('id, nome, role, organizacao_id').eq('id', perfilId).single()
+  if (!alvo) throw new Error('Acesso não encontrado.')
+  if (alvo.role !== 'admin') throw new Error('Por enquanto, só dá pra mover acesso do tipo admin entre organizações.')
+
+  const { data: org } = await supabaseAdmin.from('organizacoes').select('id, nome').eq('id', novaOrganizacaoId).single()
+  if (!org) throw new Error('Organização não encontrada.')
+
+  const organizacaoAnteriorId = alvo.organizacao_id as string | null
+  const { data: orgAnterior } = organizacaoAnteriorId
+    ? await supabaseAdmin.from('organizacoes').select('nome').eq('id', organizacaoAnteriorId).maybeSingle()
+    : { data: null }
+
+  const { error } = await supabaseAdmin.from('perfis').update({ organizacao_id: novaOrganizacaoId }).eq('id', perfilId)
+  if (error) throw new Error(mensagemAmigavel(error))
+
+  after(() => registrarAuditoria({
+    perfil, acao: 'ALTERACAO_SUPERVISOR',
+    campoAlterado: `Organização de ${alvo.nome}`,
+    valorAnterior: (orgAnterior as { nome?: string } | null)?.nome ?? 'nenhuma',
+    valorNovo: org.nome as string,
+  }))
+
+  revalidatePath('/admin/usuarios')
+  return { ok: true as const, organizacaoNome: org.nome as string }
+}
+
 /**
  * Liga/desliga um acesso (`perfis.ativo`). Inativo bloqueia o login sem perder
  * o histórico — ver `getPerfil`, que trata `ativo = false` como não-logado.
