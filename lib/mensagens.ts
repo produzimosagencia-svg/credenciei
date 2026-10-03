@@ -1124,7 +1124,7 @@ export async function agendarAlertasSupervisorCredenciamento(): Promise<void> {
 export async function agendarTemplateSupervisor(params: {
   eventoId: string
   telefone: string
-  template: 'cadastro_supervisor_cpf_link' | 'supervisor_escalado_evento'
+  template: 'cadastro_supervisor_cpf_link' | 'supervisor_escalado_evento' | 'recuperar_senha_cpf_link'
   parametros: string[]
 }): Promise<void> {
   const telefone = params.telefone.replace(/\D/g, '')

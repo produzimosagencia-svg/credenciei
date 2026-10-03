@@ -1880,6 +1880,87 @@ export async function gerarLinkDeAcesso(perfilId: string) {
   return { ok: true as const, linkSenha, nome: alvo.nome as string, cpf: (alvo.cpf as string | null) ?? null }
 }
 
+/**
+ * Evento pra pendurar a mensagem de WhatsApp (`mensagens_agendadas.evento_id`
+ * é obrigatório) quando a ação não tem um evento específico em mãos — o
+ * conteúdo da mensagem não fala do evento, é só o FK que a tabela exige.
+ * Setor atual → evento dele; senão o mais recente da organização; master
+ * sem organização → o mais recente do sistema inteiro.
+ */
+async function eventoDeReferenciaParaMensagem(perfil: {
+  organizacao_id: string | null
+  fornecedor_id: string | null
+}): Promise<string | null> {
+  if (perfil.fornecedor_id) {
+    const { data } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', perfil.fornecedor_id).maybeSingle()
+    if (data?.evento_id) return data.evento_id as string
+  }
+  const query = supabaseAdmin.from('eventos').select('id').order('created_at', { ascending: false }).limit(1)
+  if (perfil.organizacao_id) query.eq('organizacao_id', perfil.organizacao_id)
+  const { data } = await query.maybeSingle()
+  return (data?.id as string | undefined) ?? null
+}
+
+/**
+ * "Esqueci minha senha" — autoatendimento (pedido do Juan, 03/10/2026).
+ * Antes o único caminho era mandar mensagem pro WhatsApp do suporte e
+ * esperar alguém resetar na mão (ver `WHATSAPP_SUPORTE` em
+ * `modern-stunning-sign-in.tsx`). Esta ação acha o acesso pelo CPF e manda
+ * um link de criar senha nova pro WhatsApp JÁ CADASTRADO — mesmo
+ * mecanismo/token de `gerarLinkDeAcesso` (`criarConviteSenhaSupervisor`),
+ * só que disparado pela própria pessoa, sem precisar de admin.
+ *
+ * A resposta é SEMPRE a mesma, exista ou não o CPF no sistema — contar a
+ * diferença deixaria alguém descobrir por tentativa quais CPFs têm conta
+ * aqui (mesmo cuidado de "e-mail não encontrado" em qualquer login sério).
+ *
+ * Depende do template `recuperar_senha_cpf_link` estar aprovado na Meta —
+ * até lá, o link é gerado e a mensagem entra na fila, mas o envio de
+ * verdade falha (fica tentando e marca erro, não quebra o resto).
+ */
+export async function solicitarRecuperacaoSenha(cpfBruto: string): Promise<{ ok: true } | { error: string }> {
+  const cpf = normalizarCpf(cpfBruto)
+  if (cpf.length !== 11) return { error: 'Informe um CPF válido, com 11 dígitos.' }
+
+  if (!await podePassar(`recuperar-senha:${cpf}`, 3, 60 * 60 * 1000)) {
+    return { error: 'Muitas tentativas com este CPF. Espere um pouco e tente de novo.' }
+  }
+
+  try {
+    const { data: perfil } = await supabaseAdmin
+      .from('perfis')
+      .select('id, nome, cpf, telefone, role, organizacao_id, fornecedor_id, ativo')
+      .eq('cpf', cpf)
+      .maybeSingle()
+
+    if (perfil && perfil.ativo !== false && perfil.telefone) {
+      const eventoId = await eventoDeReferenciaParaMensagem(perfil)
+      if (eventoId) {
+        const { data: evento } = await supabaseAdmin.from('eventos').select('nome').eq('id', eventoId).maybeSingle()
+        const linkSenha = await criarConviteSenhaSupervisor({
+          perfilId: perfil.id,
+          nome: perfil.nome as string,
+          cpf: perfil.cpf as string,
+          eventoId,
+          evento: (evento as { nome?: string } | null)?.nome ?? 'Credenciei',
+          setor: ROLE_LABELS[perfil.role as Role] ?? 'Acesso',
+        })
+        await agendarTemplateSupervisor({
+          eventoId,
+          telefone: perfil.telefone as string,
+          template: 'recuperar_senha_cpf_link',
+          parametros: [perfil.nome as string, linkSenha],
+        })
+      }
+    }
+  } catch (e) {
+    // Nunca revela erro interno nem existência do CPF — loga e segue como sucesso.
+    console.error('[solicitarRecuperacaoSenha] falha ao processar', e)
+  }
+
+  return { ok: true as const }
+}
+
 /** Edita nome/e-mail/telefone/status e, opcionalmente, a senha do supervisor. */
 export async function editarSupervisor(id: string, formData: FormData): Promise<{ error?: string }> {
   try {

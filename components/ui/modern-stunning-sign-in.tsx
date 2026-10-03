@@ -1,22 +1,25 @@
 'use client'
 import { useState } from 'react'
-import { Eye, EyeOff, MessageCircle } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, X, Check } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
+import { CpfInput } from '@/components/inputs'
+import { solicitarRecuperacaoSenha } from '@/lib/actions'
+import { mensagemAmigavel } from '@/lib/erros'
 
 /**
  * Cartão de login — adaptado do template "modern stunning sign in".
  *
  * O que mudou em relação ao template: o ícone 3D da marca no lugar do logo
  * na bolinha, um slogan, o botão no gradiente laranja, e "Esqueci a senha"
- * levando ao WhatsApp da equipe (não há troca de senha pelo site). Saíram o
- * botão do Google e o "crie sua conta". O campo aceita CPF ou e-mail,
- * porque o supervisor entra com CPF.
+ * abrindo o autoatendimento por CPF (ver `RecuperarSenha` abaixo) — antes
+ * levava pro WhatsApp do suporte pra alguém resetar na mão (pedido do Juan,
+ * 03/10/2026: tirar o humano do meio). Saíram o botão do Google e o "crie
+ * sua conta". O campo aceita CPF ou e-mail, porque o supervisor entra com
+ * CPF.
  *
  * Só desenha e coleta. Quem autentica é a página (`onEntrar`), que já sabe
  * falar com /api/auth/login.
  */
-
-const WHATSAPP_SUPORTE = 'https://wa.me/5527988146143?text=Esqueci%20minha%20senha%20do%20Credenciei'
 
 const CAMPO =
   'w-full px-5 py-3.5 rounded-xl bg-white/[.06] border border-white/10 text-white placeholder-white/35 text-sm outline-none ' +
@@ -33,6 +36,7 @@ export function SignIn1({ onEntrar, carregando, erro }: {
   const [usuario, setUsuario] = useState('')
   const [senha, setSenha] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
+  const [recuperando, setRecuperando] = useState(false)
 
   return (
     <div
@@ -102,21 +106,112 @@ export function SignIn1({ onEntrar, carregando, erro }: {
             {carregando ? 'Entrando…' : 'Entrar'}
           </button>
 
-          <a
-            href={WHATSAPP_SUPORTE}
-            target="_blank"
-            rel="noopener"
+          <button
+            type="button"
+            onClick={() => setRecuperando(true)}
             className="inline-flex items-center justify-center gap-1.5 text-xs text-white/55 hover:text-[#FF8A4C] transition mt-1"
           >
-            <MessageCircle className="w-3.5 h-3.5" />
+            <KeyRound className="w-3.5 h-3.5" />
             Esqueci a senha
-          </a>
+          </button>
         </form>
       </div>
+
+      {recuperando && <RecuperarSenha onFechar={() => setRecuperando(false)} />}
 
       <p className="relative z-10 mt-10 md:mt-0 md:absolute md:bottom-6 md:left-0 md:right-0 text-white/35 text-xs text-center">
         Credenciei © {new Date().getFullYear()} — Produzimos
       </p>
+    </div>
+  )
+}
+
+/**
+ * "Esqueci a senha" — autoatendimento por CPF (pedido do Juan, 03/10/2026).
+ *
+ * A resposta do servidor é SEMPRE a mesma tela de sucesso, exista ou não o
+ * CPF — não é esta tela que decide isso, é `solicitarRecuperacaoSenha` (ver
+ * lib/actions.ts): nunca dar pra descobrir por tentativa se um CPF tem
+ * conta aqui.
+ */
+function RecuperarSenha({ onFechar }: { onFechar: () => void }) {
+  const [cpf, setCpf] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+  const [erro, setErro] = useState('')
+
+  const digitos = cpf.replace(/\D/g, '')
+
+  const enviar = async () => {
+    setErro('')
+    setEnviando(true)
+    try {
+      const r = await solicitarRecuperacaoSenha(digitos)
+      if ('error' in r) { setErro(r.error); return }
+      setEnviado(true)
+    } catch (e) {
+      setErro(mensagemAmigavel(e))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onFechar}>
+      <div
+        className="w-full max-w-sm rounded-[28px] bg-gradient-to-b from-[#1c1a19] to-[#141211] border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,.6)] p-7"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-white font-extrabold text-lg">Esqueci a senha</h2>
+          <button onClick={onFechar} aria-label="Fechar" className="text-white/40 hover:text-white/80 transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {enviado ? (
+          <div className="text-center py-4">
+            <div className="w-12 h-12 rounded-full bg-[#FF4A0F]/15 flex items-center justify-center mx-auto mb-4">
+              <Check className="w-6 h-6 text-[#FF8A4C]" />
+            </div>
+            <p className="text-white text-sm leading-relaxed">
+              Se este CPF tiver um acesso cadastrado, enviamos um link pelo WhatsApp do número cadastrado pra você criar uma senha nova.
+            </p>
+            <button
+              onClick={onFechar}
+              className="mt-6 w-full px-5 py-3 rounded-xl text-white font-bold text-sm hover:brightness-110 transition"
+              style={{ background: 'linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%)' }}
+            >
+              Entendi
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-white/55 mt-1 mb-5">
+              Digite o CPF do seu acesso — mandamos um link pelo WhatsApp já cadastrado pra você criar uma senha nova.
+            </p>
+            <CpfInput
+              defaultValue={cpf}
+              onValueChange={setCpf}
+              placeholder="000.000.000-00"
+              autoFocus
+              className={CAMPO}
+            />
+            {erro && (
+              <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-2.5 mt-3">{erro}</div>
+            )}
+            <button
+              onClick={enviar}
+              disabled={enviando || digitos.length !== 11}
+              className="btn-press w-full px-5 py-3.5 mt-5 rounded-xl text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition flex items-center justify-center gap-2"
+              style={{ background: 'linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%)' }}
+            >
+              {enviando && <LogoLoading tamanho="xs" />}
+              {enviando ? 'Enviando…' : 'Enviar link pelo WhatsApp'}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
