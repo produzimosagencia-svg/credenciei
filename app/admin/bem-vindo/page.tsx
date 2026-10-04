@@ -14,11 +14,11 @@ export const revalidate = 0
  * nome de evento nem orientação nenhuma, "muito feia" pra quem está vendo
  * o sistema pela primeira vez.
  *
- * Esta tela resolve os eventos do operador SEM o filtro de "hoje"
- * (`eventosEscaneaveisSemData` — mesma função que já alimenta o scanner,
- * só sem a segunda peneira) justamente pra poder dizer o nome do evento
- * ANTES de ele começar. Navegação de verdade (escanear, registrar ponto)
- * continua nos mesmos lugares de sempre — esta tela só aponta pra eles.
+ * Não nomeia mais o evento (pedido do Juan, 04/10/2026): quem tem outro
+ * papel além de operador de portão (ex.: vínculo de supervisor em outra
+ * organização, caso da Mara Lúcia) via aqui um nome de evento que não
+ * contava a história inteira dela, e parecia bug. "Bem-vindo ao
+ * Credenciei", sempre — só o vínculo zero continua com aviso específico.
  */
 export default async function BemVindoPage() {
   const perfil = await getPerfil()
@@ -34,31 +34,16 @@ export default async function BemVindoPage() {
           <PartyPopper className="w-7 h-7 text-brand-500" />
         </div>
 
+        <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao Credenciei</h1>
         {eventos.length === 0 ? (
-          <>
-            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao Credenciei</h1>
-            <p className="text-slate-500 text-sm mt-2">
-              Você ainda não está vinculado a nenhum evento. Fale com quem te deu acesso.
-            </p>
-          </>
-        ) : eventos.length === 1 ? (
-          <>
-            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao</h1>
-            <p className="text-brand-500 font-extrabold text-3xl mt-1">{eventos[0].nome}</p>
-          </>
+          <p className="text-slate-500 text-sm mt-2">
+            Você ainda não está vinculado a nenhum evento. Fale com quem te deu acesso.
+          </p>
         ) : (
-          <>
-            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo!</h1>
-            <p className="text-slate-500 text-sm mt-2">Você pode atuar nestes eventos:</p>
-            <p className="text-brand-500 font-bold text-lg mt-1">
-              {eventos.map(e => e.nome).join(' · ')}
-            </p>
-          </>
+          <p className="text-slate-500 text-sm mt-2">
+            Use o menu ao lado pra navegar a qualquer momento:
+          </p>
         )}
-
-        <p className="text-slate-500 text-sm mt-6">
-          Use o menu ao lado pra navegar a qualquer momento:
-        </p>
 
         <div className="mt-4 space-y-3">
           <Link
