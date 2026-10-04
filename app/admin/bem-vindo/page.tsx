@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, ClipboardCheck, PartyPopper } from 'lucide-react'
+import { ScanLine, ClipboardCheck } from 'lucide-react'
 import { getPerfil, eventosEscaneaveisSemData } from '@/lib/supabase-server'
 import { podeAcompanhar } from '@/lib/permissions'
 
@@ -19,6 +19,10 @@ export const revalidate = 0
  * organização, caso da Mara Lúcia) via aqui um nome de evento que não
  * contava a história inteira dela, e parecia bug. "Bem-vindo ao
  * Credenciei", sempre — só o vínculo zero continua com aviso específico.
+ *
+ * A marca entra como imagem (pedido do Juan, 04/10/2026) — o laranja da
+ * logo já tem contraste bom tanto no tema claro quanto no escuro, então
+ * o mesmo arquivo serve pros dois sem precisar trocar por tema.
  */
 export default async function BemVindoPage() {
   const perfil = await getPerfil()
@@ -30,11 +34,10 @@ export default async function BemVindoPage() {
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
       <div className="w-full max-w-md text-center">
-        <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-5">
-          <PartyPopper className="w-7 h-7 text-brand-500" />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/marca/logo-laranja.png" alt="Credenciei" className="h-10 w-auto mx-auto mb-6" />
 
-        <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao Credenciei</h1>
+        <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo!</h1>
         {eventos.length === 0 ? (
           <p className="text-slate-500 text-sm mt-2">
             Você ainda não está vinculado a nenhum evento. Fale com quem te deu acesso.

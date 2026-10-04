@@ -4472,8 +4472,8 @@ const JANELA_SELECT = 'data_inicio, data_fim, batida_livre, checkin_autonomo, ja
  * decide a que DIA a saída pertence. Quem entrou 22:00 e sai 04:00 fecha o dia
  * anterior, não o de hoje.
  *
- * O teto de 18h existe pra uma entrada esquecida da semana passada não capturar
- * a saída de hoje — ver TETO_TURNO_H.
+ * O teto (`TETO_TURNO_H`) existe pra uma entrada esquecida da semana passada
+ * não capturar a saída de hoje.
  */
 /**
  * Quanto tempo depois da ENTRADA o scanner passa a aceitar a saída.

@@ -51,10 +51,17 @@ export const DURACAO_JANELA_MEIO_H = 2
  * Serve ao turno que vira a madrugada: entrou 22:00 do dia 5, sai 04:00 do dia
  * 6, e a saída tem que cair no dia 5 — é assim que a operação conta a noite.
  * Sem um teto, uma entrada esquecida da semana passada capturaria a saída de
- * hoje. Dezoito horas é maior que qualquer turno real e menor que um dia
- * inteiro de intervalo.
+ * hoje.
+ *
+ * Era 18h até 04/10/2026 — pequeno demais pra quem dobra o turno de
+ * verdade (entra 8h de um dia, só sai 8h do dia seguinte: exatamente 24h).
+ * Subiu pra 24h a pedido do Juan. O preço disso: alguém que esqueceu de
+ * bater a saída ontem e reaparece hoje em horário parecido (~24h depois)
+ * tem esse reaparecimento tratado como a SAÍDA do turno de ontem, não como
+ * uma entrada nova — 24h ainda deixa uma folga clara antes disso virar
+ * risco real (teria que faltar MAIS de um dia inteiro pra escapar do teto).
  */
-export const TETO_TURNO_H = 18
+export const TETO_TURNO_H = 24
 
 const H_MS = 60 * 60 * 1000
 const OFFSET_BRT_MS = 3 * H_MS
