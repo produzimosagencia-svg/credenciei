@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { CalendarDays, PartyPopper } from 'lucide-react'
 import { getPerfil, meusSetores } from '@/lib/supabase-server'
-import { eventosQuePossoAbrir } from '../EscolherEvento'
+import { eventosDosMeusSetores } from '../EscolherEvento'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import EscolherMeuEvento from './EscolherMeuEvento'
 
@@ -19,9 +19,14 @@ export const revalidate = 0
  * tom de boas-vindas aqui, pedido do Juan, 02/10/2026 à tarde: "ficou legal,
  * quero igual pro supervisor").
  *
- * Os dados vêm de `eventosQuePossoAbrir` (já existente, usado por Avisos e
- * Relatórios) — pra este perfil ela já devolve só os eventos onde o
- * supervisor tem (ou teve) um fornecedor, com o `ativo` do evento junto.
+ * Os dados vêm de `eventosDosMeusSetores` — devolve só os eventos onde a
+ * pessoa tem (ou teve) um vínculo de `supervisor_setores`, com o `ativo` do
+ * evento junto. Isso vale tanto pra quem É supervisor quanto pra quem só
+ * GANHOU um vínculo mantendo outro papel principal (ex.: operador de
+ * portão que também supervisiona um fornecedor — caso da Mara Lúcia,
+ * 04/10/2026: o gate antigo, travado em `role === 'supervisor'`, mandava
+ * essa gente de volta pra `/admin`, que não sabia o que fazer com ela e
+ * mostrava "nenhum evento".
  * `meusSetores` entra só pra enriquecer cada cartão com O NOME DO SETOR DELE
  * naquele evento — sem isso o cartão dizia só o nome do evento, e quem cobre
  * dois fornecedores no mesmo evento não sabia qual dos dois ia abrir.
@@ -29,9 +34,11 @@ export const revalidate = 0
 export default async function MeusEventosPage() {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (perfil.role !== 'supervisor') redirect('/admin')
 
-  const [eventos, setores] = await Promise.all([eventosQuePossoAbrir(), meusSetores(perfil)])
+  const setores = await meusSetores(perfil)
+  if (perfil.role !== 'supervisor' && !setores.length) redirect('/admin')
+
+  const eventos = await eventosDosMeusSetores(setores)
   const atuais = eventos.filter(e => e.ativo)
   const passados = eventos.filter(e => !e.ativo)
 

@@ -66,6 +66,37 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
 }
 
 /**
+ * Eventos a partir dos VÍNCULOS de `supervisor_setores` do perfil, não do
+ * papel dele — "Meus eventos" precisa valer tanto pra quem É supervisor
+ * quanto pra quem só GANHOU um vínculo de setor mantendo outro papel
+ * principal (ex.: operador de portão que também supervisiona um fornecedor
+ * — caso da Mara Lúcia, 04/10/2026, que fez login e viu "nenhum evento").
+ * Diferente de `eventosQuePossoAbrir`, não tem branch por papel — por isso
+ * não é usada por Avisos/Relatórios, que precisam do escopo largo de
+ * master/admin/suporte mesmo que a pessoa também carregue um vínculo.
+ */
+export async function eventosDosMeusSetores(setoresPreCalculados?: Awaited<ReturnType<typeof meusSetores>>): Promise<EventoEscolhivel[]> {
+  const perfil = await getPerfil()
+  if (!perfil) return []
+  const meus = setoresPreCalculados ?? await meusSetores(perfil)
+  const ids = [...new Set(meus.map(s => s.evento_id as string))]
+  if (!ids.length) return []
+  const { data } = await supabase
+    .from('eventos')
+    .select('id, nome, local, data_inicio, ativo, organizacao_id, organizacoes(nome)')
+    .in('id', ids)
+    .order('data_inicio', { ascending: false })
+  return (data ?? []).map(e => ({
+    id: e.id as string,
+    nome: e.nome as string,
+    local: (e.local as string | null) ?? null,
+    data_inicio: (e.data_inicio as string | null) ?? null,
+    ativo: e.ativo !== false,
+    organizacaoNome: (e.organizacoes as unknown as { nome: string } | null)?.nome ?? null,
+  }))
+}
+
+/**
  * A lista de eventos pra escolher — o primeiro passo das telas que vêm pelo
  * menu (Avisos, Relatórios) e por isso não sabem de qual evento se trata.
  */

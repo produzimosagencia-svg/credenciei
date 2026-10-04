@@ -181,9 +181,20 @@ export async function licencasDeEventoRestantes(perfil: any): Promise<number> {
 // supervisor → apenas o setor (fornecedor) ao qual foi vinculado na criação,
 //              e portanto só o evento dono desse setor.
 
-/** O setor (fornecedor) do supervisor logado, com o evento a que pertence. Null se não for supervisor de setor. */
+/**
+ * O setor (fornecedor) do supervisor logado, com o evento a que pertence.
+ * Null se não tiver um setor ATIVO agora.
+ *
+ * Não trava mais em `role === 'supervisor'` (achado ao vivo, 03/10/2026,
+ * caso da Mara Lúcia): alguém cujo papel principal é outro (operador de
+ * portão, admin...) pode ter GANHO um vínculo de supervisor sem trocar de
+ * papel — "a mesma pessoa pode supervisionar um setor sem perder o acesso
+ * que já tem", ver `criarSupervisorOuLanca`. Travar por role deixava esse
+ * vínculo invisível pra ela: entrava e o sistema agia como se não tivesse
+ * setor nenhum.
+ */
 export async function meuSetor(perfil: any): Promise<{ id: string; nome: string; evento_id: string; evento_nome: string } | null> {
-  if (!perfil || perfil.role !== 'supervisor' || !perfil.fornecedor_id) return null
+  if (!perfil || !perfil.fornecedor_id) return null
   const { data } = await admin
     .from('fornecedores')
     .select('id, nome, evento_id, eventos(nome)')
@@ -194,17 +205,28 @@ export async function meuSetor(perfil: any): Promise<{ id: string; nome: string;
 }
 
 /**
- * TODOS os setores que este supervisor pode acessar.
+ * TODOS os setores que esta pessoa supervisiona.
  *
- * `meuSetor` (singular) devolve o que ele está vendo AGORA; esta devolve o
+ * `meuSetor` (singular) devolve o que ela está vendo AGORA; esta devolve o
  * cardápio. A diferença é o que permite um login só cobrir vários setores —
  * ver supabase/upgrade-supervisor-multi-setor.sql.
+ *
+ * NÃO trava mais em `role === 'supervisor'` (achado ao vivo, 03/10/2026,
+ * caso da Mara Lúcia: operadora de portão no Henrique e Juliano, ganhou um
+ * setor pra supervisionar na Stoked — `criarSupervisorOuLanca` escreve o
+ * vínculo em `supervisor_setores` SEM trocar `perfis.role`, de propósito,
+ * "pra não perder o acesso que já tem". Travar aqui por role deixava esse
+ * vínculo completamente invisível: `app/admin/page.tsx` achava que ela não
+ * tinha setor nenhum e mandava pro fluxo errado). Em troca, quem não tem
+ * NENHUM vínculo em `supervisor_setores` (a maioria dos outros papéis)
+ * continua recebendo `[]`, exatamente como antes — a função só passou a
+ * responder pela EXISTÊNCIA do vínculo, não pelo papel principal da conta.
  *
  * Tolerante à migração ainda não aplicada: sem a tabela, cai no setor único
  * de sempre, e o sistema segue funcionando como antes.
  */
 export async function meusSetores(perfil: any): Promise<{ id: string; nome: string; evento_id: string }[]> {
-  if (!perfil || perfil.role !== 'supervisor') return []
+  if (!perfil) return []
 
   const { data: vinculos, error } = await admin
     .from('supervisor_setores').select('fornecedor_id').eq('perfil_id', perfil.id)

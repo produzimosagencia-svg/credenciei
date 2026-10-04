@@ -7,7 +7,7 @@ import {
 import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
-import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, buscarTudo } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, meusSetores, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluir, podeGerenciarBacklog } from '@/lib/permissions'
 import AtencaoHoje from './AtencaoHoje'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
@@ -233,6 +233,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
      * ele está entrando — `/admin/meus-eventos` já separa atual de passado.
      */
     if (perfil.role === 'supervisor') redirect('/admin/meus-eventos')
+    /*
+     * Pode ter papel principal diferente (operador de portão, admin...) e
+     * AINDA ASSIM supervisionar um setor — "a mesma pessoa pode
+     * supervisionar sem perder o acesso que já tem" (`criarSupervisorOuLanca`,
+     * 24/09/2026): o vínculo entra em `supervisor_setores` sem trocar
+     * `perfis.role`. Sem checar isso aqui, esse vínculo ficava invisível no
+     * login — achado ao vivo, 03/10/2026, caso da Mara Lúcia (operadora de
+     * portão do Henrique e Juliano, ganhou um setor pra supervisionar na
+     * Stoked e caiu em "nenhum evento" tentando entrar).
+     */
+    if (perfil.role !== 'supervisor' && (await meusSetores(perfil)).length) {
+      redirect('/admin/meus-eventos')
+    }
     const setor = await meuSetor(perfil)
     if (!setor) {
       /*

@@ -2,7 +2,7 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X } from 'lucide-react'
-import { podeGerenciarUsuarios, ehMaster, podeExcluir, ROLE_LABELS, type Role } from '@/lib/permissions'
+import { podeGerenciarUsuarios, ehMaster, podeExcluir, podeExcluirOperadorPortao, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
 import { exibirIdentificador } from '@/lib/usuario'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -267,7 +267,17 @@ export default async function UsuariosPage({
                     usuarioTelefone={u.telefone}
                     usuarioEmailContato={u.emailContato}
                     permissoesUsuario={u.permissoesUsuario}
-                    podeExcluir={podeExcluir(perfil!.role)}
+                    /*
+                     * Excluir é só do master, SALVO operador de portão/totem
+                     * (achado do Juan, 03/10/2026: admin tentou excluir um
+                     * "Gestor de credenciamento" — o rótulo de
+                     * operador_portao — por aqui, na lista de Acessos, e não
+                     * tinha o botão; só tinha sido ligado no cartão de
+                     * dentro do evento, não aqui). Mesma exceção,
+                     * `podeExcluirOperadorPortao`, só que por linha — cada
+                     * usuário da lista pode ser de um papel diferente.
+                     */
+                    podeExcluir={u.role === 'operador_portao' ? podeExcluirOperadorPortao(perfil!.role) : podeExcluir(perfil!.role)}
                   />
                 )}
                 </div>
