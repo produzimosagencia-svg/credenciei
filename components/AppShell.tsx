@@ -57,7 +57,7 @@ type Grupo = { titulo?: string; itens: NavItem[] }
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
  * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
-function gruposPara(perfil: Perfil, temEventoComBiometria: boolean): Grupo[] {
+function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSupervisor: boolean): Grupo[] {
   const role = perfil.role
   const grupos: Grupo[] = []
 
@@ -71,8 +71,14 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean): Grupo[] {
    * um jeito de VOLTAR pra escolher outro sem precisar sair e entrar de
    * novo. "Meus fornecedores", logo abaixo, só troca de setor DENTRO do
    * evento já escolhido.
+   *
+   * Não trava mais em `role === 'supervisor'` (achado ao vivo, 04/10/2026,
+   * caso da Mara Lúcia): quem tem outro papel principal mas GANHOU um
+   * vínculo de supervisor também precisa deste item — `temVinculoSupervisor`
+   * vem calculado no layout via `meusSetores`, e passa a existência do
+   * vínculo, não o papel da conta.
    */
-  if (role === 'supervisor') {
+  if (role === 'supervisor' || temVinculoSupervisor) {
     doEvento.push({ href: '/admin/meus-eventos', label: 'Meus eventos', icon: CalendarDays })
   }
   /*
@@ -557,7 +563,7 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
  */
 export default function AppShell({
   perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null,
-  temEventoComBiometria = true, children,
+  temEventoComBiometria = true, temVinculoSupervisor = false, children,
 }: {
   perfil: Perfil
   fotoOrgUrl?: string | null
@@ -567,12 +573,14 @@ export default function AppShell({
   setorAtualId?: string | null
   /** Se a organização tem algum evento configurado pra biometria — esconde "Biometria" do menu quando não. */
   temEventoComBiometria?: boolean
+  /** Se este perfil tem QUALQUER vínculo de `supervisor_setores`, mesmo sem ser supervisor de papel — mostra "Meus eventos". */
+  temVinculoSupervisor?: boolean
   children: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
-  const grupos = gruposPara(perfil, temEventoComBiometria)
+  const grupos = gruposPara(perfil, temEventoComBiometria, temVinculoSupervisor)
 
   // O master não pertence a organização nenhuma — pra ele o contexto é a
   // plataforma inteira, e dizer isso é mais honesto que repetir a marca.
