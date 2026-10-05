@@ -166,3 +166,59 @@ export async function exportarPlanilhaDeEquipe(
   const nomeArquivo = `${eventoNome} - ${setorNome}${sufixoDia}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 120)
   XLSX.writeFile(wb, `${nomeArquivo}.xlsx`)
 }
+
+// ─── Contatos para disparo avulso ────────────────────────────────────────────
+
+export type ContatoPlanilha = { nome: string; telefone: string }
+
+export type LeituraDeContatos = {
+  contatos: ContatoPlanilha[]
+  /** Linhas que tinham algo escrito mas não deram um telefone utilizável. */
+  descartadas: number
+  /** Mesmo telefone aparecendo mais de uma vez: a pessoa receberia duas vezes. */
+  duplicados: number
+}
+
+/**
+ * Lê uma planilha de contatos para o disparo avulso.
+ *
+ * Aceita .xlsx, .xls e .csv pelo mesmo caminho: `XLSX.read` entende os três,
+ * então não há motivo pra obrigar ninguém a exportar como CSV antes.
+ *
+ * Só precisa de duas colunas, com os mesmos apelidos tolerados da planilha de
+ * equipe. Nome vazio vira "Contato": o disparo usa o nome na variável {{1}}
+ * do template, e uma saudação sem nome é melhor do que não mandar.
+ *
+ * Telefone repetido é removido, não apenas contado: mandar a mesma mensagem
+ * duas vezes pro mesmo número é o tipo de erro que a pessoa percebe e que
+ * aumenta a chance de ela bloquear o número.
+ */
+export async function lerPlanilhaDeContatos(arquivo: File): Promise<LeituraDeContatos> {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const linhas = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
+
+  const porTelefone = new Map<string, ContatoPlanilha>()
+  let descartadas = 0
+  let duplicados = 0
+
+  for (const linha of linhas) {
+    const nomeBruto = valorDaColuna(linha, COLUNAS.nome)
+    const telBruto = valorDaColuna(linha, COLUNAS.telefone)
+    if (!nomeBruto && !telBruto) continue   // linha em branco, não conta como descarte
+
+    // Mesma régua do envio: 10 ou 11 dígitos ganham o 55, 12 ou 13 já vêm com
+    // o país. Qualquer outra coisa não é telefone brasileiro utilizável.
+    let d = telBruto.replace(/\D/g, '')
+    if (d.length === 10 || d.length === 11) d = `55${d}`
+    if (d.length !== 12 && d.length !== 13) { descartadas++; continue }
+    if (!d.startsWith('55')) { descartadas++; continue }
+
+    if (porTelefone.has(d)) { duplicados++; continue }
+    porTelefone.set(d, { nome: nomeBruto.trim() || 'Contato', telefone: d })
+  }
+
+  return { contatos: [...porTelefone.values()], descartadas, duplicados }
+}

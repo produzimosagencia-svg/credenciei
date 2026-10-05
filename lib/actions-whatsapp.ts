@@ -100,7 +100,7 @@ export async function previaDisparo(alvo: AlvoDisparo): Promise<PreviaDisparo> {
  */
 export async function dispararEmMassa(
   pedido: PedidoDisparo,
-): Promise<{ enfileiradas: number; semTelefone: number; excluidas: number }> {
+): Promise<{ enfileiradas: number; semTelefone: number; excluidas: number; campanhaId: string }> {
   const perfil = await exigirMaster()
 
   if (!pedido.template.trim()) throw new Error('Escolha um template.')
@@ -200,7 +200,9 @@ export async function dispararEmMassa(
   }
 
   revalidatePath('/admin/whatsapp')
-  return { enfileiradas: linhas.length, semTelefone, excluidas }
+  // O id da campanha sai junto: sem ele não dá pra acompanhar ESTE disparo
+  // depois, só o total do dia misturado com os avisos automáticos.
+  return { enfileiradas: linhas.length, semTelefone, excluidas, campanhaId }
 }
 
 /** Marca a conversa como lida antes de navegar para o chat. */
@@ -258,4 +260,83 @@ export async function salvarFluxos(ativos: Record<string, boolean>) {
 
   revalidatePath('/admin/whatsapp/fluxos')
   return { ok: true as const }
+}
+
+// ─── Acompanhamento de um disparo ────────────────────────────────────────────
+
+export type StatusDisparo = {
+  total: number
+  pendentes: number
+  enviando: number
+  enviadas: number
+  falhas: number
+  canceladas: number
+  /** Terminou quando ninguém mais está esperando a vez. */
+  concluido: boolean
+  /** Os que não chegaram, com o motivo que a Meta devolveu. */
+  erros: { telefone: string; motivo: string }[]
+}
+
+/**
+ * Como está UM disparo, pelo id da campanha.
+ *
+ * A Visão geral responde "quantas saíram hoje", somando o disparo manual com
+ * todos os avisos automáticos do sistema. Pra um envio esporádico isso não
+ * serve: a pergunta é "o meu, aquele de agora, chegou?".
+ *
+ * O id da campanha mora dentro do JSON da coluna `mensagem`, que é texto, não
+ * jsonb. Por isso a busca é por `ilike` com o UUID: não é elegante, mas um
+ * UUID não colide com nada e evita migração de coluna só pra isto.
+ */
+export async function statusDoDisparo(campanhaId: string): Promise<StatusDisparo> {
+  await exigirMaster()
+  if (!/^[0-9a-f-]{36}$/i.test(campanhaId)) throw new Error('Identificador de disparo inválido.')
+
+  const { data: linhas, error } = await supabaseAdmin
+    .from('mensagens_agendadas')
+    .select('id, status, telefone')
+    .eq('tipo', 'disparo_manual')
+    .ilike('mensagem', `%${campanhaId}%`)
+  if (error) throw new Error(`Não consegui ler o status: ${error.message}`)
+
+  const conta = (s: string) => (linhas ?? []).filter(l => l.status === s).length
+  const falhas = conta('falhou')
+
+  // O motivo só existe no log, e só pra quem falhou. Buscar sempre seria puxar
+  // uma linha por tentativa de todo mundo, inclusive de quem deu certo.
+  let erros: { telefone: string; motivo: string }[] = []
+  if (falhas > 0) {
+    const ids = (linhas ?? []).filter(l => l.status === 'falhou').map(l => l.id)
+    const { data: logs } = await supabaseAdmin
+      .from('mensagens_log')
+      .select('mensagem_agendada_id, erro, destinatario_telefone, criado_em')
+      .in('mensagem_agendada_id', ids)
+      .eq('status', 'erro')
+      .order('criado_em', { ascending: false })
+
+    const vistos = new Set<string>()
+    for (const l of logs ?? []) {
+      const chave = String(l.mensagem_agendada_id)
+      if (vistos.has(chave)) continue   // só a última tentativa de cada um
+      vistos.add(chave)
+      erros.push({
+        telefone: String(l.destinatario_telefone ?? ''),
+        motivo: String(l.erro ?? 'sem detalhe').slice(0, 300),
+      })
+    }
+    erros = erros.slice(0, 50)
+  }
+
+  const pendentes = conta('pendente')
+  const enviando = conta('enviando')
+  return {
+    total: (linhas ?? []).length,
+    pendentes,
+    enviando,
+    enviadas: conta('enviado'),
+    falhas,
+    canceladas: conta('cancelado'),
+    concluido: pendentes === 0 && enviando === 0,
+    erros,
+  }
 }

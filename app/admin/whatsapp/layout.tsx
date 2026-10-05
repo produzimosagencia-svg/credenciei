@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { MessageCircle, Send, Workflow, MessagesSquare } from 'lucide-react'
+import { MessageCircle, Send, Workflow, MessagesSquare, FileUp } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import { PageHeader } from '@/components/ui/Superficie'
@@ -21,6 +21,7 @@ export const ABAS = [
   { href: '/admin/whatsapp/disparo', label: 'Novo disparo', icone: Send },
   { href: '/admin/whatsapp/fluxos', label: 'Fluxos automáticos', icone: Workflow },
   { href: '/admin/whatsapp/conversas', label: 'Conversas', icone: MessagesSquare },
+  { href: '/admin/whatsapp/avulso', label: 'Envio avulso', icone: FileUp },
 ]
 
 export default async function WhatsAppLayout({ children }: { children: React.ReactNode }) {
