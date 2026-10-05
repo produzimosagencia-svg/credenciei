@@ -47,6 +47,12 @@ export type PedidoDisparo = {
   template: string
   /** A posição 0 é ignorada: {{1}} recebe o nome de cada contato. */
   parametros: string[]
+  /**
+   * URL pública da imagem, obrigatória quando o template tem cabeçalho de
+   * mídia. Quem busca o arquivo é o servidor da Meta, então precisa ser
+   * https e acessível de fora.
+   */
+  imagemUrl?: string
 }
 
 /**
@@ -123,6 +129,22 @@ export async function dispararEmMassa(
   if (modelo.categoria === 'AUTHENTICATION') {
     throw new Error('Templates de autenticação não podem ser usados em disparo comum.')
   }
+
+  /*
+   * Template com cabeçalho de mídia exige a imagem em todo envio. Barrar aqui
+   * é o que evita enfileirar mil mensagens que vão falhar uma a uma: a Meta
+   * recusa cada uma com erro de contagem de parâmetros, sem dizer que o que
+   * falta é a imagem.
+   */
+  if (modelo.cabecalho === 'IMAGE' && !pedido.imagemUrl?.trim()) {
+    throw new Error(`O template "${modelo.nome}" tem cabeçalho de imagem: informe a URL pública da imagem.`)
+  }
+  if (modelo.cabecalho && modelo.cabecalho !== 'TEXT' && modelo.cabecalho !== 'IMAGE') {
+    throw new Error(`O template "${modelo.nome}" tem cabeçalho de ${modelo.cabecalho.toLowerCase()}, que esta tela ainda não envia.`)
+  }
+  if (pedido.imagemUrl && !/^https:\/\//.test(pedido.imagemUrl.trim())) {
+    throw new Error('A imagem precisa de uma URL https pública: quem busca o arquivo é o servidor da Meta.')
+  }
   const parametros = Array.from({ length: modelo.variaveis }, (_, i) => String(pedido.parametros[i] ?? '').trim())
   if (parametros.slice(1).some(v => !v)) {
     throw new Error('Preencha todas as variáveis fixas do template.')
@@ -189,6 +211,9 @@ export async function dispararEmMassa(
       template: modelo.nome,
       parametros: modelo.variaveis ? [contato.nome, ...parametros.slice(1)] : [],
       phoneNumberId: pedido.phoneNumberId,
+      // Sem isto, template com cabeçalho de imagem sai sem o parâmetro dela e
+      // a Meta recusa a mensagem inteira, destinatário por destinatário.
+      imagemUrl: pedido.imagemUrl,
       campanhaId,
       origem: pedido.origem,
     }),

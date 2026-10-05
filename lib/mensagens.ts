@@ -1385,7 +1385,7 @@ async function limiteDaEtapa(
  * pré-computado no agendamento. Retorna null quando a mensagem deve ser
  * cancelada (ex.: alerta ao supervisor sem ninguém pendente).
  */
-async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[]; phoneNumberId?: string; botaoParam?: string } | null> {
+async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: string; params: string[]; phoneNumberId?: string; botaoParam?: string; imagemUrl?: string } | null> {
   const template = TEMPLATE_POR_TIPO[msg.tipo]
 
   /*
@@ -1395,9 +1395,18 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
    */
   if (msg.tipo === 'disparo_manual') {
     try {
-      const escolha = JSON.parse(msg.mensagem) as { template?: string; parametros?: string[]; phoneNumberId?: string }
+      const escolha = JSON.parse(msg.mensagem) as {
+        template?: string; parametros?: string[]; phoneNumberId?: string; imagemUrl?: string
+      }
       if (!escolha?.template) return null
-      return { template: escolha.template, params: escolha.parametros ?? [], phoneNumberId: escolha.phoneNumberId }
+      // A imagem do cabeçalho viaja na fila junto do resto: diferente dos
+      // automáticos, este conteúdo foi escolhido à mão e não é recalculável.
+      return {
+        template: escolha.template,
+        params: escolha.parametros ?? [],
+        phoneNumberId: escolha.phoneNumberId,
+        imagemUrl: escolha.imagemUrl,
+      }
     } catch {
       return null
     }
@@ -1972,6 +1981,7 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
           texto,
           phoneNumberId: envio.phoneNumberId,
           botaoParam: envio.botaoParam,
+          imagemUrl: envio.imagemUrl,
         })
 
   await supabase.from('mensagens_log').insert({

@@ -148,14 +148,38 @@ export async function enviarTemplate(
   params: string[],
   phoneNumberId?: string,
   botaoParam?: string,
+  imagemUrl?: string,
 ): Promise<ResultadoEnvio> {
   const qtdBody = QTD_VARIAVEIS_BODY[template] ?? params.length
   const parametrosBody = params.slice(0, qtdBody).map(p => ({ type: 'text', text: String(p ?? '') }))
   // `botaoParam` explícito manda; sem ele, templates de autenticação repetem
   // o código do corpo no botão (comportamento de sempre, preservado).
   const paramBotao = botaoParam ?? (TEMPLATES_AUTENTICACAO.has(template) ? params[0] : undefined)
-  const componentes = parametrosBody.length || paramBotao
+
+  /*
+   * Cabeçalho de imagem.
+   *
+   * Template aprovado com cabeçalho de mídia exige o parâmetro dele em TODO
+   * envio: a imagem que aparece no painel da Meta é só o exemplo usado na
+   * revisão, não a que viaja com a mensagem. Sem este componente a Meta
+   * recusa, e o erro fala em contagem de parâmetros, sem dizer que o que
+   * falta é a imagem.
+   *
+   * Existe template nesta conta com cabeçalho de imagem e NENHUMA variável no
+   * corpo (`vendas_abertas_luan`). Por isso a imagem entra na condição que
+   * decide se há componentes: sem ela nessa conta, aquele template saía sem
+   * componente algum e falhava em todos os destinatários.
+   *
+   * A URL precisa ser pública e https: quem busca o arquivo é o servidor da
+   * Meta, não este.
+   */
+  const paramCabecalho = imagemUrl
+    ? [{ type: 'header', parameters: [{ type: 'image', image: { link: imagemUrl } }] }]
+    : []
+
+  const componentes = parametrosBody.length || paramBotao || paramCabecalho.length
     ? [
+        ...paramCabecalho,
         ...(parametrosBody.length ? [{ type: 'body', parameters: parametrosBody }] : []),
         ...(paramBotao
           ? [{

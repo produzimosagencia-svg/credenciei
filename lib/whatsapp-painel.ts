@@ -23,6 +23,15 @@ export type TemplateMeta = {
   corpo: string
   /** Quantas variáveis o corpo espera. É o que o disparo precisa preencher. */
   variaveis: number
+  /*
+   * Formato do cabeçalho, quando existe.
+   *
+   * Importa no ENVIO, não só na exibição: template com cabeçalho de mídia
+   * exige um parâmetro próprio para ele. Mandar sem o parâmetro faz a Meta
+   * recusar a mensagem inteira, e o erro fala de contagem de parâmetros, sem
+   * dizer que o que falta é a imagem.
+   */
+  cabecalho: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null
 }
 
 export type NumeroWhatsApp = {
@@ -79,14 +88,16 @@ export async function templatesAprovados(): Promise<TemplateMeta[]> {
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000), cache: 'no-store' },
     )
     const corpo = await res.json().catch(() => null) as
-      { data?: { name: string; status: string; category: string; language?: string; components?: { type: string; text?: string }[] }[] } | null
+      { data?: { name: string; status: string; category: string; language?: string; components?: { type: string; text?: string; format?: string }[] }[] } | null
 
     return (corpo?.data ?? []).map(t => {
       const texto = t.components?.find(c => c.type === 'BODY')?.text ?? ''
+      const cab = t.components?.find(c => c.type === 'HEADER')
       return {
         nome: t.name,
         status: t.status,
         categoria: t.category,
+        cabecalho: (cab?.format as TemplateMeta['cabecalho']) ?? null,
         idioma: t.language ?? 'pt_BR',
         corpo: texto,
         variaveis: new Set([...texto.matchAll(/\{\{(\d+)\}\}/g)].map(m => m[1])).size,

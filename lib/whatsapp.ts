@@ -66,9 +66,14 @@ export async function enviarMensagem(params: {
   phoneNumberId?: string
   /** Parâmetro do botão de URL dinâmica, quando o template tem um — separado do corpo. */
   botaoParam?: string
+  /*
+   * URL pública da imagem, quando o template tem cabeçalho de mídia.
+   * A Evolution manda texto livre e ignora: lá a imagem não existe.
+   */
+  imagemUrl?: string
 }): Promise<ResultadoEnvio> {
   return provedor() === 'meta'
-    ? enviarTemplate(params.numero, params.template, params.parametros, params.phoneNumberId, params.botaoParam)
+    ? enviarTemplate(params.numero, params.template, params.parametros, params.phoneNumberId, params.botaoParam, params.imagemUrl)
     : enviarTextoEvolution(params.numero, params.texto)
 }
 

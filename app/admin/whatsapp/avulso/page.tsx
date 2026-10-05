@@ -27,7 +27,7 @@ export default async function AvulsoPage() {
   // próprio e o template não serve pra avisar ninguém sobre evento.
   const aprovados = templates
     .filter(t => t.status === 'APPROVED' && t.categoria !== 'AUTHENTICATION')
-    .map(t => ({ nome: t.nome, variaveis: t.variaveis, corpo: t.corpo, categoria: t.categoria }))
+    .map(t => ({ nome: t.nome, variaveis: t.variaveis, corpo: t.corpo, categoria: t.categoria, cabecalho: t.cabecalho }))
 
   const semNumero = !numeros.some(n => n.status === 'CONNECTED')
 

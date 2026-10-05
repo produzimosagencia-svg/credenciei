@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
-  AlertCircle, CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Send, Upload, Users, XCircle,
+  AlertCircle, CheckCircle2, FileSpreadsheet, FlaskConical, Image as ImageIcon, Loader2, RefreshCw,
+  Send, Upload, Users, XCircle,
 } from 'lucide-react'
 import { dispararEmMassa, statusDoDisparo, type StatusDisparo } from '@/lib/actions-whatsapp'
 import { lerPlanilhaDeContatos, type ContatoPlanilha } from '@/lib/planilha'
@@ -23,9 +24,22 @@ import { lerPlanilhaDeContatos, type ContatoPlanilha } from '@/lib/planilha'
 
 type Evento = { id: string; nome: string }
 type Numero = { id: string; numero: string; nome: string; status: string }
-type Template = { nome: string; variaveis: number; corpo: string; categoria: string }
+type Template = { nome: string; variaveis: number; corpo: string; categoria: string; cabecalho: string | null }
 
 const INTERVALO_MS = 4000
+
+/*
+ * Os números de ensaio.
+ *
+ * Disparo não volta atrás: mil mensagens saem em minutos e não dá pra
+ * cancelar. Mandar primeiro pra dois celulares conhecidos é o que mostra se a
+ * imagem chegou, se o texto está certo e se o botão abre o lugar certo, antes
+ * de a lista inteira receber.
+ */
+const CONTATOS_TESTE: ContatoPlanilha[] = [
+  { nome: 'Guilherme', telefone: '5527996528524' },
+  { nome: 'Valiati', telefone: '5527998869852' },
+]
 
 export default function FormAvulso({ eventos, numeros, templates }: {
   eventos: Evento[]; numeros: Numero[]; templates: Template[]
@@ -34,6 +48,8 @@ export default function FormAvulso({ eventos, numeros, templates }: {
   const [numeroId, setNumeroId] = useState(numeros.find(n => n.status === 'CONNECTED')?.id ?? '')
   const [templateNome, setTemplateNome] = useState('')
   const [parametros, setParametros] = useState<string[]>([])
+  const [modo, setModo] = useState<'teste' | 'planilha'>('teste')
+  const [imagemUrl, setImagemUrl] = useState('')
   const [contatos, setContatos] = useState<ContatoPlanilha[]>([])
   const [resumoArquivo, setResumoArquivo] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -43,6 +59,8 @@ export default function FormAvulso({ eventos, numeros, templates }: {
   const arquivoRef = useRef<HTMLInputElement>(null)
 
   const template = templates.find(t => t.nome === templateNome)
+  const precisaImagem = template?.cabecalho === 'IMAGE'
+  const destinatarios = modo === 'teste' ? CONTATOS_TESTE : contatos
 
   // A variável {{1}} é sempre o nome de cada contato, preenchida linha a linha
   // pelo servidor. Só da {{2}} em diante é que alguém precisa escrever algo.
@@ -74,7 +92,11 @@ export default function FormAvulso({ eventos, numeros, templates }: {
     if (!eventoId) { setErro('Escolha o evento: é ele que identifica o disparo depois.'); return }
     if (!numeroId) { setErro('Escolha o número que vai enviar.'); return }
     if (!template) { setErro('Escolha o template aprovado.'); return }
-    if (!contatos.length) { setErro('Suba a planilha de contatos.'); return }
+    if (!destinatarios.length) { setErro('Suba a planilha de contatos.'); return }
+    if (precisaImagem && !imagemUrl.trim()) {
+      setErro('Este template tem cabeçalho de imagem: cole a URL pública da imagem (https).')
+      return
+    }
     for (let i = 0; i < extras; i++) {
       if (!String(parametros[i + 1] ?? '').trim()) {
         setErro(`Preencha o valor da variável {{${i + 2}}}: ela é igual para todos os contatos.`)
@@ -87,10 +109,11 @@ export default function FormAvulso({ eventos, numeros, templates }: {
         const r = await dispararEmMassa({
           alvo: { eventoId, somenteAtivos: false },
           origem: 'csv',
-          contatosImportados: contatos,
+          contatosImportados: destinatarios,
           phoneNumberId: numeroId,
           template: template.nome,
           parametros,
+          imagemUrl: imagemUrl.trim() || undefined,
         })
         setCampanhaId(r.campanhaId)
         setStatus(null)
@@ -158,20 +181,49 @@ export default function FormAvulso({ eventos, numeros, templates }: {
 
       <section className="secao space-y-4">
         <h2 className="text-base font-bold">2. Quem recebe</h2>
+
+        <div className="abas" role="tablist">
+          <button type="button" role="tab" aria-selected={modo === 'teste'}
+            className={`aba ${modo === 'teste' ? 'aba-ativa' : ''}`}
+            onClick={() => { setModo('teste'); setErro(null) }}>
+            Disparo de teste
+          </button>
+          <button type="button" role="tab" aria-selected={modo === 'planilha'}
+            className={`aba ${modo === 'planilha' ? 'aba-ativa' : ''}`}
+            onClick={() => { setModo('planilha'); setErro(null) }}>
+            Planilha
+          </button>
+        </div>
+
+        {modo === 'teste' ? (
+          <div className="secao secao-acento space-y-2">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <FlaskConical size={15} /> Vai só para os dois números de ensaio
+            </p>
+            <ul className="space-y-1 text-sm opacity-80">
+              {CONTATOS_TESTE.map(c => <li key={c.telefone}>{c.nome} · {c.telefone}</li>)}
+            </ul>
+            <p className="text-xs opacity-60">
+              Mande primeiro por aqui, confira a imagem, o texto e o botão no celular, e só então troque para a planilha.
+            </p>
+          </div>
+        ) : null}
+
         <input ref={arquivoRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={aoEscolherArquivo} />
         <button type="button" onClick={() => arquivoRef.current?.click()}
+          hidden={modo !== 'planilha'}
           className="w-full rounded-xl border-2 border-dashed p-8 text-center transition-colors"
           style={{ borderColor: 'var(--vidro-borda)' }}>
           <Upload className="mx-auto h-7 w-7 opacity-50" />
           <span className="mt-2 block text-sm font-semibold">Selecionar planilha</span>
           <span className="mt-1 block text-xs opacity-60">.xlsx, .xls ou .csv, com as colunas Nome e Telefone. Até 5.000 contatos.</span>
         </button>
-        {resumoArquivo && (
+        {modo === 'planilha' && resumoArquivo && (
           <p className="flex items-center gap-2 text-sm">
             <FileSpreadsheet size={15} /> {resumoArquivo}
           </p>
         )}
-        {contatos.length > 0 && (
+        {modo === 'planilha' && contatos.length > 0 && (
           <details className="text-sm">
             <summary className="cursor-pointer opacity-70">Ver os 10 primeiros</summary>
             <ul className="mt-2 space-y-1 opacity-70">
@@ -204,6 +256,19 @@ export default function FormAvulso({ eventos, numeros, templates }: {
                 {'A variável {{1}} recebe o nome de cada contato da planilha, automaticamente.'}
               </p>
             )}
+            {precisaImagem && (
+              <label className="flex flex-col gap-1.5">
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <ImageIcon size={15} /> Imagem do cabeçalho
+                </span>
+                <input className="input" value={imagemUrl} placeholder="https://..."
+                  onChange={e => setImagemUrl(e.target.value)} />
+                <span className="text-xs opacity-60">
+                  Este template tem cabeçalho de imagem, e a Meta exige a imagem em todo envio. Precisa ser uma URL
+                  pública https: quem baixa o arquivo é o servidor da Meta, não o seu navegador.
+                </span>
+              </label>
+            )}
             {extras > 0 && (
               <div className="grid gap-2 md:grid-cols-2">
                 {Array.from({ length: extras }, (_, i) => (
@@ -229,7 +294,7 @@ export default function FormAvulso({ eventos, numeros, templates }: {
       <div className="linha-acao">
         <button className="btn btn-primario btn-grande" onClick={enviar} disabled={enviando}>
           {enviando ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-          {enviando ? 'Enfileirando...' : `Enviar para ${contatos.length} contato${contatos.length === 1 ? '' : 's'}`}
+          {enviando ? 'Enfileirando...' : `Enviar para ${destinatarios.length} contato${destinatarios.length === 1 ? '' : 's'}`}
         </button>
       </div>
       <p className="text-xs opacity-60">
