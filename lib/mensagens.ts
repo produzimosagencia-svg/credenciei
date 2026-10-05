@@ -1970,15 +1970,28 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
    * Montar os dois aqui é o que permite trocar de canal por variável de
    * ambiente, sem deploy — ver lib/whatsapp.ts.
    */
+  /*
+   * O texto livre só é obrigatório na Evolution, que manda texto e não
+   * template. Na Cloud API quem define o conteúdo é o template aprovado, e o
+   * texto renderizado aqui nem viaja.
+   *
+   * Exigir o texto nos dois canais travava todo disparo manual com template
+   * que não é interno do sistema: `renderizarMensagem` só conhece os modelos
+   * de `mensagens-modelos.ts`, então qualquer template criado no painel da
+   * Meta (uma campanha, por exemplo) era recusado aqui com "modelo
+   * desconhecido", sem nunca chegar a ser enviado.
+   */
+  const precisaDeTextoLivre = provedor() !== 'meta'
+
   const resultado: ResultadoEnvio = !numero
     ? { ok: false, statusHttp: 0, resposta: { erro: 'Telefone inválido' } }
-    : !texto
-      ? { ok: false, statusHttp: 0, resposta: { erro: `Modelo de mensagem desconhecido: ${envio.template}` } }
+    : (precisaDeTextoLivre && !texto)
+      ? { ok: false, statusHttp: 0, resposta: { erro: `Sem texto para o canal atual (template "${envio.template}" não tem modelo em mensagens-modelos.ts).` } }
       : await enviarMensagem({
           numero,
           template: envio.template,
           parametros: envio.params,
-          texto,
+          texto: texto ?? '',
           phoneNumberId: envio.phoneNumberId,
           botaoParam: envio.botaoParam,
           imagemUrl: envio.imagemUrl,
