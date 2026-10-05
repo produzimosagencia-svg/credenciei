@@ -1,7 +1,11 @@
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import Link from 'next/link'
+import { UserSearch, CalendarDays } from 'lucide-react'
 
-import { getPerfil } from '@/lib/supabase-server'
-import { podeAcompanhar, ehMaster } from '@/lib/permissions'
+import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { podeAcompanhar, ehMaster, podeGerenciarEventos, veTodosEventos } from '@/lib/permissions'
+import { suporteTemEscopo } from '@/lib/suporte'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import LocalizarFuncionario from './LocalizarFuncionario'
 import { PageHeader } from '@/components/ui/Superficie'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -25,10 +29,72 @@ const TUTORIAL: TutorialConfig = {
   ],
 }
 
-export default async function LocalizarPage() {
+/**
+ * Registrar ponto — pede o EVENTO primeiro (pedido do Juan, 05/10/2026,
+ * mesmo padrão de Lançamento manual/Bloquear CPF/Relatórios/Meu Crachá):
+ * antes a busca cruzava TODOS os eventos acontecendo hoje de uma vez só,
+ * sem perguntar qual — confuso pra quem opera mais de um evento ao mesmo
+ * tempo (achado testando o próprio CPF, que não aparecia em nenhum porque
+ * master não tem ficha de funcionário em evento nenhum). Ver
+ * `localizarFuncionario` em lib/actions.ts, que agora recebe o eventoId e
+ * escopa a busca só a ele.
+ */
+export default async function LocalizarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ evento?: string }>
+}) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!podeAcompanhar(perfil)) redirect('/admin')
+
+  const meusVinculos = await meusSetores(perfil)
+  const { evento: eventoParam } = await searchParams
+
+  if (!eventoParam) {
+    /*
+     * Quem só tem vínculo (sem ser admin/master/suporte) vê a lista ESTRITA
+     * dos próprios setores — `eventosQuePossoAbrir` daria o escopo largo da
+     * organização, que não é o dela de verdade pra registrar ponto.
+     */
+    const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')
+      ? await eventosQuePossoAbrir()
+      : await eventosDosMeusSetores(meusVinculos)
+    return (
+      <div className="max-w-xl mx-auto space-y-5">
+        <PageHeader titulo="Registrar ponto" descricao="Escolha o evento — a busca é só dentro dele" />
+        <EscolherEvento
+          eventos={eventos}
+          href={id => `/admin/localizar?evento=${id}`}
+          icone={<UserSearch className="w-3.5 h-3.5" />}
+          titulo="Em qual evento?"
+          descricao="Busque por CPF ou nome de quem perdeu o horário, com foto na hora"
+          vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel para poder registrar ponto nele.' }}
+          mostrarOrganizacao={veTodosEventos(perfil)}
+        />
+      </div>
+    )
+  }
+
+  const { data: evento } = await supabase
+    .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
+  if (!evento) notFound()
+
+  /*
+   * Mesma régua de Lançamento manual: vínculo (papel supervisor ou outro
+   * papel que ganhou um) neste evento libera; senão, cai pra suporte/escopo
+   * largo de admin-master.
+   */
+  const temVinculoNesteEvento = meusVinculos.some(s => s.evento_id === eventoParam)
+  if (temVinculoNesteEvento) {
+    // liberado
+  } else if (perfil.role === 'supervisor') {
+    notFound()
+  } else if (perfil.role === 'suporte') {
+    if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
+  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
+    notFound()
+  }
 
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
@@ -41,10 +107,17 @@ export default async function LocalizarPage() {
       <div className="max-w-xl mx-auto space-y-5">
         <PageHeader
           titulo="Registrar ponto"
-          descricao="Registre a batida de quem perdeu o horário — busca por CPF ou nome, com foto na hora"
-          acoes={<TutorialButton />}
+          descricao={`${evento.nome} — busca por CPF ou nome, com foto na hora`}
+          acoes={
+            <>
+              <Link href="/admin/localizar" className="btn btn-secundario">
+                <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
+              </Link>
+              <TutorialButton />
+            </>
+          }
         />
-        <LocalizarFuncionario />
+        <LocalizarFuncionario eventoId={eventoParam} />
       </div>
     </TutorialProvider>
   )

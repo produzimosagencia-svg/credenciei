@@ -57,7 +57,7 @@ function mascarar(valor: string): string {
   return /^[\d.\-\s]*$/.test(valor) ? formatCpf(valor) : valor
 }
 
-export default function LocalizarFuncionario() {
+export default function LocalizarFuncionario({ eventoId }: { eventoId: string }) {
   const [termo, setTermo] = useState('')
   const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
   const [candidatos, setCandidatos] = useState<CandidatoLocalizado[] | null>(null)
@@ -99,7 +99,7 @@ export default function LocalizarFuncionario() {
     e.preventDefault()
     setErro(null); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null)
     startBusca(async () => {
-      const res = await localizarFuncionario(termo)
+      const res = await localizarFuncionario(termo, eventoId)
       if (res.error) return setErro(res.error)
       if (res.candidatos) return setCandidatos(res.candidatos)
       abrirFicha(res.funcionario!)

@@ -19,6 +19,14 @@ export const revalidate = 0
  * O supervisor já tem um setor fixo (`perfil.fornecedor_id`) — vai direto.
  * O admin cobre o evento inteiro, não um setor, então escolhe evento e
  * depois setor antes (mesmo padrão de Avisos/Veículos/Lançamento manual).
+ *
+ * Quem tem outro papel principal mas GANHOU um vínculo de supervisor
+ * (achado ao vivo, 05/10/2026, caso da Mara Lúcia) também vai DIRETO,
+ * igual ao supervisor de papel — `perfil.fornecedor_id` já é o setor
+ * ATIVO dela também (gravado ao entrar no evento por "Meus eventos",
+ * `entrarNoEventoSupervisor`). Sem isso, ela caía no seletor "Crachá
+ * Admin" de escolher fornecedor entre TODOS do evento — confuso pra quem
+ * só quer o próprio crachá pessoal.
  */
 export default async function MeuCrachaPage({
   searchParams,
@@ -27,17 +35,12 @@ export default async function MeuCrachaPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  /*
-   * Vale também pra quem tem outro papel principal mas GANHOU um vínculo
-   * de supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia) — entra
-   * pelo mesmo fluxo do admin (escolhe evento e fornecedor), já que ela não
-   * tem um `fornecedor_id` ATIVO fixo como o supervisor de papel tem.
-   */
   const meusVinculos = await meusSetores(perfil)
   const temVinculo = !!meusVinculos.length
   if (perfil.role !== 'supervisor' && perfil.role !== 'admin' && perfil.role !== 'master' && !temVinculo) redirect('/admin')
 
-  if (perfil.role === 'supervisor') {
+  const vinculoAtivo = perfil.fornecedor_id && meusVinculos.some(s => s.id === perfil.fornecedor_id)
+  if (perfil.role === 'supervisor' || vinculoAtivo) {
     const resultado = await garantirMeuCracha()
     if ('error' in resultado) {
       return (
@@ -53,12 +56,16 @@ export default async function MeuCrachaPage({
   const { evento: eventoParam, setor: setorParam } = await searchParams
 
   if (!eventoParam) {
-    const eventos = (perfil.role === 'admin' || perfil.role === 'master')
+    const ehAdminOuMasterSemEvento = perfil.role === 'admin' || perfil.role === 'master'
+    const eventos = ehAdminOuMasterSemEvento
       ? await eventosQuePossoAbrir()
       : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="space-y-5">
-        <PageHeader titulo="Crachá Admin" descricao="Escolha o evento — o crachá é vinculado a um fornecedor dele" />
+        <PageHeader
+          titulo={ehAdminOuMasterSemEvento ? 'Crachá Admin' : 'Meu Crachá'}
+          descricao="Escolha o evento — o crachá é vinculado a um fornecedor dele"
+        />
         <EscolherEvento
           eventos={eventos}
           href={id => `/admin/meu-cracha?evento=${id}`}
@@ -75,17 +82,28 @@ export default async function MeuCrachaPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  const temVinculoNesteEvento = meusVinculos.some(s => s.evento_id === eventoParam)
+  const idsVinculoNesteEvento = meusVinculos.filter(s => s.evento_id === eventoParam).map(s => s.id)
+  const temVinculoNesteEvento = !!idsVinculoNesteEvento.length
   if (!temVinculoNesteEvento && !veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
+  /*
+   * Admin/master escolhem entre TODOS os fornecedores do evento (é uma
+   * credencial administrativa, de visita). Quem só tem vínculo (sem ser
+   * admin/master) escolhe só ENTRE OS PRÓPRIOS — é o crachá pessoal dela,
+   * não uma escolha de gestão.
+   */
+  const ehAdminOuMaster = perfil.role === 'admin' || perfil.role === 'master'
+  const titulo = ehAdminOuMaster ? 'Crachá Admin' : 'Meu Crachá'
+
   if (!setorParam) {
-    const { data: setores } = await supabase
-      .from('fornecedores').select('id, nome').eq('evento_id', eventoParam).order('nome')
+    let query = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam).order('nome')
+    if (!ehAdminOuMaster) query = query.in('id', idsVinculoNesteEvento)
+    const { data: setores } = await query
 
     return (
       <div className="space-y-5">
         <PageHeader
-          titulo="Crachá Admin"
+          titulo={titulo}
           descricao={`${evento.nome} — em qual fornecedor você quer aparecer credenciado?`}
           acoes={
             <Link href="/admin/meu-cracha" className="btn btn-secundario">
@@ -93,7 +111,7 @@ export default async function MeuCrachaPage({
             </Link>
           }
         />
-        <Secao tom="acento" icone={<Building2 className="w-3.5 h-3.5" />} titulo="Fornecedores deste evento" corpoClassName={setores?.length ? 'p-0' : 'p-4'}>
+        <Secao tom="acento" icone={<Building2 className="w-3.5 h-3.5" />} titulo={ehAdminOuMaster ? 'Fornecedores deste evento' : 'Seus fornecedores neste evento'} corpoClassName={setores?.length ? 'p-0' : 'p-4'}>
           {!setores?.length ? (
             <EmptyState
               icone={<Building2 className="w-7 h-7" />}
@@ -122,7 +140,7 @@ export default async function MeuCrachaPage({
   if ('error' in resultado) {
     return (
       <div className="space-y-5">
-        <PageHeader titulo="Crachá Admin" descricao={evento.nome} />
+        <PageHeader titulo={titulo} descricao={evento.nome} />
         <Aviso tom="atencao">{resultado.error}</Aviso>
       </div>
     )

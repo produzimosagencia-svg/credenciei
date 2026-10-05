@@ -3884,33 +3884,57 @@ export async function contarPendentesDeAprovacao(): Promise<number> {
 }
 
 /**
- * Os eventos (com o total de pendentes de cada um) que este usuário pode
- * decidir — alimenta a tela ponte `/admin/aprovacoes`, que existe porque o
- * menu é da plataforma inteira e a tela de decisão é de UM evento.
+ * TODOS os eventos no escopo deste usuário, com o total de pendentes de
+ * cada um (0 incluso) — alimenta a tela ponte `/admin/aprovacoes`, que
+ * existe porque o menu é da plataforma inteira e a tela de decisão é de UM
+ * evento.
+ *
+ * Antes só listava quem JÁ TINHA pendente, e pulava direto pra dentro
+ * quando sobrava um só — pedido do Juan, 05/10/2026: a escolha do evento
+ * precisa ser sempre explícita, mesmo sem nenhum pendente agora (mesma
+ * régua já aplicada em Atividades do evento desde 09/09/2026: "um seletor
+ * que some sozinho vira 'o sistema não filtra por evento' pra quem olha").
  */
-export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; nome: string; pendentes: number }[]> {
+export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; nome: string; pendentes: number; ativo: boolean }[]> {
   const perfil = await getPerfil()
   if (!perfil) return []
   const setorIds = await setoresComAcessoAAprovacao(perfil)
   if (setorIds && !setorIds.length) return []
 
+  let eventosQuery = supabaseAdmin.from('eventos').select('id, nome, ativo').order('data_inicio', { ascending: false })
+  if (setorIds) {
+    const { data: fornecedores } = await supabaseAdmin.from('fornecedores').select('evento_id').in('id', setorIds)
+    const eventoIds = [...new Set((fornecedores ?? []).map(f => f.evento_id as string))]
+    if (!eventoIds.length) return []
+    eventosQuery = eventosQuery.in('id', eventoIds)
+  } else if (!ehMaster(perfil.role) && perfil.organizacao_id) {
+    eventosQuery = eventosQuery.eq('organizacao_id', perfil.organizacao_id)
+  }
+  const { data: eventosData } = await eventosQuery
+  if (!eventosData?.length) return []
+
   let query = supabaseAdmin
     .from('funcionarios')
-    .select('fornecedor_id, fornecedores!inner(evento_id, eventos!inner(nome))')
+    .select('fornecedor_id, fornecedores!inner(evento_id)')
     .eq('status_credenciamento', 'pendente')
+    .in('fornecedores.evento_id', eventosData.map(e => e.id as string))
   if (setorIds) query = query.in('fornecedor_id', setorIds)
   const { data } = await query
 
-  const porEvento = new Map<string, { nome: string; pendentes: number }>()
+  const pendentesPorEvento = new Map<string, number>()
   for (const f of data ?? []) {
-    const fornecedor = f.fornecedores as unknown as { evento_id: string; eventos: { nome: string } } | null
-    if (!fornecedor) continue
-    const atual = porEvento.get(fornecedor.evento_id) ?? { nome: fornecedor.eventos.nome, pendentes: 0 }
-    atual.pendentes++
-    porEvento.set(fornecedor.evento_id, atual)
+    const eid = (f.fornecedores as unknown as { evento_id: string } | null)?.evento_id
+    if (!eid) continue
+    pendentesPorEvento.set(eid, (pendentesPorEvento.get(eid) ?? 0) + 1)
   }
-  return [...porEvento.entries()]
-    .map(([id, v]) => ({ id, ...v }))
+
+  return eventosData
+    .map(e => ({
+      id: e.id as string,
+      nome: e.nome as string,
+      ativo: e.ativo !== false,
+      pendentes: pendentesPorEvento.get(e.id as string) ?? 0,
+    }))
     .sort((a, b) => b.pendentes - a.pendentes)
 }
 
@@ -4003,20 +4027,27 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
   let alvoFornecedorId: string
   /*
    * Vale também pra quem tem outro papel principal mas GANHOU um vínculo
-   * de supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia) — entra
-   * pelo mesmo caminho do admin (escolhe fornecedor), só que a checagem é
-   * por VÍNCULO, não por organização.
+   * de supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia).
+   *
+   * `perfil.fornecedor_id` é o setor ATIVO — pra ela, gravado quando entrou
+   * no evento por "Meus eventos" (`entrarNoEventoSupervisor`), exatamente
+   * como funciona pro supervisor de papel. Checar contra `meusSetores` (em
+   * vez de só o papel) é o que permite os dois caminharem pelo MESMO branch
+   * direto, sem cair no seletor "escolha o fornecedor" do admin — o
+   * crachá dela é pessoal, não uma escolha administrativa.
    */
   let viaVinculo = false
-  if (perfil.role === 'supervisor') {
-    if (!perfil.fornecedor_id) return { error: 'Você ainda não está vinculado a um fornecedor.' }
+  const meus = await meusSetores(perfil)
+  if (perfil.fornecedor_id && meus.some(s => s.id === perfil.fornecedor_id)) {
     alvoFornecedorId = perfil.fornecedor_id
+    viaVinculo = perfil.role !== 'supervisor'
+  } else if (perfil.role === 'supervisor') {
+    return { error: 'Você ainda não está vinculado a um fornecedor.' }
   } else if (perfil.role === 'admin' || ehMaster(perfil.role)) {
     if (!fornecedorId) return { error: 'Escolha o fornecedor.' }
     alvoFornecedorId = fornecedorId
   } else {
     if (!fornecedorId) return { error: 'Escolha o fornecedor.' }
-    const meus = await meusSetores(perfil)
     if (!meus.some(s => s.id === fornecedorId)) return { error: 'Sem permissão sobre este fornecedor.' }
     alvoFornecedorId = fornecedorId
     viaVinculo = true
@@ -7778,10 +7809,19 @@ export async function obterQRDoFuncionario(
 }
 
 export async function localizarFuncionario(
-  termo: string
+  termo: string,
+  /*
+   * Pedido do Juan, 05/10/2026: antes a busca era GLOBAL — cruzava TODOS os
+   * eventos acontecendo hoje de uma vez, o que confundia quem opera mais de
+   * um evento ao mesmo tempo (achou o bug testando o próprio CPF). Agora a
+   * tela pede o evento primeiro (mesmo padrão de Avisos/Relatórios/Bloquear
+   * CPF) e passa o id aqui — a busca escopa só a ESTE evento.
+   */
+  eventoId: string
 ): Promise<{ funcionario?: FuncionarioLocalizado; candidatos?: CandidatoLocalizado[]; error?: string }> {
   const perfil = await getPerfil()
   if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para localizar funcionários.' }
+  if (!eventoId) return { error: 'Escolha o evento antes de buscar.' }
 
   const busca = termo.trim()
   const digitos = busca.replace(/\D/g, '')
@@ -7796,8 +7836,20 @@ export async function localizarFuncionario(
   }
 
   /*
+   * O evento escolhido precisa estar ACONTECENDO HOJE (pedido do Juan,
+   * 25/09/2026, preservado): registro assistido com foto é coisa de quem
+   * está na frente do operador agora, não um lançamento de outro dia — isso
+   * é o `lancar-ponto`. "Ativo" não bastava: um evento com datas erradas
+   * continua ativo sem estar acontecendo.
+   */
+  const hojeNesteEvento = await eventosAcontecendoHoje([eventoId])
+  if (!hojeNesteEvento.has(eventoId)) {
+    return { error: 'Este evento não está acontecendo hoje. O registro assistido só vale para o dia de hoje.' }
+  }
+
+  /*
    * Nome não passa por `ilike`: ele ignora caixa, mas diferencia "Julia" de
-   * "Júlia". Carregamos os eventos ativos paginados e comparamos a chave sem
+   * "Júlia". Carregamos a equipe do evento paginada e comparamos a chave sem
    * acentos em memória. CPF continua filtrado no banco porque é identificação
    * exata e não sofre essa ambiguidade.
    */
@@ -7805,7 +7857,7 @@ export async function localizarFuncionario(
     let consulta = supabaseAdmin
       .from('funcionarios')
       .select(SELECT_LOCALIZAR)
-      .eq('fornecedores.eventos.ativo', true)
+      .eq('fornecedores.evento_id', eventoId)
       .order('nome')
       .range(de, ate)
     if (pareceCpf) {
@@ -7816,31 +7868,26 @@ export async function localizarFuncionario(
     return consulta
   }, { tetoTotal: 10_000 })
   const termoNome = chaveBusca(busca)
-  const achadosTodos = pareceCpf
+  const achados = pareceCpf
     ? achadosBrutos
     : achadosBrutos.filter(f => chaveBusca(f.nome).includes(termoNome))
-
-  /*
-   * Só quem é de evento ACONTECENDO HOJE (pedido do Juan, 25/09/2026). Esta
-   * busca é a do portão — registrar ponto de alguém de outro evento não faz
-   * sentido, e mostrar a pessoa fazia o operador achar que ela estava
-   * credenciada. "Ativo" não bastava: um evento com datas erradas continua
-   * ativo sem estar acontecendo.
-   */
-  const acontecendoHoje = await eventosAcontecendoHoje(
-    achadosTodos.map(f => comEvento(f.fornecedores)?.eventos?.id ?? ''),
-  )
-  const doEventoDeHoje = (f: LinhaLocalizada) => acontecendoHoje.has(comEvento(f.fornecedores)?.eventos?.id ?? '')
-  const achados = achadosTodos.filter(doEventoDeHoje)
 
   // Escopo do suporte é async (consulta `suporte_escopo`) — resolvido ANTES
   // do filtro síncrono abaixo, uma vez só, não por candidato.
   const escopoSuporte = perfil.role === 'suporte' ? await escopoDoSuporteComoConjuntos(perfil.id) : null
+  /*
+   * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
+   * GANHOU um vínculo de supervisor (achado ao vivo, 05/10/2026, caso da
+   * Mara Lúcia) — `meusSetores` já responde pela EXISTÊNCIA do vínculo.
+   */
+  const meusVinculos = perfil.role === 'supervisor' || !ehMaster(perfil.role) ? await meusSetores(perfil) : []
+  const idsVinculo = new Set(meusVinculos.map(s => s.id))
 
   // Filtra pelo que ESTE usuário pode enxergar antes de dizer se achou ou não —
   // "não encontrado" também protege quem está fora do escopo dele.
   const dentroDoEscopo = (f: LinhaLocalizada) => {
-    if (perfil.role === 'supervisor') return f.fornecedor_id === perfil.fornecedor_id
+    if (idsVinculo.has(f.fornecedor_id)) return true
+    if (perfil.role === 'supervisor') return false
     if (ehMaster(perfil.role)) return true
     if (perfil.role === 'suporte') {
       const evento = comEvento(f.fornecedores)?.eventos
@@ -7856,31 +7903,29 @@ export async function localizarFuncionario(
    *
    * O documento na mão do operador está certo, mas a consulta exata não acha
    * uma linha gravada com um algarismo trocado. Só no caminho de falha
-   * carregamos os eventos ativos e oferecemos cadastros com até dois dígitos
-   * diferentes. Nunca escolhemos automaticamente, mesmo quando aparece uma
-   * pessoa só: a tela mostra nome, CPF salvo, setor e evento para o operador
-   * confirmar quem está na frente dele.
+   * carregamos a equipe do evento de novo (sem filtro de CPF) e oferecemos
+   * cadastros com até dois dígitos diferentes. Nunca escolhemos
+   * automaticamente, mesmo quando aparece uma pessoa só: a tela mostra nome,
+   * CPF salvo, setor e evento para o operador confirmar quem está na frente.
    */
   if (pareceCpf && digitos.length === 11 && !visiveis.length) {
     const possiveis = await buscarTudo<LinhaLocalizada>((de, ate) =>
       supabaseAdmin
         .from('funcionarios')
         .select(SELECT_LOCALIZAR)
-        .eq('fornecedores.eventos.ativo', true)
+        .eq('fornecedores.evento_id', eventoId)
         .order('nome')
         .range(de, ate),
     { tetoTotal: 10_000 })
 
-    const proximos = possiveis.filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
-    const hojeProximos = await eventosAcontecendoHoje(proximos.map(f => comEvento(f.fornecedores)?.eventos?.id ?? ''))
-    visiveis = proximos
-      .filter(f => hojeProximos.has(comEvento(f.fornecedores)?.eventos?.id ?? ''))
+    visiveis = possiveis
+      .filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
       .filter(dentroDoEscopo)
     buscaAproximada = visiveis.length > 0
   }
 
   if (!visiveis.length) {
-    const onde = perfil.role === 'supervisor' ? 'no seu fornecedor, no evento de hoje' : 'nos eventos acontecendo hoje'
+    const onde = idsVinculo.size ? 'na sua equipe, neste evento' : 'neste evento'
     return {
       error: pareceCpf
         ? `Nenhuma pessoa com este CPF ${onde}. Confira o número ou tente pelo nome.`
@@ -7930,8 +7975,16 @@ export async function abrirFuncionarioLocalizado(
   if (!func) return { error: 'Esta pessoa não está em nenhum evento ativo.' }
   const eventoDoFunc = comEvento(func.fornecedores)?.eventos
   let dentroDoEscopo: boolean
-  if (perfil.role === 'supervisor') {
-    dentroDoEscopo = func.fornecedor_id === perfil.fornecedor_id
+  /*
+   * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
+   * GANHOU um vínculo de supervisor (achado ao vivo, 05/10/2026, caso da
+   * Mara Lúcia).
+   */
+  const meuVinculo = (await meusSetores(perfil)).some(s => s.id === func.fornecedor_id)
+  if (meuVinculo) {
+    dentroDoEscopo = true
+  } else if (perfil.role === 'supervisor') {
+    dentroDoEscopo = false
   } else if (perfil.role === 'suporte') {
     dentroDoEscopo = !!eventoDoFunc && (await suporteTemEscopo(perfil.id, { eventoId: eventoDoFunc.id, organizacaoId: eventoDoFunc.organizacao_id ?? undefined }))
   } else {

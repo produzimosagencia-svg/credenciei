@@ -33,9 +33,13 @@ export default async function AprovacoesPontePage({
   const { aba } = await searchParams
   const naAbaNegados = aba === 'negados'
 
+  /*
+   * SEMPRE lista os eventos e pede o clique — nunca pula direto pra dentro,
+   * mesmo com um só (pedido do Juan, 05/10/2026, mesma régua de Atividades
+   * do evento desde 09/09/2026). `eventosComPendentesDeAprovacao` já traz
+   * TODOS os eventos do escopo, pendente ou não.
+   */
   const [eventos, negados] = await Promise.all([eventosComPendentesDeAprovacao(), historicoDeNegados()])
-
-  if (!naAbaNegados && eventos.length === 1) redirect(`/admin/eventos/${eventos[0].id}/aprovacoes`)
 
   const totalPendentes = eventos.reduce((s, e) => s + e.pendentes, 0)
 
@@ -52,19 +56,24 @@ export default async function AprovacoesPontePage({
       </div>
 
       {!naAbaNegados ? (
-        <Secao tom="acento" icone={<ClipboardCheck className="w-3.5 h-3.5" />} titulo="Eventos com pendência" corpoClassName={eventos.length ? 'p-0' : 'p-4'}>
+        <Secao tom="acento" icone={<ClipboardCheck className="w-3.5 h-3.5" />} titulo="Em qual evento?" corpoClassName={eventos.length ? 'p-0' : 'p-4'}>
           {!eventos.length ? (
             <EmptyState
               icone={<ClipboardCheck className="w-7 h-7" />}
-              titulo="Nada pendente agora"
-              descricao="Quando alguém se cadastrar e precisar de aprovação, aparece aqui."
+              titulo="Nenhum evento ainda"
+              descricao="Crie um evento no Painel para poder decidir credenciamentos nele."
             />
           ) : (
             <div className="divide-y divide-slate-50">
               {eventos.map(e => (
                 <Link key={e.id} href={`/admin/eventos/${e.id}/aprovacoes`} className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50 transition-colors">
-                  <p className="text-slate-800 font-medium text-sm">{e.nome}</p>
-                  <Badge tom="atencao">{e.pendentes} pendente{e.pendentes === 1 ? '' : 's'}</Badge>
+                  <p className="text-slate-800 font-medium text-sm flex items-center gap-2">
+                    {e.nome}
+                    {!e.ativo && <Badge tom="neutro">Encerrado</Badge>}
+                  </p>
+                  {e.pendentes > 0
+                    ? <Badge tom="atencao">{e.pendentes} pendente{e.pendentes === 1 ? '' : 's'}</Badge>
+                    : <span className="text-slate-400 text-2xs">Nada pendente</span>}
                 </Link>
               ))}
             </div>
