@@ -5,7 +5,9 @@ import {
   AlertCircle, CheckCircle2, FileSpreadsheet, FlaskConical, Image as ImageIcon, Loader2, RefreshCw,
   Send, Upload, Users, XCircle,
 } from 'lucide-react'
-import { dispararEmMassa, statusDoDisparo, type StatusDisparo } from '@/lib/actions-whatsapp'
+import {
+  dispararEmMassa, statusDoDisparo, subirImagemDeTemplate, type StatusDisparo,
+} from '@/lib/actions-whatsapp'
 import { lerPlanilhaDeContatos, type ContatoPlanilha } from '@/lib/planilha'
 
 /*
@@ -39,6 +41,7 @@ const INTERVALO_MS = 4000
 const CONTATOS_TESTE: ContatoPlanilha[] = [
   { nome: 'Guilherme', telefone: '5527996528524' },
   { nome: 'Valiati', telefone: '5527998869852' },
+  { nome: 'Fred', telefone: '5527992750079' },
 ]
 
 export default function FormAvulso({ eventos, numeros, templates }: {
@@ -50,6 +53,8 @@ export default function FormAvulso({ eventos, numeros, templates }: {
   const [parametros, setParametros] = useState<string[]>([])
   const [modo, setModo] = useState<'teste' | 'planilha'>('teste')
   const [imagemUrl, setImagemUrl] = useState('')
+  const [subindoImagem, setSubindoImagem] = useState(false)
+  const [nomeImagem, setNomeImagem] = useState<string | null>(null)
   const [contatos, setContatos] = useState<ContatoPlanilha[]>([])
   const [resumoArquivo, setResumoArquivo] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -57,6 +62,7 @@ export default function FormAvulso({ eventos, numeros, templates }: {
   const [status, setStatus] = useState<StatusDisparo | null>(null)
   const [enviando, iniciar] = useTransition()
   const arquivoRef = useRef<HTMLInputElement>(null)
+  const imagemRef = useRef<HTMLInputElement>(null)
 
   const template = templates.find(t => t.nome === templateNome)
   const precisaImagem = template?.cabecalho === 'IMAGE'
@@ -84,6 +90,24 @@ export default function FormAvulso({ eventos, numeros, templates }: {
       setResumoArquivo(`${arquivo.name}: ${partes.join(', ')}.`)
     } catch {
       setErro('Não consegui ler o arquivo. Vale .xlsx, .xls ou .csv, com colunas Nome e Telefone.')
+    }
+  }
+
+  async function aoEscolherImagem(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0]
+    if (!arquivo) return
+    setErro(null); setSubindoImagem(true)
+    try {
+      const dados = new FormData()
+      dados.append('arquivo', arquivo)
+      const { url } = await subirImagemDeTemplate(dados)
+      setImagemUrl(url)
+      setNomeImagem(arquivo.name)
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : 'Não consegui subir a imagem.')
+      setNomeImagem(null)
+    } finally {
+      setSubindoImagem(false)
     }
   }
 
@@ -257,17 +281,44 @@ export default function FormAvulso({ eventos, numeros, templates }: {
               </p>
             )}
             {precisaImagem && (
-              <label className="flex flex-col gap-1.5">
+              <div className="space-y-2">
                 <span className="flex items-center gap-2 text-sm font-semibold">
                   <ImageIcon size={15} /> Imagem do cabeçalho
                 </span>
-                <input className="input" value={imagemUrl} placeholder="https://..."
-                  onChange={e => setImagemUrl(e.target.value)} />
-                <span className="text-xs opacity-60">
-                  Este template tem cabeçalho de imagem, e a Meta exige a imagem em todo envio. Precisa ser uma URL
-                  pública https: quem baixa o arquivo é o servidor da Meta, não o seu navegador.
-                </span>
-              </label>
+                <input ref={imagemRef} type="file" accept="image/jpeg,image/png,image/webp"
+                  className="hidden" onChange={aoEscolherImagem} />
+
+                {imagemUrl ? (
+                  <div className="secao secao-sucesso space-y-2">
+                    <p className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 size={15} /> {nomeImagem ?? 'Imagem pronta'}
+                    </p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imagemUrl} alt="" style={{ maxHeight: 160, borderRadius: 12 }} />
+                    <button type="button" className="btn btn-fantasma btn-sm"
+                      onClick={() => { setImagemUrl(''); setNomeImagem(null); if (imagemRef.current) imagemRef.current.value = '' }}>
+                      Trocar imagem
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => imagemRef.current?.click()} disabled={subindoImagem}
+                    className="w-full rounded-xl border-2 border-dashed p-6 text-center transition-colors"
+                    style={{ borderColor: 'var(--vidro-borda)' }}>
+                    {subindoImagem
+                      ? <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                      : <Upload className="mx-auto h-6 w-6 opacity-50" />}
+                    <span className="mt-2 block text-sm font-semibold">
+                      {subindoImagem ? 'Subindo...' : 'Subir a arte'}
+                    </span>
+                    <span className="mt-1 block text-xs opacity-60">JPG, PNG ou WEBP, até 5 MB</span>
+                  </button>
+                )}
+
+                <p className="text-xs opacity-60">
+                  Este template tem cabeçalho de imagem, e a Meta exige a arte em todo envio. A imagem fica hospedada
+                  aqui e o link é gerado pra ela, porque quem baixa o arquivo é o servidor da Meta.
+                </p>
+              </div>
             )}
             {extras > 0 && (
               <div className="grid gap-2 md:grid-cols-2">

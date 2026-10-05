@@ -365,3 +365,52 @@ export async function statusDoDisparo(campanhaId: string): Promise<StatusDisparo
     erros,
   }
 }
+
+// ─── Imagem de cabeçalho dos templates ───────────────────────────────────────
+
+/** Trinta dias. A URL só precisa viver enquanto a fila do disparo escoa. */
+const VALIDADE_IMAGEM_S = 60 * 60 * 24 * 30
+
+/**
+ * Sobe a arte do cabeçalho e devolve um link que a Meta consegue abrir.
+ *
+ * O bucket é PRIVADO, como todos os deste projeto, e o link é assinado. A Meta
+ * não precisa de bucket público: ela só precisa de um https que funcione sem
+ * login, e é isso que a URL assinada é. Bucket público com caminho previsível
+ * deixaria a arte de qualquer cliente aberta pra quem adivinhasse o endereço.
+ *
+ * O nome do arquivo é aleatório de propósito: nome de arquivo do cliente
+ * costuma dizer o nome do evento e do artista antes de a coisa ser anunciada.
+ *
+ * O prazo de 30 dias é folga sobre o que o disparo leva pra escoar. Se um dia
+ * uma fila demorar mais do que isso, as últimas mensagens falham ao buscar a
+ * imagem: é o custo de não ter bucket público, e vale pagar.
+ */
+export async function subirImagemDeTemplate(formData: FormData): Promise<{ url: string }> {
+  await exigirMaster()
+
+  const arquivo = formData.get('arquivo')
+  if (!(arquivo instanceof File) || arquivo.size === 0) throw new Error('Escolha uma imagem.')
+
+  const TIPOS = ['image/jpeg', 'image/png', 'image/webp']
+  if (!TIPOS.includes(arquivo.type)) {
+    throw new Error('A imagem precisa ser JPG, PNG ou WEBP.')
+  }
+  // A Meta recusa mídia acima de 5MB no cabeçalho de template.
+  if (arquivo.size > 5 * 1024 * 1024) throw new Error('Imagem muito grande. O limite da Meta é 5MB.')
+
+  const extensao = arquivo.type === 'image/png' ? 'png' : arquivo.type === 'image/webp' ? 'webp' : 'jpg'
+  const caminho = `cabecalhos/${randomUUID()}.${extensao}`
+
+  const { error } = await supabaseAdmin.storage
+    .from('templates')
+    .upload(caminho, Buffer.from(await arquivo.arrayBuffer()), { contentType: arquivo.type })
+  if (error) throw new Error(`Não consegui subir a imagem: ${error.message}`)
+
+  const { data, error: erroUrl } = await supabaseAdmin.storage
+    .from('templates')
+    .createSignedUrl(caminho, VALIDADE_IMAGEM_S)
+  if (erroUrl || !data?.signedUrl) throw new Error('Subi a imagem mas não consegui gerar o link. Tente de novo.')
+
+  return { url: data.signedUrl }
+}
