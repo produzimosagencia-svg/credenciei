@@ -26,6 +26,9 @@ export async function proxy(request: NextRequest) {
     // redirect pro login e ninguém percebe até alguém escanear o QR.
     pathname.startsWith('/veiculo-cadastro/') ||
     pathname.startsWith('/veiculo/') ||
+    // Respostas de um disparo, compartilhadas com o cliente dono da lista por
+    // link com prazo. Ele não tem conta: sem esta linha o link cai no login.
+    pathname.startsWith('/respostas/') ||
     pathname === '/login' ||
     // A landing é pública: é a porta de entrada de quem ainda não tem conta.
     pathname === '/' ||
