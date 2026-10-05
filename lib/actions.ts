@@ -3579,10 +3579,16 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
  * função, contra `supervisor_setores`.
  *
  * Ver supabase/upgrade-supervisor-multi-setor.sql para o desenho inteiro.
+ *
+ * Não trava mais em `role === 'supervisor'` (achado ao vivo, 05/10/2026,
+ * caso da Mara Lúcia, mesmo raciocínio de `entrarNoEventoSupervisor`): a
+ * consulta a `supervisor_setores` logo abaixo já barra quem não tem vínculo
+ * NENHUM com este fornecedor, então travar também pelo papel principal só
+ * escondia o vínculo de quem tem outro papel e ainda assim supervisiona.
  */
 export async function trocarSetorAtivo(fornecedorId: string) {
   const perfil = await getPerfil()
-  if (!perfil || perfil.role !== 'supervisor') throw new Error('Sem permissão')
+  if (!perfil) throw new Error('Sem permissão')
 
   const { data: vinculo, error } = await supabaseAdmin
     .from('supervisor_setores')
@@ -3623,10 +3629,17 @@ export async function trocarSetorAtivo(fornecedorId: string) {
  * Funciona IGUAL para evento atual ou encerrado: `meusSetores` já devolve o
  * histórico inteiro, current ou não — ver o comentário em `acessosDoEvento`
  * sobre por que encerrar um evento não derruba mais o login do supervisor.
+ *
+ * Não trava mais em `role === 'supervisor'` (achado ao vivo, 05/10/2026,
+ * caso da Mara Lúcia): quem tem outro papel principal mas GANHOU um
+ * vínculo de supervisor também precisa entrar por aqui — `meusSetores` já
+ * responde pela EXISTÊNCIA do vínculo (ver seu comentário), e o `if (!setor)`
+ * logo abaixo já barra quem não tem vínculo NENHUM pra aquele evento, então
+ * a proteção continua de pé sem depender do papel principal da conta.
  */
 export async function entrarNoEventoSupervisor(eventoId: string) {
   const perfil = await getPerfil()
-  if (!perfil || perfil.role !== 'supervisor') throw new Error('Sem permissão')
+  if (!perfil) throw new Error('Sem permissão')
 
   const meus = await meusSetores(perfil)
   const setor = meus.find(s => s.evento_id === eventoId)

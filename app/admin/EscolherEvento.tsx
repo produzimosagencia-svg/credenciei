@@ -97,6 +97,41 @@ export async function eventosDosMeusSetores(setoresPreCalculados?: Awaited<Retur
 }
 
 /**
+ * TODOS os eventos (ativos e encerrados) da organização — histórico amplo,
+ * não vínculo. Serve só a "Meus eventos" de quem NÃO É supervisor (ex.:
+ * operador de portão): esse papel nunca teve vínculo fino por evento — o
+ * escopo dele sempre foi a organização inteira (ver `eventosEscaneaveisSemData`,
+ * que já lista assim pra decidir o que ele pode ESCANEAR agora). Sem vínculo
+ * nenhum pra apontar "trabalhou aqui", a única história possível é "todo
+ * evento que já rodou nesta organização".
+ *
+ * Achado ao vivo, 05/10/2026, caso da Mara Lúcia: "Meus eventos" mostrava só
+ * a Stoked (vínculo de supervisor) — o Henrique e Juliano, onde ela
+ * trabalhou como operadora de portão, tinha sumido, porque nunca existiu
+ * vínculo nenhum pra esse papel.
+ *
+ * NUNCA usada pra quem É supervisor — reaproveitar aqui furaria o escopo
+ * fino que `eventosDosMeusSetores`/`eventosQuePossoAbrir` documentam pra
+ * esse papel (só os eventos do próprio setor, não a organização inteira).
+ */
+export async function eventosDaOrganizacao(organizacaoId: string | null): Promise<EventoEscolhivel[]> {
+  if (!organizacaoId) return []
+  const { data } = await supabase
+    .from('eventos')
+    .select('id, nome, local, data_inicio, ativo, organizacao_id, organizacoes(nome)')
+    .eq('organizacao_id', organizacaoId)
+    .order('data_inicio', { ascending: false })
+  return (data ?? []).map(e => ({
+    id: e.id as string,
+    nome: e.nome as string,
+    local: (e.local as string | null) ?? null,
+    data_inicio: (e.data_inicio as string | null) ?? null,
+    ativo: e.ativo !== false,
+    organizacaoNome: (e.organizacoes as unknown as { nome: string } | null)?.nome ?? null,
+  }))
+}
+
+/**
  * A lista de eventos pra escolher — o primeiro passo das telas que vêm pelo
  * menu (Avisos, Relatórios) e por isso não sabem de qual evento se trata.
  */

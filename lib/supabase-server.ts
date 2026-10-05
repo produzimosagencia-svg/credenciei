@@ -255,9 +255,15 @@ export async function meusSetores(perfil: any): Promise<{ id: string; nome: stri
  * em `/admin/meus-eventos`. Sem este filtro, um supervisor com setor em dois
  * eventos via `supervisor_setores` veria os dois juntos no mesmo menu, e
  * trocar ali já seria trocar de evento sem perceber.
+ *
+ * Não trava mais em `role === 'supervisor'` (achado ao vivo, 05/10/2026,
+ * caso da Mara Lúcia, mesmo raciocínio de `meuSetor`/`meusSetores`): quem
+ * tem outro papel principal mas GANHOU um vínculo de supervisor também
+ * precisa do dropdown funcionando depois de entrar no evento por
+ * `entrarNoEventoSupervisor`.
  */
 export async function meusSetoresDoEventoAtual(perfil: any): Promise<{ id: string; nome: string; evento_id: string }[]> {
-  if (!perfil || perfil.role !== 'supervisor' || !perfil.fornecedor_id) return []
+  if (!perfil || !perfil.fornecedor_id) return []
   const { data: atual } = await admin.from('fornecedores').select('evento_id').eq('id', perfil.fornecedor_id).maybeSingle()
   const eventoAtualId = (atual as { evento_id?: string } | null)?.evento_id
   if (!eventoAtualId) return []

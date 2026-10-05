@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { CalendarDays, PartyPopper } from 'lucide-react'
 import { getPerfil, meusSetores } from '@/lib/supabase-server'
-import { eventosDosMeusSetores } from '../EscolherEvento'
+import { eventosDosMeusSetores, eventosDaOrganizacao, type EventoEscolhivel } from '../EscolherEvento'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import EscolherMeuEvento from './EscolherMeuEvento'
 
@@ -30,6 +30,14 @@ export const revalidate = 0
  * `meusSetores` entra só pra enriquecer cada cartão com O NOME DO SETOR DELE
  * naquele evento — sem isso o cartão dizia só o nome do evento, e quem cobre
  * dois fornecedores no mesmo evento não sabia qual dos dois ia abrir.
+ *
+ * Quem NÃO É supervisor (ex.: operador de portão) ganha também, mesclado,
+ * `eventosDaOrganizacao` — achado ao vivo, 05/10/2026, mesmo caso da Mara
+ * Lúcia: via só a Stoked (o vínculo novo) e o Henrique e Juliano, onde ela
+ * trabalhou como operadora de portão, tinha sumido — esse papel nunca teve
+ * vínculo fino por evento, só escopo de organização inteira. Supervisor de
+ * verdade NUNCA ganha isso — manteria o escopo fino de sempre (só o setor
+ * dele), sem vazar o resto da organização.
  */
 export default async function MeusEventosPage() {
   const perfil = await getPerfil()
@@ -38,7 +46,14 @@ export default async function MeusEventosPage() {
   const setores = await meusSetores(perfil)
   if (perfil.role !== 'supervisor' && !setores.length) redirect('/admin')
 
-  const eventos = await eventosDosMeusSetores(setores)
+  const eventosVinculo = await eventosDosMeusSetores(setores)
+  let eventos: EventoEscolhivel[] = eventosVinculo
+  if (perfil.role !== 'supervisor') {
+    const daOrg = await eventosDaOrganizacao((perfil.organizacao_id as string | null) ?? null)
+    const vistos = new Set(eventosVinculo.map(e => e.id))
+    eventos = [...eventosVinculo, ...daOrg.filter(e => !vistos.has(e.id))]
+      .sort((a, b) => (b.data_inicio ?? '').localeCompare(a.data_inicio ?? ''))
+  }
   const atuais = eventos.filter(e => e.ativo)
   const passados = eventos.filter(e => !e.ativo)
 

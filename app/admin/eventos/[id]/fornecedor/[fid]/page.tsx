@@ -101,11 +101,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   if (!fornecedor) notFound()
 
   /*
-   * Os setores deste supervisor e os dias do evento.
-   *
-   * `meusSetores` devolve vazio para quem não é supervisor — admin e master
-   * navegam pelos setores pela tela do evento, e um seletor aqui seria um
-   * segundo caminho para a mesma coisa.
+   * Os setores deste perfil (vínculo de supervisor, não papel principal —
+   * ver o comentário de `meusSetores`) e os dias do evento.
    */
   const [setoresDoSupervisor, { data: diasDoEvento }] = await Promise.all([
     meusSetores(perfil),
@@ -114,7 +111,12 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   ])
 
   /*
-   * Isolamento: supervisor só vê os PRÓPRIOS setores.
+   * Isolamento: quem tem vínculo de supervisor aqui só vê os PRÓPRIOS
+   * setores — vale pro papel 'supervisor' E pra quem só GANHOU um vínculo
+   * mantendo outro papel principal (achado ao vivo, 05/10/2026, caso da
+   * Mara Lúcia: operadora de portão de uma organização, supervisora de um
+   * fornecedor de OUTRA — o branch antigo, por papel, caía na checagem de
+   * organização abaixo e dava 404 nela, mesmo com o vínculo legítimo).
    *
    * Era `perfil.fornecedor_id !== fid` — a coluna do setor ATIVO. Quem
    * supervisiona dois setores só conseguia abrir um deles; o outro dava 404,
@@ -122,8 +124,10 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
    * (`meusSetores`), então ele navega entre os seus livremente.
    */
   const organizacaoDoEvento = (fornecedor.eventos as any)?.organizacao_id
-  if (perfil.role === 'supervisor') {
-    if (!setoresDoSupervisor.some(s => s.id === fid)) notFound()
+  if (setoresDoSupervisor.some(s => s.id === fid)) {
+    // Vínculo de supervisor neste setor — liberado, de qualquer organização.
+  } else if (perfil.role === 'supervisor') {
+    notFound()
   } else if (!veTodosEventos(perfil) && organizacaoDoEvento !== perfil.organizacao_id) {
     notFound()
   }
@@ -323,16 +327,23 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         titulo={fornecedor.nome}
         descricao={(fornecedor.eventos as any)?.nome}
         /*
-         * O supervisor NUNCA pode abrir `/admin/eventos/${id}` (é a tela de
-         * quem administra o evento inteiro) — essa página o manda de volta
-         * pra cá na hora (`redirect` em app/admin/eventos/[id]/page.tsx).
-         * Mandar o "voltar" dele pra lá virava um loop: clicava e nada
-         * parecia acontecer, porque voltava direto pro mesmo lugar. Pedido
-         * do Juan, 02/10/2026 ("toda tela precisa ter a setinha de voltar
-         * FUNCIONANDO") — pra ele, `/admin/meus-eventos` é o destino que
-         * faz sentido.
+         * Quem entrou aqui por um VÍNCULO de supervisor (papel 'supervisor'
+         * OU outro papel que ganhou o vínculo, achado ao vivo, 05/10/2026,
+         * caso da Mara Lúcia) nunca pode abrir `/admin/eventos/${id}` (é a
+         * tela de quem administra o evento inteiro) — essa página manda de
+         * volta pra cá na hora (`redirect` em app/admin/eventos/[id]/page.tsx),
+         * ou pior, 404 pra quem nem é da organização do evento. Mandar o
+         * "voltar" pra lá virava um beco sem saída: clicava e nada parecia
+         * acontecer (ou dava 404), porque voltava direto pro mesmo lugar ou
+         * pior. Pedido do Juan, 02/10/2026 ("toda tela precisa ter a
+         * setinha de voltar FUNCIONANDO") — `/admin/meus-eventos` é o
+         * destino que faz sentido pra quem entrou assim.
          */
-        voltarPara={perfil.role === 'supervisor' ? '/admin/meus-eventos' : `/admin/eventos/${id}`}
+        voltarPara={
+          perfil.role === 'supervisor' || setoresDoSupervisor.some(s => s.id === fid)
+            ? '/admin/meus-eventos'
+            : `/admin/eventos/${id}`
+        }
         /* Só o que se usa no dia do evento. Localizar funcionário, cadastro
            manual e cópia do link saíram daqui a pedido: cinco botões na mesma
            fileira quebravam a linha e escondiam o Escanear QR, que é a ação
