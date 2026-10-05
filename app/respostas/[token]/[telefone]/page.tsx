@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/Superficie'
 import ConversaRolagem from '@/app/admin/whatsapp/conversas/[telefone]/ConversaRolagem'
 import estilos from '@/app/admin/whatsapp/conversas/[telefone]/mensagens.module.css'
 import Moldura, { LinkIndisponivel } from '../Moldura'
-import { formatarTelefone, iniciais } from '../formato'
+import { formatarTelefone, iniciais, rotuloSemTexto } from '../formato'
+import Midia from './Midia'
 import ResponderCompartilhado from './ResponderCompartilhado'
 
 export const dynamic = 'force-dynamic'
@@ -74,9 +75,18 @@ export default async function ConversaCompartilhadaPage({
             return (
               <div key={m.id} className={`flex ${enviada ? `justify-end ${estilos.enviada}` : `justify-start ${estilos.recebida}`}`}>
                 <div className={`max-w-[82%] rounded-xl px-3 py-2 shadow-sm ${enviada ? 'bg-[#d9fdd3]' : 'bg-white'}`}>
-                  <p className="whitespace-pre-wrap break-words text-sm text-slate-700">
-                    {m.texto ?? <span className="italic text-slate-400">(sem texto: áudio, imagem ou outro formato)</span>}
-                  </p>
+                  {m.midia && <Midia token={token} id={m.id} classe={m.midia.classe} nome={m.midia.nome} />}
+                  {m.texto ? (
+                    <p className={`whitespace-pre-wrap break-words text-sm text-slate-700 ${m.midia ? 'mt-2' : ''}`}>{m.texto}</p>
+                  ) : !m.midia && (
+                    <p className="text-sm italic text-slate-500">
+                      {m.tipo === 'reaction'
+                        ? (m.reacao ? `Reagiu com ${m.reacao}` : 'Retirou a reação')
+                        : m.tipo === 'unsupported'
+                          ? 'Mensagem em um formato que o WhatsApp não repassa para empresas'
+                          : rotuloSemTexto(m.tipo)}
+                    </p>
+                  )}
                   <p className="mt-1 flex items-center justify-end gap-1 text-2xs tabular-nums text-slate-400">
                     {formatarBR(m.em, 'curto')}
                     {Icone && (

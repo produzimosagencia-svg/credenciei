@@ -2,7 +2,6 @@ import 'server-only'
 
 import { createHash, randomBytes } from 'node:crypto'
 import { supabaseAdmin } from './supabase-server'
-import { conversaDe, type MensagemChat } from './whatsapp-painel'
 
 /**
  * Atendimento compartilhado: um link público, com prazo, que mostra só as
@@ -243,10 +242,143 @@ export async function telefoneDoCompartilhamento(estado: EstadoCompartilhamento,
   return nomes.has(chaveTelefone(digitos))
 }
 
-/** As mensagens de uma conversa do link, ou `null` se o número não pertence a ele. */
-export async function conversaCompartilhada(estado: EstadoCompartilhamento, telefone: string): Promise<MensagemChat[] | null> {
+export type ClasseDeMidia = 'imagem' | 'figurinha' | 'audio' | 'video' | 'documento'
+
+export type MensagemCompartilhada = {
+  id: string
+  direcao: 'recebida' | 'enviada'
+  tipo: string
+  /** Texto da mensagem, ou a legenda quando ela é foto, vídeo ou documento. */
+  texto: string | null
+  em: string
+  /** Presente quando a mensagem carrega um arquivo que dá para abrir. */
+  midia: { classe: ClasseDeMidia; nome: string | null } | null
+  /** O emoji, quando a mensagem é uma reação. */
+  reacao: string | null
+  status: string | null
+  erro: string | null
+}
+
+const CLASSE_POR_TIPO: Record<string, ClasseDeMidia> = {
+  image: 'imagem', sticker: 'figurinha', audio: 'audio', video: 'video', document: 'documento',
+}
+
+type BrutoDaMeta = Record<string, { id?: string; caption?: string; filename?: string; mime_type?: string; emoji?: string } | undefined> | null
+
+const PRIORIDADE_STATUS: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4 }
+
+/**
+ * As mensagens de uma conversa do link, ou `null` se o número não pertence a ele.
+ *
+ * Lê o registro cru da Meta em vez de reaproveitar a leitura da aba Conversas:
+ * o webhook só grava em `texto` o corpo de mensagem de texto, então foto,
+ * figurinha, áudio, legenda e reação só existem dentro de `bruto`.
+ */
+export async function conversaCompartilhada(estado: EstadoCompartilhamento, telefone: string): Promise<MensagemCompartilhada[] | null> {
   if (!await telefoneDoCompartilhamento(estado, telefone)) return null
-  const mensagens = await conversaDe(telefone.replace(/\D/g, ''))
+
   // Conversa mais antiga que o disparo, se houver, é de outro assunto.
-  return mensagens.filter(m => m.em >= estado.desde)
+  const { data: eventos } = await supabaseAdmin
+    .from('whatsapp_eventos')
+    .select('id, direcao, tipo, texto, ocorrido_em, wa_message_id, bruto')
+    .eq('telefone', telefone.replace(/\D/g, ''))
+    .in('direcao', ['recebida', 'enviada'])
+    .gte('ocorrido_em', estado.desde)
+    .order('ocorrido_em')
+    .limit(500)
+
+  const idsEnviados = (eventos ?? [])
+    .filter(e => e.direcao === 'enviada' && e.wa_message_id)
+    .map(e => e.wa_message_id as string)
+  const { data: status } = idsEnviados.length
+    ? await supabaseAdmin
+        .from('whatsapp_eventos')
+        .select('tipo, wa_message_id, bruto')
+        .eq('direcao', 'status')
+        .in('wa_message_id', idsEnviados)
+    : { data: [] }
+
+  const statusPorId = new Map<string, { tipo: string; erro: string | null }>()
+  for (const e of status ?? []) {
+    const tipo = e.tipo as string
+    const id = e.wa_message_id as string | null
+    if (!id || !(tipo in PRIORIDADE_STATUS)) continue
+    const atual = statusPorId.get(id)
+    if (atual && PRIORIDADE_STATUS[atual.tipo] >= PRIORIDADE_STATUS[tipo]) continue
+    const err = (e.bruto as { errors?: { code?: number; title?: string }[] } | null)?.errors?.[0]
+    statusPorId.set(id, { tipo, erro: err ? `${err.code}: ${err.title ?? ''}` : null })
+  }
+
+  return (eventos ?? []).map(e => {
+    const tipo = e.tipo as string
+    const bruto = e.bruto as BrutoDaMeta
+    const parte = bruto?.[tipo]
+    const classe = e.direcao === 'recebida' ? CLASSE_POR_TIPO[tipo] : undefined
+    const st = e.wa_message_id ? statusPorId.get(e.wa_message_id as string) : undefined
+    return {
+      id: e.id as string,
+      direcao: e.direcao as 'recebida' | 'enviada',
+      tipo,
+      texto: ((e.texto as string | null) ?? parte?.caption ?? '').trim() || null,
+      em: e.ocorrido_em as string,
+      midia: classe && parte?.id ? { classe, nome: parte.filename ?? null } : null,
+      reacao: tipo === 'reaction' ? (bruto?.reaction?.emoji ?? null) : null,
+      status: st?.tipo ?? (e.direcao === 'enviada' && e.wa_message_id ? 'sent' : null),
+      erro: st?.erro ?? null,
+    }
+  })
+}
+
+export type MidiaCompartilhada = { corpo: ReadableStream<Uint8Array>; mime: string; tamanho: string | null; nome: string | null }
+
+/**
+ * O arquivo de uma mensagem recebida (foto, figurinha, áudio, vídeo ou
+ * documento), buscado na Meta na hora.
+ *
+ * A Meta não entrega mídia por endereço público: o arquivo só sai com o token
+ * da conta, que não pode ir para o navegador. Por isso a página aponta para
+ * uma rota nossa, e é esta função que confere o link, confere que a mensagem é
+ * de uma conversa dele e só então repassa o arquivo.
+ *
+ * Devolve `null` em qualquer recusa, sem distinguir o motivo para quem pede.
+ */
+export async function midiaCompartilhada(token: string, eventoId: string): Promise<MidiaCompartilhada | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(eventoId)) return null
+  const leitura = await lerCompartilhamento(token)
+  if (!leitura.valido) return null
+
+  const { data: evento } = await supabaseAdmin
+    .from('whatsapp_eventos')
+    .select('telefone, direcao, tipo, ocorrido_em, bruto')
+    .eq('id', eventoId)
+    .maybeSingle()
+  if (!evento || evento.direcao !== 'recebida' || !evento.telefone) return null
+  if ((evento.ocorrido_em as string) < leitura.estado.desde) return null
+  if (!CLASSE_POR_TIPO[evento.tipo as string]) return null
+  if (!await telefoneDoCompartilhamento(leitura.estado, evento.telefone as string)) return null
+
+  const parte = (evento.bruto as BrutoDaMeta)?.[evento.tipo as string]
+  const tokenMeta = process.env.WHATSAPP_TOKEN
+  if (!parte?.id || !tokenMeta) return null
+
+  try {
+    const cabecalho = { Authorization: `Bearer ${tokenMeta}` }
+    // O endereço gravado no webhook vence em minutos; o id continua valendo
+    // por semanas, então o endereço é pedido de novo a cada abertura.
+    const meta = await fetch(`https://graph.facebook.com/v21.0/${parte.id}`, { headers: cabecalho, signal: AbortSignal.timeout(15_000) })
+    const dados = await meta.json().catch(() => null) as { url?: string; mime_type?: string } | null
+    if (!meta.ok || !dados?.url) return null
+
+    const arquivo = await fetch(dados.url, { headers: cabecalho, signal: AbortSignal.timeout(30_000) })
+    if (!arquivo.ok || !arquivo.body) return null
+    return {
+      corpo: arquivo.body,
+      // "audio/ogg; codecs=opus" vira "audio/ogg": o parâmetro confunde alguns navegadores.
+      mime: (dados.mime_type ?? parte.mime_type ?? 'application/octet-stream').split(';')[0].trim(),
+      tamanho: arquivo.headers.get('content-length'),
+      nome: parte.filename ?? null,
+    }
+  } catch {
+    return null
+  }
 }

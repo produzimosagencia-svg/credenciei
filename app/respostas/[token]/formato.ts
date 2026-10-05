@@ -29,6 +29,7 @@ const ROTULO_DO_TIPO: Record<string, string> = {
   video: 'Vídeo',
   document: 'Documento',
   sticker: 'Figurinha',
+  unsupported: 'Mensagem em formato não suportado',
   location: 'Localização',
   contacts: 'Contato',
   reaction: 'Reação',
