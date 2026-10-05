@@ -17,7 +17,7 @@
 // guarda: o dia esperado e a batida feita. É o que sustenta a pergunta do
 // fechamento — "estava escalado para 5 dias e veio em 4".
 
-import { supabaseAdmin } from './supabase-server'
+import { supabaseAdmin, meusSetores } from './supabase-server'
 import { veTodosEventos } from './permissions'
 import { janelaDoMeio, faseDoDia, diaBRT, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
 
@@ -246,9 +246,17 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
  * copiada dentro da página cheia; um segundo consumidor (o modal, aberto sem
  * navegar) precisava da mesma verificação, e duas cópias da mesma regra
  * divergem no primeiro ajuste que alguém faz numa e esquece na outra.
+ *
+ * Não trava mais em `role === 'supervisor'` (achado ao vivo, 05/10/2026,
+ * caso da Mara Lúcia: operadora de portão que também supervisiona um
+ * fornecedor — "Sem permissão" no histórico e no crachá de quem é da
+ * própria equipe dela). `meusSetores` responde pela EXISTÊNCIA do vínculo
+ * (supervisor_setores), não pelo papel principal da conta, e cobre todos os
+ * setores dela — não só o `fornecedor_id` ATIVO no momento — mesma régua já
+ * usada em `meuSetor`/`meusSetores`/`entrarNoEventoSupervisor`.
  */
 export async function podeVerHistoricoDe(
-  perfil: { role: string; fornecedor_id?: string | null; organizacao_id?: string | null } | null,
+  perfil: { id: string; role: string; fornecedor_id?: string | null; organizacao_id?: string | null } | null,
   funcionarioId: string,
 ): Promise<boolean> {
   if (!perfil) return false
@@ -262,6 +270,8 @@ export async function podeVerHistoricoDe(
 
   const org = (vinculo.fornecedores as unknown as { eventos: { organizacao_id: string | null } })?.eventos?.organizacao_id
 
-  if (perfil.role === 'supervisor') return perfil.fornecedor_id === vinculo.fornecedor_id
+  const meus = await meusSetores(perfil)
+  if (meus.some(s => s.id === vinculo.fornecedor_id)) return true
+  if (perfil.role === 'supervisor') return false
   return veTodosEventos(perfil) || org === perfil.organizacao_id
 }
