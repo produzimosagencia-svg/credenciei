@@ -193,6 +193,29 @@ ${link}
 Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
 
   /*
+   * Template irmão de `confirmacao_escala`, só pra evento com subeventos —
+   * mesma estrutura, acrescentando evento pai/subevento/setor na abertura
+   * (pedido do Juan, 05/10/2026). `setor` e `fornecedor` chegam com o MESMO
+   * valor (nome do fornecedor) — ver o comentário em `montarEnvioTemplate`
+   * (lib/mensagens.ts) sobre por que são dois parâmetros e não um reusado.
+   */
+  confirmacao_subeventos: ([nome, eventoPai, subevento, setor, funcao, fornecedor, quando, instrucoes, link, avisoUniforme, rotuloCredencial]) =>
+`📋 Oi, ${nome}! Você foi escalado(a) para trabalhar no evento *${eventoPai}*, no subevento *${subevento}*, no setor *${setor}*.
+
+👤 Função: ${funcao}
+🏷️ Fornecedor: ${fornecedor}
+📅 Quando: ${quando}
+
+📌 ${instrucoes}
+
+👕 ${avisoUniforme}
+
+🔗 ${rotuloCredencial}
+${link}
+
+Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
+
+  /*
    * A lista vem pronta de `montarEnvioTemplate`, uma pessoa por linha.
    *
    * O supervisor le isso no meio da operacao, quase sempre em pe e com pressa.

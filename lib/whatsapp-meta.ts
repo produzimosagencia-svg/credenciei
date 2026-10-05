@@ -63,6 +63,14 @@ const QTD_VARIAVEIS_BODY: Record<string, number> = {
    * cortado daqui pra frente.
    */
   confirmacao_escala: 8,
+  /*
+   * Template irmão de `confirmacao_escala`, só pra evento com subeventos
+   * (Juan, 05/10/2026) — mesmas 10 variáveis reais do corpo aprovado na
+   * Meta (nome, evento pai, subevento, setor, função, fornecedor — mesmo
+   * valor do setor, repetido —, data, instruções, credencial, uniforme);
+   * `rotuloCredencial` por último, de novo só pro texto local.
+   */
+  confirmacao_subeventos: 10,
 }
 
 export type ResultadoEnvio = {

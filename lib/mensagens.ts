@@ -1552,8 +1552,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
   if (msg.tipo === 'confirmacao_escala') {
     if (!msg.funcionario_id) return null
     const [{ data: func }, { data: evento }] = await Promise.all([
-      supabase.from('funcionarios').select('nome, cargo, qr_token, fornecedor_id').eq('id', msg.funcionario_id).single(),
-      supabase.from('eventos').select('nome, local, data_inicio, msg_pre_evento_instrucoes, metodo_identificacao').eq('id', msg.evento_id).single(),
+      supabase.from('funcionarios').select('nome, cargo, qr_token, fornecedor_id, subevento_id, subeventos(nome)').eq('id', msg.funcionario_id).single(),
+      supabase.from('eventos').select('nome, local, data_inicio, msg_pre_evento_instrucoes, metodo_identificacao, tem_subeventos').eq('id', msg.evento_id).single(),
     ])
     if (!func || !evento) return null
     const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
@@ -1571,13 +1571,44 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
      * Sem quebra de linha: a Meta rejeita parâmetro de template com `\n` em
      * tempo de envio, e `aviso_uniforme_texto` é texto livre do organizador.
      *
-     * `rotuloCredencial` vai por ÚLTIMO (9º) de propósito — só serve ao
-     * texto local (Evolution/log), nunca ao corpo da Meta. Ver
-     * `QTD_VARIAVEIS_BODY.confirmacao_escala` em lib/whatsapp-meta.ts.
+     * `rotuloCredencial` vai por ÚLTIMO de propósito — só serve ao texto
+     * local (Evolution/log), nunca ao corpo da Meta. Ver `QTD_VARIAVEIS_BODY`
+     * em lib/whatsapp-meta.ts.
      */
     const avisoUniforme = (evento as unknown as { aviso_uniforme_texto?: string | null })
       .aviso_uniforme_texto?.trim().replace(/\s*\n+\s*/g, ' ')
       || 'Consulte seu supervisor sobre uniforme ou identificação, se exigido.'
+    const rotuloCredencial = instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial
+    const setor = fornecedor?.nome ?? 'seu fornecedor'
+
+    /*
+     * Evento com subeventos (pedido do Juan, 05/10/2026) — template
+     * DIFERENTE, nunca os dois: decide aqui, no momento do ENVIO (não no
+     * agendamento), porque é só agora que se sabe com certeza se o
+     * funcionário ainda está num subevento (ele pode ter sido movido entre
+     * o agendamento e o disparo). `tem_subeventos` do evento E
+     * `subevento_id` do funcionário juntos — um evento pode ter ligado
+     * subeventos DEPOIS de alguém já estar cadastrado sem um.
+     */
+    const nomeSubevento = (func as unknown as { subeventos?: { nome?: string } | null }).subeventos?.nome ?? null
+    if (evento.tem_subeventos === true && nomeSubevento) {
+      return {
+        template: 'confirmacao_subeventos',
+        params: [
+          func.nome,
+          evento.nome,
+          nomeSubevento,
+          setor,
+          func.cargo?.trim() || 'não informada',
+          setor,
+          dataLocal,
+          instrucoes,
+          credencial,
+          avisoUniforme,
+          rotuloCredencial,
+        ],
+      }
+    }
 
     return {
       template,
@@ -1585,12 +1616,12 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         func.nome,
         evento.nome,
         func.cargo?.trim() || 'não informada',
-        fornecedor?.nome ?? 'seu fornecedor',
+        setor,
         dataLocal,
         instrucoes,
         credencial,
         avisoUniforme,
-        instrucoesDeAcesso(evento.metodo_identificacao).rotuloCredencial,
+        rotuloCredencial,
       ],
     }
   }
