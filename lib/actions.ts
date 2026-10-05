@@ -3637,19 +3637,33 @@ export async function trocarSetorAtivo(fornecedorId: string) {
  * logo abaixo já barra quem não tem vínculo NENHUM pra aquele evento, então
  * a proteção continua de pé sem depender do papel principal da conta.
  */
-export async function entrarNoEventoSupervisor(eventoId: string) {
-  const perfil = await getPerfil()
-  if (!perfil) throw new Error('Sem permissão')
+/*
+ * Devolve `{error}` em vez de lançar — igual a `criarSupervisor` e demais
+ * Server Actions chamadas direto do cliente. Lançar aqui some em produção: o
+ * React Server Components troca qualquer `throw` não-capturado por "An error
+ * occurred in the Server Components render", e o card de histórico sem
+ * vínculo (ver `EscolherMeuEvento.tsx`) batia nesse exato caminho — achado ao
+ * vivo, 05/10/2026, mesmo caso da Mara Lúcia.
+ */
+export async function entrarNoEventoSupervisor(eventoId: string): Promise<
+  { ok: true; fornecedorId: string; eventoId: string; error?: undefined } | { ok?: undefined; error: string }
+> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil) return { error: 'Sem permissão' }
 
-  const meus = await meusSetores(perfil)
-  const setor = meus.find(s => s.evento_id === eventoId)
-  if (!setor) throw new Error('Você não tem acesso a este evento.')
+    const meus = await meusSetores(perfil)
+    const setor = meus.find(s => s.evento_id === eventoId)
+    if (!setor) return { error: 'Você não tem um vínculo de supervisor neste evento.' }
 
-  const { error } = await supabaseAdmin.from('perfis').update({ fornecedor_id: setor.id }).eq('id', perfil.id)
-  if (error) throw new Error(mensagemAmigavel(error))
+    const { error } = await supabaseAdmin.from('perfis').update({ fornecedor_id: setor.id }).eq('id', perfil.id)
+    if (error) return { error: mensagemAmigavel(error) }
 
-  revalidatePath('/admin', 'layout')
-  return { ok: true as const, fornecedorId: setor.id, eventoId }
+    revalidatePath('/admin', 'layout')
+    return { ok: true as const, fornecedorId: setor.id, eventoId }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
 }
 
 /**
@@ -3843,6 +3857,16 @@ async function setoresComAcessoAAprovacao(perfil: Awaited<ReturnType<typeof getP
     return (data ?? []).map(f => f.id as string)
   }
 
+  /*
+   * Ninguém dos branches acima bateu (ex.: operador de portão) — mas pode
+   * ter um vínculo de supervisor mesmo assim (achado ao vivo, 05/10/2026,
+   * caso da Mara Lúcia). `meusSetores` já responde pela EXISTÊNCIA do
+   * vínculo, não pelo papel principal — mesma régua usada em
+   * `meuSetor`/`entrarNoEventoSupervisor`.
+   */
+  const meusVinculos = await meusSetores(perfil)
+  if (meusVinculos.length) return meusVinculos.map(s => s.id)
+
   return []
 }
 
@@ -3977,6 +4001,13 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
   if (!perfil.cpf) return { error: 'Seu cadastro não tem CPF. Fale com o suporte.' }
 
   let alvoFornecedorId: string
+  /*
+   * Vale também pra quem tem outro papel principal mas GANHOU um vínculo
+   * de supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia) — entra
+   * pelo mesmo caminho do admin (escolhe fornecedor), só que a checagem é
+   * por VÍNCULO, não por organização.
+   */
+  let viaVinculo = false
   if (perfil.role === 'supervisor') {
     if (!perfil.fornecedor_id) return { error: 'Você ainda não está vinculado a um fornecedor.' }
     alvoFornecedorId = perfil.fornecedor_id
@@ -3984,7 +4015,11 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
     if (!fornecedorId) return { error: 'Escolha o fornecedor.' }
     alvoFornecedorId = fornecedorId
   } else {
-    return { error: 'Sem permissão.' }
+    if (!fornecedorId) return { error: 'Escolha o fornecedor.' }
+    const meus = await meusSetores(perfil)
+    if (!meus.some(s => s.id === fornecedorId)) return { error: 'Sem permissão sobre este fornecedor.' }
+    alvoFornecedorId = fornecedorId
+    viaVinculo = true
   }
 
   const { data: fornecedor } = await supabaseAdmin
@@ -4007,7 +4042,7 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
     nome: perfil.nome,
     cpf: perfil.cpf,
     telefone: perfil.telefone ?? '',
-    cargo: perfil.role === 'supervisor' ? 'Supervisor' : 'Administração',
+    cargo: (perfil.role === 'supervisor' || viaVinculo) ? 'Supervisor' : 'Administração',
   })
 }
 
@@ -5312,13 +5347,14 @@ async function exigirAcessoABloqueio(eventoId: string) {
   const perfil = await getPerfil()
   if (!perfil) throw new Error('Sem permissão')
 
-  if (perfil.role === 'supervisor') {
-    const meus = await meusSetores(perfil)
-    if (!meus.some(s => s.evento_id === eventoId)) {
-      throw new Error('Você não tem fornecedor neste evento.')
-    }
-    return perfil
-  }
+  /*
+   * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
+   * GANHOU um vínculo de supervisor neste evento (achado ao vivo,
+   * 05/10/2026, caso da Mara Lúcia).
+   */
+  const meus = await meusSetores(perfil)
+  if (meus.some(s => s.evento_id === eventoId)) return perfil
+  if (perfil.role === 'supervisor') throw new Error('Você não tem fornecedor neste evento.')
 
   if (!podeGerenciarEventos(perfil) && perfil.role !== 'suporte') throw new Error('Sem permissão')
 
@@ -8210,7 +8246,13 @@ export async function lancarPontoManual(
    * passado, com hora arbitrária, e isso é ato de gestão. Supervisor entra
    * porque é quem sabe quem de fato trabalhou no setor dele.
    */
-  if (!perfil || !(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')) {
+  /*
+   * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
+   * GANHOU um vínculo de supervisor (achado ao vivo, 05/10/2026, caso da
+   * Mara Lúcia) — a checagem fina de setor vem abaixo, por `meusSetores`.
+   */
+  const meusVinculos = perfil ? await meusSetores(perfil) : []
+  if (!perfil || !(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte' || meusVinculos.length)) {
     return { error: 'Sem permissão para lançar ponto manualmente.' }
   }
 
@@ -8238,11 +8280,10 @@ export async function lancarPontoManual(
   const evento = comEvento(func.fornecedores)?.eventos
   if (!evento) return { error: 'Evento não encontrado.' }
 
-  if (perfil.role === 'supervisor') {
-    const meus = await meusSetores(perfil)
-    if (!meus.some(s => s.id === func.fornecedor_id)) {
-      return { error: 'Esta pessoa é de outro fornecedor. Você só lança ponto da sua equipe.' }
-    }
+  if (meusVinculos.some(s => s.id === func.fornecedor_id)) {
+    // Vínculo de supervisor neste fornecedor — liberado.
+  } else if (perfil.role === 'supervisor') {
+    return { error: 'Esta pessoa é de outro fornecedor. Você só lança ponto da sua equipe.' }
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }

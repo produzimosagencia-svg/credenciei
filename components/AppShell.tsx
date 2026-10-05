@@ -113,7 +113,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * sem precisar entrar pra saber se tem alguém esperando (pedido do Juan,
    * 24/09/2026).
    */
-  if (podeGerenciarUsuarios(perfil) || role === 'supervisor' || role === 'suporte') {
+  if (podeGerenciarUsuarios(perfil) || role === 'supervisor' || role === 'suporte' || temVinculoSupervisor) {
     doEvento.push({
       href: '/admin/aprovacoes', label: 'Aguardando aprovação', icon: ClipboardCheck,
       badge: <BadgeAprovacoesPendentes />,
@@ -127,7 +127,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * `garantirMeuCracha` continuam existindo, só não tem mais entrada no
    * menu pra esse papel).
    */
-  if (role === 'supervisor') {
+  if (role === 'supervisor' || temVinculoSupervisor) {
     doEvento.push({ href: '/admin/meu-cracha', label: 'Meu Crachá', icon: IdCard })
   }
   /*
@@ -170,7 +170,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * Sem operador de portão pelo mesmo motivo — escrever o passado com hora
    * arbitrária é ato de gestão. Mesma régua da action `lancarPontoManual`.
    */
-  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte' || temVinculoSupervisor) {
     administrativo.push({ href: '/admin/lancar-ponto', label: 'Lançamento manual', icon: ClipboardPen })
   }
   /*
@@ -183,10 +183,10 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * pessoa tentando entrar sem estar escalada. O bloqueio vale só no evento
    * escolhido — a tela explica isso antes de deixar usar.
    */
-  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || role === 'suporte' || temVinculoSupervisor) {
     administrativo.push({ href: '/admin/bloquear-cpf', label: 'Bloquear CPF', icon: ShieldBan })
   }
-  if (podeGerenciarEventos(perfil) || role === 'supervisor') {
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || temVinculoSupervisor) {
     administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
   }
   /*

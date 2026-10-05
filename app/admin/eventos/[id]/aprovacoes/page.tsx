@@ -25,12 +25,18 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
   const { data: evento } = await supabase.from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).single()
   if (!evento) notFound()
 
-  // null = vê o evento inteiro; array = só estes setores (supervisor).
+  /*
+   * null = vê o evento inteiro; array = só estes setores (vínculo de
+   * supervisor — papel 'supervisor' OU outro papel que GANHOU um vínculo,
+   * achado ao vivo, 05/10/2026, caso da Mara Lúcia: o branch antigo, por
+   * papel, caía direto no `notFound()` de quem não é suporte).
+   */
   let fornecedorIdsPermitidos: string[] | null = null
-  if (perfil.role === 'supervisor') {
-    const meus = await meusSetores(perfil)
-    fornecedorIdsPermitidos = meus.filter(s => s.evento_id === eventoId).map(s => s.id)
-    if (!fornecedorIdsPermitidos.length) notFound()
+  const meusSetoresNesteEvento = (await meusSetores(perfil)).filter(s => s.evento_id === eventoId)
+  if (meusSetoresNesteEvento.length) {
+    fornecedorIdsPermitidos = meusSetoresNesteEvento.map(s => s.id)
+  } else if (perfil.role === 'supervisor') {
+    notFound()
   } else {
     const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
     if (!podeSempre) {
@@ -77,15 +83,16 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
         titulo="Aprovações"
         descricao={`${evento.nome} — credenciamentos aguardando decisão`}
         /*
-         * Supervisor não pode abrir `/admin/eventos/${eventoId}` (vira loop —
-         * essa página sempre o manda de volta pro próprio fornecedor, ver
-         * app/admin/eventos/[id]/page.tsx). Volta pro MESMO fornecedor dele
-         * neste evento, não pro seletor de eventos — é de lá que ele veio.
-         * Mesmo ajuste já feito na tela do fornecedor, 02/10/2026.
+         * Quem entrou por VÍNCULO (papel 'supervisor' ou outro papel que
+         * ganhou o vínculo) não pode abrir `/admin/eventos/${eventoId}` (vira
+         * loop — essa página sempre manda de volta pro próprio fornecedor,
+         * ver app/admin/eventos/[id]/page.tsx). Volta pro MESMO fornecedor
+         * neste evento, não pro seletor de eventos — é de lá que veio. Mesmo
+         * ajuste já feito na tela do fornecedor, 02/10/2026 e 05/10/2026.
          */
         voltarPara={
-          perfil.role === 'supervisor'
-            ? (fornecedorIdsPermitidos?.[0] ? `/admin/eventos/${eventoId}/fornecedor/${fornecedorIdsPermitidos[0]}` : '/admin/meus-eventos')
+          fornecedorIdsPermitidos
+            ? (fornecedorIdsPermitidos[0] ? `/admin/eventos/${eventoId}/fornecedor/${fornecedorIdsPermitidos[0]}` : '/admin/meus-eventos')
             : `/admin/eventos/${eventoId}`
         }
         acoes={

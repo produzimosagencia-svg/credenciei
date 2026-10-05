@@ -1,11 +1,11 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { IdCard, CalendarDays, Building2 } from 'lucide-react'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
 import { garantirMeuCracha } from '@/lib/actions'
 import { PageHeader, Secao, EmptyState, Aviso } from '@/components/ui/Superficie'
-import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 
 export const revalidate = 0
 
@@ -27,7 +27,15 @@ export default async function MeuCrachaPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (perfil.role !== 'supervisor' && perfil.role !== 'admin' && perfil.role !== 'master') redirect('/admin')
+  /*
+   * Vale também pra quem tem outro papel principal mas GANHOU um vínculo
+   * de supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia) — entra
+   * pelo mesmo fluxo do admin (escolhe evento e fornecedor), já que ela não
+   * tem um `fornecedor_id` ATIVO fixo como o supervisor de papel tem.
+   */
+  const meusVinculos = await meusSetores(perfil)
+  const temVinculo = !!meusVinculos.length
+  if (perfil.role !== 'supervisor' && perfil.role !== 'admin' && perfil.role !== 'master' && !temVinculo) redirect('/admin')
 
   if (perfil.role === 'supervisor') {
     const resultado = await garantirMeuCracha()
@@ -45,11 +53,14 @@ export default async function MeuCrachaPage({
   const { evento: eventoParam, setor: setorParam } = await searchParams
 
   if (!eventoParam) {
+    const eventos = (perfil.role === 'admin' || perfil.role === 'master')
+      ? await eventosQuePossoAbrir()
+      : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="space-y-5">
         <PageHeader titulo="Crachá Admin" descricao="Escolha o evento — o crachá é vinculado a um fornecedor dele" />
         <EscolherEvento
-          eventos={await eventosQuePossoAbrir()}
+          eventos={eventos}
           href={id => `/admin/meu-cracha?evento=${id}`}
           icone={<IdCard className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
@@ -64,7 +75,8 @@ export default async function MeuCrachaPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  const temVinculoNesteEvento = meusVinculos.some(s => s.evento_id === eventoParam)
+  if (!temVinculoNesteEvento && !veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
 
   if (!setorParam) {
     const { data: setores } = await supabase

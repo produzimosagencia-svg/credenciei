@@ -6,7 +6,7 @@ import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT } from '@/lib/janelas'
 import { PageHeader, Aviso } from '@/components/ui/Superficie'
-import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import LancarPonto, { type PessoaDoEvento, type DiaDaOperacao } from './LancarPonto'
 
 export const revalidate = 0
@@ -33,17 +33,32 @@ export default async function LancarPontoPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Mesma régua da action: quem gerencia o evento, o supervisor da equipe, ou suporte.
-  if (!(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')) redirect('/admin')
+  /*
+   * Mesma régua da action: quem gerencia o evento, o supervisor da equipe,
+   * suporte, ou quem tem outro papel principal mas GANHOU um vínculo de
+   * supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia).
+   */
+  const meusVinculos = await meusSetores(perfil)
+  const temVinculo = !!meusVinculos.length
+  if (!(podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte' || temVinculo)) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
 
   if (!eventoParam) {
+    /*
+     * Quem só tem vínculo (sem ser admin/suporte) vê a lista ESTRITA dos
+     * próprios setores (`eventosDosMeusSetores`) — `eventosQuePossoAbrir`
+     * daria o escopo largo da organização dela, que não é o dela de verdade
+     * pra lançar ponto.
+     */
+    const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')
+      ? await eventosQuePossoAbrir()
+      : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="space-y-5">
         <PageHeader titulo="Lançamento manual" descricao="Registrar uma batida que a pessoa não fez, com a hora certa" />
         <EscolherEvento
-          eventos={await eventosQuePossoAbrir()}
+          eventos={eventos}
           href={id => `/admin/lancar-ponto?evento=${id}`}
           icone={<ClipboardPen className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
@@ -58,18 +73,23 @@ export default async function LancarPontoPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoParam).single()
   if (!evento) notFound()
-  if (perfil.role === 'suporte') {
+
+  /*
+   * Supervisor só lança da própria equipe — a lista já sai restrita, e a
+   * action confere de novo (a lista esconde, quem barra é ela). Vale pro
+   * papel 'supervisor' E pra quem tem outro papel principal mas GANHOU um
+   * vínculo neste evento (achado ao vivo, 05/10/2026, caso da Mara Lúcia:
+   * o branch antigo, por papel, caía no 404 de organização pra ela).
+   */
+  const setoresNesteEvento = meusVinculos.filter(s => s.evento_id === eventoParam).map(s => s.id as string)
+  const setoresDoSupervisor = (perfil.role === 'supervisor' || setoresNesteEvento.length) ? setoresNesteEvento : null
+  if (setoresDoSupervisor) {
+    if (!setoresDoSupervisor.length) notFound()
+  } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
   } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
     notFound()
   }
-
-  // Supervisor só lança da própria equipe — a lista já sai restrita, e a
-  // action confere de novo (a lista esconde, quem barra é ela).
-  const setoresDoSupervisor = perfil.role === 'supervisor'
-    ? (await meusSetores(perfil)).filter(s => s.evento_id === eventoParam).map(s => s.id as string)
-    : null
-  if (setoresDoSupervisor && !setoresDoSupervisor.length) notFound()
 
   let setoresQuery = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam)
   if (setoresDoSupervisor) setoresQuery = setoresQuery.in('id', setoresDoSupervisor)

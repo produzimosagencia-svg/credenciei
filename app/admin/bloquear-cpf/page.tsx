@@ -5,7 +5,7 @@ import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabas
 import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
-import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import PainelBloqueio from './PainelBloqueio'
 import type { CpfBloqueado } from '@/lib/actions'
 
@@ -41,15 +41,23 @@ export default async function BloquearCpfPage({
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  // Supervisor entra: é ele quem vê a pessoa no portão. Quem barra de
-  // verdade é `exigirAcessoABloqueio` na action — aqui só evita abrir a tela.
-  if (!podeGerenciarEventos(perfil) && perfil.role !== 'supervisor' && perfil.role !== 'suporte') {
+  /*
+   * Supervisor entra: é ele quem vê a pessoa no portão. Vale também pra
+   * quem tem outro papel principal mas GANHOU um vínculo de supervisor
+   * (achado ao vivo, 05/10/2026, caso da Mara Lúcia). Quem barra de
+   * verdade é `exigirAcessoABloqueio` na action — aqui só evita abrir a tela.
+   */
+  const meusVinculos = await meusSetores(perfil)
+  if (!podeGerenciarEventos(perfil) && perfil.role !== 'supervisor' && perfil.role !== 'suporte' && !meusVinculos.length) {
     redirect('/admin')
   }
 
   const { evento: eventoParam } = await searchParams
 
   if (!eventoParam) {
+    const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')
+      ? await eventosQuePossoAbrir()
+      : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="space-y-5">
         <PageHeader
@@ -58,7 +66,7 @@ export default async function BloquearCpfPage({
         />
         <Explicacao />
         <EscolherEvento
-          eventos={await eventosQuePossoAbrir()}
+          eventos={eventos}
           href={id => `/admin/bloquear-cpf?evento=${id}`}
           icone={<ShieldBan className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
@@ -75,9 +83,10 @@ export default async function BloquearCpfPage({
   if (!evento) notFound()
 
   // A mesma régua da action, repetida aqui porque a URL é digitável.
-  if (perfil.role === 'supervisor') {
-    const meus = await meusSetores(perfil)
-    if (!meus.some(s => s.evento_id === evento.id)) notFound()
+  if (meusVinculos.some(s => s.evento_id === evento.id)) {
+    // Vínculo de supervisor neste evento — liberado.
+  } else if (perfil.role === 'supervisor') {
+    notFound()
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       notFound()

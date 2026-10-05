@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { FileSpreadsheet, CalendarDays } from 'lucide-react'
-import { getPerfil } from '@/lib/supabase-server'
-import { veTodosEventos } from '@/lib/permissions'
+import { getPerfil, meusSetores } from '@/lib/supabase-server'
+import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { obterResumoParaTelaDeRelatorios } from '@/lib/relatorios'
 import { PageHeader } from '@/components/ui/Superficie'
-import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import ExportarRelatorio from '../eventos/[id]/relatorios/ExportarRelatorio'
 
 export const revalidate = 0
@@ -59,7 +59,16 @@ export default async function RelatoriosPage({
     )
   }
 
-  const eventos = await eventosQuePossoAbrir()
+  /*
+   * Quem não é supervisor/admin/master/suporte mas tem um vínculo de
+   * supervisor (achado ao vivo, 05/10/2026, caso da Mara Lúcia) vê a lista
+   * ESTRITA dos próprios setores — `eventosQuePossoAbrir` daria o escopo
+   * largo da organização dela, que não é o dela de verdade pra relatórios.
+   */
+  const meusVinculos = await meusSetores(perfil)
+  const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte' || !meusVinculos.length)
+    ? await eventosQuePossoAbrir()
+    : await eventosDosMeusSetores(meusVinculos)
   if (!eventos.length && !veTodosEventos(perfil) && perfil.role !== 'supervisor') redirect('/admin')
 
   return (
