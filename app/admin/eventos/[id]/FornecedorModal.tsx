@@ -1,8 +1,9 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Pencil, Check } from 'lucide-react'
-import { criarFornecedor, editarFornecedor, buscarSupervisorPorCpf } from '@/lib/actions'
+import { criarFornecedor, editarFornecedor, buscarSupervisorPorCpf, carregarTravasDoModal } from '@/lib/actions'
+import { rotuloDoDia, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -34,6 +35,24 @@ export default function FornecedorModal(props: Props) {
   const router = useRouter()
 
   const isEditar = props.mode === 'editar'
+
+  /*
+   * Trava de pessoas POR DIA (pedido do Juan, 06/10/2026 — antes só a
+   * planilha de estrutura gravava). Busca ao abrir: os dias e a trava atual
+   * vêm do servidor, e a seção só existe quando o evento usa dias de
+   * trabalho por pessoa. Evento sem isso: o modal é exatamente o de sempre.
+   */
+  const [travas, setTravas] = useState<{ dias: DiaDaEscala[]; atuais: Record<string, number> } | null>(null)
+  const eventoIdDoModal = props.eventoId
+  const fornecedorIdDoModal = props.mode === 'editar' ? props.fornecedorId : undefined
+  useEffect(() => {
+    if (!open) return
+    let vivo = true
+    carregarTravasDoModal(eventoIdDoModal, fornecedorIdDoModal)
+      .then(r => { if (vivo && r.usaEscala && r.dias.length) setTravas({ dias: r.dias, atuais: r.travas }) })
+      .catch(() => { /* sem a seção — o resto do modal segue */ })
+    return () => { vivo = false }
+  }, [open, eventoIdDoModal, fornecedorIdDoModal])
   const defaultNome = isEditar ? (props as any).nome : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
   const defaultQuantidade = isEditar ? (props as any).quantidade_estimada ?? '' : ''
@@ -156,6 +175,36 @@ export default function FornecedorModal(props: Props) {
                   Sistema), cadastro por link ou planilha acima deste número é bloqueado.
                 </p>
               </div>
+
+              {/* Limite por dia — só em evento com dias de trabalho por pessoa. Em branco = sem limite naquele dia. */}
+              {travas && (
+                <div>
+                  <input type="hidden" name="trava_presente" value="1" />
+                  <label className="text-sm font-medium text-slate-700 block mb-1.5">Limite de pessoas por dia</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {travas.dias.map(d => {
+                      const r = rotuloDoDia(d.data)
+                      return (
+                        <label key={d.data} className="block">
+                          <span className="block text-xs text-slate-500 mb-1">
+                            {r.semanaCurta} {r.curto} <span className="opacity-60">· {ROTULO_FASE[d.fase]}</span>
+                          </span>
+                          <input
+                            name={`trava_${d.data}`} type="number" min="1" step="1"
+                            defaultValue={travas.atuais[d.data] ?? ''} placeholder="Sem limite"
+                            className="input tabular-nums"
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="text-slate-500 text-xs mt-1">
+                    Quantas pessoas este setor aceita em cada dia. Quando o dia enche, ele aparece como
+                    &quot;lotado&quot; no formulário do funcionário e o supervisor não consegue aprovar mais.
+                    Em branco = sem limite.
+                  </p>
+                </div>
+              )}
 
               {/*
                 * Mover/atribuir subevento — só no editar, e só quando o evento

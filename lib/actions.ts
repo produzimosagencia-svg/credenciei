@@ -44,7 +44,8 @@ import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './v
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
-  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, type DetalheCredenciamento,
+  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor,
+  type DetalheCredenciamento,
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
 import {
@@ -754,6 +755,18 @@ export async function criarSupervisor(fornecedorId: string, eventoId: string, fo
   }
 }
 
+/** O usuário do Auth com este e-mail (o do CPF), se existir — só no caminho de erro, então a listagem é aceitável. */
+async function acharUsuarioAuthPorEmail(admin: ReturnType<typeof getAdminSupabase>, email: string) {
+  for (let pagina = 1; pagina <= 20; pagina++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page: pagina, perPage: 1000 })
+    if (error) return null
+    const achado = data.users.find(u => (u.email ?? '').toLowerCase() === email.toLowerCase())
+    if (achado) return achado
+    if (data.users.length < 1000) return null
+  }
+  return null
+}
+
 async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfil = await getPerfil()
   if (!perfil) throw new Error('Sem permissão para criar supervisores')
@@ -986,9 +999,47 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
   if (error) {
     // O Auth fala em "e-mail"; aqui quem existe é o nome de usuário.
     const jaExiste = /already|exist|registered/i.test(error.message)
-    throw new Error(jaExiste
-      ? `Já existe um supervisor com o CPF ${cpf}. Se for a mesma pessoa em outro fornecedor, edite o acesso dela em vez de criar outro.`
-      : mensagemAuth(error.message))
+    if (jaExiste) {
+      /*
+       * O LOGIN deste CPF existe, mas nenhum perfil tem este CPF — achado
+       * importando a estrutura do Vital (06/10/2026): a conta da Rosane foi
+       * criada com o CPF certo e, depois, alguém gravou um CPF digitado errado
+       * no perfil (antes de o sistema validar o dígito). A busca por CPF não
+       * a achava, e o login "já existia".
+       *
+       * O login nasce do CPF, então o perfil que tem o MESMO id é a mesma
+       * pessoa. Quando o CPF do perfil é vazio ou INVÁLIDO, o do login é o
+       * certo: acerta e segue como supervisor já existente. CPF válido e
+       * diferente não se mexe — pode ser outra pessoa, e quem decide é o
+       * administrador (a mensagem diz os dois CPFs).
+       */
+      const dono = await acharUsuarioAuthPorEmail(admin, email)
+      if (dono) {
+        const { data: perfilDoLogin } = await admin
+          .from('perfis').select('id, nome, role, cpf').eq('id', dono.id).maybeSingle()
+        if (perfilDoLogin?.role === 'supervisor') {
+          const cpfDoPerfil = (perfilDoLogin.cpf as string | null) ?? ''
+          if (!cpfDoPerfil || !validarCpf(cpfDoPerfil)) {
+            const { error: erroCpf } = await admin.from('perfis').update({ cpf }).eq('id', perfilDoLogin.id)
+            if (!erroCpf) {
+              after(() => registrarAuditoria({
+                perfil, acao: 'ALTERACAO_SUPERVISOR',
+                campoAlterado: `CPF do supervisor ${perfilDoLogin.nome}`,
+                valorAnterior: cpfDoPerfil ? formatCpf(cpfDoPerfil) : 'sem CPF',
+                valorNovo: `${formatCpf(cpf)} (o do login dela — o anterior era inválido)`,
+                eventoId, organizacaoId: organizacaoId ?? undefined,
+              }))
+              // Agora a busca por CPF a acha: segue pelo ramo de supervisor existente.
+              return criarSupervisorOuLanca(fornecedorId, eventoId, formData)
+            }
+          } else {
+            throw new Error(`O login do CPF ${formatCpf(cpf)} pertence a ${perfilDoLogin.nome}, que no cadastro tem outro CPF (${formatCpf(cpfDoPerfil)}). Confira qual está certo em Usuários antes de continuar.`)
+          }
+        }
+      }
+      throw new Error(`Já existe um acesso com o CPF ${formatCpf(cpf)}, mas não consegui ligá-lo a um supervisor. Fale com o suporte.`)
+    }
+    throw new Error(mensagemAuth(error.message))
   }
 
   /*
@@ -2853,6 +2904,43 @@ export async function criarFornecedor(eventoId: string, formData: FormData): Pro
   }
 }
 
+/**
+ * Lê do formulário do fornecedor as travas por dia (`trava_YYYY-MM-DD`) e
+ * grava. Só age quando a seção apareceu na tela (`trava_presente`) — modal
+ * de evento sem dias de trabalho não manda nada, e nada é apagado por engano.
+ * Erro aqui NUNCA derruba o cadastro do fornecedor (já salvo): só vai pro log.
+ */
+async function gravarTravasDoFormulario(fornecedorId: string, formData: FormData) {
+  if (!formData.has('trava_presente')) return
+  const porDia: Record<string, number | null> = {}
+  for (const [campo, valor] of formData.entries()) {
+    const dia = campo.match(/^trava_(\d{4}-\d{2}-\d{2})$/)?.[1]
+    if (!dia) continue
+    const n = Math.floor(Number(String(valor).trim()))
+    porDia[dia] = String(valor).trim() !== '' && Number.isFinite(n) && n > 0 ? n : null
+  }
+  if (!Object.keys(porDia).length) return
+  const r = await gravarTravasDoFornecedor(fornecedorId, porDia)
+  if (!r.ok) console.error('[fornecedor] trava por dia não gravada (migração upgrade-trava-por-dia.sql pendente?)', r.erro)
+}
+
+/** Os dias do evento e a trava atual do fornecedor — o que o modal de fornecedor mostra ao abrir. */
+export async function carregarTravasDoModal(eventoId: string, fornecedorId?: string): Promise<{
+  usaEscala: boolean; dias: DiaDaEscala[]; travas: Record<string, number>
+}> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    if (!(await eventoUsaEscalaPorDia(eventoId))) return { usaEscala: false, dias: [], travas: {} }
+    const [dias, travas] = await Promise.all([
+      diasDaEscalaDoEvento(eventoId),
+      fornecedorId ? travasDoFornecedor(fornecedorId) : Promise.resolve(new Map<string, number>()),
+    ])
+    return { usaEscala: true, dias, travas: Object.fromEntries(travas) }
+  } catch {
+    return { usaEscala: false, dias: [], travas: {} }
+  }
+}
+
 async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Promise<void> {
   const perfilCriador = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
@@ -2921,6 +3009,8 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
     if (erroSubevento) console.error('[criarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
   }
 
+  await gravarTravasDoFormulario(novo.id as string, formData)
+
   if (exigeSupervisor) {
     const dadosSupervisor = new FormData()
     dadosSupervisor.set('nome', supNome)
@@ -2984,6 +3074,8 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
       .eq('id', id)
     if (erroSubevento) console.error('[editarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
   }
+  await gravarTravasDoFormulario(id, formData)
+
   /*
    * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
    * `sincronizarAgendamentos` recria a fila do evento, cancelando o que

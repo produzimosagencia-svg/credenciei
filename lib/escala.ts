@@ -319,3 +319,30 @@ export async function diasLotados(
     return []
   }
 }
+
+/**
+ * Grava a trava por dia de um fornecedor a partir do que o formulário trouxe:
+ * dia com número = trava; dia em branco = sem trava (apaga a que existia).
+ * Dia que não veio no formulário não é tocado. Falha de banco (migração
+ * `upgrade-trava-por-dia.sql` pendente) devolve o erro — quem chama decide se
+ * isso trava ou só avisa; o resto do cadastro do fornecedor já foi salvo.
+ */
+export async function gravarTravasDoFornecedor(
+  fornecedorId: string, porDia: Record<string, number | null>,
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const comTrava = Object.entries(porDia).filter((e): e is [string, number] => e[1] !== null)
+  const semTrava = Object.entries(porDia).filter(([, v]) => v === null).map(([d]) => d)
+  if (comTrava.length) {
+    const { error } = await supabaseAdmin.from('fornecedor_cotas_dia').upsert(
+      comTrava.map(([data, maximo]) => ({ fornecedor_id: fornecedorId, data, maximo, atualizado_em: new Date().toISOString() })),
+      { onConflict: 'fornecedor_id,data' },
+    )
+    if (error) return { ok: false, erro: error.message }
+  }
+  if (semTrava.length) {
+    const { error } = await supabaseAdmin.from('fornecedor_cotas_dia')
+      .delete().eq('fornecedor_id', fornecedorId).in('data', semTrava)
+    if (error) return { ok: false, erro: error.message }
+  }
+  return { ok: true }
+}

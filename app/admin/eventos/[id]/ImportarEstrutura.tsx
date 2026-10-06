@@ -267,16 +267,22 @@ function Resumo({ plano, resultados, onFechar }: { plano: PlanoEstrutura; result
   const atualizados = resultados.filter(r => r.acao === 'atualizado').length
   const comErro = resultados.filter(r => r.acao === 'erro')
   const avisos = resultados.filter(r => r.aviso)
+  const entraram = criados + atualizados
+  // O título diz o que de fato aconteceu: com todas as linhas falhando, "concluída" enganava.
+  const titulo = entraram === 0 ? 'Nada foi importado' : comErro.length ? 'Importação concluída com erros' : 'Importação concluída'
+  const cor = entraram === 0 ? 'text-red-600' : comErro.length ? 'text-amber-600' : 'text-green-700'
   return (
     <div className="space-y-4">
-      <p className="flex items-center gap-2 text-green-700 font-bold">
-        <CheckCircle2 className="w-5 h-5" /> Importação concluída
+      <p className={`flex items-center gap-2 font-bold ${cor}`}>
+        {entraram === 0 || comErro.length ? <AlertCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />} {titulo}
+        {comErro.length > 0 && <span className="text-sm font-medium opacity-80">· {comErro.length} linha{comErro.length === 1 ? '' : 's'} com erro</span>}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <Numero rotulo="Fornecedores criados" valor={criados} tom="text-brand-600" />
         <Numero rotulo="Registros atualizados" valor={atualizados} />
         <Numero rotulo="Subgrupos criados" valor={plano.contagens.subgruposCriar} />
-        <Numero rotulo="Supervisores novos" valor={plano.contagens.supervisoresNovos} />
+        {/* Os três abaixo vêm da PRÉVIA (o que a planilha previa), não do que gravou. */}
+        <Numero rotulo="Supervisores previstos novos" valor={plano.contagens.supervisoresNovos} />
         <Numero rotulo="Supervisores existentes" valor={plano.contagens.supervisoresExistentes} />
         <Numero rotulo="Com vários setores" valor={plano.contagens.supervisoresMultiplos} />
       </div>
@@ -286,9 +292,16 @@ function Resumo({ plano, resultados, onFechar }: { plano: PlanoEstrutura; result
           {avisos.map(r => <p key={`a${r.linha}`} className="text-amber-700">Linha {r.linha}: {r.aviso}</p>)}
         </div>
       )}
-      <p className="text-slate-500 text-xs">
-        Cada supervisor novo recebe no WhatsApp UM link de acesso — quem tem vários setores vê todos ao entrar.
-      </p>
+      {entraram > 0 && (
+        <p className="text-slate-500 text-xs">
+          Cada supervisor novo recebe no WhatsApp UM link de acesso — quem tem vários setores vê todos ao entrar.
+        </p>
+      )}
+      {comErro.length > 0 && (
+        <p className="text-slate-500 text-xs">
+          Corrija o que está nas linhas com erro e importe a MESMA planilha de novo: o que já entrou não duplica.
+        </p>
+      )}
       <button type="button" onClick={onFechar} className="w-full btn btn-primario">Fechar</button>
     </div>
   )
