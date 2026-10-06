@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processarFilaMensagens, agendarAlertasSupervisorCredenciamento } from '@/lib/mensagens'
 
+// Lote da Meta (100 por rodada, ver lib/mensagens.ts) leva segundos, mas com
+// folga explícita: sem isto vale o padrão do plano da Vercel.
+export const maxDuration = 60
+
 // Fallback do worker da VPS: Vercel Cron bate aqui 1x/minuto (ver vercel.json).
 // Também serve pra disparo manual (ex: futuro botão "reenviar agora" no admin).
 export async function GET(request: NextRequest) {

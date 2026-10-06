@@ -46,6 +46,16 @@ const ANTECEDENCIA_REFORCO_MINUTOS = 2
  */
 const ATRASO_MAXIMO_MIN = 3 * 60
 const BATCH_SIZE_PADRAO = 10
+/*
+ * Meta (API oficial) aguenta volume: o espaçamento e o pacing abaixo existem
+ * por causa da Evolution, onde disparar rápido baniu o número. Com eles, a
+ * fila saía a ~600 mensagens/hora — um lembrete para as 4 mil pessoas do
+ * Vital (06/10/2026) levaria mais de 3 horas e passaria do ATRASO_MAXIMO_MIN,
+ * sendo descartado no meio. Na Meta: lotes de 100, cinco envios por vez, sem
+ * espera artificial — ~100 por rodada em poucos segundos.
+ */
+const BATCH_SIZE_META = 100
+const PARALELO_META = 5
 const PACING_MS_MIN = 1000
 const PACING_MS_MAX = 2000
 const pacingAleatorio = () => PACING_MS_MIN + Math.floor(Math.random() * (PACING_MS_MAX - PACING_MS_MIN))
@@ -1270,7 +1280,9 @@ export async function agendarTemplateSupervisor(params: {
  * tentativa e aplica retry com backoff. Chamado tanto pelo worker da VPS
  * (a cada ~20s) quanto pela rota /api/cron (fallback via Vercel Cron).
  */
-export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promise<{ processadas: number }> {
+export async function processarFilaMensagens(limiteEscolhido?: number): Promise<{ processadas: number }> {
+  const ehMeta = provedor() === 'meta'
+  const limite = limiteEscolhido ?? (ehMeta ? BATCH_SIZE_META : BATCH_SIZE_PADRAO)
   // Interruptor de emergência: seta WHATSAPP_PAUSADO=true (worker na VPS e/ou
   // Vercel) pra parar todo envio na hora, sem precisar redeployar.
   if (process.env.WHATSAPP_PAUSADO === 'true') return { processadas: 0 }
@@ -1353,6 +1365,20 @@ export async function processarFilaMensagens(limite = BATCH_SIZE_PADRAO): Promis
     .select('*')
 
   let processadas = 0
+
+  if (ehMeta) {
+    // Cinco por vez. Um envio que lança não pode derrubar os outros quatro
+    // (nem deixar o resto do lote parado em 'enviando').
+    const lote = claimados ?? []
+    for (let i = 0; i < lote.length; i += PARALELO_META) {
+      await Promise.all(lote.slice(i, i + PARALELO_META).map(msg =>
+        enviarUma(msg).catch(e => console.error('[fila] envio falhou', msg.id, e)),
+      ))
+      processadas += Math.min(PARALELO_META, lote.length - i)
+    }
+    return { processadas }
+  }
+
   for (const [indice, msg] of (claimados ?? []).entries()) {
     /*
      * Espaça os envios com intervalo aleatório.
