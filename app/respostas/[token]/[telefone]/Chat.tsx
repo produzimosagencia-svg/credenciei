@@ -64,6 +64,13 @@ export default function Chat({ token, telefone, nome, podeResponder, janelaAbert
     jaRolou.current = true
   }, [ultimaId])
 
+  // Foto que termina de carregar aumenta o balão. Se a pessoa estava no fim da
+  // conversa, continua no fim; se subiu para ler algo antigo, não é puxada.
+  const acompanharMidia = () => {
+    const el = rolagem.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 420) el.scrollTo({ top: el.scrollHeight })
+  }
+
   // A caixa cresce com o texto, até um teto, em vez de rolar dentro de duas linhas.
   useEffect(() => {
     const el = campo.current
@@ -153,7 +160,7 @@ export default function Chat({ token, telefone, nome, podeResponder, janelaAbert
                       : 'rounded-2xl rounded-bl-md border border-white/[0.07] bg-white/[0.08]'
                   } ${m.status === 'enviando' ? 'opacity-80' : ''} ${m.status === 'failed' ? 'ring-2 ring-red-400/70' : ''}`}
                 >
-                  {m.midia && <Midia token={token} id={m.id} classe={m.midia.classe} nome={m.midia.nome} />}
+                  {m.midia && <Midia token={token} id={m.id} classe={m.midia.classe} nome={m.midia.nome} aoCarregar={acompanharMidia} />}
                   {m.texto ? (
                     <p className={`whitespace-pre-wrap break-words text-[0.9375rem] leading-relaxed text-white ${m.midia ? 'mt-2' : ''}`}>{m.texto}</p>
                   ) : !m.midia && (
