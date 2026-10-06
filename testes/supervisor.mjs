@@ -62,5 +62,10 @@ ok(conv.includes("finalidade: convite.estado.finalidade ?? 'acesso'"), 'convite 
 const conteudo = readFileSync(new URL('../app/supervisor/criar-senha/[token]/ConteudoCriarSenha.tsx', import.meta.url), 'utf8')
 ok(conteudo.includes('{!recuperacao && (') && conteudo.includes('<CartaoDeEntrada>'), 'recuperação não mostra evento/fornecedor e usa a moldura do login')
 
+console.log('\n\x1b[1m7 · Login por CPF acha conta com e-mail de verdade\x1b[0m')
+const login = readFileSync(new URL('../app/api/auth/login/route.ts', import.meta.url), 'utf8')
+ok(login.includes('auth.admin.getUserById') && login.includes('soDigitos && digitos.length === 11'), 'CPF que não bate com o e-mail interno procura a conta pelo CPF cadastrado')
+ok(login.indexOf('signInWithPassword({\n    email: identificador') < login.indexOf('getUserById'), 'a primeira tentativa continua sendo a de sempre; a busca só entra se ela falhar')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
