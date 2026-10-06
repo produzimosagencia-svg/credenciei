@@ -9,8 +9,9 @@ import type { ClasseDeMidia } from '@/lib/respostas-compartilhadas'
  * A foto, figurinha, áudio, vídeo ou documento de uma mensagem recebida.
  *
  * O arquivo vem da rota `/respostas/[código]/midia/[id]`, que confere o link e
- * busca na Meta. Nada é carregado antes de aparecer na tela: uma conversa
- * comprida não dispara dezenas de buscas na Meta de uma vez.
+ * busca na Meta. Foto e figurinha carregam junto com a conversa: adiar para
+ * quando entram na tela deixava a imagem sem aparecer em aba aberta em segundo
+ * plano. Áudio e vídeo, que pesam mais, só são buscados quando a pessoa toca.
  *
  * A foto reserva o espaço e mostra um brilho enquanto vem: a busca passa pela
  * Meta e pode levar alguns segundos, e sem isso o balão ficava vazio e depois
@@ -51,7 +52,6 @@ export default function Midia({ token, id, classe, nome, aoCarregar }: {
         <img
           src={src}
           alt={figurinha ? 'Figurinha enviada pela pessoa' : 'Foto enviada pela pessoa'}
-          loading="lazy"
           // Imagem que já estava no cache termina antes de a página ganhar vida,
           // e o `onLoad` não chega a disparar. Sem esta conferência ela ficaria
           // invisível para sempre.
