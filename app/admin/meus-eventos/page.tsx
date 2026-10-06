@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 import { CalendarDays, PartyPopper } from 'lucide-react'
-import { getPerfil, meusSetores } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, comArea } from '@/lib/supabase-server'
 import { eventosDosMeusSetores, eventosDaOrganizacao, type EventoEscolhivel } from '../EscolherEvento'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
-import EscolherMeuEvento from './EscolherMeuEvento'
+import EscolherMeuEvento, { type SetorComArea } from './EscolherMeuEvento'
 
 export const revalidate = 0
 
@@ -57,10 +57,12 @@ export default async function MeusEventosPage() {
   const atuais = eventos.filter(e => e.ativo)
   const passados = eventos.filter(e => !e.ativo)
 
-  const setoresPorEvento = new Map<string, string[]>()
-  for (const s of setores) {
+  // Os setores dele em cada evento, com a área (subgrupo) — quem tem mais de
+  // um escolhe onde atuar antes de entrar (ver EscolherMeuEvento).
+  const setoresPorEvento = new Map<string, SetorComArea[]>()
+  for (const s of await comArea(setores)) {
     const lista = setoresPorEvento.get(s.evento_id) ?? []
-    lista.push(s.nome)
+    lista.push({ id: s.id, nome: s.nome, area: s.area })
     setoresPorEvento.set(s.evento_id, lista)
   }
 

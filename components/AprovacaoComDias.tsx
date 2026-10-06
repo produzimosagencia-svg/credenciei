@@ -115,7 +115,7 @@ export default function AprovacaoComDias({
 
           <SeletorDiasEscala
             dias={detalhe.diasDoEvento} marcados={marcados} onAlternar={alternar}
-            pedidos={pedidos} desabilitado={isPending || detalhe.status === 'negado'}
+            pedidos={pedidos} lotados={detalhe.lotados} desabilitado={isPending || detalhe.status === 'negado'}
           />
           <LegendaFases comPedido={pedidos.length > 0} />
 

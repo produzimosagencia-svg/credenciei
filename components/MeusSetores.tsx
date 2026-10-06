@@ -6,7 +6,11 @@ import { LogoLoading } from '@/components/LogoLoading'
 import { trocarSetorAtivo } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 
-export type SetorDoSupervisor = { id: string; nome: string; evento_id: string }
+export type SetorDoSupervisor = {
+  id: string; nome: string; evento_id: string
+  /** Área (subevento) do setor — agrupa a lista quando o evento tem subeventos. */
+  area?: string | null
+}
 
 /**
  * "Meus setores" — o item de menu de quem supervisiona mais de um.
@@ -92,11 +96,16 @@ export default function MeusSetores({
             </div>
 
             <div className="p-2">
-              {setores.map(s => {
+              {setores.map((s, i) => {
                 const ativo = s.id === atualId
+                // Evento com subeventos: título da área antes do primeiro setor dela.
+                const novaArea = !!s.area && s.area !== setores[i - 1]?.area
                 return (
+                  <div key={s.id}>
+                  {novaArea && (
+                    <p className="px-3 pt-2 pb-1 text-2xs font-semibold uppercase tracking-wide text-brand-600">{s.area}</p>
+                  )}
                   <button
-                    key={s.id}
                     onClick={() => escolher(s)}
                     disabled={isPending}
                     className={`w-full flex items-center gap-2.5 text-left px-3 py-3 rounded-xl transition-colors disabled:opacity-50 ${
@@ -111,6 +120,7 @@ export default function MeusSetores({
                       ? <LogoLoading tamanho={14} />
                       : ativo && <Check className="w-4 h-4 text-brand-500 shrink-0" />}
                   </button>
+                  </div>
                 )
               })}
             </div>

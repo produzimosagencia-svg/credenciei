@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, CalendarDays, MapPin, Building2 } from 'lucide-react'
 import { formatarBR } from '@/lib/tz'
 import { entrarNoEventoSupervisor } from '@/lib/actions'
 import { Badge } from '@/components/ui/Superficie'
@@ -26,21 +26,34 @@ import type { EventoEscolhivel } from '../EscolherEvento'
  *     pra `/admin/atividades`, que já lista esse evento certinho pro papel
  *     dela — sem chamar a ação de entrar.
  */
+export type SetorComArea = { id: string; nome: string; area: string | null }
+
+/*
+ * Mais de um setor no MESMO evento (pedido do Juan, 06/10/2026): o clique no
+ * evento abre "Selecione onde deseja atuar", agrupado por área (subgrupo) —
+ * entrar direto num setor qualquer escondia os outros. Com um setor só, entra
+ * direto, como sempre. Trocar depois é pelo "Meus fornecedores" do menu.
+ */
 export default function EscolherMeuEvento({ eventos, setoresPorEvento }: {
   eventos: EventoEscolhivel[]
-  /** O(s) fornecedor(es) do supervisor DENTRO de cada evento — quem cobre dois no mesmo evento precisa saber qual vai abrir. */
-  setoresPorEvento: Map<string, string[]>
+  /** O(s) fornecedor(es) do supervisor DENTRO de cada evento, com a área de cada um. */
+  setoresPorEvento: Map<string, SetorComArea[]>
 }) {
   const [isPending, startTransition] = useTransition()
   const [carregando, setCarregando] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [aberto, setAberto] = useState<string | null>(null)
   const router = useRouter()
 
-  const escolher = (evento: EventoEscolhivel) => {
+  const escolher = (evento: EventoEscolhivel, fornecedorId?: string) => {
+    if (!fornecedorId && (setoresPorEvento.get(evento.id)?.length ?? 0) > 1) {
+      setAberto(atual => atual === evento.id ? null : evento.id)
+      return
+    }
     setErro(null)
-    setCarregando(evento.id)
+    setCarregando(fornecedorId ?? evento.id)
     startTransition(async () => {
-      const r = await entrarNoEventoSupervisor(evento.id)
+      const r = await entrarNoEventoSupervisor(evento.id, fornecedorId)
       if (!r.ok) {
         setErro(r.error)
         setCarregando(null)
@@ -81,7 +94,7 @@ export default function EscolherMeuEvento({ eventos, setoresPorEvento }: {
                 {temVinculo ? (
                   <span className="inline-flex items-center gap-1 min-w-0">
                     <Building2 className="w-3 h-3 shrink-0 text-slate-300" />
-                    <span className="truncate">{setoresPorEvento.get(e.id)!.join(', ')}</span>
+                    <span className="truncate">{setoresPorEvento.get(e.id)!.map(s => s.nome.trim()).join(', ')}</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 min-w-0 text-slate-400">
@@ -108,9 +121,11 @@ export default function EscolherMeuEvento({ eventos, setoresPorEvento }: {
           )
         }
 
+        const setores = setoresPorEvento.get(e.id) ?? []
+        const variosSetores = setores.length > 1
         return (
+          <div key={e.id} className="space-y-1.5">
           <button
-            key={e.id}
             type="button"
             disabled={isPending}
             onClick={() => escolher(e)}
@@ -126,10 +141,36 @@ export default function EscolherMeuEvento({ eventos, setoresPorEvento }: {
               ? <LogoLoading tamanho={18} />
               : (
                 <div className="w-7 h-7 rounded-full bg-slate-50 group-hover:bg-brand-100 flex items-center justify-center shrink-0 transition-colors">
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600" />
+                  {variosSetores
+                    ? <ChevronDown className={`w-4 h-4 text-slate-400 group-hover:text-brand-600 transition-transform ${aberto === e.id ? 'rotate-180' : ''}`} />
+                    : <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600" />}
                 </div>
               )}
           </button>
+
+          {variosSetores && aberto === e.id && (
+            <div className="ml-4 rounded-2xl border border-brand-200 bg-brand-50/30 p-3 space-y-2">
+              <p className="text-slate-700 text-sm font-semibold px-1">Selecione onde deseja atuar</p>
+              {setores.map((s, i) => (
+                <div key={s.id}>
+                  {s.area && s.area !== setores[i - 1]?.area && (
+                    <p className="px-1 pt-1 pb-1 text-2xs font-semibold uppercase tracking-wide text-brand-600">{s.area}</p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => escolher(e, s.id)}
+                    className="btn-press w-full flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-brand-300 disabled:opacity-60"
+                  >
+                    <Building2 className="w-4 h-4 shrink-0 text-slate-400" />
+                    <span className="flex-1 truncate text-sm text-slate-700 font-medium">{s.nome.trim()}</span>
+                    {carregando === s.id ? <LogoLoading tamanho={14} /> : <ChevronRight className="w-4 h-4 text-slate-300" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
         )
       })}
       {erro && <p className="text-red-500 text-xs px-2 pt-1">{erro}</p>}

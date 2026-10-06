@@ -9,6 +9,7 @@
  */
 
 import { formatCpf, formatTelefone } from './format'
+import type { LinhaEstrutura } from './estrutura-regras'
 
 export type LinhaPlanilha = {
   nome: string
@@ -69,6 +70,84 @@ export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[
       valor: valorDaColuna(linha, COLUNAS.valor),
     }))
     .filter(l => l.nome)
+}
+
+// ─── Planilha de ESTRUTURA (fornecedores, áreas, travas, supervisores) ──────
+
+/** Sem acento, minúsculo, sem espaço sobrando — "CPF  Supervisor" ≡ "cpf supervisor". */
+const semAcento = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+/** Apelidos de cada coluna da planilha de estrutura, já sem acento. Fonte única da tela e da IA. */
+const COLUNAS_ESTRUTURA: Record<Exclude<keyof LinhaEstrutura, 'linha'>, string[]> = {
+  fornecedor: ['fornecedor', 'empresa', 'nome do fornecedor', 'setor'],
+  subgrupo: ['subgrupo', 'sub grupo', 'sub-grupo', 'area', 'subevento', 'sub evento'],
+  trava: ['trava do setor por dia', 'trava por dia', 'trava', 'limite por dia', 'limite', 'cota', 'quantidade', 'quantidade por dia'],
+  supervisorNome: ['nome supervisor', 'nome do supervisor', 'supervisor', 'responsavel', 'nome responsavel'],
+  supervisorCpf: ['cpf supervisor', 'cpf do supervisor', 'cpf responsavel', 'cpf'],
+  supervisorTelefone: ['telefone supervisor', 'telefone do supervisor', 'whatsapp supervisor', 'celular supervisor', 'telefone', 'whatsapp', 'celular'],
+}
+
+/**
+ * Lê a planilha de estrutura. Linha toda em branco é ignorada (rodapé);
+ * qualquer outra entra, mesmo incompleta — quem aponta o que falta é a
+ * prévia (`planejarEstrutura`), com o número da linha pra pessoa corrigir.
+ *
+ * `faltando`: colunas obrigatórias que não foram achadas no cabeçalho — o
+ * aviso certo pra "mandou a planilha errada".
+ */
+export async function lerPlanilhaDeEstrutura(arquivo: File): Promise<{ linhas: LinhaEstrutura[]; faltando: string[] }> {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const brutas = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
+
+  const cabecalho = Object.keys(brutas[0] ?? {})
+  const coluna = (apelidos: string[]) => {
+    for (const apelido of apelidos) {
+      const achada = cabecalho.find(k => semAcento(k) === apelido)
+      if (achada) return achada
+    }
+    return null
+  }
+  const mapa = Object.fromEntries(
+    Object.entries(COLUNAS_ESTRUTURA).map(([campo, apelidos]) => [campo, coluna(apelidos)]),
+  ) as Record<keyof typeof COLUNAS_ESTRUTURA, string | null>
+
+  const ROTULO: Record<keyof typeof COLUNAS_ESTRUTURA, string> = {
+    fornecedor: 'Fornecedor', subgrupo: 'Subgrupo', trava: 'Trava do setor por dia',
+    supervisorNome: 'Nome Supervisor', supervisorCpf: 'CPF Supervisor', supervisorTelefone: 'Telefone Supervisor',
+  }
+  const faltando = (Object.keys(mapa) as (keyof typeof mapa)[])
+    .filter(c => c !== 'trava' && !mapa[c]).map(c => ROTULO[c])
+
+  const val = (linha: Record<string, unknown>, campo: keyof typeof mapa) => {
+    const col = mapa[campo]
+    return col ? String(linha[col] ?? '').trim() : ''
+  }
+  const linhas = brutas
+    .map((linha, i) => ({
+      // Cabeçalho é a linha 1 da planilha; a primeira de dados, a 2.
+      linha: i + 2,
+      fornecedor: val(linha, 'fornecedor'),
+      subgrupo: val(linha, 'subgrupo'),
+      trava: val(linha, 'trava'),
+      supervisorNome: val(linha, 'supervisorNome'),
+      supervisorCpf: val(linha, 'supervisorCpf'),
+      supervisorTelefone: val(linha, 'supervisorTelefone'),
+    }))
+    .filter(l => l.fornecedor || l.subgrupo || l.supervisorNome || l.supervisorCpf)
+  return { linhas, faltando }
+}
+
+/** A planilha tem cara de ESTRUTURA (e não de equipe)? Usado pelo chat da IA pra saber qual leitura usar. */
+export async function pareceEstrutura(arquivo: File): Promise<boolean> {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array', sheetRows: 2 })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const cab = (XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 })[0] ?? []).map(c => semAcento(String(c)))
+  const tem = (apelidos: string[]) => cab.some(c => apelidos.includes(c))
+  return tem(COLUNAS_ESTRUTURA.fornecedor) && tem(['cpf supervisor', 'cpf do supervisor', 'nome supervisor', 'nome do supervisor', 'supervisor'])
 }
 
 /**

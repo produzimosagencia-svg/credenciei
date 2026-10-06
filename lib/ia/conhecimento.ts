@@ -24,8 +24,9 @@ acompanha tudo em tempo real.
   os admins delas. Não pertence a nenhuma organização (organizacao_id nulo).
 - **admin**: dono de UMA organização. Vê apenas os dados dela. Cria eventos (até
   o limite contratado), setores e supervisores. NÃO pode excluir eventos.
-- **supervisor**: preso a UM setor (fornecedor). Vê só a equipe daquele setor e
-  as presenças dela. NÃO tem mais o scanner (saiu do papel dele a pedido —
+- **supervisor**: preso aos SEUS setores (fornecedores). Vê só a equipe deles e
+  as presenças dela. O mesmo CPF pode cuidar de vários setores com um login só
+  (ver "Estrutura do evento", abaixo). NÃO tem mais o scanner (saiu do papel dele a pedido —
   quem credencia é o posto de credenciamento). Nunca vê outros setores,
   eventos ou a organização.
 - **operador_portao**: preso à ORGANIZAÇÃO inteira (não a um setor). Só lê QR
@@ -200,6 +201,42 @@ só, nunca linha por linha. Você não vê CPF nem nome de ninguém: quem lê o
 arquivo é o sistema, justamente pra nenhum número passar por você e voltar
 trocado. Pergunte em qual setor a equipe entra antes de importar.
 
+## Estrutura do evento: Subgrupo → Fornecedor → Supervisor
+Em evento com subeventos (ligado em Editar evento, "Este evento possui
+subeventos"), a hierarquia é: Evento → Subevento, que nas telas e na
+credencial aparece como **Subgrupo** ou área (Camarote, Pista...) → Fornecedor
+(= setor, a equipe de uma empresa naquela área) → supervisor do fornecedor.
+
+O mesmo CPF é UM supervisor só, com UM login, que vê todos os setores dele —
+quem cuida de três fornecedores não ganha três contas.
+
+**Planilha de estrutura** — monta tudo isso de uma vez. Colunas: Fornecedor,
+Subgrupo, Trava do setor por dia, Nome Supervisor, CPF Supervisor, Telefone
+Supervisor. Pela tela: botão "Importar planilha de estrutura" no Detalhe do
+evento (tem o "Baixar modelo"). Pelo chat: a pessoa anexa no clipe e você usa
+importar_estrutura_evento — você recebe só um resumo (subgrupos, fornecedores,
+quantos supervisores), nunca CPF nem telefone. A primeira chamada mostra a
+prévia (fornecedores novos e a atualizar, subgrupos novos, supervisores novos
+e existentes, linhas com erro e o número de cada uma) e pede confirmação.
+Subgrupo que não existe é criado. Linha com erro fica de fora; o resto entra.
+
+**Trava por dia**: "Sábado: 10 / Domingo: 8", "Sáb 10, Dom 8", "10/10: 15" ou
+só "10" (todos os dias). Em branco = sem trava. Dia que o evento não tem é
+erro na prévia. A trava por dia vale quando o evento usa escala por dia (o
+funcionário escolhe os dias em que trabalha); sem escala por dia, o MAIOR
+número da linha vira a quantidade estimada do fornecedor (o teto total — que só
+BLOQUEIA cadastro quando a organização liga "Trava de cota"; ver "Limites que
+não são do código").
+
+**Reimportar é seguro**: área e fornecedor são reconhecidos pelo nome (sem
+diferenciar maiúscula/acento) e supervisor pelo CPF — o que já existe é
+ATUALIZADO, nada é duplicado. Serve pra corrigir as linhas com erro e mandar de
+novo, ou pra retomar uma importação que parou no meio. Planilha grande pode
+parar pelo tempo no chat: a ferramenta diz de que linha continuar.
+
+Só quem cria acessos (admin da organização, master) importa estrutura —
+supervisor não.
+
 ## Editar evento (/admin/eventos/[id]/editar)
 Mesmos campos do cadastro, mais a mensagem pré-evento de WhatsApp (quando
 enviar + instruções livres que entram na confirmação de escala). Tem os dois
@@ -222,7 +259,8 @@ supervisor vê só o próprio setor; admin vê o evento inteiro da organização
 ## Usuários (/admin/usuarios) e Novo usuário (/admin/usuarios/novo)
 Quem tem acesso ao sistema. Não confunde com a equipe do evento: quem só
 trabalha no dia aparece dentro do setor, não aqui. Ao criar um supervisor, ele
-recebe login e senha por WhatsApp e fica preso a um único setor.
+recebe login e senha por WhatsApp e enxerga só os setores dele — o mesmo CPF
+em outro setor ganha esse setor a mais no MESMO login, nunca uma conta nova.
 
 ## Escanear QR (menu "Scanner": /admin/scanner no painel; /scan em tela cheia pro operador de portão)
 Leitor de QR. Não tem botão Entrada/Saída: o sistema decide sozinho pelo que a
@@ -268,9 +306,11 @@ emergência.
 
 - **Um CPF por evento**: a mesma pessoa não pode se cadastrar em dois setores do
   mesmo evento. O sistema recusa e diz em qual setor ela já está.
-- **Teto de ativação**: o setor tem uma quantidade estimada. Quem se cadastra
-  além do teto entra INATIVO e precisa ser ativado à mão no painel do setor.
-  Pessoa inativa não consegue registrar presença.
+- **Teto do setor**: o setor tem uma quantidade estimada. Com "Trava de cota"
+  ligada na organização (Configurações → Funcionalidades do Sistema), quem
+  tenta se cadastrar além dela é recusado ("Seu fornecedor está com o número
+  máximo de pessoas"). Sem a trava, é só referência. O crachá do supervisor
+  não ocupa vaga. Ninguém mais entra inativo por passar do teto.
 - **Base central de CPF**: quem já trabalhou em outro evento da mesma
   organização tem o formulário preenchido sozinho ao digitar o CPF.
 - **Cidade é obrigatória no formulário público**: é o campo que permite achar
@@ -334,9 +374,10 @@ evento é o admin da organização dona dele.
 # Limites que não são do código
 
 - **Capacidade é por SETOR, não por evento.** O evento não tem um número máximo
-  de pessoas; cada setor tem a "quantidade estimada". Ela é REFERÊNCIA, não
-  trava: mostra o quanto falta na barra do cartão do setor e nada mais. Quem
-  se cadastra além dela entra ATIVA e trabalha normalmente — o teto já
+  de pessoas; cada setor tem a "quantidade estimada". Sem "Trava de cota" na
+  organização ela é REFERÊNCIA: mostra o quanto falta na barra do cartão do
+  setor e nada mais; com a trava, recusa cadastro novo acima dela. Ninguém
+  é desativado por passar do teto — o teto já
   desativou 197 pessoas de um setor sem ninguém perceber, e deixou de fazer
   isso. Para tirar alguém da escala existe "desativar", explícito e
   reversível. Quando pedirem "muda a capacidade do evento", trate como o teto

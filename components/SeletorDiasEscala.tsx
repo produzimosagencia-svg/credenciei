@@ -31,16 +31,22 @@ const COR_MARCADO: Record<FaseDoDia, string> = {
 }
 
 export default function SeletorDiasEscala({
-  dias, marcados, onAlternar, pedidos, desabilitado = false,
+  dias, marcados, onAlternar, pedidos, lotados, desabilitado = false,
 }: {
   dias: DiaDaEscala[]
   marcados: string[]
   onAlternar: (dia: string) => void
   /** Só na tela do supervisor: os dias que a PESSOA pediu. */
   pedidos?: string[]
+  /**
+   * Dias que bateram a trava do fornecedor (importação de estrutura). Não dá
+   * pra MARCAR um dia lotado — desmarcar sempre dá.
+   */
+  lotados?: string[]
   desabilitado?: boolean
 }) {
   const marcadosSet = new Set(marcados)
+  const lotadosSet = new Set(lotados ?? [])
   const pedidosSet = pedidos ? new Set(pedidos) : null
 
   return (
@@ -49,14 +55,15 @@ export default function SeletorDiasEscala({
         const { semanaCurta, curto } = rotuloDoDia(data)
         const marcado = marcadosSet.has(data)
         const pediu = pedidosSet?.has(data) ?? false
+        const lotado = lotadosSet.has(data) && !marcado
         return (
           <button
             key={data}
             type="button"
             onClick={() => onAlternar(data)}
-            disabled={desabilitado}
+            disabled={desabilitado || lotado}
             aria-pressed={marcado}
-            title={pedidosSet ? (pediu ? 'Pedido pelo funcionário' : 'Não pedido pelo funcionário') : undefined}
+            title={lotado ? 'Dia lotado neste setor' : pedidosSet ? (pediu ? 'Pedido pelo funcionário' : 'Não pedido pelo funcionário') : undefined}
             className={`relative w-[68px] py-2 rounded-xl border text-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
               marcado ? COR_MARCADO[fase] : 'bg-white border-slate-200 text-slate-500 hover:border-brand-300'
             }`}
@@ -67,7 +74,8 @@ export default function SeletorDiasEscala({
             <span className="block text-2xs uppercase tracking-wide opacity-70">{semanaCurta}</span>
             <span className="block text-sm font-semibold tabular-nums">{curto}</span>
             <span className="block h-3.5 mt-0.5">
-              {marcado && <Check className="w-3.5 h-3.5 mx-auto" />}
+              {marcado ? <Check className="w-3.5 h-3.5 mx-auto" />
+                : lotado ? <span className="block text-2xs font-semibold uppercase leading-3.5">lotado</span> : null}
             </span>
           </button>
         )

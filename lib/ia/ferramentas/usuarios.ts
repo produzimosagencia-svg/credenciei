@@ -88,7 +88,7 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
     ferramenta({
       nome: 'criar_supervisor',
       descricao:
-        'Cria ou escala um supervisor com acesso ao sistema, preso a UM setor. Supervisor novo recebe no WhatsApp um link individual para criar a senha; quem já possui o CPF cadastrado recebe apenas o aviso da nova escala. ' +
+        'Cria ou escala um supervisor com acesso ao sistema para um setor. O mesmo CPF pode cuidar de vários setores com um login só — chamar de novo com outro setor ADICIONA esse setor (os que ele já tinha continuam no acesso). Supervisor novo recebe no WhatsApp um link individual para criar a senha; quem já possui o CPF cadastrado recebe apenas o aviso da nova escala. ' +
         'Precisa de confirmação, porque cria uma conta de acesso de verdade.',
       parametros: {
         type: 'object',
@@ -118,7 +118,7 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
             {
               cpf: cpfLimpo,
               setor: r.setor.nome,
-              acesso: 'ele passa a enxergar apenas a equipe deste fornecedor',
+              acesso: 'ele passa a enxergar a equipe deste fornecedor (setores que já tinha continuam)',
               WhatsApp: 'recebe o link de criação de senha ou, se a conta já existir, o aviso da escala',
             },
             'que uma conta será criada ou uma conta existente será escalada para este setor',
@@ -223,7 +223,8 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
     ferramenta({
       nome: 'vincular_supervisor_ao_setor',
       descricao:
-        'Move um supervisor para outro setor. Ele passa a enxergar só a equipe do setor novo e perde o acesso ao anterior na hora.',
+        'Troca o setor PRINCIPAL de um supervisor (o que ele vê ao entrar). Um supervisor pode cuidar de vários setores com o mesmo login: ' +
+        'os setores que ele já tem vinculados continuam no acesso dele. Para dar um setor A MAIS a quem já supervisiona, use criar_supervisor com o mesmo CPF.',
       parametros: {
         type: 'object',
         properties: {
@@ -249,7 +250,7 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         await registrarAuditoriaIA(perfil, 'vincular_supervisor_ao_setor', {
           perfil_id, nome: r.alvo.nome, fornecedor_id, setor: destino.setor.nome,
         })
-        return `${r.alvo.nome} agora supervisiona o fornecedor ${destino.setor.nome}. O acesso ao fornecedor anterior foi encerrado.`
+        return `${r.alvo.nome} agora tem o fornecedor ${destino.setor.nome} como setor principal. Os outros setores vinculados a ele continuam no acesso.`
       },
     }),
 

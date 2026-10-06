@@ -24,6 +24,7 @@ import { ferramentasDeSetor } from './ferramentas/setores'
 import { ferramentasDeFuncionario } from './ferramentas/funcionarios'
 import { ferramentasDeUsuario } from './ferramentas/usuarios'
 import { ferramentasDeWhatsapp } from './ferramentas/whatsapp'
+import { ferramentasDeEstrutura } from './ferramentas/estrutura'
 
 export type {
   PerfilIA,
@@ -41,5 +42,6 @@ export function ferramentasPara(ctx: ContextoIA) {
     ...ferramentasDeFuncionario(ctx, pedirConfirmacao),
     ...ferramentasDeUsuario(ctx, pedirConfirmacao),
     ...ferramentasDeWhatsapp(ctx, pedirConfirmacao),
+    ...ferramentasDeEstrutura(ctx, pedirConfirmacao),
   ]
 }

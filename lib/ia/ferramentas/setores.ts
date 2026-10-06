@@ -32,13 +32,14 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
       nome: 'criar_setor',
       descricao:
         'Cria um setor dentro de um evento e devolve o link público de cadastro da equipe. ' +
-        'O teto (quantidade prevista) é o que faz quem se cadastra além dele entrar inativo.',
+        'O teto (quantidade prevista) é só REFERÊNCIA — aparece na barra do cartão do setor; quem se cadastra além dele entra ativo normalmente. ' +
+        'Para montar vários fornecedores de uma vez, com área (subgrupo), trava por dia e supervisor, o caminho é a planilha de estrutura (importar_estrutura_evento).',
       parametros: {
         type: 'object',
         properties: {
           evento_id: { type: 'string' },
           nome: { type: 'string' },
-          quantidade_estimada: { type: 'number', description: 'teto de pessoas ativas do setor' },
+          quantidade_estimada: { type: 'number', description: 'teto de referência de pessoas do setor (não desativa ninguém)' },
           valor_combinado: { type: 'number', description: 'valor por funcionário, em reais' },
         },
         required: ['evento_id', 'nome'],

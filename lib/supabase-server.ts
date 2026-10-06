@@ -272,6 +272,31 @@ export async function meusSetoresDoEventoAtual(perfil: any): Promise<{ id: strin
   return todos.filter(s => s.evento_id === eventoAtualId)
 }
 
+/**
+ * Junta a ÁREA (subevento — o "Subgrupo" da credencial) a cada setor da lista.
+ *
+ * É o que deixa o supervisor com setores em várias áreas do mesmo evento
+ * escolher "Camarote → Bar" e "Arquibancada → Bar" sem confundir os dois
+ * (pedido do Juan, 06/10/2026). Consulta à parte e tolerante: sem subeventos
+ * (ou migração pendente), `area` fica nula e tudo aparece como sempre.
+ */
+export async function comArea<T extends { id: string }>(setores: T[]): Promise<(T & { area: string | null })[]> {
+  if (!setores.length) return []
+  try {
+    const { data } = await admin
+      .from('fornecedores').select('id, subeventos(nome)').in('id', setores.map(s => s.id))
+    const area = new Map((data ?? []).map(f => [
+      f.id as string, (f.subeventos as unknown as { nome?: string } | null)?.nome ?? null,
+    ]))
+    // Ordena por área (sem área por último) mantendo a ordem de quem chamou
+    // dentro de cada uma — a lista sai pronta pra agrupar.
+    return setores.map(s => ({ ...s, area: area.get(s.id) ?? null }))
+      .sort((a, b) => (a.area === null ? 1 : 0) - (b.area === null ? 1 : 0) || (a.area ?? '').localeCompare(b.area ?? '', 'pt-BR'))
+  } catch {
+    return setores.map(s => ({ ...s, area: null }))
+  }
+}
+
 /** Lista {id, nome} dos eventos que o usuário tem permissão de escanear. */
 /** Os eventos que este usuário pode operar no portão — só os acontecendo hoje. */
 export async function eventosEscaneaveis(perfil: Parameters<typeof eventosEscaneaveisSemData>[0]): Promise<{ id: string; nome: string }[]> {

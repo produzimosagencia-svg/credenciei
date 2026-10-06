@@ -6,6 +6,7 @@ import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange } from 'lucide-react
 import { criarSubevento, editarSubevento, excluirSubevento } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 import { EmptyState } from '@/components/ui/Superficie'
+import ImportarEstrutura from './ImportarEstrutura'
 
 type Subevento = { id: string; nome: string }
 type Contagem = { fornecedores: number; equipe: number }
@@ -70,7 +71,9 @@ export default function SubeventosCard({
         * por cima, não importa a distância (reportado pelo Juan, 01/10/2026,
         * persistindo mesmo depois do espaçamento maior).
         */}
-      <div className="relative z-10 flex items-center justify-end">
+      <div className="relative z-10 flex flex-wrap items-center justify-end gap-2">
+        {/* Monta fornecedores, travas e supervisores de todas as áreas de uma vez. */}
+        <ImportarEstrutura eventoId={eventoId} />
         <SubeventoModal mode="criar" eventoId={eventoId} />
       </div>
 

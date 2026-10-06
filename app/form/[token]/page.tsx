@@ -6,7 +6,7 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { consultarAutorizacaoCadastroIndividual } from '@/lib/cadastro-individual'
-import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
+import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, diasLotados } from '@/lib/escala'
 import { diaBRT } from '@/lib/janelas'
 import type { DiaDaEscala } from '@/lib/escala-regras'
 
@@ -70,15 +70,29 @@ export default async function FormPage({
     } catch { /* biometria ainda não migrada */ }
   }
 
+  // Nome da área (subevento) do setor — consulta à parte e tolerante, como a biometria acima.
+  let subeventoNome: string | null = null
+  if (fornecedor.subevento_id) {
+    try {
+      const { data } = await supabase.from('subeventos').select('nome').eq('id', fornecedor.subevento_id).maybeSingle()
+      subeventoNome = (data?.nome as string | undefined) ?? null
+    } catch { /* migração pendente */ }
+  }
+
   /*
    * Escala por dia — só em evento de subeventos (ver lib/escala.ts). Dias que
    * já passaram não aparecem: ninguém se escala para ontem. Evento normal
    * fica com `null` e o formulário é exatamente o de sempre.
    */
   let diasEscala: DiaDaEscala[] | null = null
+  let lotados: string[] = []
   if (evento?.id && await eventoUsaEscalaPorDia(evento.id)) {
     const hoje = diaBRT()
-    diasEscala = (await diasDaEscalaDoEvento(evento.id)).filter(d => d.data >= hoje)
+    ;[diasEscala, lotados] = await Promise.all([
+      diasDaEscalaDoEvento(evento.id).then(d => d.filter(x => x.data >= hoje)),
+      // Trava por dia do fornecedor (importação de estrutura): dia cheio aparece "lotado".
+      diasLotados(fornecedor.id, 'pedido'),
+    ])
   }
   const autorizacao = individual
     ? await consultarAutorizacaoCadastroIndividual(individual)
@@ -128,8 +142,24 @@ export default async function FormPage({
               <QrCode className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">Credenciamento</h1>
-            <p className="text-slate-600 text-sm font-medium mt-1">{evento?.nome}</p>
-            <p className="text-slate-400 text-xs mt-0.5">Empresa: {fornecedor.nome}</p>
+            {/*
+              * Onde a pessoa está se cadastrando, com nome de cada nível
+              * (pedido do Juan, 06/10/2026): num evento com várias áreas e
+              * dezenas de setores, "Teste / Empresa: Dias Trabalhados" não
+              * deixava claro se era o link certo antes de preencher tudo.
+              */}
+            <dl className="mt-3 inline-grid grid-cols-[auto_auto] gap-x-2 gap-y-0.5 text-sm text-left">
+              <dt className="text-slate-400">Evento:</dt>
+              <dd className="text-slate-700 font-semibold">{evento?.nome}</dd>
+              {subeventoNome && (
+                <>
+                  <dt className="text-slate-400">Subevento:</dt>
+                  <dd className="text-slate-700 font-semibold">{subeventoNome}</dd>
+                </>
+              )}
+              <dt className="text-slate-400">Setor:</dt>
+              <dd className="text-slate-700 font-semibold">{fornecedor.nome}</dd>
+            </dl>
             <div className="flex justify-center mt-4">
               <TutorialButton />
             </div>
@@ -147,6 +177,7 @@ export default async function FormPage({
             autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
             biometriaHabilitada={biometriaHabilitada}
             diasEscala={diasEscala}
+            diasLotados={lotados}
           />
         </div>
       </div>

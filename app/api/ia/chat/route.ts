@@ -4,6 +4,7 @@ import { conversar, type MensagemChat } from '@/lib/ia/agente'
 import type { PedidoConfirmacao } from '@/lib/ia/ferramentas'
 import { mensagemAmigavel } from '@/lib/erros'
 import type { LinhaPlanilha } from '@/lib/planilha'
+import type { LinhaEstrutura } from '@/lib/estrutura-regras'
 
 /**
  * Teto de linhas por anexo. Segura tanto o tempo da função quanto uma planilha
@@ -11,6 +12,13 @@ import type { LinhaPlanilha } from '@/lib/planilha'
  * caminho certo, porque não depende de uma volta do modelo.
  */
 const MAX_LINHAS_PLANILHA = 1000
+
+/**
+ * Teto da planilha de ESTRUTURA — o mesmo da importação pela tela do evento
+ * (MAX_LINHAS_ESTRUTURA em lib/actions.ts). Recusar aqui, em vez de cortar,
+ * evita importar meia planilha achando que foi inteira.
+ */
+const MAX_LINHAS_ESTRUTURA = 500
 
 // A conversa pode levar dezenas de segundos quando o modelo encadeia várias
 // ferramentas antes de responder.
@@ -46,6 +54,7 @@ export async function POST(request: NextRequest) {
     confirmacoes?: string[]
     telaAtual?: string
     planilha?: LinhaPlanilha[]
+    estrutura?: LinhaEstrutura[]
   }
   try {
     corpo = await request.json()
@@ -71,6 +80,25 @@ export async function POST(request: NextRequest) {
         chavePix: texto(l?.chavePix),
       }))
     : undefined
+
+  // Estrutura: exatamente os campos de LinhaEstrutura, nada a mais. `linha`
+  // vira número — é ela que aponta "linha 7: CPF inválido" pra pessoa, e é
+  // por ela que as levas da importação escolhem o que gravar.
+  const estrutura: LinhaEstrutura[] | undefined = Array.isArray(corpo.estrutura)
+    ? corpo.estrutura.map((l, i) => ({
+        linha: Number.isFinite(Number(l?.linha)) ? Math.trunc(Number(l?.linha)) : i + 2,
+        fornecedor: texto(l?.fornecedor), subgrupo: texto(l?.subgrupo), trava: texto(l?.trava),
+        supervisorNome: texto(l?.supervisorNome), supervisorCpf: texto(l?.supervisorCpf),
+        supervisorTelefone: texto(l?.supervisorTelefone),
+      }))
+    : undefined
+
+  if (estrutura && estrutura.length > MAX_LINHAS_ESTRUTURA) {
+    return Response.json(
+      { error: `Esta planilha de estrutura tem ${estrutura.length} linhas — o máximo por importação é ${MAX_LINHAS_ESTRUTURA}. Divida em partes (por subgrupo, por exemplo) e anexe uma de cada vez.` },
+      { status: 413 }
+    )
+  }
 
   if (planilha && planilha.length > MAX_LINHAS_PLANILHA) {
     return Response.json(
@@ -98,6 +126,7 @@ export async function POST(request: NextRequest) {
     confirmacoes: Array.isArray(corpo.confirmacoes) ? corpo.confirmacoes : [],
     telaAtual: typeof corpo.telaAtual === 'string' ? corpo.telaAtual : undefined,
     planilha,
+    estrutura,
     aoPedirConfirmacao: pedido => pedidosDeConfirmacao.push(pedido),
   })
 

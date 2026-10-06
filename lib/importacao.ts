@@ -201,6 +201,8 @@ export async function importarFuncionarios(
     if (cota) {
       const { count } = await supabaseAdmin
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+        // Crachá do supervisor não ocupa vaga da equipe (mesma regra do cadastro público).
+        .or('origem.is.null,origem.neq.supervisor')
       let restante = Math.max(0, cota - (count ?? 0))
       finalPayload = finalPayload.filter(f => {
         if (restante <= 0) {

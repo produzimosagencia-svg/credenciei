@@ -44,9 +44,14 @@ import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './v
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
-  gravarDiasEscolhidos, gravarEscalaAprovada, type DetalheCredenciamento,
+  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, type DetalheCredenciamento,
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
+import {
+  planejarEstrutura, normalizarNome, normalizarCpfPlanilha, maiorTrava,
+  type LinhaEstrutura, type LinhaPlanejada, type PlanoEstrutura, type ContextoEstrutura, type ResultadoLinhaEstrutura,
+} from './estrutura-regras'
+import { emLotes } from './lotes'
 import { podePassar } from './limite'
 import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
@@ -3650,7 +3655,15 @@ export async function trocarSetorAtivo(fornecedorId: string) {
  * vínculo (ver `EscolherMeuEvento.tsx`) batia nesse exato caminho — achado ao
  * vivo, 05/10/2026, mesmo caso da Mara Lúcia.
  */
-export async function entrarNoEventoSupervisor(eventoId: string): Promise<
+export async function entrarNoEventoSupervisor(
+  eventoId: string,
+  /**
+   * O setor escolhido em "Selecione onde deseja atuar" (supervisor com mais
+   * de um setor no evento). Ausente = o primeiro dele no evento, como antes.
+   * Só vale se for MESMO dele e deste evento.
+   */
+  fornecedorId?: string,
+): Promise<
   { ok: true; fornecedorId: string; eventoId: string; error?: undefined } | { ok?: undefined; error: string }
 > {
   try {
@@ -3658,7 +3671,9 @@ export async function entrarNoEventoSupervisor(eventoId: string): Promise<
     if (!perfil) return { error: 'Sem permissão' }
 
     const meus = await meusSetores(perfil)
-    const setor = meus.find(s => s.evento_id === eventoId)
+    const setor = fornecedorId
+      ? meus.find(s => s.id === fornecedorId && s.evento_id === eventoId)
+      : meus.find(s => s.evento_id === eventoId)
     if (!setor) return { error: 'Você não tem um vínculo de supervisor neste evento.' }
 
     const { error } = await supabaseAdmin.from('perfis').update({ fornecedor_id: setor.id }).eq('id', perfil.id)
@@ -3784,6 +3799,8 @@ export async function aprovarCredenciamento(
       const pedidos = escala.dias.filter(d => d.selecionado).map(d => d.data)
       const conferido = conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
       if (!conferido.ok) return { error: conferido.erro }
+      const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, [])
+      if (cheios) return { error: cheios }
       const gravado = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: conferido.dias, perfilId: perfil.id })
       if (!gravado.ok) return { error: mensagemAmigavel(gravado.erro) }
       after(() => registrarAuditoria({
@@ -3819,6 +3836,22 @@ export async function aprovarCredenciamento(
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }
+}
+
+/**
+ * Trava por dia do setor na APROVAÇÃO: algum dia NOVO desta pessoa passaria
+ * do limite? Dia que ela já tinha aprovado não conta (ajustar a escala não
+ * pode tirar um dia que já valia só porque o setor encheu depois).
+ * Devolve a mensagem de erro, ou null.
+ */
+async function diasAcimaDaTrava(
+  fornecedorId: string, funcionarioId: string, dias: string[], jaAprovados: string[],
+): Promise<string | null> {
+  const novos = dias.filter(d => !jaAprovados.includes(d))
+  if (!novos.length) return null
+  const cheios = (await diasLotados(fornecedorId, 'aprovado', funcionarioId)).filter(d => novos.includes(d))
+  if (!cheios.length) return null
+  return `${listarDias(cheios)} já ${cheios.length === 1 ? 'atingiu' : 'atingiram'} o limite de pessoas aprovadas neste setor. Tire ${cheios.length === 1 ? 'esse dia' : 'esses dias'} ou aumente a trava.`
 }
 
 /**
@@ -3876,6 +3909,9 @@ export async function ajustarEscalaDoFuncionario(
     const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
     const conferido = conferirDiasPermitidos(dias, disponiveis)
     if (!conferido.ok) return { error: conferido.erro }
+    const jaAprovados = ((await escalaDoFuncionario(funcionarioId))?.dias ?? []).filter(d => d.aprovado).map(d => d.data)
+    const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, jaAprovados)
+    if (cheios) return { error: cheios }
 
     const gravado = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: conferido.dias, perfilId: perfil.id })
     if (!gravado.ok) return { error: mensagemAmigavel(gravado.erro) }
@@ -3934,6 +3970,7 @@ export async function detalheDoCredenciamento(funcionarioId: string, fornecedorI
     ])
     const diasDoEvento: DiaDaEscala[] = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
     const escala = usaEscala ? await escalaDoFuncionario(funcionarioId) : null
+    const lotados = usaEscala ? await diasLotados(fornecedorId, 'aprovado', funcionarioId) : []
 
     return {
       ok: true,
@@ -3955,6 +3992,7 @@ export async function detalheDoCredenciamento(funcionarioId: string, fornecedorI
         usaEscala,
         diasDoEvento,
         escala,
+        lotados,
       },
     }
   } catch (e) {
@@ -7622,6 +7660,13 @@ export async function cadastrarFuncionarioPublico(
     if (!disponiveis.length) return { error: 'O período de trabalho deste evento já terminou.' }
     const conferido = conferirDiasPermitidos(dados.dias, disponiveis)
     if (!conferido.ok) return { error: conferido.erro }
+    // Trava por dia do setor (importação de estrutura): a tela já mostra o dia
+    // lotado, mas é aqui que um envio de quem estava com a tela aberta há
+    // horas (ou chamada direta) é recusado.
+    const cheios = (await diasLotados(fornecedorId, 'pedido')).filter(d => conferido.dias.includes(d))
+    if (cheios.length) {
+      return { error: `${listarDias(cheios)} já ${cheios.length === 1 ? 'está lotado' : 'estão lotados'} neste setor. Escolha outro dia ou fale com o seu supervisor.` }
+    }
     diasEscolhidos = conferido.dias
   }
 
@@ -7630,8 +7675,11 @@ export async function cadastrarFuncionarioPublico(
   if (travaCotaHabilitada) {
     const cota = fornecedorCompleto?.quantidade_estimada ?? null
     if (cota) {
+      // O crachá do próprio supervisor (origem 'supervisor') não ocupa vaga da
+      // equipe — sem isto, setor de 10 vagas aceitava só 9.
       const { count } = await supabaseAdmin
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+        .or('origem.is.null,origem.neq.supervisor')
       if ((count ?? 0) >= cota) {
         return { error: 'Seu fornecedor está com o número máximo de pessoas. Contate seu supervisor.' }
       }
@@ -10083,6 +10131,182 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
   }
 
   revalidatePath('/admin/configuracoes')
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPORTAÇÃO DE ESTRUTURA — a planilha que monta o evento de uma vez:
+// Fornecedor | Subgrupo (área) | Trava por dia | Supervisor (nome, CPF, tel).
+// As regras (o que cada linha vira, o que está errado) estão em
+// lib/estrutura-regras.ts; aqui só se lê o banco e grava, linha por linha,
+// pela MESMA `criarFornecedorOuLanca` da tela — supervisor pelo CPF, um
+// acesso só, mensagem de acesso uma vez por evento.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_LINHAS_ESTRUTURA = 500
+
+/** Quem importa estrutura cria fornecedor E supervisor — a régua de quem cria acesso. */
+async function exigirImportadorDeEstrutura(eventoId: string) {
+  const perfil = await exigirEventoDaOrg(eventoId)
+  if (!podeGerenciarUsuarios(perfil) && perfil.role !== 'suporte') {
+    throw new Error('Importar a estrutura cria supervisores — só quem cria acessos pode fazer isso.')
+  }
+  const { data: evento } = await supabaseAdmin.from('eventos').select('id, nome, tem_subeventos').eq('id', eventoId).single()
+  if (!evento) throw new Error('Evento não encontrado')
+  if ((evento as { tem_subeventos?: boolean }).tem_subeventos !== true) {
+    throw new Error('Este evento não usa subeventos. Ligue "Este evento possui subeventos" em Editar evento antes de importar.')
+  }
+  return { perfil, evento: evento as { id: string; nome: string } }
+}
+
+/** O banco do jeito que a prévia precisa: áreas, fornecedores, quem já tem acesso, dias do evento. */
+async function contextoDaEstrutura(eventoId: string, linhas: LinhaEstrutura[]): Promise<ContextoEstrutura> {
+  const cpfs = [...new Set(linhas.map(l => normalizarCpfPlanilha(l.supervisorCpf)).filter(c => c.length === 11))]
+  const [subeventos, fornecedores, dias, acessos] = await Promise.all([
+    supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId).then(r => r.data ?? []),
+    buscarTudo((de, ate) => supabaseAdmin.from('fornecedores').select('id, nome, subevento_id')
+      .eq('evento_id', eventoId).order('id').range(de, ate)),
+    diasDaEscalaDoEvento(eventoId).then(d => d.map(x => x.data)),
+    (async () => {
+      const mapa = new Map<string, { nome: string; role: string }>()
+      for (const lote of emLotes(cpfs, 200)) {
+        const { data } = await supabaseAdmin.from('perfis').select('cpf, nome, role').in('cpf', lote)
+        for (const p of data ?? []) mapa.set(p.cpf as string, { nome: p.nome as string, role: p.role as string })
+      }
+      return mapa
+    })(),
+  ])
+  return {
+    dias,
+    subeventos: subeventos as { id: string; nome: string }[],
+    fornecedores: fornecedores as { id: string; nome: string; subevento_id: string | null }[],
+    acessos,
+    validarCpf,
+  }
+}
+
+/** A PRÉVIA: o que vai ser criado, o que já existe e o que está errado — nada é gravado. */
+export async function previaImportacaoEstrutura(eventoId: string, linhas: LinhaEstrutura[]): Promise<
+  { ok?: false; error: string } | { ok: true; plano: PlanoEstrutura; eventoNome: string }
+> {
+  try {
+    const { evento } = await exigirImportadorDeEstrutura(eventoId)
+    if (!linhas.length) return { error: 'A planilha não tem nenhuma linha.' }
+    if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `A planilha tem ${linhas.length} linhas — o máximo por importação é ${MAX_LINHAS_ESTRUTURA}.` }
+    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas))
+    return { ok: true, plano, eventoNome: evento.nome }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * GRAVA as linhas `apenas` (números de linha) da planilha — a tela manda em
+ * levas pequenas e mostra o andamento; nenhuma chamada passa do tempo da
+ * função mesmo com centenas de linhas.
+ *
+ * A planilha INTEIRA vem junto em toda leva: duplicidade (mesmo setor duas
+ * vezes, mesmo CPF com dois nomes) só se vê olhando tudo. E o banco é relido
+ * a cada leva — o que a leva anterior criou já conta como "existe", que é o
+ * que torna repetir a importação (ou retomar uma que caiu) seguro.
+ */
+export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstrutura[], apenas: number[]): Promise<
+  { ok?: false; error: string } | { ok: true; resultados: ResultadoLinhaEstrutura[] }
+> {
+  try {
+    await exigirImportadorDeEstrutura(eventoId)
+    if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `Máximo de ${MAX_LINHAS_ESTRUTURA} linhas por importação.` }
+    const alvo = new Set(apenas.slice(0, 20))
+    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas))
+    const subPorNome = new Map(
+      (await supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId)).data?.map(s => [normalizarNome(s.nome as string), s.id as string]) ?? [],
+    )
+
+    const resultados: ResultadoLinhaEstrutura[] = []
+    for (const l of plano.linhas.filter(x => alvo.has(x.linha))) {
+      if (l.acao === 'erro') {
+        resultados.push({ linha: l.linha, acao: 'erro', erro: l.erros.join(' ') })
+        continue
+      }
+      try {
+        resultados.push(await gravarLinhaEstrutura(eventoId, l, subPorNome))
+      } catch (e) {
+        resultados.push({ linha: l.linha, acao: 'erro', erro: mensagemAmigavel(e) })
+      }
+    }
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true, resultados }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function gravarLinhaEstrutura(
+  eventoId: string, l: LinhaPlanejada, subPorNome: Map<string, string>,
+): Promise<ResultadoLinhaEstrutura> {
+  // 1. A área (subevento): reaproveita pelo nome, cria se não existir.
+  let subeventoId = subPorNome.get(normalizarNome(l.subgrupo))
+  if (!subeventoId) {
+    const { data, error } = await supabaseAdmin.from('subeventos')
+      .insert([{ evento_id: eventoId, nome: l.subgrupo }]).select('id').single()
+    if (error || !data) throw new Error(`Não consegui criar a área "${l.subgrupo}".`)
+    subeventoId = data.id as string
+    subPorNome.set(normalizarNome(l.subgrupo), subeventoId)
+  }
+
+  // 2. O fornecedor dentro da área — pelo nome, sem diferenciar caixa/acento.
+  const teto = maiorTrava(l.travaPorDia)
+  const acharFornecedor = async () => {
+    const { data } = await supabaseAdmin.from('fornecedores').select('id, nome')
+      .eq('evento_id', eventoId).eq('subevento_id', subeventoId)
+    return (data ?? []).find(f => normalizarNome(f.nome as string) === normalizarNome(l.fornecedor))?.id as string | undefined
+  }
+  const dadosSupervisor = new FormData()
+  dadosSupervisor.set('nome', l.supervisor.nome)
+  dadosSupervisor.set('cpf', l.supervisor.cpf)
+  dadosSupervisor.set('telefone', l.supervisor.telefone)
+
+  let fornecedorId = await acharFornecedor()
+  let acao: 'criado' | 'atualizado'
+  if (!fornecedorId) {
+    // A MESMA criação da tela: valida, cria, liga o supervisor pelo CPF e
+    // desfaz o fornecedor se o supervisor falhar.
+    const fd = new FormData()
+    fd.set('nome', l.fornecedor)
+    fd.set('subevento_id', subeventoId)
+    if (teto) fd.set('quantidade_estimada', String(teto))
+    fd.set('supervisor_nome', l.supervisor.nome)
+    fd.set('supervisor_cpf', l.supervisor.cpf)
+    fd.set('supervisor_telefone', l.supervisor.telefone)
+    await criarFornecedorOuLanca(eventoId, fd)
+    fornecedorId = await acharFornecedor()
+    if (!fornecedorId) throw new Error('O fornecedor foi criado, mas não consegui confirmar a área dele. Confira na tela do evento.')
+    acao = 'criado'
+  } else {
+    // Já existe: atualiza o teto e garante o supervisor — sem duplicar nada.
+    if (teto) await supabaseAdmin.from('fornecedores').update({ quantidade_estimada: teto }).eq('id', fornecedorId)
+    const { data: perfilDoCpf } = await supabaseAdmin.from('perfis').select('id').eq('cpf', l.supervisor.cpf).maybeSingle()
+    const jaLigado = perfilDoCpf
+      ? !!(await supabaseAdmin.from('supervisor_setores').select('perfil_id')
+          .eq('perfil_id', perfilDoCpf.id).eq('fornecedor_id', fornecedorId).maybeSingle()).data
+      : false
+    if (!jaLigado) await criarSupervisorOuLanca(fornecedorId, eventoId, dadosSupervisor)
+    acao = 'atualizado'
+  }
+
+  // 3. A trava por dia. Reimportar SUBSTITUI a trava do fornecedor; linha sem
+  //    trava não mexe na que já existe.
+  const dias = Object.entries(l.travaPorDia)
+  if (!dias.length) return { linha: l.linha, acao }
+  const { error: erroTrava } = await supabaseAdmin.from('fornecedor_cotas_dia').upsert(
+    dias.map(([data, maximo]) => ({ fornecedor_id: fornecedorId, data, maximo, atualizado_em: new Date().toISOString() })),
+    { onConflict: 'fornecedor_id,data' },
+  )
+  if (erroTrava) {
+    return { linha: l.linha, acao, aviso: 'A trava por dia não foi gravada — falta rodar supabase/upgrade-trava-por-dia.sql.' }
+  }
+  await supabaseAdmin.from('fornecedor_cotas_dia').delete()
+    .eq('fornecedor_id', fornecedorId).not('data', 'in', `(${dias.map(([d]) => d).join(',')})`)
+  return { linha: l.linha, acao }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

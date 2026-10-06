@@ -3,6 +3,8 @@ import { CONHECIMENTO_DO_SISTEMA } from './conhecimento'
 import { ferramentasPara, type ContextoIA, type PedidoConfirmacao, type PerfilIA } from './ferramentas'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
 import { resumirPlanilha, type LinhaPlanilha } from '@/lib/planilha'
+import type { LinhaEstrutura } from '@/lib/estrutura-regras'
+import { resumirEstrutura } from './ferramentas/estrutura'
 
 const MODELO = 'gemini-3.6-flash'
 
@@ -79,7 +81,7 @@ chame a ferramenta e deixe ela responder.
 ## Confirmação — ações de risco
 
 Ações de risco (excluir qualquer coisa, criar evento, criar acesso de usuário,
-importar planilha, reenviar WhatsApp em lote, cancelar envios, trocar QR ou link)
+importar planilha ou estrutura de evento, reenviar WhatsApp em lote, cancelar envios, trocar QR ou link)
 devolvem "precisa_confirmar" na primeira chamada. Quando isso acontecer:
 
 1. NÃO chame a ferramenta de novo, de jeito nenhum.
@@ -174,7 +176,7 @@ async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<
 }
 
 /** Fatos voláteis da conversa — vão na instrução de sistema, que é por chamada. */
-function contextoDaVez(perfil: PerfilIA, telaAtual?: string, planilha?: LinhaPlanilha[]): string {
+function contextoDaVez(perfil: PerfilIA, telaAtual?: string, planilha?: LinhaPlanilha[], estrutura?: LinhaEstrutura[]): string {
   const agora = new Intl.DateTimeFormat('pt-BR', {
     dateStyle: 'full', timeStyle: 'short', timeZone: 'America/Sao_Paulo',
   }).format(new Date())
@@ -188,6 +190,14 @@ function contextoDaVez(perfil: PerfilIA, telaAtual?: string, planilha?: LinhaPla
       ? 'A pessoa ANEXOU uma planilha de equipe nesta conversa. Resumo do que veio nela (os dados das pessoas você não vê, e não precisa): '
         + JSON.stringify(resumirPlanilha(planilha))
         + '. Para cadastrar essa equipe use a ferramenta importar_planilha — nunca cadastre linha por linha.'
+      : null,
+    // Mesma regra para a planilha de estrutura: nomes de área e fornecedor
+    // (que não são dado pessoal) e só a CONTAGEM de supervisores — CPF e
+    // telefone deles ficam no servidor, indo direto pras actions.
+    estrutura?.length
+      ? 'A pessoa ANEXOU uma planilha de ESTRUTURA de evento (fornecedores por subgrupo, trava por dia e supervisores) nesta conversa. Resumo (CPFs e telefones você não vê, e não precisa): '
+        + JSON.stringify(resumirEstrutura(estrutura))
+        + '. Para importar use a ferramenta importar_estrutura_evento com o evento que a pessoa disser (se não disse, pergunte) — nunca crie setor ou supervisor um a um a partir dela.'
       : null,
   ].filter(Boolean).join('\n')
 }
@@ -206,6 +216,7 @@ export async function* conversar(params: {
   confirmacoes: string[]
   telaAtual?: string
   planilha?: LinhaPlanilha[]
+  estrutura?: LinhaEstrutura[]
   aoPedirConfirmacao?: (pedido: PedidoConfirmacao) => void
 }): AsyncGenerator<EventoDaConversa> {
   const ctx: ContextoIA = {
@@ -213,6 +224,7 @@ export async function* conversar(params: {
     confirmacoes: new Set(params.confirmacoes),
     aoPedirConfirmacao: params.aoPedirConfirmacao,
     planilha: params.planilha,
+    estrutura: params.estrutura,
   }
 
   const ferramentas = ferramentasPara(ctx)
@@ -234,7 +246,7 @@ export async function* conversar(params: {
     systemInstruction: [
       COMPORTAMENTO,
       CONHECIMENTO_DO_SISTEMA,
-      contextoDaVez(params.perfil, params.telaAtual, params.planilha),
+      contextoDaVez(params.perfil, params.telaAtual, params.planilha, params.estrutura),
     ].join('\n\n'),
     tools: [{ functionDeclarations: declaracoes }],
     /*

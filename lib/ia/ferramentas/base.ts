@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster, type Role } from '@/lib/permissions'
 import type { LinhaPlanilha } from '@/lib/planilha'
+import type { LinhaEstrutura } from '@/lib/estrutura-regras'
 
 /**
  * Fundação das ferramentas da IA: tipos, checagem de escopo e a trava de
@@ -50,6 +51,13 @@ export type ContextoIA = {
    * trocado.
    */
   planilha?: LinhaPlanilha[]
+  /**
+   * Linhas da planilha de ESTRUTURA do evento (fornecedor, área, trava e
+   * supervisor), quando é esse o tipo de arquivo anexado. Mesma regra da
+   * `planilha`: o modelo só recebe o resumo — CPF e telefone dos supervisores
+   * vão daqui direto pras actions de importação.
+   */
+  estrutura?: LinhaEstrutura[]
 }
 
 /**

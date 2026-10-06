@@ -68,6 +68,7 @@ function comprimir(file: File): Promise<string> {
 
 export default function FormularioFuncionario({
   fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual, biometriaHabilitada = false, diasEscala = null,
+  diasLotados = [],
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
@@ -89,13 +90,16 @@ export default function FormularioFuncionario({
    * aparece. O servidor confere a escolha de novo (`cadastrarFuncionarioPublico`).
    */
   diasEscala?: DiaDaEscala[] | null
+  /** Dias em que este setor já bateu a trava — aparecem "lotado" e não dá pra marcar. */
+  diasLotados?: string[]
 }) {
   const router = useRouter()
   const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
   const [consentimento, setConsentimento] = useState(false)
   const [diasEscolhidos, setDiasEscolhidos] = useState<string[]>([])
   const [diasSalvos, setDiasSalvos] = useState<string[]>([])
-  const todosMarcados = !!diasEscala?.length && diasEscolhidos.length === diasEscala.length
+  const diasLivres = (diasEscala ?? []).filter(d => !diasLotados.includes(d.data))
+  const todosMarcados = diasLivres.length > 0 && diasLivres.every(d => diasEscolhidos.includes(d.data))
   const alternarDia = (dia: string) =>
     setDiasEscolhidos(atual => atual.includes(dia) ? atual.filter(d => d !== dia) : [...atual, dia].sort())
   const [foto, setFoto] = useState<string | null>(null)
@@ -588,7 +592,14 @@ export default function FormularioFuncionario({
           </p>
           {diasEscala.length ? (
             <div className="space-y-2.5 pt-1">
-              <SeletorDiasEscala dias={diasEscala} marcados={diasEscolhidos} onAlternar={alternarDia} desabilitado={loading} />
+              <SeletorDiasEscala dias={diasEscala} marcados={diasEscolhidos} onAlternar={alternarDia} lotados={diasLotados} desabilitado={loading} />
+              {diasLotados.length > 0 && (
+                <p className="text-amber-700 text-xs">
+                  {diasLivres.length
+                    ? 'Os dias marcados como lotado já atingiram o limite de pessoas deste setor.'
+                    : 'Todos os dias deste setor já estão lotados. Fale com o seu supervisor.'}
+                </p>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-500 text-xs">
                   {diasEscolhidos.length
@@ -597,7 +608,7 @@ export default function FormularioFuncionario({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setDiasEscolhidos(todosMarcados ? [] : (diasEscala ?? []).map(d => d.data))}
+                  onClick={() => setDiasEscolhidos(todosMarcados ? [] : diasLivres.map(d => d.data))}
                   className="text-brand-500 text-xs font-medium hover:underline"
                 >
                   {todosMarcados ? 'Desmarcar todos' : 'Marcar todos'}

@@ -10,12 +10,20 @@ import {
   apagarConversa, carregarConversas, novaConversa, quandoRelativo, salvarConversa, tituloDe,
   type Confirmacao, type Conversa, type Mensagem,
 } from './historico'
-import { lerPlanilhaDeEquipe, type LinhaPlanilha } from '@/lib/planilha'
+import { lerPlanilhaDeEquipe, lerPlanilhaDeEstrutura, pareceEstrutura, type LinhaPlanilha } from '@/lib/planilha'
+import type { LinhaEstrutura } from '@/lib/estrutura-regras'
 import { Aviso } from '@/components/ui/Superficie'
 import { LogoLoading } from '@/components/LogoLoading'
 
 /** Planilha anexada à conversa: fica no cliente e vai junto de cada mensagem. */
 type Anexo = { nome: string; linhas: LinhaPlanilha[] }
+
+/**
+ * Planilha de ESTRUTURA do evento (fornecedor, subgrupo, trava, supervisor).
+ * Estado separado do `Anexo` porque vai num campo próprio da requisição: a
+ * rota e as ferramentas tratam os dois tipos de arquivo de jeitos diferentes.
+ */
+type AnexoEstrutura = { nome: string; linhas: LinhaEstrutura[] }
 
 const SUGESTOES = [
   'Quem ainda não bateu o ponto?',
@@ -72,6 +80,7 @@ function Formatado({ texto }: { texto: string }) {
  */
 const ACOES: Record<string, { rotulo: string; Icone: React.ElementType }> = {
   importar_planilha: { rotulo: 'Confirmar cadastro', Icone: FileSpreadsheet },
+  importar_estrutura_evento: { rotulo: 'Importar estrutura', Icone: FileSpreadsheet },
   criar_evento: { rotulo: 'Criar evento', Icone: CalendarPlus },
   criar_supervisor: { rotulo: 'Criar acesso', Icone: UserPlus },
   reenviar_whatsapp: { rotulo: 'Reenviar mensagens', Icone: Send },
@@ -153,6 +162,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   const [entrada, setEntrada] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [anexo, setAnexo] = useState<Anexo | null>(null)
+  const [estrutura, setEstrutura] = useState<AnexoEstrutura | null>(null)
   const [erroAnexo, setErroAnexo] = useState<string | null>(null)
   const confirmadas = useRef<string[]>([])
   const fimDaLista = useRef<HTMLDivElement>(null)
@@ -166,11 +176,28 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
     if (!arquivo) return
     setErroAnexo(null)
     try {
+      // O mesmo clipe aceita os dois tipos de planilha: o cabeçalho decide.
+      // Um anexo por vez — o novo substitui o anterior, seja de que tipo for.
+      if (await pareceEstrutura(arquivo)) {
+        const { linhas, faltando } = await lerPlanilhaDeEstrutura(arquivo)
+        if (faltando.length) {
+          setErroAnexo(`Parece uma planilha de estrutura, mas não achei ${faltando.length === 1 ? 'a coluna' : 'as colunas'} ${faltando.join(', ')}. Confira o cabeçalho (ou baixe o modelo na tela do evento).`)
+          return
+        }
+        if (!linhas.length) {
+          setErroAnexo('A planilha de estrutura não tem nenhuma linha preenchida.')
+          return
+        }
+        setAnexo(null)
+        setEstrutura({ nome: arquivo.name, linhas })
+        return
+      }
       const linhas = await lerPlanilhaDeEquipe(arquivo)
       if (!linhas.length) {
         setErroAnexo('Não achei ninguém nessa planilha. Ela precisa ter pelo menos as colunas Nome e CPF.')
         return
       }
+      setEstrutura(null)
       setAnexo({ nome: arquivo.name, linhas })
     } catch {
       setErroAnexo('Não consegui ler esse arquivo. Use a planilha modelo (.xlsx ou .csv).')
@@ -211,6 +238,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
           confirmacoes: confirmadas.current,
           telaAtual: pathname,
           planilha: anexo?.linhas,
+          estrutura: estrutura?.linhas,
         }),
       })
 
@@ -273,6 +301,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
     const texto = entrada.trim()
     if (texto) return void enviar(texto)
     if (anexo) return void enviar(`Anexei a planilha "${anexo.nome}" com a equipe. Cadastra pra mim?`)
+    if (estrutura) return void enviar(`Anexei a planilha de estrutura "${estrutura.nome}". Importa pra mim?`)
   }
 
   const confirmar = (operacao: string) => {
@@ -284,6 +313,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   const comecarNova = () => {
     confirmadas.current = []
     setAnexo(null)
+    setEstrutura(null)
     setErroAnexo(null)
     setConversa(novaConversa())
     setVerHistorico(false)
@@ -292,6 +322,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   const abrirConversa = (c: Conversa) => {
     confirmadas.current = []
     setAnexo(null)
+    setEstrutura(null)
     setErroAnexo(null)
     setConversa(c)
     setVerHistorico(false)
@@ -461,6 +492,25 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   </button>
                 </div>
               )}
+              {estrutura && (
+                <div className="flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-xl px-3 py-2">
+                  <FileSpreadsheet className="w-4 h-4 text-brand-600 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-brand-700 text-xs font-semibold truncate">{estrutura.nome}</p>
+                    <p className="text-brand-500 text-2xs">
+                      Estrutura: {estrutura.linhas.length} linha{estrutura.linhas.length !== 1 ? 's' : ''} — diga em qual evento importar
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEstrutura(null)}
+                    className="shrink-0 text-brand-400 hover:text-brand-700"
+                    aria-label="Remover planilha de estrutura"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               {erroAnexo && (
                 <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-xl px-3 py-2">{erroAnexo}</p>
               )}
@@ -478,8 +528,8 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   onClick={() => arquivoRef.current?.click()}
                   disabled={ocupado}
                   className="btn btn-secundario btn-icone-campo shrink-0"
-                  aria-label="Anexar planilha da equipe"
-                  title="Anexar planilha da equipe"
+                  aria-label="Anexar planilha (equipe ou estrutura do evento)"
+                  title="Anexar planilha (equipe ou estrutura do evento)"
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
@@ -494,12 +544,12 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                     }
                   }}
                   rows={1}
-                  placeholder={anexo ? 'Em qual fornecedor entram?' : 'Pergunte ou peça algo...'}
+                  placeholder={anexo ? 'Em qual fornecedor entram?' : estrutura ? 'Em qual evento importar?' : 'Pergunte ou peça algo...'}
                   className="input resize-none max-h-32 text-sm"
                 />
                 <button
                   type="submit"
-                  disabled={(!entrada.trim() && !anexo) || ocupado}
+                  disabled={(!entrada.trim() && !anexo && !estrutura) || ocupado}
                   className="btn btn-primario btn-icone-campo shrink-0"
                   aria-label="Enviar"
                 >

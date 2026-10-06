@@ -105,7 +105,7 @@ export default async function MeuCrachaPage({
   const titulo = ehAdminOuMaster ? 'Crachá Admin' : 'Meu Crachá'
 
   if (!setorParam) {
-    let query = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam).order('nome')
+    let query = supabase.from('fornecedores').select('id, nome, subeventos(nome)').eq('evento_id', eventoParam).order('nome')
     if (!ehAdminOuMaster) query = query.in('id', idsVinculoNesteEvento)
     const { data: setores } = await query
 
@@ -143,14 +143,26 @@ export default async function MeuCrachaPage({
             />
           ) : (
             <div className="divide-y divide-slate-50">
-              {setores.map(s => (
-                <Link
-                  key={s.id}
-                  href={`/admin/meu-cracha?evento=${eventoParam}&setor=${s.id}`}
-                  className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50 transition-colors"
-                >
-                  <p className="text-slate-800 font-medium text-sm">{s.nome}</p>
-                </Link>
+              {/*
+                * Agrupado pela área (subgrupo) do evento — pedido do Juan,
+                * 06/10/2026: abrir o evento e ver os subgrupos dentro dele.
+                * Sem subeventos, a lista é a de sempre.
+                */}
+              {porArea(setores).map(([area, lista]) => (
+                <div key={area ?? '—'}>
+                  {area && (
+                    <p className="px-4 pt-3 pb-1 text-2xs font-semibold uppercase tracking-wide text-brand-600">{area}</p>
+                  )}
+                  {lista.map(s => (
+                    <Link
+                      key={s.id}
+                      href={`/admin/meu-cracha?evento=${eventoParam}&setor=${s.id}`}
+                      className="flex items-center justify-between gap-3 p-4 hover:bg-slate-50 transition-colors"
+                    >
+                      <p className="text-slate-800 font-medium text-sm">{s.nome}</p>
+                    </Link>
+                  ))}
+                </div>
               ))}
             </div>
           )}
@@ -169,4 +181,14 @@ export default async function MeuCrachaPage({
     )
   }
   redirect(`/credential/${resultado.qrToken}`)
+}
+
+/** Fornecedores agrupados pela área (subevento), na ordem em que vieram; sem área por último. */
+function porArea(setores: { id: string; nome: string; subeventos?: unknown }[]): [string | null, { id: string; nome: string }[]][] {
+  const grupos = new Map<string | null, { id: string; nome: string }[]>()
+  for (const s of setores) {
+    const area = (s.subeventos as { nome?: string } | null)?.nome ?? null
+    grupos.set(area, [...(grupos.get(area) ?? []), { id: s.id, nome: s.nome }])
+  }
+  return [...grupos].sort(([a], [b]) => (a === null ? 1 : 0) - (b === null ? 1 : 0) || (a ?? '').localeCompare(b ?? '', 'pt-BR'))
 }

@@ -151,6 +151,8 @@ export type DetalheCredenciamento = {
   usaEscala: boolean
   diasDoEvento: DiaDaEscala[]
   escala: EscalaDoFuncionario | null
+  /** Dias em que o setor já tem o máximo de aprovados (sem contar esta pessoa). */
+  lotados: string[]
 }
 
 export async function escalaDoFuncionario(funcionarioId: string): Promise<EscalaDoFuncionario | null> {
@@ -256,4 +258,64 @@ export async function gravarEscalaAprovada(args: {
   if (erroStatus) return { ok: false, erro: erroStatus.message }
 
   return { ok: true, antes, depois: [...aprovados].sort() }
+}
+
+// ─── Trava do fornecedor por dia (supabase/upgrade-trava-por-dia.sql) ────────
+
+/**
+ * A trava de cada dia deste fornecedor ("Sábado: 10 / Domingo: 8", vinda da
+ * importação de estrutura). Vazio = sem trava por dia. Tolerante à migração
+ * pendente: sem a tabela, ninguém tem trava — tudo como antes.
+ */
+export async function travasDoFornecedor(fornecedorId: string): Promise<Map<string, number>> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('fornecedor_cotas_dia').select('data, maximo').eq('fornecedor_id', fornecedorId)
+    if (error) return new Map()
+    return new Map((data ?? []).map(l => [l.data as string, l.maximo as number]))
+  } catch {
+    return new Map()
+  }
+}
+
+/**
+ * Os dias LOTADOS deste fornecedor.
+ *
+ *   'pedido'   — para o formulário: conta quem pediu o dia (ou já tem ele
+ *                aprovado), fora os negados. Quem pediu ocupa a vaga enquanto
+ *                o supervisor não decide; senão o dia "lotaria" só depois da
+ *                aprovação e o formulário aceitaria gente demais.
+ *   'aprovado' — para a aprovação: conta só os dias já APROVADOS dos outros.
+ *
+ * `ignorarFuncionarioId`: a própria pessoa não conta contra ela mesma.
+ */
+export async function diasLotados(
+  fornecedorId: string, modo: 'pedido' | 'aprovado', ignorarFuncionarioId?: string,
+): Promise<string[]> {
+  const travas = await travasDoFornecedor(fornecedorId)
+  if (!travas.size) return []
+  try {
+    const linhas = await buscarTudo((de, ate) => supabaseAdmin
+      .from('funcionario_dias')
+      .select('funcionario_id, data, selecionado, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento, escala_status)')
+      .eq('funcionarios.fornecedor_id', fornecedorId)
+      .in('data', [...travas.keys()])
+      .order('id').range(de, ate))
+
+    const ocupacao = new Map<string, number>()
+    for (const l of linhas) {
+      if (l.funcionario_id === ignorarFuncionarioId) continue
+      const f = l.funcionarios as unknown as { status_credenciamento: string | null; escala_status: string | null } | null
+      if (!f || f.status_credenciamento === 'negado') continue
+      const ocupa = modo === 'aprovado'
+        ? l.aprovado
+        : (f.escala_status === 'aprovada' ? l.aprovado : l.selecionado)
+      if (ocupa) ocupacao.set(l.data as string, (ocupacao.get(l.data as string) ?? 0) + 1)
+    }
+    return [...travas].filter(([dia, max]) => (ocupacao.get(dia) ?? 0) >= max).map(([dia]) => dia).sort()
+  } catch {
+    // Na dúvida não trava: a trava é limite de operação, não segurança — e
+    // derrubar o cadastro de todo mundo por uma consulta falha é pior.
+    return []
+  }
 }
