@@ -8467,6 +8467,7 @@ export async function localizarFuncionario(
       .select(SELECT_LOCALIZAR)
       .eq('fornecedores.evento_id', eventoId)
       .order('nome')
+      .order('id') // desempate: homônimos tinham a página cortada no meio
       .range(de, ate)
     if (pareceCpf) {
       consulta = digitos.length === 11
@@ -8523,6 +8524,7 @@ export async function localizarFuncionario(
         .select(SELECT_LOCALIZAR)
         .eq('fornecedores.evento_id', eventoId)
         .order('nome')
+        .order('id') // desempate: homônimos tinham a página cortada no meio
         .range(de, ate),
     { tetoTotal: 10_000 })
 

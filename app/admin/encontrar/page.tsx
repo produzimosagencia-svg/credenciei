@@ -150,6 +150,11 @@ export default async function EncontrarPage({
       .from('funcionarios')
       .select('id, nome, cpf, telefone, cargo, cidade, created_at, consentimento_base, fornecedores!inner(evento_id, eventos!inner(organizacao_id))')
       .order('created_at', { ascending: false })
+      // Desempate por id: cadastros em lote (planilha, link) saem com o MESMO
+      // horário, e sem uma ordem total as páginas de 1000 se sobrepõem e deixam
+      // buracos — a lista perdia ~6 pessoas por carregamento, e quem sumia mudava
+      // a cada vez (06/10/2026: "agora eu não me encontro na base").
+      .order('id', { ascending: true })
       .range(de, ate)
     if (digitos.length >= 3) consulta = consulta.like('cpf', `%${digitos}%`)
     return consulta

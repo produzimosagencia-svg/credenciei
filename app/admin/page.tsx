@@ -375,6 +375,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               .eq('evento_id', eventoDoGrafico.id as string)
               .gte('created_at', new Date(janela.de).toISOString())
               .lte('created_at', new Date(janela.ate).toISOString())
+              // Sem ordem, as páginas de 1000 se sobrepõem e o gráfico contava batida em dobro/faltando.
+              .order('created_at').order('id')
               .range(de, ate)
           )
         : Promise.resolve([]),

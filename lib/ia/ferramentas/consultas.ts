@@ -201,6 +201,7 @@ export function ferramentasDeConsulta(ctx: ContextoIA) {
             .select('id, nome, cpf, telefone, empresa, cargo, ativo, pago, valor_receber, chave_pix, qr_token, qr_expira_em, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome))')
             .in('fornecedores.evento_id', ids)
             .order('nome')
+            .order('id') // desempate: homônimos tinham a página cortada no meio
             .range(de, ate)
           if (porCpf) q = q.eq('cpf', digitos)
           if (perfil.role === 'supervisor' && perfil.fornecedor_id) q = q.eq('fornecedor_id', perfil.fornecedor_id)

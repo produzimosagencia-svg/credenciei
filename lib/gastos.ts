@@ -150,7 +150,7 @@ export async function listarGastos(filtro: FiltroGastos = {}): Promise<Gasto[]> 
   const organizacaoId = apenasInterno ? (await getPerfil())?.organizacao_id ?? null : null
 
   const linhas = await buscarTudo<LinhaCrua>((de, ate) => {
-    let q = supabaseAdmin.from('gastos_evento').select(SELECT).order('data_gasto', { ascending: false }).order('registrado_em', { ascending: false })
+    let q = supabaseAdmin.from('gastos_evento').select(SELECT).order('data_gasto', { ascending: false }).order('registrado_em', { ascending: false }).order('id')
     if (apenasInterno) {
       q = q.is('evento_id', null)
       if (organizacaoId) q = q.eq('organizacao_id', organizacaoId)
