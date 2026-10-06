@@ -11,6 +11,7 @@ import { formatarBR } from '@/lib/tz'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import AtribuirEvento from './AtribuirEvento'
+import EditarDadosPessoa from './EditarDadosPessoa'
 
 export const revalidate = 0
 
@@ -192,7 +193,23 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
         />
       </Secao>
 
-      <Secao titulo="Dados de contato" icone={<IdCard className="w-3.5 h-3.5" />} corpoClassName="p-4">
+      <Secao
+        titulo="Dados de contato"
+        icone={<IdCard className="w-3.5 h-3.5" />}
+        corpoClassName="p-4"
+        // Esta ficha já é só do master (redirect lá em cima); a ação confere de novo no servidor.
+        acoes={
+          <EditarDadosPessoa
+            cpf={cpf}
+            nome={atual.nome as string}
+            telefone={telefone ?? ''}
+            cidade={(cidade as string | null) ?? ''}
+            chavePix={(atual.chave_pix as string | null) ?? ''}
+            cadastros={cadastros.length}
+            eventos={new Set(trabalhos.map(t => t.eventoId)).size}
+          />
+        }
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
           <Dado rotulo="CPF" valor={formatCpf(cpf)} />
           <Dado rotulo="Telefone" valor={telefone || '—'} icone={<Phone className="w-3 h-3" />} />

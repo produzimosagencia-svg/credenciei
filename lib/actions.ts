@@ -3669,6 +3669,85 @@ export async function editarCpfFuncionario(
   return { ok: true }
 }
 
+/**
+ * Edita os DADOS DA PESSOA na Base de funcionários — só o master (pedido do
+ * Juan, 06/10/2026): nome, telefone, cidade, chave PIX e CPF.
+ *
+ * A pessoa aparece uma vez por evento em `funcionarios`, então a edição vale
+ * para TODOS os cadastros dela (o que a ficha mostra é a identidade, não um
+ * evento). A função (`cargo`) fica de fora: ela muda de evento para evento.
+ *
+ * Mudar o CPF segue as mesmas travas de `editarCpfFuncionario`: dígito válido
+ * e nenhum conflito com OUTRA pessoa dentro de um mesmo evento (senão duas
+ * identidades se fundiriam). Cada campo que mudou vira uma linha de auditoria.
+ */
+export async function editarDadosDaPessoaNaBase(
+  cpfAtualBruto: string,
+  dados: { nome: string; cpf: string; telefone: string; cidade: string; chavePix: string },
+): Promise<{ ok: true; cpf: string; cadastros: number } | { erro: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil || !ehMaster(perfil.role)) return { erro: 'Só o master edita os dados da base.' }
+
+    const cpfAtual = normalizarCpf(cpfAtualBruto)
+    const { data: cadastros } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, cidade, chave_pix, fornecedores!inner(evento_id)')
+      .eq('cpf', cpfAtual)
+    if (!cadastros?.length) return { erro: 'Esta pessoa não está mais na base.' }
+
+    const nome = dados.nome.replace(/\s+/g, ' ').trim()
+    if (nome.length < 2 || nome.length > 120) return { erro: 'Informe um nome válido.' }
+    const telefone = dados.telefone.replace(/\D/g, '')
+    if (telefone.length < 10 || telefone.length > 13) return { erro: 'Informe um telefone válido, com DDD.' }
+    const cidade = grafiaDaCidade(dados.cidade) || null
+    if (cidade && cidade.length > 80) return { erro: 'Cidade inválida — confira o que foi digitado.' }
+    const chavePix = dados.chavePix.trim() || null
+    if (chavePix && chavePix.length > 140) return { erro: 'Chave PIX inválida — confira o que foi digitado.' }
+
+    const novoCpf = normalizarCpf(dados.cpf)
+    if (!validarCpf(novoCpf)) return { erro: 'CPF inválido. Confira os 11 dígitos.' }
+
+    // CPF novo: nenhum cadastro de OUTRA pessoa com ele nos eventos desta pessoa.
+    if (novoCpf !== cpfAtual) {
+      const eventos = [...new Set(cadastros.map(c => (c.fornecedores as unknown as { evento_id: string }).evento_id))]
+      const { data: conflitos } = await supabaseAdmin
+        .from('funcionarios').select('nome, fornecedores!inner(evento_id)')
+        .eq('cpf', novoCpf).in('fornecedores.evento_id', eventos).limit(1)
+      if (conflitos?.length) {
+        return { erro: `O CPF ${formatCpf(novoCpf)} já é de "${conflitos[0].nome}" em um dos eventos desta pessoa. Se for a mesma pessoa, apague a duplicada antes.` }
+      }
+    }
+
+    const ids = cadastros.map(c => c.id as string)
+    const { error } = await supabaseAdmin.from('funcionarios')
+      .update({ nome, telefone, cidade, chave_pix: chavePix, cpf: novoCpf }).in('id', ids)
+    if (error) return { erro: mensagemAmigavel(error) }
+
+    // Auditoria por campo que mudou, ligada ao cadastro mais recente.
+    const ref = cadastros[0]
+    const antes = { nome: ref.nome as string, cpf: ref.cpf as string, telefone: (ref.telefone as string | null) ?? '', cidade: (ref.cidade as string | null) ?? '', chave_pix: (ref.chave_pix as string | null) ?? '' }
+    const depois = { nome, cpf: novoCpf, telefone, cidade: cidade ?? '', chave_pix: chavePix ?? '' }
+    const eventoRef = (ref.fornecedores as unknown as { evento_id: string }).evento_id
+    for (const campo of Object.keys(depois) as (keyof typeof depois)[]) {
+      if (antes[campo] === depois[campo]) continue
+      after(() => registrarAuditoria({
+        perfil, acao: 'EDICAO_BASE_FUNCIONARIO', campoAlterado: campo,
+        valorAnterior: antes[campo] || null, valorNovo: depois[campo] || null,
+        motivo: `Editado na Base de funcionários (${ids.length} cadastro${ids.length === 1 ? '' : 's'})`,
+        funcionarioId: ref.id as string, eventoId: eventoRef,
+      }))
+    }
+
+    revalidatePath('/admin/base-funcionarios')
+    revalidatePath(`/admin/pessoas/${cpfAtual}`)
+    revalidatePath(`/admin/pessoas/${novoCpf}`)
+    return { ok: true as const, cpf: novoCpf, cadastros: ids.length }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
 /** Marca/desmarca a baixa de pagamento do valor a receber do setor. */
 export async function alternarPagamento(funcionarioId: string, fornecedorId: string, eventoId: string, pago: boolean) {
   await exigirAcessoFuncionarios(fornecedorId, eventoId)

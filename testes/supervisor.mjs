@@ -48,5 +48,12 @@ const agora = msgs.slice(msgs.indexOf('export async function enviarMensagemAgora
 ok(agora.includes(".eq('status', 'pendente')") && agora.includes("status: 'enviando'"), 'reivindica pelo status — se a fila chegar junto, só um envia (nunca duas mensagens)')
 ok(agora.includes('WHATSAPP_PAUSADO'), 'respeita o interruptor de emergência do WhatsApp')
 
+console.log('\n\x1b[1m5 · Base de funcionários: só o master edita\x1b[0m')
+const baseAct = trecho('export async function editarDadosDaPessoaNaBase', 1800)
+ok(/if \(!perfil \|\| !ehMaster\(perfil\.role\)\) return \{ erro: 'Só o master/.test(baseAct), 'a ação recusa quem não é master (o servidor decide, não a tela)')
+ok(baseAct.includes('validarCpf(novoCpf)') && baseAct.includes('conflitos'), 'CPF novo: dígito válido e sem conflito com outra pessoa no mesmo evento')
+const fichaPag = readFileSync(new URL('../app/admin/pessoas/[cpf]/page.tsx', import.meta.url), 'utf8')
+ok(fichaPag.includes("if (!ehMaster(perfil.role)) redirect('/admin')") && fichaPag.includes('<EditarDadosPessoa'), 'a ficha já é só do master e traz o botão Editar dados')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
