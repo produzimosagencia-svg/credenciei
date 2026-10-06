@@ -36,6 +36,8 @@ export const ACAO_LABELS: Record<string, string> = {
   AJUSTE_ESCALA: 'Dias de trabalho ajustados',
   MESCLA_SUBEVENTO: 'Subeventos mesclados',
   EDICAO_BASE_FUNCIONARIO: 'Dados da pessoa editados na base',
+  DEPOIMENTO_COLABORADOR: 'Depoimento sobre colaborador',
+  AVALIACAO_COLABORADOR: 'Colaborador avaliado (estrelas)',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */

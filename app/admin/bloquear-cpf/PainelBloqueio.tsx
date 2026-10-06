@@ -6,6 +6,7 @@ import { bloquearCpf, desbloquearCpf, type CpfBloqueado } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao } from '@/components/ui/Superficie'
+import { TAMANHO_MINIMO_JUSTIFICATIVA } from '@/lib/depoimentos'
 
 /** O formulário e a lista. A explicação do que é isto mora na página. */
 export default function PainelBloqueio({
@@ -20,6 +21,9 @@ export default function PainelBloqueio({
   const [erro, setErro] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
   const [pendente, iniciar] = useTransition()
+  // Liberar exige justificativa: o botão só abre o campo, quem confirma é o "Confirmar".
+  const [liberando, setLiberando] = useState<string | null>(null)
+  const [justificativa, setJustificativa] = useState('')
 
   const bloquear = (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,8 +43,10 @@ export default function PainelBloqueio({
     setErro(null)
     setOk(null)
     iniciar(async () => {
-      const r = await desbloquearCpf(id, eventoId)
+      const r = await desbloquearCpf(id, eventoId, justificativa)
       if (r.error) { setErro(r.error); return }
+      setLiberando(null)
+      setJustificativa('')
       router.refresh()
     })
   }
@@ -93,18 +99,51 @@ export default function PainelBloqueio({
         ) : (
           <ul className="divide-y divide-slate-100">
             {bloqueados.map(b => (
-              <li key={b.id} className="flex items-center gap-3 px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="text-slate-800 text-sm font-semibold tabular-nums">{formatCpf(b.cpf)}</p>
-                  <p className="text-slate-400 text-2xs truncate">
-                    {b.motivo ? `${b.motivo} · ` : ''}
-                    {b.bloqueadoPor ? `por ${b.bloqueadoPor} · ` : ''}
-                    {formatarBR(b.criadoEm, 'curto')}
-                  </p>
+              <li key={b.id} className="px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-slate-800 text-sm font-semibold tabular-nums">{formatCpf(b.cpf)}</p>
+                    <p className="text-slate-400 text-2xs truncate">
+                      {b.motivo ? `${b.motivo} · ` : ''}
+                      {b.bloqueadoPor ? `por ${b.bloqueadoPor} · ` : ''}
+                      {formatarBR(b.criadoEm, 'curto')}
+                    </p>
+                  </div>
+                  {liberando !== b.id && (
+                    <button
+                      onClick={() => { setLiberando(b.id); setJustificativa(''); setErro(null) }}
+                      disabled={pendente}
+                      className="btn btn-secundario btn-sm shrink-0"
+                    >
+                      Liberar
+                    </button>
+                  )}
                 </div>
-                <button onClick={() => liberar(b.id)} disabled={pendente} className="btn btn-secundario btn-sm shrink-0">
-                  Liberar
-                </button>
+                {liberando === b.id && (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      autoFocus rows={2} value={justificativa} maxLength={500}
+                      onChange={e => setJustificativa(e.target.value)}
+                      placeholder="Justificativa para liberar este CPF (obrigatória)"
+                      className="input w-full"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => { setLiberando(null); setErro(null) }}
+                        disabled={pendente} className="btn btn-secundario btn-sm"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => liberar(b.id)}
+                        disabled={pendente || justificativa.trim().length < TAMANHO_MINIMO_JUSTIFICATIVA}
+                        className="btn btn-primario btn-sm"
+                      >
+                        {pendente ? 'Aguarde…' : 'Confirmar liberação'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

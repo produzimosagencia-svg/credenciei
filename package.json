@@ -14,7 +14,8 @@
     "supervisor": "node testes/supervisor.mjs",
     "nomes": "node testes/nomes.mjs",
     "eventos": "node testes/eventos.mjs",
-    "paginacao": "node testes/paginacao.mjs"
+    "paginacao": "node testes/paginacao.mjs",
+    "depoimentos": "node testes/depoimentos.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

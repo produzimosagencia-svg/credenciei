@@ -11,6 +11,7 @@ import AcoesDaEquipe from './AcoesDaEquipe'
 import TrocarSetor from './TrocarSetor'
 import ImportarFuncionarios from '../../ImportarFuncionarios'
 import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
+import AvaliarEquipe from './AvaliarEquipe'
 import ExportarEquipe from '../../ExportarEquipe'
 import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
@@ -450,6 +451,18 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
       {/* Só aparece quando há CPF repetido — numa equipe limpa some inteiro. */}
       <CpfsDuplicados grupos={acharDuplicados(funcionariosEnriquecidos)} />
+
+      {/* A avaliação por estrelas abre quando o evento termina (o master avalia a qualquer hora). */}
+      {(ehMaster(perfil.role) || (() => {
+        const fim = (evento?.data_fim ?? evento?.data_inicio) as string | null
+        return !!fim && new Date(fim).getTime() < Date.now()
+      })()) && funcionariosEnriquecidos.length > 0 && (
+        <AvaliarEquipe
+          fornecedorId={fid}
+          eventoId={id}
+          equipe={funcionariosEnriquecidos.map(f => ({ id: f.id, nome: f.nome }))}
+        />
+      )}
 
       <div data-tutorial="setor-tabela">
         <FuncionarioTable

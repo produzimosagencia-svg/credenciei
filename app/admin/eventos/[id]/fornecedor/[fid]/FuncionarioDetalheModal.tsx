@@ -14,6 +14,7 @@ import SeletorLista from '@/components/SeletorLista'
 import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
 import SecaoEscala from './SecaoEscala'
+import DepoimentoColaborador from './DepoimentoColaborador'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -36,7 +37,7 @@ type Funcionario = {
   fim: Presenca
 }
 
-type Aba = 'dados' | 'historico' | 'cracha'
+type Aba = 'dados' | 'historico' | 'depoimento' | 'cracha'
 
 export default function FuncionarioDetalheModal({
   funcionario: f,
@@ -472,7 +473,7 @@ export default function FuncionarioDetalheModal({
                 vezes — valor, PIX, se já foi pago; o histórico é uma consulta
                 mais rara, de fechamento. */}
             <div className="flex gap-1 px-6 pt-3 border-b border-slate-100 sticky top-[73px] bg-white z-10">
-              {(['dados', 'historico', 'cracha'] as const).map(a => (
+              {(['dados', 'historico', 'depoimento', 'cracha'] as const).map(a => (
                 <button
                   key={a}
                   onClick={() => abrirAba(a)}
@@ -482,7 +483,7 @@ export default function FuncionarioDetalheModal({
                       : 'border-transparent text-slate-400 hover:text-slate-600'
                   }`}
                 >
-                  {a === 'dados' ? 'Dados' : a === 'historico' ? 'Histórico de batidas' : 'Crachá'}
+                  {a === 'dados' ? 'Dados' : a === 'historico' ? 'Histórico de batidas' : a === 'depoimento' ? 'Depoimento' : 'Crachá'}
                 </button>
               ))}
             </div>
@@ -992,6 +993,8 @@ export default function FuncionarioDetalheModal({
                   <HistoricoBatidas h={historico} podeEditar={podeEditarPonto} role={role} onSalvo={recarregarHistorico} />
                 ) : null}
               </div>
+            ) : aba === 'depoimento' ? (
+              <DepoimentoColaborador funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} nome={f.nome} />
             ) : (
               <div className="p-6">
                 {carregandoCracha ? (

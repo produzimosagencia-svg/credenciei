@@ -54,6 +54,10 @@ import {
   type DecisoesEstrutura,
 } from './estrutura-regras'
 import { emLotes } from './lotes'
+import {
+  TAMANHO_MINIMO_DEPOIMENTO, TAMANHO_MAXIMO_DEPOIMENTO, TAMANHO_MINIMO_JUSTIFICATIVA,
+  resumirAvaliacoes, type Depoimento, type TipoDepoimento, type Avaliacao, type ResumoAvaliacoes,
+} from './depoimentos'
 import { podePassar } from './limite'
 import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
@@ -5924,13 +5928,32 @@ export async function bloquearCpf(
     organizacaoId: evento?.organizacao_id ?? undefined,
   }))
 
+  // Bloquear faz parte do comportamento da pessoa: entra no histórico dela,
+  // que vale para os próximos eventos (ver `gravarDepoimento`).
+  after(() => gravarDepoimentoAutomatico({
+    cpf, eventoId, tipo: 'bloqueio', autor: perfil!,
+    texto: `CPF bloqueado neste evento.${(motivo ?? '').trim() ? ` Motivo: ${(motivo ?? '').trim()}` : ' Sem motivo informado.'}`,
+  }))
+
   revalidatePath('/admin/bloquear-cpf')
   return { ok: true as const, cpf }
 }
 
-/** Desfaz o bloqueio. Mesma régua — quem pode bloquear pode liberar. */
-export async function desbloquearCpf(bloqueioId: string, eventoId: string) {
+/**
+ * Desfaz o bloqueio. Mesma régua — quem pode bloquear pode liberar.
+ *
+ * Liberar exige JUSTIFICATIVA (pedido do Juan, 06/10/2026): bloquear alguém
+ * é uma decisão tomada por um motivo, e desfazê-la sem dizer por quê apagaria
+ * esse motivo do histórico. A justificativa vai pra auditoria e pro histórico
+ * da pessoa (depoimento tipo 'desbloqueio').
+ */
+export async function desbloquearCpf(bloqueioId: string, eventoId: string, justificativa?: string) {
   const perfil = await exigirAcessoABloqueio(eventoId)
+
+  const motivoLiberacao = (justificativa ?? '').replace(/\s+/g, ' ').trim()
+  if (motivoLiberacao.length < TAMANHO_MINIMO_JUSTIFICATIVA) {
+    return { error: 'Informe a justificativa para liberar este CPF (pelo menos 5 letras).' }
+  }
 
   // O bloqueio tem que ser DESTE evento: sem isto, um id colado na chamada
   // liberaria o bloqueio de outro evento.
@@ -5950,12 +5973,295 @@ export async function desbloquearCpf(bloqueioId: string, eventoId: string) {
     acao: 'DESBLOQUEIO_CPF',
     campoAlterado: 'CPF liberado no evento',
     valorAnterior: alvo.cpf as string,
+    motivo: motivoLiberacao,
     eventoId,
     organizacaoId: evento?.organizacao_id ?? undefined,
+  }))
+  after(() => gravarDepoimentoAutomatico({
+    cpf: alvo.cpf as string, eventoId, tipo: 'desbloqueio', autor: perfil!,
+    texto: `CPF liberado neste evento. Justificativa: ${motivoLiberacao}`,
   }))
 
   revalidatePath('/admin/bloquear-cpf')
   return { ok: true as const }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEPOIMENTO DO COLABORADOR — o histórico de comportamento da PESSOA.
+// Guardado pelo CPF (não pelo cadastro de um evento), então vale para os
+// próximos eventos e sobrevive a bloqueio de CPF. Tabela e motivo do desenho:
+// supabase/upgrade-depoimentos-colaborador.sql.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Grava a linha, com o nome do evento/setor/autor COPIADOS (o evento pode ser apagado depois). */
+async function inserirDepoimento(d: {
+  cpf: string; nomeNaEpoca: string | null; funcionarioId: string | null
+  eventoId: string | null; setorNome: string | null; tipo: TipoDepoimento; texto: string
+  autor: { id: string; nome: string }
+}): Promise<{ ok: true } | { erro: string }> {
+  let eventoNome: string | null = null
+  let organizacaoId: string | null = null
+  if (d.eventoId) {
+    const { data: ev } = await supabaseAdmin.from('eventos').select('nome, organizacao_id').eq('id', d.eventoId).maybeSingle()
+    eventoNome = (ev?.nome as string | undefined) ?? null
+    organizacaoId = (ev?.organizacao_id as string | null | undefined) ?? null
+  }
+  const { error } = await supabaseAdmin.from('depoimentos_colaborador').insert([{
+    cpf: d.cpf, nome_na_epoca: d.nomeNaEpoca, funcionario_id: d.funcionarioId,
+    evento_id: d.eventoId, evento_nome: eventoNome, organizacao_id: organizacaoId, setor_nome: d.setorNome,
+    tipo: d.tipo, texto: d.texto, autor_id: d.autor.id, autor_nome: d.autor.nome,
+  }])
+  if (error) {
+    if (/depoimentos_colaborador/.test(error.message)) {
+      return { erro: 'O banco ainda não tem a tabela de depoimentos. Rode supabase/upgrade-depoimentos-colaborador.sql no SQL Editor.' }
+    }
+    return { erro: mensagemAmigavel(error) }
+  }
+  return { ok: true }
+}
+
+/**
+ * Bloqueio e liberação de CPF entram sozinhos no histórico da pessoa. Nunca
+ * derruba a ação que o chamou (já feita): falha só vai pro log.
+ */
+async function gravarDepoimentoAutomatico(a: {
+  cpf: string; eventoId: string; tipo: 'bloqueio' | 'desbloqueio'; texto: string; autor: { id: string; nome: string }
+}) {
+  try {
+    const { data: cad } = await supabaseAdmin
+      .from('funcionarios').select('id, nome, fornecedores!inner(nome, evento_id)')
+      .eq('cpf', a.cpf).eq('fornecedores.evento_id', a.eventoId).limit(1)
+    const f = cad?.[0] as { id: string; nome: string; fornecedores: { nome: string } } | undefined
+    const r = await inserirDepoimento({
+      cpf: a.cpf, nomeNaEpoca: f?.nome ?? null, funcionarioId: f?.id ?? null,
+      eventoId: a.eventoId, setorNome: (f?.fornecedores as unknown as { nome?: string } | undefined)?.nome ?? null,
+      tipo: a.tipo, texto: a.texto, autor: a.autor,
+    })
+    if ('erro' in r) console.error('[depoimento] automático não gravado:', r.erro)
+  } catch (e) {
+    console.error('[depoimento] falha ao gravar o automático', e)
+  }
+}
+
+/**
+ * Escreve um depoimento sobre o colaborador. Quem pode mexer na equipe do
+ * setor (`exigirAcessoFuncionarios`) pode escrever; o texto fica no histórico
+ * da PESSOA, e aparece nos próximos eventos dela.
+ */
+export async function adicionarDepoimento(
+  funcionarioId: string, fornecedorId: string, eventoId: string,
+  dados: { texto: string; tipo: string },
+): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    const texto = (dados.texto ?? '').replace(/[ \t]+\n/g, '\n').trim()
+    if (texto.length < TAMANHO_MINIMO_DEPOIMENTO) return { erro: 'Escreva o depoimento (pelo menos 3 letras).' }
+    if (texto.length > TAMANHO_MAXIMO_DEPOIMENTO) return { erro: `O depoimento passa de ${TAMANHO_MAXIMO_DEPOIMENTO} letras — resuma.` }
+    const tipo = (['positivo', 'neutro', 'atencao'] as const).find(t => t === dados.tipo) ?? 'neutro'
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('id, nome, cpf, fornecedor_id, fornecedores(nome)').eq('id', funcionarioId).maybeSingle()
+    if (!func || func.fornecedor_id !== fornecedorId) return { erro: 'Colaborador não encontrado neste fornecedor.' }
+
+    const r = await inserirDepoimento({
+      cpf: func.cpf as string, nomeNaEpoca: func.nome as string, funcionarioId,
+      eventoId, setorNome: (func.fornecedores as unknown as { nome?: string } | null)?.nome ?? null,
+      tipo, texto, autor: perfil,
+    })
+    if ('erro' in r) return r
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'DEPOIMENTO_COLABORADOR', campoAlterado: 'Depoimento',
+      valorNovo: texto.slice(0, 200), funcionarioId, eventoId,
+    }))
+    revalidatePath(`/admin/pessoas/${func.cpf}`)
+    return { ok: true as const }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * O evento já terminou? Avaliar a equipe é coisa de DEPOIS do evento (pedido do
+ * Juan, 06/10/2026) — antes, a nota seria palpite. O master pode a qualquer
+ * momento (ele acompanha e corrige).
+ */
+async function podeAvaliarAgora(
+  perfil: { role: string }, eventoId: string,
+): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  if (ehMaster(perfil.role)) return { ok: true }
+  const { data: ev } = await supabaseAdmin.from('eventos').select('data_inicio, data_fim, ativo').eq('id', eventoId).maybeSingle()
+  if (!ev) return { ok: false, motivo: 'Evento não encontrado.' }
+  const fim = (ev.data_fim ?? ev.data_inicio) as string | null
+  const terminou = ev.ativo === false || (!!fim && new Date(fim).getTime() < Date.now())
+  return terminou ? { ok: true } : { ok: false, motivo: 'A avaliação abre quando o evento terminar.' }
+}
+
+/** As notas da pessoa (todos os eventos) — o master vê todas, os demais só as da organização deste evento. */
+async function carregarAvaliacoes(cpf: string, funcionarioId: string, veTudo: boolean, orgDoEvento: string | null): Promise<{
+  avaliacoes: ResumoAvaliacoes; minhaNota: number | null
+}> {
+  try {
+    let q = supabaseAdmin.from('avaliacoes_colaborador')
+      .select('funcionario_id, nota, evento_nome, setor_nome, avaliador_nome, organizacao_id, atualizado_em')
+      .eq('cpf', cpf).order('atualizado_em', { ascending: false })
+    if (!veTudo && orgDoEvento) q = q.eq('organizacao_id', orgDoEvento)
+    const { data, error } = await q.limit(100)
+    if (error || !data) return { avaliacoes: resumirAvaliacoes([]), minhaNota: null }
+    const nomesOrg = new Map<string, string>()
+    if (veTudo) {
+      const ids = [...new Set(data.map(d => d.organizacao_id as string | null).filter((v): v is string => !!v))]
+      if (ids.length) {
+        const { data: orgs } = await supabaseAdmin.from('organizacoes').select('id, nome').in('id', ids)
+        for (const o of orgs ?? []) nomesOrg.set(o.id as string, o.nome as string)
+      }
+    }
+    const lista: Avaliacao[] = data.map(d => ({
+      nota: d.nota as number, eventoNome: (d.evento_nome as string | null) ?? null, setorNome: (d.setor_nome as string | null) ?? null,
+      avaliadorNome: d.avaliador_nome as string,
+      organizacaoNome: veTudo && d.organizacao_id ? (nomesOrg.get(d.organizacao_id as string) ?? null) : null,
+      atualizadoEm: d.atualizado_em as string,
+    }))
+    const minha = data.find(d => d.funcionario_id === funcionarioId)
+    return { avaliacoes: resumirAvaliacoes(lista), minhaNota: (minha?.nota as number | undefined) ?? null }
+  } catch {
+    return { avaliacoes: resumirAvaliacoes([]), minhaNota: null }
+  }
+}
+
+/**
+ * O supervisor (ou quem gerencia a equipe) dá de 1 a 5 estrelas ao colaborador
+ * neste evento — uma nota por pessoa por evento, que pode ser ajustada. Só
+ * depois do evento (o master, a qualquer momento).
+ */
+export async function avaliarColaborador(
+  funcionarioId: string, fornecedorId: string, eventoId: string, nota: number,
+): Promise<{ ok: true; nota: number } | { erro: string }> {
+  try {
+    const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    const n = Math.round(Number(nota))
+    if (!Number.isFinite(n) || n < 1 || n > 5) return { erro: 'A nota vai de 1 a 5 estrelas.' }
+
+    const pode = await podeAvaliarAgora(perfil, eventoId)
+    if (!pode.ok) return { erro: pode.motivo }
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('id, cpf, fornecedor_id, fornecedores(nome)').eq('id', funcionarioId).maybeSingle()
+    if (!func || func.fornecedor_id !== fornecedorId) return { erro: 'Colaborador não encontrado neste fornecedor.' }
+    const { data: ev } = await supabaseAdmin.from('eventos').select('nome, organizacao_id').eq('id', eventoId).maybeSingle()
+
+    const { error } = await supabaseAdmin.from('avaliacoes_colaborador').upsert([{
+      funcionario_id: funcionarioId, cpf: func.cpf as string, evento_id: eventoId,
+      evento_nome: (ev?.nome as string | undefined) ?? null, organizacao_id: (ev?.organizacao_id as string | null | undefined) ?? null,
+      setor_nome: (func.fornecedores as unknown as { nome?: string } | null)?.nome ?? null,
+      nota: n, avaliador_id: perfil.id, avaliador_nome: perfil.nome, atualizado_em: new Date().toISOString(),
+    }], { onConflict: 'funcionario_id' })
+    if (error) {
+      if (/avaliacoes_colaborador/.test(error.message)) {
+        return { erro: 'O banco ainda não tem a tabela de avaliações. Rode supabase/upgrade-depoimentos-colaborador.sql no SQL Editor.' }
+      }
+      return { erro: mensagemAmigavel(error) }
+    }
+    after(() => registrarAuditoria({
+      perfil, acao: 'AVALIACAO_COLABORADOR', campoAlterado: 'Nota (estrelas)',
+      valorNovo: `${n} de 5`, funcionarioId, eventoId,
+    }))
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/pessoas/${func.cpf}`)
+    return { ok: true as const, nota: n }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * As notas já dadas à equipe de um setor neste evento (`funcionarioId → nota`),
+ * pro painel "Avaliar equipe". Tolerante: sem a tabela, vem vazio.
+ */
+export async function notasDaEquipe(fornecedorId: string, eventoId: string): Promise<Record<string, number>> {
+  try {
+    await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    const { data } = await supabaseAdmin
+      .from('avaliacoes_colaborador').select('funcionario_id, nota, funcionarios!inner(fornecedor_id)')
+      .eq('evento_id', eventoId).eq('funcionarios.fornecedor_id', fornecedorId).limit(1000)
+    return Object.fromEntries((data ?? []).map(d => [d.funcionario_id as string, d.nota as number]))
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * O histórico de depoimentos da PESSOA deste colaborador (todos os eventos).
+ *
+ * O master enxerga tudo, de todas as organizações. Quem não é master vê só o
+ * que foi escrito na organização DESTE evento — o mesmo cuidado da Base de
+ * funcionários: o que um cliente escreve sobre a equipe dele não pode chegar
+ * ao concorrente.
+ */
+export async function listarDepoimentos(funcionarioId: string, fornecedorId: string, eventoId: string): Promise<
+  | {
+      ok: true; depoimentos: Depoimento[]; veTudo: boolean
+      /** As notas da pessoa em todos os eventos (mesma regra de visibilidade dos depoimentos). */
+      avaliacoes: ResumoAvaliacoes
+      /** A nota deste colaborador NESTE evento, e se esta pessoa pode dá-la/ajustá-la agora. */
+      minhaNota: number | null
+      podeAvaliar: boolean
+      motivoSemAvaliar: string | null
+    }
+  | { erro: string }
+> {
+  try {
+    const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('cpf, fornecedor_id').eq('id', funcionarioId).maybeSingle()
+    if (!func || func.fornecedor_id !== fornecedorId) return { erro: 'Colaborador não encontrado neste fornecedor.' }
+
+    const veTudo = ehMaster(perfil.role)
+    let orgDoEvento: string | null = null
+    let consulta = supabaseAdmin.from('depoimentos_colaborador')
+      .select('id, tipo, texto, autor_nome, evento_nome, setor_nome, organizacao_id, created_at')
+      .eq('cpf', func.cpf as string).order('created_at', { ascending: false }).order('id')
+    if (!veTudo) {
+      const { data: ev } = await supabaseAdmin.from('eventos').select('organizacao_id').eq('id', eventoId).maybeSingle()
+      const orgId = ev?.organizacao_id as string | null | undefined
+      if (!orgId) return { ok: true as const, depoimentos: [], veTudo, avaliacoes: resumirAvaliacoes([]), minhaNota: null, podeAvaliar: false, motivoSemAvaliar: null }
+      consulta = consulta.eq('organizacao_id', orgId)
+      orgDoEvento = orgId
+    }
+    const { data, error } = await consulta.limit(300)
+    if (error) {
+      // Migração pendente: a aba abre vazia, sem derrubar o resto.
+      if (/depoimentos_colaborador/.test(error.message)) {
+        return { ok: true as const, depoimentos: [], veTudo, avaliacoes: resumirAvaliacoes([]), minhaNota: null, podeAvaliar: false, motivoSemAvaliar: null }
+      }
+      return { erro: mensagemAmigavel(error) }
+    }
+
+    const { avaliacoes, minhaNota } = await carregarAvaliacoes(func.cpf as string, funcionarioId, veTudo, orgDoEvento)
+    const pode = await podeAvaliarAgora(perfil, eventoId)
+
+    const nomesOrg = new Map<string, string>()
+    if (veTudo) {
+      const ids = [...new Set((data ?? []).map(d => d.organizacao_id as string | null).filter((v): v is string => !!v))]
+      if (ids.length) {
+        const { data: orgs } = await supabaseAdmin.from('organizacoes').select('id, nome').in('id', ids)
+        for (const o of orgs ?? []) nomesOrg.set(o.id as string, o.nome as string)
+      }
+    }
+    return {
+      ok: true as const, veTudo, avaliacoes, minhaNota,
+      podeAvaliar: pode.ok, motivoSemAvaliar: pode.ok ? null : pode.motivo,
+      depoimentos: (data ?? []).map(d => ({
+        id: d.id as string, tipo: d.tipo as TipoDepoimento, texto: d.texto as string,
+        autorNome: d.autor_nome as string, eventoNome: (d.evento_nome as string | null) ?? null,
+        setorNome: (d.setor_nome as string | null) ?? null,
+        organizacaoNome: veTudo && d.organizacao_id ? (nomesOrg.get(d.organizacao_id as string) ?? null) : null,
+        criadoEm: d.created_at as string,
+      })),
+    }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
 }
 
 export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
@@ -10880,4 +11186,98 @@ export async function editarCargoFuncionario(
   after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
   return { ok: true as const }
+}
+
+// ─── Pesquisa dentro do evento ──────────────────────────────────────────────
+
+export type ResultadoBuscaEvento = {
+  tipo: 'subsetor' | 'setor' | 'supervisor' | 'colaborador'
+  /** Texto principal (nome do subsetor, do setor, do supervisor ou do colaborador). */
+  titulo: string
+  /** Onde a pessoa/setor está: "SUBSETOR › SETOR". */
+  contexto: string
+  /** Subsetor (subevento) onde o resultado mora — a tela usa pra filtrar os cartões. */
+  subeventoId: string | null
+  href: string
+}
+
+/**
+ * Pesquisa do evento: subsetor (subevento), setor (fornecedor), supervisor e
+ * colaborador, tudo por uma caixa só. Só leitura, restrita ao evento (e à
+ * organização de quem pergunta — mesma regra das escritas). Devolve `{ erro }`
+ * em vez de lançar: o Next mascara exceções de Server Action em produção.
+ */
+export async function buscarNoEvento(eventoId: string, termo: string): Promise<
+  { ok: true; resultados: ResultadoBuscaEvento[]; limitado: boolean } | { erro: string }
+> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    const q = chaveBusca(termo)
+    if (q.length < 2) return { ok: true, resultados: [], limitado: false }
+    const bate = (v: string | null | undefined) => chaveBusca(v).includes(q)
+
+    const [{ data: subs }, { data: forns }] = await Promise.all([
+      supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId).limit(500),
+      supabaseAdmin.from('fornecedores').select('id, nome, subevento_id').eq('evento_id', eventoId).limit(2000),
+    ])
+    const nomeSub = new Map((subs ?? []).map(s => [s.id as string, s.nome as string]))
+    const fornPorId = new Map((forns ?? []).map(f => [f.id as string, f]))
+    const contextoDe = (fornecedorId: string) => {
+      const f = fornPorId.get(fornecedorId)
+      const sub = f?.subevento_id ? nomeSub.get(f.subevento_id as string) : null
+      return { sub: (f?.subevento_id as string | null) ?? null, texto: [sub, f?.nome as string | undefined].filter(Boolean).join(' › ') }
+    }
+    const hrefSetor = (fid: string) => `/admin/eventos/${eventoId}/fornecedor/${fid}`
+
+    const out: ResultadoBuscaEvento[] = []
+
+    for (const s of subs ?? []) {
+      if (bate(s.nome as string)) {
+        out.push({ tipo: 'subsetor', titulo: s.nome as string, contexto: 'Subevento', subeventoId: s.id as string, href: `/admin/eventos/${eventoId}/subevento/${s.id}` })
+      }
+    }
+    for (const f of forns ?? []) {
+      if (bate(f.nome as string)) {
+        const c = contextoDe(f.id as string)
+        out.push({ tipo: 'setor', titulo: f.nome as string, contexto: c.sub ? (nomeSub.get(c.sub) ?? 'Setor') : 'Setor', subeventoId: c.sub, href: hrefSetor(f.id as string) })
+      }
+    }
+
+    // Supervisores: um por setor que cobre (quem cobre três setores aparece nos três).
+    const fornecedorIds = (forns ?? []).map(f => f.id as string)
+    const vinculos: { fornecedor_id: string; nome: string }[] = []
+    for (const lote of emLotes(fornecedorIds, 200)) {
+      const { data } = await supabaseAdmin
+        .from('supervisor_setores').select('fornecedor_id, perfis!inner(nome)').in('fornecedor_id', lote)
+      for (const v of (data ?? []) as unknown as { fornecedor_id: string; perfis: { nome: string } }[]) {
+        if (v.perfis?.nome) vinculos.push({ fornecedor_id: v.fornecedor_id, nome: v.perfis.nome })
+      }
+    }
+    for (const v of vinculos) {
+      if (!bate(v.nome)) continue
+      const c = contextoDe(v.fornecedor_id)
+      out.push({ tipo: 'supervisor', titulo: v.nome, contexto: c.texto || 'Setor', subeventoId: c.sub, href: hrefSetor(v.fornecedor_id) })
+    }
+
+    // Colaboradores: o nome é gravado em maiúsculas, mas o termo pode vir com
+    // acento diferente — pesquisa no banco pelo trecho e confere com `bate`.
+    const digitos = termo.replace(/\D/g, '')
+    const porCpf = digitos.length >= 3
+    const trecho = termo.trim().replace(/[%,()]/g, ' ')
+    let consulta = supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, fornecedor_id, fornecedores!inner(evento_id)')
+      .eq('fornecedores.evento_id', eventoId)
+    consulta = porCpf ? consulta.like('cpf', `%${digitos}%`) : consulta.ilike('nome', `%${trecho}%`)
+    const { data: pessoas } = await consulta.order('nome').order('id').limit(40)
+    for (const p of pessoas ?? []) {
+      const c = contextoDe(p.fornecedor_id as string)
+      out.push({ tipo: 'colaborador', titulo: p.nome as string, contexto: c.texto || 'Setor', subeventoId: c.sub, href: hrefSetor(p.fornecedor_id as string) })
+    }
+
+    const LIMITE = 60
+    return { ok: true, resultados: out.slice(0, LIMITE), limitado: out.length > LIMITE }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
 }

@@ -2,7 +2,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   CalendarDays, Building2, Briefcase, MapPin, Phone, MessageCircle, IdCard, CalendarPlus,
-  ShieldCheck, ShieldAlert, UserPlus,
+  ShieldCheck, ShieldAlert, UserPlus, MessageSquareText,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
@@ -12,6 +12,8 @@ import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import AtribuirEvento from './AtribuirEvento'
 import EditarDadosPessoa from './EditarDadosPessoa'
+import ListaDepoimentos, { ResumoDeNotas } from '@/components/ListaDepoimentos'
+import { resumirAvaliacoes, type Avaliacao, type Depoimento, type TipoDepoimento } from '@/lib/depoimentos'
 
 export const revalidate = 0
 
@@ -55,6 +57,39 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
     .order('created_at', { ascending: false })
 
   if (!cadastros?.length) notFound()
+
+  /*
+   * Histórico de comportamento: depoimentos e notas de TODOS os eventos e
+   * organizações (esta ficha é só do master). Tolerante: sem a migração
+   * (tabelas ainda não criadas) as listas vêm vazias e o resto da ficha abre.
+   */
+  const [{ data: depoimentosBrutos }, { data: avaliacoesBrutas }] = await Promise.all([
+    supabaseAdmin.from('depoimentos_colaborador')
+      .select('id, tipo, texto, autor_nome, evento_nome, setor_nome, organizacao_id, created_at')
+      .eq('cpf', cpf).order('created_at', { ascending: false }).order('id').limit(300),
+    supabaseAdmin.from('avaliacoes_colaborador')
+      .select('nota, evento_nome, setor_nome, avaliador_nome, organizacao_id, atualizado_em')
+      .eq('cpf', cpf).order('atualizado_em', { ascending: false }).limit(100),
+  ])
+  const idsOrg = [...new Set([...(depoimentosBrutos ?? []), ...(avaliacoesBrutas ?? [])]
+    .map(d => d.organizacao_id as string | null).filter((v): v is string => !!v))]
+  const nomesOrg = new Map<string, string>()
+  if (idsOrg.length) {
+    const { data: orgs } = await supabaseAdmin.from('organizacoes').select('id, nome').in('id', idsOrg)
+    for (const o of orgs ?? []) nomesOrg.set(o.id as string, o.nome as string)
+  }
+  const nomeOrg = (id: unknown) => (id ? nomesOrg.get(id as string) ?? null : null)
+  const depoimentos: Depoimento[] = (depoimentosBrutos ?? []).map(d => ({
+    id: d.id as string, tipo: d.tipo as TipoDepoimento, texto: d.texto as string,
+    autorNome: d.autor_nome as string, eventoNome: (d.evento_nome as string | null) ?? null,
+    setorNome: (d.setor_nome as string | null) ?? null,
+    organizacaoNome: nomeOrg(d.organizacao_id), criadoEm: d.created_at as string,
+  }))
+  const resumoNotas = resumirAvaliacoes((avaliacoesBrutas ?? []).map((d): Avaliacao => ({
+    nota: d.nota as number, eventoNome: (d.evento_nome as string | null) ?? null,
+    setorNome: (d.setor_nome as string | null) ?? null, avaliadorNome: d.avaliador_nome as string,
+    organizacaoNome: nomeOrg(d.organizacao_id), atualizadoEm: d.atualizado_em as string,
+  })))
 
   // Todos os registros de presença desta pessoa, de uma vez.
   const { data: registros } = await supabaseAdmin
@@ -191,6 +226,16 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
           setores={setoresOpcoes}
           jaNosEventos={jaNosEventos}
         />
+      </Secao>
+
+      <Secao
+        titulo="Depoimentos e notas"
+        descricao="Histórico de comportamento em todos os eventos"
+        icone={<MessageSquareText className="w-3.5 h-3.5" />}
+        corpoClassName="p-4 space-y-4"
+      >
+        <ResumoDeNotas resumo={resumoNotas} mostrarOrganizacao />
+        <ListaDepoimentos depoimentos={depoimentos} mostrarOrganizacao />
       </Secao>
 
       <Secao

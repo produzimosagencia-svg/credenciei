@@ -1,9 +1,9 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle } from 'lucide-react'
-import { criarSubevento, editarSubevento, excluirSubevento, mesclarSubeventos } from '@/lib/actions'
+import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle, Search, Users, UserCog, Layers, Building2 } from 'lucide-react'
+import { criarSubevento, editarSubevento, excluirSubevento, mesclarSubeventos, buscarNoEvento, type ResultadoBuscaEvento } from '@/lib/actions'
 import { mesmoNome, nomesParecem } from '@/lib/estrutura-regras'
 import { NomeMaiusculoInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -30,6 +30,32 @@ export default function SubeventosCard({
   subeventos: Subevento[]
   contagens?: Record<string, Contagem>
 }) {
+  // Pesquisa do evento (subsetor, setor, supervisor, colaborador). Os hooks
+  // ficam antes do `return` da lista enxuta pra respeitar a ordem dos hooks.
+  const [termo, setTermo] = useState('')
+  // O resultado guarda o termo a que responde: se o texto mudou, ele já não vale (sem setState síncrono no efeito).
+  const [resposta, setResposta] = useState<{ termo: string; achados: ResultadoBuscaEvento[] | null; limitado: boolean; erro: string | null } | null>(null)
+  const termoLimpo = termo.trim()
+  const buscaAtiva = termoLimpo.length >= 2
+  const respostaAtual = buscaAtiva && resposta?.termo === termoLimpo ? resposta : null
+  const achados = respostaAtual?.achados ?? null
+  const limitado = respostaAtual?.limitado ?? false
+  const erroBusca = respostaAtual?.erro ?? null
+  const buscando = buscaAtiva && !respostaAtual
+
+  useEffect(() => {
+    if (termoLimpo.length < 2) return
+    let vivo = true
+    const t = setTimeout(async () => {
+      const r = await buscarNoEvento(eventoId, termoLimpo)
+      if (!vivo) return
+      setResposta('erro' in r
+        ? { termo: termoLimpo, achados: null, limitado: false, erro: r.erro }
+        : { termo: termoLimpo, achados: r.resultados, limitado: r.limitado, erro: null })
+    }, 300)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [termoLimpo, eventoId])
+
   if (!contagens) {
     // Modo lista enxuta (não usado na visão principal atual, mantido por
     // segurança caso o componente volte a ser embutido como seção pequena).
@@ -61,6 +87,10 @@ export default function SubeventosCard({
     )
   }
 
+  // Com a pesquisa ativa, só ficam os cartões dos subsetores onde algo foi achado.
+  const idsAchados = achados ? new Set(achados.map(a => a.subeventoId).filter((v): v is string => !!v)) : null
+  const subeventosVisiveis = idsAchados ? subeventos.filter(sv => idsAchados.has(sv.id)) : subeventos
+
   return (
     <div className="space-y-6">
       {/*
@@ -79,6 +109,13 @@ export default function SubeventosCard({
         <SubeventoModal mode="criar" eventoId={eventoId} />
       </div>
 
+      {subeventos.length > 0 && (
+        <BuscaDoEvento
+          termo={termo} onTermo={setTermo}
+          achados={achados} limitado={limitado} erro={erroBusca} buscando={buscando}
+        />
+      )}
+
       {subeventos.length === 0 ? (
         <EmptyState
           icone={<CalendarRange className="w-7 h-7" />}
@@ -94,7 +131,7 @@ export default function SubeventosCard({
          * `.evento-vivo-selo`/`.ponto-vivo` (app/globals.css), não duplica CSS.
          */
         <div className={`grid gap-4 ${subeventos.length > 1 ? 'lg:grid-cols-2' : ''}`}>
-          {subeventos.map(s => {
+          {subeventosVisiveis.map(s => {
             const c = contagens[s.id] ?? { fornecedores: 0, equipe: 0 }
             // Áreas que provavelmente são a MESMA (nome escrito de outro jeito ou com erro de digitação).
             const duplicadaDe = subeventos.filter(o => o.id !== s.id && (mesmoNome(o.nome, s.nome) || nomesParecem(o.nome, s.nome)))
@@ -144,6 +181,79 @@ export default function SubeventosCard({
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const ICONE_BUSCA: Record<ResultadoBuscaEvento['tipo'], React.ReactNode> = {
+  subsetor: <Layers className="w-3.5 h-3.5" />,
+  setor: <Building2 className="w-3.5 h-3.5" />,
+  supervisor: <UserCog className="w-3.5 h-3.5" />,
+  colaborador: <Users className="w-3.5 h-3.5" />,
+}
+const ROTULO_BUSCA: Record<ResultadoBuscaEvento['tipo'], string> = {
+  subsetor: 'Subsetor', setor: 'Setor', supervisor: 'Supervisor', colaborador: 'Colaborador',
+}
+
+/** A caixa de pesquisa e a lista de resultados; quem busca é o SubeventosCard. */
+function BuscaDoEvento({ termo, onTermo, achados, limitado, erro, buscando }: {
+  termo: string
+  onTermo: (v: string) => void
+  achados: ResultadoBuscaEvento[] | null
+  limitado: boolean
+  erro: string | null
+  buscando: boolean
+}) {
+  const ativo = termo.trim().length >= 2
+  return (
+    <div className="relative z-10 space-y-3">
+      <div className="relative">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="search" value={termo} onChange={e => onTermo(e.target.value)}
+          placeholder="Pesquisar setor, colaborador, supervisor ou subsetor"
+          className="input w-full pl-10 pr-10" autoComplete="off"
+          aria-label="Pesquisar no evento"
+        />
+        {termo && (
+          <button
+            type="button" onClick={() => onTermo('')} aria-label="Limpar pesquisa"
+            className="btn-press absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {ativo && (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+          {erro ? (
+            <p className="text-red-500 text-sm p-4">{erro}</p>
+          ) : achados === null || buscando ? (
+            <p className="text-slate-400 text-sm p-4">Pesquisando…</p>
+          ) : achados.length === 0 ? (
+            <p className="text-slate-500 text-sm p-4">Nada encontrado para “{termo.trim()}”.</p>
+          ) : (
+            <>
+              <ul className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
+                {achados.map((a, i) => (
+                  <li key={`${a.tipo}-${a.href}-${a.titulo}-${i}`}>
+                    <Link href={a.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                      <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">{ICONE_BUSCA[a.tipo]}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-slate-800 text-sm font-semibold truncate">{a.titulo}</span>
+                        <span className="block text-slate-400 text-2xs truncate">{ROTULO_BUSCA[a.tipo]} · {a.contexto}</span>
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {limitado && <p className="text-slate-400 text-2xs px-4 py-2 border-t border-slate-100">Mostrando os primeiros resultados — refine a pesquisa pra ver os demais.</p>}
+            </>
+          )}
         </div>
       )}
     </div>
