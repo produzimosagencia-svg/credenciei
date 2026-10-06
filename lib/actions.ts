@@ -59,7 +59,7 @@ import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
-import { sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
+import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
@@ -2026,12 +2026,16 @@ export async function solicitarRecuperacaoSenha(cpfBruto: string): Promise<{ ok:
           evento: (evento as { nome?: string } | null)?.nome ?? 'Credenciei',
           setor: ROLE_LABELS[perfil.role as Role] ?? 'Acesso',
         })
-        await agendarTemplateSupervisor({
+        const mensagemId = await agendarTemplateSupervisor({
           eventoId,
           telefone: perfil.telefone as string,
           template: 'recuperar_senha_cpf_link',
           parametros: [perfil.nome as string, linkSenha],
         })
+        // Sai AGORA, depois da resposta: quem pede a senha está olhando a tela
+        // e não pode esperar o ciclo de 1 minuto da fila. Se falhar, a fila
+        // normal tenta de novo (ver `enviarMensagemAgora`).
+        if (mensagemId) after(() => enviarMensagemAgora(mensagemId).catch(e => console.error('[recuperar-senha] envio imediato falhou', e)))
       }
     }
   } catch (e) {

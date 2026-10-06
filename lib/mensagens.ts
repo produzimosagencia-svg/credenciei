@@ -1253,11 +1253,11 @@ export async function agendarTemplateSupervisor(params: {
   telefone: string
   template: 'cadastro_supervisor_cpf_link' | 'supervisor_escalado_evento' | 'recuperar_senha_cpf_link'
   parametros: string[]
-}): Promise<void> {
+}): Promise<string | null> {
   const telefone = params.telefone.replace(/\D/g, '')
-  if (!telefone) return
+  if (!telefone) return null
   const agora = new Date()
-  const { error } = await supabase.from('mensagens_agendadas').insert({
+  const { data, error } = await supabase.from('mensagens_agendadas').insert({
     evento_id: params.eventoId,
     tipo: 'disparo_manual',
     data_ref: agora.toISOString().slice(0, 10),
@@ -1269,8 +1269,35 @@ export async function agendarTemplateSupervisor(params: {
       template: params.template,
       parametros: params.parametros,
     }),
-  })
+  }).select('id').single()
   if (error) throw new Error(`Não foi possível agendar a mensagem do supervisor: ${error.message}`)
+  return (data?.id as string | undefined) ?? null
+}
+
+/**
+ * Envia UMA mensagem já enfileirada AGORA, sem esperar o próximo ciclo da fila.
+ *
+ * Para o que alguém está esperando olhando a tela — recuperação de senha
+ * (06/10/2026: pedida às 20:47:25, enviada às 20:48:39, porque a fila só
+ * esvazia uma vez por minuto; quem pede a senha acha que não chegou e pede de
+ * novo). A mensagem continua sendo uma linha da fila, com histórico e nova
+ * tentativa se falhar: isto só adianta a primeira.
+ *
+ * Reivindica do mesmo jeito que `processarFilaMensagens` (UPDATE condicional
+ * por status), então se o ciclo da fila chegar junto, só um dos dois envia —
+ * nunca duas mensagens.
+ */
+export async function enviarMensagemAgora(id: string): Promise<void> {
+  if (process.env.WHATSAPP_PAUSADO === 'true') return
+  const { data: claimados } = await supabase
+    .from('mensagens_agendadas')
+    .update({ status: 'enviando' })
+    .eq('id', id)
+    .eq('status', 'pendente')
+    .select('*')
+  const msg = claimados?.[0]
+  if (!msg) return // a fila já pegou
+  await enviarUma(msg)
 }
 
 /**

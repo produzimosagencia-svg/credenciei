@@ -40,5 +40,13 @@ const esc = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
 ok(esc.includes("origemDaPessoa === 'supervisor') return { ok: true }"), 'o crachá do supervisor não ocupa nem sofre a trava')
 ok(esc.includes('if (erroContagem) return { ok: true }'), 'erro de leitura não tranca o portão')
 
+console.log('\n\x1b[1m4 · Recuperação de senha sai na hora\x1b[0m')
+const recup = trecho('export async function solicitarRecuperacaoSenha', 2600)
+ok(recup.includes('enviarMensagemAgora(mensagemId)') && recup.includes('after('), 'o envio imediato roda depois da resposta (after), sem travar a tela')
+const msgs = readFileSync(new URL('../lib/mensagens.ts', import.meta.url), 'utf8')
+const agora = msgs.slice(msgs.indexOf('export async function enviarMensagemAgora'), msgs.indexOf('export async function enviarMensagemAgora') + 900)
+ok(agora.includes(".eq('status', 'pendente')") && agora.includes("status: 'enviando'"), 'reivindica pelo status — se a fila chegar junto, só um envia (nunca duas mensagens)')
+ok(agora.includes('WHATSAPP_PAUSADO'), 'respeita o interruptor de emergência do WhatsApp')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
