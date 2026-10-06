@@ -19,10 +19,10 @@ export default function AoVivo({ intervaloMs = 8000 }: { intervaloMs?: number })
   }, [intervaloMs, router])
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-2xs font-medium text-green-700" title="Atualização automática ligada">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-2xs font-semibold text-emerald-300" title="Atualização automática ligada">
       <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
       </span>
       Ao vivo
     </span>

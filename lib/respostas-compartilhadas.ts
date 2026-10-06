@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createHash, randomBytes } from 'node:crypto'
+import { cache } from 'react'
 import { supabaseAdmin } from './supabase-server'
 
 /**
@@ -113,7 +114,11 @@ type Leitura =
   | { valido: false; motivo: 'invalido' | 'expirado' }
   | { valido: true; estado: EstadoCompartilhamento; chave: string }
 
-export async function lerCompartilhamento(token: string): Promise<Leitura> {
+/**
+ * Lido uma vez por requisição: a moldura da página e a conversa aberta pedem o
+ * mesmo link, e sem isto seriam duas idas ao banco para a mesma linha.
+ */
+export const lerCompartilhamento = cache(async (token: string): Promise<Leitura> => {
   const chave = chaveDoToken(token)
   if (!chave) return { valido: false, motivo: 'invalido' }
 
@@ -122,7 +127,7 @@ export async function lerCompartilhamento(token: string): Promise<Leitura> {
   if (!estado?.campanhas?.length) return { valido: false, motivo: 'invalido' }
   if (new Date(estado.expira_em).getTime() <= Date.now()) return { valido: false, motivo: 'expirado' }
   return { valido: true, estado, chave }
-}
+})
 
 /**
  * De uma relação de telefones, quais receberam um dos disparos do link, e com
@@ -236,10 +241,15 @@ export async function conversasCompartilhadas(token: string): Promise<Compartilh
  * do número da empresa.
  */
 export async function telefoneDoCompartilhamento(estado: EstadoCompartilhamento, telefone: string): Promise<boolean> {
+  return (await nomeNoCompartilhamento(estado, telefone)) !== null
+}
+
+/** O nome com que o número estava na lista do disparo; `null` se não estava nela. */
+async function nomeNoCompartilhamento(estado: EstadoCompartilhamento, telefone: string): Promise<string | null> {
   const digitos = telefone.replace(/\D/g, '')
-  if (digitos.length < 12 || digitos.length > 13) return false
+  if (digitos.length < 12 || digitos.length > 13) return null
   const nomes = await quemEstaNosDisparos(estado, [digitos])
-  return nomes.has(chaveTelefone(digitos))
+  return nomes.get(chaveTelefone(digitos)) ?? null
 }
 
 export type ClasseDeMidia = 'imagem' | 'figurinha' | 'audio' | 'video' | 'documento'
@@ -268,19 +278,28 @@ type BrutoDaMeta = Record<string, { id?: string; caption?: string; filename?: st
 const PRIORIDADE_STATUS: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4 }
 
 /**
- * As mensagens de uma conversa do link, ou `null` se o número não pertence a ele.
+ * Uma conversa do link, ou `null` se o número não pertence a ele ou a pessoa
+ * não respondeu.
  *
  * Lê o registro cru da Meta em vez de reaproveitar a leitura da aba Conversas:
  * o webhook só grava em `texto` o corpo de mensagem de texto, então foto,
  * figurinha, áudio, legenda e reação só existem dentro de `bruto`.
  */
-export async function conversaCompartilhada(estado: EstadoCompartilhamento, telefone: string): Promise<MensagemCompartilhada[] | null> {
-  if (!await telefoneDoCompartilhamento(estado, telefone)) return null
+export type ConversaAberta = {
+  nome: string
+  /** Dá para responder com texto livre? Só dentro de 24h da última recebida. */
+  janelaAberta: boolean
+  mensagens: MensagemCompartilhada[]
+}
+
+export async function conversaCompartilhada(estado: EstadoCompartilhamento, telefone: string): Promise<ConversaAberta | null> {
+  const nomeDaLista = await nomeNoCompartilhamento(estado, telefone)
+  if (nomeDaLista === null) return null
 
   // Conversa mais antiga que o disparo, se houver, é de outro assunto.
   const { data: eventos } = await supabaseAdmin
     .from('whatsapp_eventos')
-    .select('id, direcao, tipo, texto, ocorrido_em, wa_message_id, bruto')
+    .select('id, direcao, tipo, texto, nome_contato, ocorrido_em, wa_message_id, bruto')
     .eq('telefone', telefone.replace(/\D/g, ''))
     .in('direcao', ['recebida', 'enviada'])
     .gte('ocorrido_em', estado.desde)
@@ -309,7 +328,11 @@ export async function conversaCompartilhada(estado: EstadoCompartilhamento, tele
     statusPorId.set(id, { tipo, erro: err ? `${err.code}: ${err.title ?? ''}` : null })
   }
 
-  return (eventos ?? []).map(e => {
+  const recebidas = (eventos ?? []).filter(e => e.direcao === 'recebida')
+  const ultimaRecebida = recebidas.at(-1)
+  if (!ultimaRecebida) return null
+
+  const mensagens = (eventos ?? []).map((e): MensagemCompartilhada => {
     const tipo = e.tipo as string
     const bruto = e.bruto as BrutoDaMeta
     const parte = bruto?.[tipo]
@@ -327,6 +350,12 @@ export async function conversaCompartilhada(estado: EstadoCompartilhamento, tele
       erro: st?.erro ?? null,
     }
   })
+
+  return {
+    nome: nomeDaLista || nomeLegivel(recebidas.find(e => nomeLegivel(e.nome_contato as string | null))?.nome_contato as string | null),
+    janelaAberta: new Date(ultimaRecebida.ocorrido_em as string).getTime() > Date.now() - JANELA_H * 60 * 60 * 1000,
+    mensagens,
+  }
 }
 
 export type MidiaCompartilhada = { corpo: ReadableStream<Uint8Array>; mime: string; tamanho: string | null; nome: string | null }

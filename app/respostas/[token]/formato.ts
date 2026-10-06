@@ -39,3 +39,22 @@ const ROTULO_DO_TIPO: Record<string, string> = {
 export function rotuloSemTexto(tipo: string): string {
   return ROTULO_DO_TIPO[tipo] ?? '(mensagem sem texto)'
 }
+
+/*
+ * Cor do círculo de cada conversa. Sai do telefone, e não da posição na lista,
+ * para a mesma pessoa ter sempre a mesma cor mesmo quando a lista reordena.
+ */
+const CORES_DO_CIRCULO = [
+  'from-[#ff7a45] to-[#e33c06]',
+  'from-[#8b7bff] to-[#5a46e8]',
+  'from-[#34d399] to-[#0f9f72]',
+  'from-[#38bdf8] to-[#1d7fd6]',
+  'from-[#f472b6] to-[#d1347f]',
+  'from-[#fbbf24] to-[#d97b06]',
+]
+
+export function corDoCirculo(telefone: string): string {
+  let soma = 0
+  for (const digito of telefone.replace(/\D/g, '')) soma = (soma * 31 + Number(digito)) % 9973
+  return CORES_DO_CIRCULO[soma % CORES_DO_CIRCULO.length]
+}

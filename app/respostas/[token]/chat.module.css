@@ -1,0 +1,62 @@
+/*
+ * Movimento do atendimento compartilhado. Tudo curto e discreto: quem atende
+ * passa horas nesta tela, e animação longa vira espera.
+ */
+
+.entrarRecebida { animation: entrarRecebida 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.entrarEnviada { animation: entrarEnviada 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.surgir { animation: surgir 220ms ease-out both; }
+.item { animation: surgir 260ms ease-out both; }
+
+@keyframes entrarRecebida {
+  from { opacity: 0; transform: translate(-12px, 6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes entrarEnviada {
+  from { opacity: 0; transform: translate(12px, 6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes surgir {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Fundo da conversa: brilho da marca bem fraco, para a área não ficar chapada. */
+.fundo {
+  background-color: #0c0b18;
+  background-image:
+    radial-gradient(60rem 28rem at 110% -10%, rgba(255, 74, 15, 0.10), transparent 60%),
+    radial-gradient(40rem 24rem at -10% 110%, rgba(90, 80, 255, 0.07), transparent 60%);
+}
+
+/* Faixa de luz que percorre os blocos enquanto a conversa carrega. */
+.esqueleto {
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.05) 30%, rgba(255, 255, 255, 0.11) 50%, rgba(255, 255, 255, 0.05) 70%);
+  background-size: 200% 100%;
+  animation: brilho 1.3s linear infinite;
+}
+@keyframes brilho {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Barra fina no topo da lista enquanto a conversa clicada ainda não abriu. */
+.progresso {
+  background: linear-gradient(90deg, transparent, #ff6a2b, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: correr 900ms ease-in-out infinite;
+}
+@keyframes correr {
+  from { background-position: -50% 0; }
+  to { background-position: 150% 0; }
+}
+
+.rolagem { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+.rolagem::-webkit-scrollbar { width: 8px; }
+.rolagem::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 8px; }
+.rolagem::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); }
+
+@media (prefers-reduced-motion: reduce) {
+  .entrarRecebida, .entrarEnviada, .surgir, .item, .esqueleto, .progresso { animation: none; }
+}
