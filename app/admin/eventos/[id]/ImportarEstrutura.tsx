@@ -6,7 +6,7 @@ import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Upload, X } from 
 import { previaImportacaoEstrutura, importarEstruturaLote } from '@/lib/actions'
 import { lerPlanilhaDeEstrutura } from '@/lib/planilha'
 import { listarDias } from '@/lib/escala-regras'
-import type { LinhaEstrutura, PlanoEstrutura, ResultadoLinhaEstrutura } from '@/lib/estrutura-regras'
+import type { LinhaEstrutura, PlanoEstrutura, ResultadoLinhaEstrutura, DecisoesEstrutura } from '@/lib/estrutura-regras'
 import { Badge } from '@/components/ui/Superficie'
 
 /**
@@ -26,7 +26,7 @@ const LEVA = 5
 
 type Etapa =
   | { tipo: 'arquivo' }
-  | { tipo: 'previa'; linhas: LinhaEstrutura[]; plano: PlanoEstrutura }
+  | { tipo: 'previa'; linhas: LinhaEstrutura[]; plano: PlanoEstrutura; decisoes: DecisoesEstrutura }
   | { tipo: 'gravando'; feitas: number; total: number }
   | { tipo: 'fim'; plano: PlanoEstrutura; resultados: ResultadoLinhaEstrutura[] }
 
@@ -62,7 +62,7 @@ function Modal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void 
       if (!linhas.length) { setErro('A planilha não tem nenhuma linha preenchida.'); return }
       const r = await previaImportacaoEstrutura(eventoId, linhas)
       if (!r.ok) { setErro(r.error); return }
-      setEtapa({ tipo: 'previa', linhas, plano: r.plano })
+      setEtapa({ tipo: 'previa', linhas, plano: r.plano, decisoes: {} })
     } catch {
       setErro('Não consegui ler este arquivo. Confira se é uma planilha .xlsx, .xls ou .csv.')
     } finally {
@@ -71,7 +71,22 @@ function Modal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void 
     }
   }
 
-  const confirmar = async (linhas: LinhaEstrutura[], plano: PlanoEstrutura) => {
+  /** A pessoa trocou "usar a existente" por "criar área nova" (ou o contrário): refaz a prévia com a escolha. */
+  const decidir = async (linhas: LinhaEstrutura[], decisoes: DecisoesEstrutura) => {
+    setErro(null)
+    setLendo(true)
+    try {
+      const r = await previaImportacaoEstrutura(eventoId, linhas, decisoes)
+      if (!r.ok) { setErro(r.error); return }
+      setEtapa({ tipo: 'previa', linhas, plano: r.plano, decisoes })
+    } catch {
+      setErro('Não consegui atualizar a prévia — confira a internet e tente de novo.')
+    } finally {
+      setLendo(false)
+    }
+  }
+
+  const confirmar = async (linhas: LinhaEstrutura[], plano: PlanoEstrutura, decisoes: DecisoesEstrutura) => {
     const aGravar = plano.linhas.filter(l => l.acao !== 'erro').map(l => l.linha)
     const resultados: ResultadoLinhaEstrutura[] = plano.linhas
       .filter(l => l.acao === 'erro').map(l => ({ linha: l.linha, acao: 'erro' as const, erro: l.erros.join(' ') }))
@@ -79,7 +94,7 @@ function Modal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void 
     setEtapa({ tipo: 'gravando', feitas: 0, total: aGravar.length })
     for (let i = 0; i < aGravar.length; i += LEVA) {
       try {
-        const r = await importarEstruturaLote(eventoId, linhas, aGravar.slice(i, i + LEVA))
+        const r = await importarEstruturaLote(eventoId, linhas, aGravar.slice(i, i + LEVA), decisoes)
         if (!r.ok) {
           resultados.push(...aGravar.slice(i, i + LEVA).map(linha => ({ linha, acao: 'erro' as const, erro: r.error })))
         } else resultados.push(...r.resultados)
@@ -139,9 +154,10 @@ function Modal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void 
 
         {etapa.tipo === 'previa' && (
           <Previa
-            plano={etapa.plano} soErros={soErros} onSoErros={setSoErros}
+            plano={etapa.plano} soErros={soErros} onSoErros={setSoErros} ocupado={lendo}
             onVoltar={() => setEtapa({ tipo: 'arquivo' })}
-            onConfirmar={() => confirmar(etapa.linhas, etapa.plano)}
+            onDecidir={(chave, decisao) => decidir(etapa.linhas, { ...etapa.decisoes, [chave]: decisao })}
+            onConfirmar={() => confirmar(etapa.linhas, etapa.plano, etapa.decisoes)}
           />
         )}
 
@@ -177,9 +193,9 @@ function Numero({ rotulo, valor, tom = 'text-slate-800' }: { rotulo: string; val
   )
 }
 
-function Previa({ plano, soErros, onSoErros, onVoltar, onConfirmar }: {
-  plano: PlanoEstrutura; soErros: boolean; onSoErros: (v: boolean) => void
-  onVoltar: () => void; onConfirmar: () => void
+function Previa({ plano, soErros, onSoErros, ocupado, onVoltar, onDecidir, onConfirmar }: {
+  plano: PlanoEstrutura; soErros: boolean; onSoErros: (v: boolean) => void; ocupado: boolean
+  onVoltar: () => void; onDecidir: (chave: string, decisao: 'usar' | 'novo') => void; onConfirmar: () => void
 }) {
   const c = plano.contagens
   const validas = plano.linhas.length - c.linhasComErro
@@ -195,6 +211,42 @@ function Previa({ plano, soErros, onSoErros, onVoltar, onConfirmar }: {
         <Numero rotulo="Supervisores existentes" valor={c.supervisoresExistentes} />
         <Numero rotulo="Com vários setores" valor={c.supervisoresMultiplos} />
       </div>
+
+      {/* Nomes de área que o sistema entendeu sozinho — nada a decidir, só a transparência. */}
+      {plano.reconhecidos.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-800 space-y-1">
+          <p className="font-semibold">Reconheci áreas escritas de outro jeito — não vou criar duplicadas:</p>
+          {plano.reconhecidos.map(n => (
+            <p key={n.nomeNaPlanilha}>&quot;{n.nomeNaPlanilha}&quot; → <strong>{n.nomeUsado}</strong></p>
+          ))}
+        </div>
+      )}
+
+      {/* Nome PARECIDO (provável erro de digitação): sugere a existente, a pessoa decide. */}
+      {plano.parecidos.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-900 space-y-2.5">
+          <p className="font-semibold">Estes nomes são parecidos com áreas que já existem — confira:</p>
+          {plano.parecidos.map(n => (
+            <div key={n.chave} className="space-y-1.5">
+              <p>&quot;{n.nomeNaPlanilha}&quot; parece <strong>{n.existenteNome}</strong> <span className="opacity-70">({n.linhas.length} linha{n.linhas.length === 1 ? '' : 's'})</span></p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button" disabled={ocupado} onClick={() => onDecidir(n.chave, 'usar')}
+                  className={`rounded-lg border px-2.5 py-1 font-semibold disabled:opacity-60 ${n.decisao === 'usar' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-amber-300 text-amber-800'}`}
+                >
+                  Usar &quot;{n.existenteNome}&quot;
+                </button>
+                <button
+                  type="button" disabled={ocupado} onClick={() => onDecidir(n.chave, 'novo')}
+                  className={`rounded-lg border px-2.5 py-1 font-semibold disabled:opacity-60 ${n.decisao === 'novo' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-amber-300 text-amber-800'}`}
+                >
+                  Criar área nova &quot;{n.nomeNaPlanilha}&quot;
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {plano.multiplos.length > 0 && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
@@ -223,8 +275,11 @@ function Previa({ plano, soErros, onSoErros, onVoltar, onConfirmar }: {
               <tr key={l.linha}>
                 <td className="tabular-nums text-slate-400 text-2xs">{l.linha}</td>
                 <td className="text-xs">
-                  {l.subgrupo || '—'}
+                  {l.subgrupoUsado || l.subgrupo || '—'}
                   {l.subgrupoNovo && l.acao !== 'erro' && <span className="block text-brand-600 text-2xs">novo</span>}
+                  {!l.subgrupoNovo && l.subgrupoUsado && l.subgrupoUsado !== l.subgrupo && (
+                    <span className="block text-green-700 text-2xs">escrito &quot;{l.subgrupo}&quot;</span>
+                  )}
                 </td>
                 <td className="text-xs font-medium text-slate-700">{l.fornecedor || '—'}</td>
                 <td className="text-2xs text-slate-500">

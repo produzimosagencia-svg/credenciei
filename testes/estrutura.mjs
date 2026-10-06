@@ -7,6 +7,7 @@
 
 import {
   interpretarTrava, planejarEstrutura, normalizarCpfPlanilha, normalizarNome, maiorTrava,
+  chaveCanonica, nomesParecem, mesmoNome,
 } from '../lib/estrutura-regras.ts'
 
 let falhas = 0
@@ -110,6 +111,59 @@ const depois = planejarEstrutura([
 ], { ...ctx, fornecedores: [...ctx.fornecedores, { id: 'f-cred', nome: 'Credenciais', subevento_id: 'sub-camarote' }], acessos: new Map([[CPF_JOAO, { nome: 'João Silva', role: 'supervisor' }]]) })
 ok(depois.linhas[0].acao === 'atualizar' && depois.contagens.supervisoresExistentes === 1 && depois.contagens.supervisoresNovos === 0,
   'mesma planilha de novo: atualiza a trava, reaproveita o supervisor')
+
+// ─────────────────────────────────────────────────────────────────────────────
+grupo('6 · Nomes de área escritos de outro jeito — os casos reais do Vital')
+
+ok(mesmoNome('Camarote Na Vista', 'CAMAROTE NAVISTA'), '"Camarote Na Vista" é a mesma área de "CAMAROTE NAVISTA"')
+ok(mesmoNome('Empresarial', 'EMPRESARIAIS'), '"Empresarial" é a mesma de "EMPRESARIAIS" (plural)')
+ok(mesmoNome('Muvuka/Pega/Fervô', 'MUVUKA / PEGA / FERVÔ'), 'barra, espaço e acento não separam')
+ok(mesmoNome('Arquibancadas', 'arquibancada') && mesmoNome('Fornecedores s/apontamento', 'FORNECEDORES S/ APONTAMENTO.'), 'plural, ponto e espaço')
+ok(chaveCanonica('') === '' && !mesmoNome('', ''), 'nome vazio nunca "é o mesmo"')
+
+ok(nomesParecem('Camarote Navist', 'CAMAROTE NAVISTA'), 'erro de digitação é "parecido" (pergunta, não junta sozinho)')
+ok(nomesParecem('Empresaril', 'Empresarial'), '"Empresaril" parece "Empresarial"')
+ok(!nomesParecem('Camarote', 'Camarote Navista'), '"Camarote" e "Camarote Navista" são áreas DIFERENTES')
+ok(!nomesParecem('Bloco 1', 'Bloco 2') && !nomesParecem('Setor A1', 'Setor A2'), 'números diferentes → áreas diferentes')
+ok(!nomesParecem('Arquibancada', 'Bloco') && !nomesParecem('Geral', 'Gerais'), 'nomes curtos ou sem relação não se juntam')
+
+const vital = {
+  dias: DIAS,
+  subeventos: [
+    { id: 'cam', nome: 'CAMAROTE NAVISTA' }, { id: 'emp', nome: 'EMPRESARIAIS' }, { id: 'muv', nome: 'MUVUKA / PEGA / FERVÔ' },
+  ],
+  fornecedores: [], acessos: new Map(), validarCpf,
+}
+const reimport = planejarEstrutura([
+  L(2, 'Bar A', 'Camarote Na Vista', '', 'Ana', CPF_JOAO),
+  L(3, 'Bar B', 'Empresarial', '', 'Ana', CPF_JOAO),
+  L(4, 'Bar C', 'Muvuka/Pega/Fervô', '', 'Ana', CPF_JOAO),
+  L(5, 'Bar D', 'Camarote Na Vista', '', 'Ana', CPF_JOAO),
+], vital)
+ok(reimport.contagens.subgruposCriar === 0, 'a planilha do Vital NÃO cria nenhuma área nova')
+ok(reimport.linhas[0].subeventoId === 'cam' && reimport.linhas[0].subgrupoUsado === 'CAMAROTE NAVISTA', 'usa a área existente, com o nome dela')
+ok(reimport.linhas[1].subeventoId === 'emp' && reimport.linhas[2].subeventoId === 'muv', 'Empresarial → EMPRESARIAIS e Muvuka → a existente')
+ok(reimport.reconhecidos.length === 3, 'a prévia lista os 3 nomes reconhecidos')
+
+const novaNaPlanilha = planejarEstrutura([
+  L(2, 'Bar A', 'Pista Premium', '', 'Ana', CPF_JOAO),
+  L(3, 'Bar B', 'pista  premium', '', 'Ana', CPF_JOAO),
+  L(4, 'Bar C', 'Pistas Premium', '', 'Ana', CPF_JOAO),
+], vital)
+ok(novaNaPlanilha.contagens.subgruposCriar === 1, 'três escritas da MESMA área nova na planilha criam UMA só')
+
+const digitado = [L(2, 'Bar A', 'Camarote Navist', '', 'Ana', CPF_JOAO)]
+const padrao = planejarEstrutura(digitado, vital)
+ok(padrao.parecidos.length === 1 && padrao.parecidos[0].decisao === 'usar' && padrao.linhas[0].subeventoId === 'cam' && padrao.contagens.subgruposCriar === 0,
+  'nome parecido: sugere a existente (padrão) e não cria área')
+const quisNova = planejarEstrutura(digitado, vital, { [padrao.parecidos[0].chave]: 'novo' })
+ok(quisNova.linhas[0].subeventoId === null && quisNova.contagens.subgruposCriar === 1, 'a pessoa pode escolher criar a área nova')
+
+const dup = planejarEstrutura([
+  L(2, 'Caixa', 'Camarote Na Vista', '', 'Ana', CPF_JOAO),
+  L(3, 'CAIXAS', 'CAMAROTE NAVISTA', '', 'Bia', CPF_MARIA),
+], vital)
+ok(dup.linhas[1].erros.join().includes('Setor duplicado'), 'mesmo fornecedor em duas escritas da mesma área → duplicado')
 
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

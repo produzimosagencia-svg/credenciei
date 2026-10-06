@@ -123,6 +123,73 @@ export function interpretarTrava(texto: string, diasDoEvento: string[]): Resulta
   return { ok: true, porDia }
 }
 
+// ─── Nomes que "são a mesma coisa" ──────────────────────────────────────────
+
+/** Plural simples do português → singular. Só pra comparar nomes, nunca pra gravar. */
+function singular(t: string): string {
+  if (t.length <= 3) return t
+  if (/ais$/.test(t)) return `${t.slice(0, -3)}al`
+  if (/eis$/.test(t)) return `${t.slice(0, -3)}el`
+  if (/ois$/.test(t)) return `${t.slice(0, -3)}ol`
+  if (/oes$|aes$/.test(t)) return `${t.slice(0, -3)}ao`
+  if (/ns$/.test(t)) return `${t.slice(0, -2)}m`
+  if (/res$|zes$/.test(t)) return t.slice(0, -2)
+  if (/s$/.test(t) && !/ss$/.test(t)) return t.slice(0, -1)
+  return t
+}
+
+/**
+ * A "chave" de um nome: sem acento, sem maiúscula, sem pontuação, sem espaço e
+ * com cada palavra no singular — "Camarote Na Vista" ≡ "CAMAROTE NAVISTA",
+ * "Empresarial" ≡ "EMPRESARIAIS", "Muvuka/Pega" ≡ "muvuka  pega".
+ *
+ * Nasceu de um problema real (Vital, 06/10/2026): a planilha escrevia o nome
+ * da área de outro jeito e cada variação virava um subevento novo — três
+ * áreas duplicadas de uma vez. Igualar só maiúscula/acento/espaço não bastava.
+ */
+export function chaveCanonica(nome: string): string {
+  return normalizarNome(nome).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).map(singular).join('')
+}
+
+function distanciaDeEdicao(a: string, b: string): number {
+  const anterior = Array.from({ length: b.length + 1 }, (_, j) => j)
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = anterior[0]
+    anterior[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const guarda = anterior[j]
+      anterior[j] = Math.min(anterior[j] + 1, anterior[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1))
+      diagonal = guarda
+    }
+  }
+  return anterior[b.length]
+}
+
+/**
+ * Dois nomes DIFERENTES que provavelmente são o mesmo (erro de digitação):
+ * "Empresaril" / "Empresarial", "Camarote Navist" / "Camarote Navista".
+ *
+ * Cauteloso de propósito — juntar duas áreas que não são a mesma é pior que
+ * perguntar: exige nome de pelo menos 6 letras, parecença alta e os MESMOS
+ * números ("Bloco 1" e "Bloco 2" são áreas diferentes, mesmo parecendo). Quem
+ * decide é a pessoa, na prévia; isto só sugere.
+ */
+export function nomesParecem(a: string, b: string): boolean {
+  const ka = chaveCanonica(a)
+  const kb = chaveCanonica(b)
+  if (!ka || !kb || ka === kb) return false
+  if ((ka.match(/\d/g) ?? []).join('') !== (kb.match(/\d/g) ?? []).join('')) return false
+  const maior = Math.max(ka.length, kb.length)
+  if (maior < 6) return false
+  return 1 - distanciaDeEdicao(ka, kb) / maior >= 0.82
+}
+
+/** Dois nomes se escrevem diferente mas são o MESMO (ver `chaveCanonica`). */
+export function mesmoNome(a: string, b: string): boolean {
+  const ka = chaveCanonica(a)
+  return !!ka && ka === chaveCanonica(b)
+}
+
 // ─── Plano da importação (a prévia) ─────────────────────────────────────────
 
 export type ContextoEstrutura = {
@@ -135,10 +202,21 @@ export type ContextoEstrutura = {
   validarCpf: (cpf: string) => boolean
 }
 
+/**
+ * O que fazer com um nome de área PARECIDO (mas não igual) a uma que já existe.
+ * A chave é `chaveCanonica(nome na planilha)`. Sem decisão = 'usar' a existente.
+ */
+export type DecisoesEstrutura = Record<string, 'usar' | 'novo'>
+
 export type LinhaPlanejada = {
   linha: number
   fornecedor: string
+  /** Como está escrito na planilha. */
   subgrupo: string
+  /** A área que vai ser de fato usada (a existente, quando o nome foi reconhecido). */
+  subgrupoUsado: string
+  /** Id da área existente que será usada; `null` = área nova. */
+  subeventoId: string | null
   /** 'criar' / 'atualizar' (já existe naquela área) / 'erro' (não entra). */
   acao: 'criar' | 'atualizar' | 'erro'
   subgrupoNovo: boolean
@@ -161,14 +239,60 @@ export type PlanoEstrutura = {
   }
   /** Nome do supervisor → setores dele, só de quem cuida de mais de um. */
   multiplos: { nome: string; cpf: string; setores: string[] }[]
+  /** Nomes de área escritos de outro jeito e reconhecidos sozinhos ("Na Vista" → "CAMAROTE NAVISTA"). */
+  reconhecidos: { nomeNaPlanilha: string; nomeUsado: string }[]
+  /** Nomes PARECIDOS com uma área existente — a pessoa decide: usar a existente ou criar nova. */
+  parecidos: { chave: string; nomeNaPlanilha: string; existenteId: string; existenteNome: string; decisao: 'usar' | 'novo'; linhas: number[] }[]
 }
 
-export function planejarEstrutura(linhas: LinhaEstrutura[], ctx: ContextoEstrutura): PlanoEstrutura {
-  const subPorNome = new Map(ctx.subeventos.map(s => [normalizarNome(s.nome), s.id]))
-  const fornecedorExiste = new Set(ctx.fornecedores.map(f => `${f.subevento_id ?? ''}|${normalizarNome(f.nome)}`))
+type ResolucaoArea =
+  | { tipo: 'existente'; id: string; nome: string; escritaDiferente: boolean }
+  | { tipo: 'parecida'; id: string; nome: string; decisao: 'usar' | 'novo' }
+  | { tipo: 'nova' }
+
+export function planejarEstrutura(
+  linhas: LinhaEstrutura[], ctx: ContextoEstrutura, decisoes: DecisoesEstrutura = {},
+): PlanoEstrutura {
+  // ── As áreas citadas na planilha, uma vez só por nome ("Empresarial" e
+  //    "Empresariais" na mesma planilha são a MESMA área).
+  const areas = new Map<string, { nome: string; linhas: number[]; resolucao: ResolucaoArea }>()
+  for (const l of linhas) {
+    const nome = limparNome(l.subgrupo)
+    const chave = chaveCanonica(nome)
+    if (!chave) continue
+    if (!areas.has(chave)) {
+      let resolucao: ResolucaoArea = { tipo: 'nova' }
+      const igual = ctx.subeventos.find(s => chaveCanonica(s.nome) === chave)
+      if (igual) {
+        resolucao = { tipo: 'existente', id: igual.id, nome: igual.nome, escritaDiferente: normalizarNome(igual.nome) !== normalizarNome(nome) }
+      } else {
+        const parecida = ctx.subeventos.find(s => nomesParecem(s.nome, nome))
+        if (parecida) resolucao = { tipo: 'parecida', id: parecida.id, nome: parecida.nome, decisao: decisoes[chave] ?? 'usar' }
+      }
+      areas.set(chave, { nome, linhas: [], resolucao })
+    }
+    areas.get(chave)!.linhas.push(l.linha)
+  }
+  /** O id da área existente a usar, ou null (área nova). */
+  const idDaArea = (chave: string): string | null => {
+    const r = areas.get(chave)?.resolucao
+    if (!r || r.tipo === 'nova') return null
+    if (r.tipo === 'parecida' && r.decisao === 'novo') return null
+    return r.id
+  }
+  const nomeDaArea = (chave: string, nomeNaPlanilha: string): string => {
+    const r = areas.get(chave)?.resolucao
+    if (r && r.tipo !== 'nova' && !(r.tipo === 'parecida' && r.decisao === 'novo')) return r.nome
+    return areas.get(chave)?.nome ?? nomeNaPlanilha
+  }
+
+  const fornecedorExiste = new Set(ctx.fornecedores.map(f => `${f.subevento_id ?? ''}|${chaveCanonica(f.nome)}`))
 
   // Primeira passada: quantas vezes cada (área, fornecedor) e cada CPF aparecem.
-  const chaveSetor = (l: LinhaEstrutura) => `${normalizarNome(l.subgrupo)}|${normalizarNome(l.fornecedor)}`
+  const chaveSetor = (l: LinhaEstrutura) => {
+    const chaveArea = chaveCanonica(l.subgrupo)
+    return `${idDaArea(chaveArea) ?? `novo:${chaveArea}`}|${chaveCanonica(l.fornecedor)}`
+  }
   const vezesSetor = new Map<string, number>()
   const nomesPorCpf = new Map<string, Set<string>>()
   for (const l of linhas) {
@@ -180,7 +304,7 @@ export function planejarEstrutura(linhas: LinhaEstrutura[], ctx: ContextoEstrutu
     }
   }
 
-  const subgruposNovos = new Set<string>()
+  const areasNovas = new Set<string>()
   const vistosSetor = new Set<string>()
   const planejadas: LinhaPlanejada[] = linhas.map(l => {
     const erros: string[] = []
@@ -217,13 +341,16 @@ export function planejarEstrutura(linhas: LinhaEstrutura[], ctx: ContextoEstrutu
       avisos.push(`Este CPF já tem acesso como ${acesso.role} — ele ganha o fornecedor sem perder o acesso que já tem.`)
     }
 
-    const subId = subPorNome.get(normalizarNome(subgrupo))
-    const subgrupoNovo = !!subgrupo && !subId
-    if (subgrupoNovo && !erros.length) subgruposNovos.add(normalizarNome(subgrupo))
-    const existe = !!subId && fornecedorExiste.has(`${subId}|${normalizarNome(fornecedor)}`)
+    const chaveArea = chaveCanonica(subgrupo)
+    const subId = chaveArea ? idDaArea(chaveArea) : null
+    const subgrupoNovo = !!chaveArea && !subId
+    if (subgrupoNovo && !erros.length) areasNovas.add(chaveArea)
+    const existe = !!subId && fornecedorExiste.has(`${subId}|${chaveCanonica(fornecedor)}`)
 
     return {
       linha: l.linha, fornecedor, subgrupo,
+      subgrupoUsado: chaveArea ? nomeDaArea(chaveArea, subgrupo) : subgrupo,
+      subeventoId: subId,
       acao: erros.length ? 'erro' : existe ? 'atualizar' : 'criar',
       subgrupoNovo,
       travaPorDia: trava.ok ? trava.porDia : {},
@@ -237,24 +364,32 @@ export function planejarEstrutura(linhas: LinhaEstrutura[], ctx: ContextoEstrutu
   const setoresPorCpf = new Map<string, { nome: string; existente: boolean; setores: string[] }>()
   for (const l of validas) {
     const atual = setoresPorCpf.get(l.supervisor.cpf) ?? { nome: l.supervisor.nome, existente: l.supervisor.existente, setores: [] }
-    atual.setores.push(`${l.fornecedor} (${l.subgrupo})`)
+    atual.setores.push(`${l.fornecedor} (${l.subgrupoUsado})`)
     setoresPorCpf.set(l.supervisor.cpf, atual)
   }
   const multiplos = [...setoresPorCpf].filter(([, s]) => s.setores.length > 1)
     .map(([cpf, s]) => ({ nome: s.nome, cpf, setores: s.setores }))
+
+  const reconhecidos: PlanoEstrutura['reconhecidos'] = []
+  const parecidos: PlanoEstrutura['parecidos'] = []
+  for (const [chave, a] of areas) {
+    const r = a.resolucao
+    if (r.tipo === 'existente' && r.escritaDiferente) reconhecidos.push({ nomeNaPlanilha: a.nome, nomeUsado: r.nome })
+    if (r.tipo === 'parecida') parecidos.push({ chave, nomeNaPlanilha: a.nome, existenteId: r.id, existenteNome: r.nome, decisao: r.decisao, linhas: a.linhas })
+  }
 
   return {
     linhas: planejadas,
     contagens: {
       fornecedoresCriar: validas.filter(l => l.acao === 'criar').length,
       fornecedoresAtualizar: validas.filter(l => l.acao === 'atualizar').length,
-      subgruposCriar: subgruposNovos.size,
+      subgruposCriar: areasNovas.size,
       supervisoresNovos: [...setoresPorCpf.values()].filter(s => !s.existente).length,
       supervisoresExistentes: [...setoresPorCpf.values()].filter(s => s.existente).length,
       supervisoresMultiplos: multiplos.length,
       linhasComErro: planejadas.length - validas.length,
     },
-    multiplos,
+    multiplos, reconhecidos, parecidos,
   }
 }
 

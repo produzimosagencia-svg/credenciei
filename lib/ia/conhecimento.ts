@@ -233,6 +233,17 @@ organização liga "Trava de cota"; ver "Limites que não são do código"). Dá
 pra definir a trava também no cadastro manual do fornecedor ("Limite de
 pessoas por dia").
 
+**Nomes escritos de outro jeito não criam área nova**: o sistema reconhece
+"Camarote Na Vista" = "CAMAROTE NAVISTA", "Empresarial" = "EMPRESARIAIS",
+"Muvuka/Pega/Fervô" = "MUVUKA / PEGA / FERVÔ" (maiúscula, acento, espaço, barra,
+ponto e plural não contam) e usa a área que já existe. Nome só PARECIDO (erro de
+digitação, ex.: "Camarote Navist") usa a existente por padrão, mas a prévia
+avisa e a pessoa pode escolher "criar área nova" (na tela, ou pedindo no chat).
+Nomes diferentes de verdade ("Camarote" x "Camarote Navista") ou com números
+diferentes ("Bloco 1" x "Bloco 2") nunca são juntados. Áreas que JÁ ficaram
+duplicadas se juntam no botão "Mesclar" do cartão do subevento (move os
+fornecedores e as pessoas e apaga a área vazia — sem volta).
+
 **Reimportar é seguro**: área e fornecedor são reconhecidos pelo nome (sem
 diferenciar maiúscula/acento) e supervisor pelo CPF — o que já existe é
 ATUALIZADO, nada é duplicado. Serve pra corrigir as linhas com erro e mandar de

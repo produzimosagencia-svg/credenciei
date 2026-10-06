@@ -2,8 +2,9 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange } from 'lucide-react'
-import { criarSubevento, editarSubevento, excluirSubevento } from '@/lib/actions'
+import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle } from 'lucide-react'
+import { criarSubevento, editarSubevento, excluirSubevento, mesclarSubeventos } from '@/lib/actions'
+import { mesmoNome, nomesParecem } from '@/lib/estrutura-regras'
 import ConfirmModal from '@/components/ConfirmModal'
 import { EmptyState } from '@/components/ui/Superficie'
 import ImportarEstrutura from './ImportarEstrutura'
@@ -94,6 +95,8 @@ export default function SubeventosCard({
         <div className={`grid gap-4 ${subeventos.length > 1 ? 'lg:grid-cols-2' : ''}`}>
           {subeventos.map(s => {
             const c = contagens[s.id] ?? { fornecedores: 0, equipe: 0 }
+            // Áreas que provavelmente são a MESMA (nome escrito de outro jeito ou com erro de digitação).
+            const duplicadaDe = subeventos.filter(o => o.id !== s.id && (mesmoNome(o.nome, s.nome) || nomesParecem(o.nome, s.nome)))
             return (
               <div key={s.id} className="evento-vivo flex flex-col">
                 <span className="evento-vivo-selo">
@@ -105,6 +108,13 @@ export default function SubeventosCard({
                     {s.nome}
                   </h3>
                 </Link>
+
+                {duplicadaDe.length > 0 && (
+                  <p className="flex items-start gap-1.5 mt-2.5 text-amber-400 text-xs leading-snug">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    Parece a mesma área de {duplicadaDe.map(o => `“${o.nome}”`).join(' e ')} — use Mesclar para juntar.
+                  </p>
+                )}
 
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 mt-4 text-[13px]">
                   <dt className="text-slate-500">Equipe</dt>
@@ -120,6 +130,13 @@ export default function SubeventosCard({
                   </Link>
                   <div className="acoes-no-escuro shrink-0 flex items-center gap-0.5 justify-center rounded-[10px] bg-white/[.06] border border-white/[.12] px-1">
                     <SubeventoModal mode="editar" eventoId={eventoId} subeventoId={s.id} nome={s.nome} />
+                    {subeventos.length > 1 && (
+                      <MesclarSubeventoButton
+                        eventoId={eventoId} origem={s} contagem={c}
+                        candidatas={subeventos.filter(o => o.id !== s.id)}
+                        sugeridaId={duplicadaDe[0]?.id}
+                      />
+                    )}
                     <ExcluirSubeventoButton eventoId={eventoId} subeventoId={s.id} nome={s.nome} />
                   </div>
                 </div>
@@ -230,6 +247,79 @@ function ExcluirSubeventoButton({ eventoId, subeventoId, nome }: { eventoId: str
         mensagem={`Excluir o subevento "${nome}"?`}
       />
       {erro && <p className="text-red-500 text-2xs mt-1">{erro}</p>}
+    </>
+  )
+}
+
+/**
+ * "Mesclar": junta esta área em outra — os fornecedores e as pessoas passam pra
+ * escolhida e esta, já vazia, é apagada. Pra desfazer áreas duplicadas
+ * ("Camarote Na Vista" / "CAMAROTE NAVISTA"). Pede confirmação dizendo o que
+ * vai se mover; não dá pra desfazer depois.
+ */
+function MesclarSubeventoButton({ eventoId, origem, contagem, candidatas, sugeridaId }: {
+  eventoId: string
+  origem: Subevento
+  contagem: Contagem
+  candidatas: Subevento[]
+  /** A área que parece ser a mesma (pré-selecionada). */
+  sugeridaId?: string
+}) {
+  const [aberto, setAberto] = useState(false)
+  const [destinoId, setDestinoId] = useState(sugeridaId ?? '')
+  const [erro, setErro] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  const mesclar = () => {
+    setErro(null)
+    startTransition(async () => {
+      const r = await mesclarSubeventos(eventoId, origem.id, destinoId)
+      if (!r.ok) { setErro(r.error); return }
+      setAberto(false)
+      router.refresh()
+    })
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => { setDestinoId(sugeridaId ?? ''); setErro(null); setAberto(true) }}
+        className="btn-press w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50"
+        title={`Mesclar ${origem.nome} em outra área`}
+      >
+        <Merge className="w-3.5 h-3.5" />
+      </button>
+      {aberto && (
+        <div className="overlay-fade-in fixed inset-0 bg-black/45 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !isPending && setAberto(false)}>
+          <div className="modal-pop-in bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-slate-800 font-bold text-base">Mesclar subevento</h3>
+              <button onClick={() => setAberto(false)} disabled={isPending} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-slate-600 text-sm">
+              Juntar <strong>{origem.nome}</strong> em qual área? Os{' '}
+              <strong>{contagem.fornecedores} fornecedor{contagem.fornecedores !== 1 ? 'es' : ''}</strong> e as{' '}
+              <strong>{contagem.equipe} pessoa{contagem.equipe !== 1 ? 's' : ''}</strong> daqui passam para a área escolhida, e
+              &quot;{origem.nome}&quot; é apagada.
+            </p>
+            <select value={destinoId} onChange={e => setDestinoId(e.target.value)} className="input w-full">
+              <option value="">Escolha a área que fica…</option>
+              {candidatas.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
+            </select>
+            <p className="text-slate-400 text-xs">Não dá para desfazer. Fornecedores com o mesmo nome nas duas áreas continuam como setores separados.</p>
+            {erro && <p className="text-red-500 text-xs">{erro}</p>}
+            <div className="flex gap-2">
+              <button onClick={mesclar} disabled={isPending || !destinoId} className="flex-1 btn btn-primario disabled:opacity-50">
+                {isPending ? 'Mesclando…' : 'Mesclar'}
+              </button>
+              <button onClick={() => setAberto(false)} disabled={isPending} className="btn btn-secundario">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

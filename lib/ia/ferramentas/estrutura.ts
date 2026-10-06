@@ -1,8 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { previaImportacaoEstrutura, importarEstruturaLote } from '@/lib/actions'
 import {
-  limparNome, normalizarCpfPlanilha, normalizarNome,
-  type LinhaEstrutura, type ResultadoLinhaEstrutura,
+  limparNome, normalizarCpfPlanilha, normalizarNome, chaveCanonica,
+  type LinhaEstrutura, type ResultadoLinhaEstrutura, type DecisoesEstrutura,
 } from '@/lib/estrutura-regras'
 import { registrarAuditoriaIA } from '../auditoria'
 import {
@@ -110,11 +110,17 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
         'Use SEMPRE que houver planilha de estrutura anexada — nunca crie setor ou supervisor um a um a partir dela. ' +
         'Você não vê CPFs nem telefones, e não precisa: o sistema lê o arquivo e confere tudo. ' +
         'A primeira chamada mostra a prévia (o que será criado/atualizado e as linhas com erro) e pede confirmação. ' +
+        'O sistema ENTENDE nomes de área escritos de outro jeito: "Camarote Na Vista" = "CAMAROTE NAVISTA", "Empresarial" = "EMPRESARIAIS" (maiúscula, acento, espaço, barra e plural não criam área nova) e usa a que já existe. ' +
+        'Nome só PARECIDO (erro de digitação) também usa a existente por padrão, mas a prévia avisa em "nomes_parecidos": diga isso ao usuário. Se ele quiser mesmo uma área nova para algum desses nomes, chame de novo passando o nome em "criar_areas_novas_para". ' +
         'Se a resposta trouxer "continuar_da_linha", a importação parou pelo tempo: explique quantas linhas faltam e, quando o usuário pedir pra continuar, chame de novo passando esse número.',
       parametros: {
         type: 'object',
         properties: {
           evento: { type: 'string', description: 'id ou nome do evento que recebe a estrutura' },
+          criar_areas_novas_para: {
+            type: 'array', items: { type: 'string' },
+            description: 'nomes de área (como estão na planilha) que o usuário quer CRIAR como área nova em vez de usar a parecida que já existe',
+          },
           continuar_da_linha: {
             type: 'number',
             description: 'só para retomar uma importação interrompida: o valor de "continuar_da_linha" que a chamada anterior devolveu',
@@ -122,7 +128,7 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
         },
         required: ['evento'],
       },
-      executar: async ({ evento, continuar_da_linha }) => {
+      executar: async ({ evento, continuar_da_linha, criar_areas_novas_para }) => {
         const inicio = Date.now()
         const barrado = exigirGestor(perfil, 'importa a estrutura do evento')
         if (barrado) return barrado
@@ -138,7 +144,12 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
 
         // A prévia é a da tela: nada gravado, e a permissão é refeita pela
         // sessão lá dentro (só quem cria acessos importa estrutura).
-        const previa = await previaImportacaoEstrutura(eventoId, linhas)
+        const decisoes: DecisoesEstrutura = {}
+        for (const nome of Array.isArray(criar_areas_novas_para) ? criar_areas_novas_para : []) {
+          const chave = chaveCanonica(String(nome))
+          if (chave) decisoes[chave] = 'novo'
+        }
+        const previa = await previaImportacaoEstrutura(eventoId, linhas, decisoes)
         if (!previa.ok) return previa.error
         const { plano, eventoNome } = previa
         const c = plano.contagens
@@ -167,7 +178,8 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
         // A operação carrega evento + contagem (+ ponto de retomada): trocar o
         // arquivo ou o evento depois de confirmar não reaproveita o clique
         // antigo, e retomar pede um clique novo, com o que falta à vista.
-        const operacao = `importar_estrutura_evento:${eventoId}:${linhas.length}${desde != null ? `:${desde}` : ''}`
+        const operacao = `importar_estrutura_evento:${eventoId}:${linhas.length}${desde != null ? `:${desde}` : ''}${
+          Object.keys(decisoes).length ? `:areas-${Object.keys(decisoes).sort().join('+').slice(0, 60)}` : ''}`
         if (!confirmacoes.has(operacao)) {
           const impacto: Record<string, unknown> = desde == null
             ? {
@@ -187,6 +199,17 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
                 linhas_que_faltam: aGravar.length,
                 linhas_com_erro_que_ficam_de_fora: errosDaPrevia.length,
               }
+          // Nomes de área (não são dado pessoal): o que o sistema entendeu sozinho e o que ficou em dúvida.
+          if (desde == null && plano.reconhecidos.length) {
+            impacto.nomes_reconhecidos = plano.reconhecidos.slice(0, 15)
+              .map(n => `"${n.nomeNaPlanilha}" será tratado como a área "${n.nomeUsado}" que já existe (não cria área nova)`)
+          }
+          if (desde == null && plano.parecidos.length) {
+            impacto.nomes_parecidos = plano.parecidos.slice(0, 15).map(n =>
+              n.decisao === 'usar'
+                ? `"${n.nomeNaPlanilha}" parece a área "${n.existenteNome}" (que já existe) — vou usar a existente`
+                : `"${n.nomeNaPlanilha}" vai virar uma área NOVA, como pedido (parece "${n.existenteNome}")`)
+          }
           if (errosDaPrevia.length) {
             impacto.primeiros_erros = errosDaPrevia.slice(0, 10).map(e => `linha ${e.linha}: ${e.erro}`)
           }
@@ -216,7 +239,7 @@ export function ferramentasDeEstrutura(ctx: ContextoIA, pedirConfirmacao: PedirC
           const leva = aGravar.slice(feitas, feitas + LEVA)
           const t0 = Date.now()
           try {
-            const res = await importarEstruturaLote(eventoId, linhas, leva)
+            const res = await importarEstruturaLote(eventoId, linhas, leva, decisoes)
             if (!res.ok) resultados.push(...leva.map(linha => ({ linha, acao: 'erro' as const, erro: res.error })))
             else resultados.push(...res.resultados)
           } catch (e) {

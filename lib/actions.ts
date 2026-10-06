@@ -49,8 +49,9 @@ import {
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
 import {
-  planejarEstrutura, normalizarNome, normalizarCpfPlanilha, maiorTrava,
+  planejarEstrutura, mesmoNome, normalizarCpfPlanilha, maiorTrava,
   type LinhaEstrutura, type LinhaPlanejada, type PlanoEstrutura, type ContextoEstrutura, type ResultadoLinhaEstrutura,
+  type DecisoesEstrutura,
 } from './estrutura-regras'
 import { emLotes } from './lotes'
 import { podePassar } from './limite'
@@ -10354,14 +10355,14 @@ async function contextoDaEstrutura(eventoId: string, linhas: LinhaEstrutura[]): 
 }
 
 /** A PRÉVIA: o que vai ser criado, o que já existe e o que está errado — nada é gravado. */
-export async function previaImportacaoEstrutura(eventoId: string, linhas: LinhaEstrutura[]): Promise<
+export async function previaImportacaoEstrutura(eventoId: string, linhas: LinhaEstrutura[], decisoes: DecisoesEstrutura = {}): Promise<
   { ok?: false; error: string } | { ok: true; plano: PlanoEstrutura; eventoNome: string }
 > {
   try {
     const { evento } = await exigirImportadorDeEstrutura(eventoId)
     if (!linhas.length) return { error: 'A planilha não tem nenhuma linha.' }
     if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `A planilha tem ${linhas.length} linhas — o máximo por importação é ${MAX_LINHAS_ESTRUTURA}.` }
-    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas))
+    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes)
     return { ok: true, plano, eventoNome: evento.nome }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
@@ -10378,17 +10379,14 @@ export async function previaImportacaoEstrutura(eventoId: string, linhas: LinhaE
  * a cada leva — o que a leva anterior criou já conta como "existe", que é o
  * que torna repetir a importação (ou retomar uma que caiu) seguro.
  */
-export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstrutura[], apenas: number[]): Promise<
+export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstrutura[], apenas: number[], decisoes: DecisoesEstrutura = {}): Promise<
   { ok?: false; error: string } | { ok: true; resultados: ResultadoLinhaEstrutura[] }
 > {
   try {
     await exigirImportadorDeEstrutura(eventoId)
     if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `Máximo de ${MAX_LINHAS_ESTRUTURA} linhas por importação.` }
     const alvo = new Set(apenas.slice(0, 20))
-    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas))
-    const subPorNome = new Map(
-      (await supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId)).data?.map(s => [normalizarNome(s.nome as string), s.id as string]) ?? [],
-    )
+    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes)
 
     const resultados: ResultadoLinhaEstrutura[] = []
     for (const l of plano.linhas.filter(x => alvo.has(x.linha))) {
@@ -10397,7 +10395,7 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
         continue
       }
       try {
-        resultados.push(await gravarLinhaEstrutura(eventoId, l, subPorNome))
+        resultados.push(await gravarLinhaEstrutura(eventoId, l))
       } catch (e) {
         resultados.push({ linha: l.linha, acao: 'erro', erro: mensagemAmigavel(e) })
       }
@@ -10410,16 +10408,23 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
 }
 
 async function gravarLinhaEstrutura(
-  eventoId: string, l: LinhaPlanejada, subPorNome: Map<string, string>,
+  eventoId: string, l: LinhaPlanejada,
 ): Promise<ResultadoLinhaEstrutura> {
-  // 1. A área (subevento): reaproveita pelo nome, cria se não existir.
-  let subeventoId = subPorNome.get(normalizarNome(l.subgrupo))
+  // 1. A área (subevento). A prévia já decidiu: `subeventoId` é a existente
+  //    (nome igual, escrito de outro jeito, ou parecido que a pessoa aceitou).
+  //    Sem id é área NOVA — mas relê o banco antes de criar: a leva anterior
+  //    pode ter acabado de criar essa mesma área (mesmo nome, outra linha), e
+  //    foi assim que apareceram áreas duplicadas no Vital.
+  let subeventoId = l.subeventoId
   if (!subeventoId) {
-    const { data, error } = await supabaseAdmin.from('subeventos')
-      .insert([{ evento_id: eventoId, nome: l.subgrupo }]).select('id').single()
-    if (error || !data) throw new Error(`Não consegui criar a área "${l.subgrupo}".`)
-    subeventoId = data.id as string
-    subPorNome.set(normalizarNome(l.subgrupo), subeventoId)
+    const { data: atuais } = await supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId)
+    subeventoId = (atuais ?? []).find(s => mesmoNome(s.nome as string, l.subgrupoUsado))?.id as string | undefined ?? null
+    if (!subeventoId) {
+      const { data, error } = await supabaseAdmin.from('subeventos')
+        .insert([{ evento_id: eventoId, nome: l.subgrupoUsado }]).select('id').single()
+      if (error || !data) throw new Error(`Não consegui criar a área "${l.subgrupoUsado}".`)
+      subeventoId = data.id as string
+    }
   }
 
   // 2. O fornecedor dentro da área — pelo nome, sem diferenciar caixa/acento.
@@ -10427,7 +10432,7 @@ async function gravarLinhaEstrutura(
   const acharFornecedor = async () => {
     const { data } = await supabaseAdmin.from('fornecedores').select('id, nome')
       .eq('evento_id', eventoId).eq('subevento_id', subeventoId)
-    return (data ?? []).find(f => normalizarNome(f.nome as string) === normalizarNome(l.fornecedor))?.id as string | undefined
+    return (data ?? []).find(f => mesmoNome(f.nome as string, l.fornecedor))?.id as string | undefined
   }
   const dadosSupervisor = new FormData()
   dadosSupervisor.set('nome', l.supervisor.nome)
@@ -10507,6 +10512,52 @@ export async function editarSubevento(id: string, eventoId: string, formData: Fo
     if (error) throw new Error(mensagemAmigavel(error))
     revalidatePath(`/admin/eventos/${eventoId}`)
     return {}
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * Junta DOIS subeventos em um: tudo que está em `origemId` (fornecedores e as
+ * pessoas deles) passa pra `destinoId`, e a área de origem — agora vazia — é
+ * apagada. Existe pra desfazer duplicatas ("Camarote Na Vista" /
+ * "CAMAROTE NAVISTA"), que uma planilha com o nome escrito de outro jeito
+ * criava antes de a importação reconhecer nomes parecidos (06/10/2026).
+ *
+ * Só `fornecedores.subevento_id` e `funcionarios.subevento_id` apontam pra um
+ * subevento (conferido nas migrações), então não há mais nada a levar.
+ * Nada é apagado além da área vazia; fornecedores de mesmo nome nas duas
+ * áreas continuam como dois setores (cada um com o seu link e supervisor).
+ */
+export async function mesclarSubeventos(eventoId: string, origemId: string, destinoId: string): Promise<
+  { ok: true; fornecedores: number; funcionarios: number; destinoNome: string } | { ok?: false; error: string }
+> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    if (!origemId || !destinoId || origemId === destinoId) return { error: 'Escolha duas áreas diferentes.' }
+
+    const { data: areas } = await supabaseAdmin.from('subeventos').select('id, nome').eq('evento_id', eventoId).in('id', [origemId, destinoId])
+    const origem = areas?.find(a => a.id === origemId)
+    const destino = areas?.find(a => a.id === destinoId)
+    if (!origem || !destino) return { error: 'Estas áreas não são deste evento.' }
+
+    const { data: movidos, error: erroForn } = await supabaseAdmin
+      .from('fornecedores').update({ subevento_id: destinoId }).eq('subevento_id', origemId).eq('evento_id', eventoId).select('id')
+    if (erroForn) return { error: mensagemAmigavel(erroForn) }
+    const { data: pessoas, error: erroFunc } = await supabaseAdmin
+      .from('funcionarios').update({ subevento_id: destinoId }).eq('subevento_id', origemId).select('id')
+    if (erroFunc) return { error: mensagemAmigavel(erroFunc) }
+
+    const { error: erroApagar } = await supabaseAdmin.from('subeventos').delete().eq('id', origemId)
+    if (erroApagar) return { error: `Os fornecedores foram movidos, mas não consegui apagar a área "${origem.nome}": ${mensagemAmigavel(erroApagar)}` }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'MESCLA_SUBEVENTO', campoAlterado: 'Subevento',
+      valorAnterior: `${origem.nome as string}`, valorNovo: `mesclado em ${destino.nome as string} (${movidos?.length ?? 0} fornecedores, ${pessoas?.length ?? 0} pessoas)`,
+      eventoId,
+    }))
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true as const, fornecedores: movidos?.length ?? 0, funcionarios: pessoas?.length ?? 0, destinoNome: destino.nome as string }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }
