@@ -55,5 +55,12 @@ ok(baseAct.includes('validarCpf(novoCpf)') && baseAct.includes('conflitos'), 'CP
 const fichaPag = readFileSync(new URL('../app/admin/pessoas/[cpf]/page.tsx', import.meta.url), 'utf8')
 ok(fichaPag.includes("if (!ehMaster(perfil.role)) redirect('/admin')") && fichaPag.includes('<EditarDadosPessoa'), 'a ficha já é só do master e traz o botão Editar dados')
 
+console.log('\n\x1b[1m6 · Link de recuperação de senha\x1b[0m')
+const conv = readFileSync(new URL('../lib/supervisor-convite.ts', import.meta.url), 'utf8')
+ok(recup.includes("finalidade: 'recuperacao'"), '"Esqueci a senha" cria o convite marcado como recuperação')
+ok(conv.includes("finalidade: convite.estado.finalidade ?? 'acesso'"), 'convite antigo (sem o campo) continua sendo de primeiro acesso')
+const conteudo = readFileSync(new URL('../app/supervisor/criar-senha/[token]/ConteudoCriarSenha.tsx', import.meta.url), 'utf8')
+ok(conteudo.includes('{!recuperacao && (') && conteudo.includes('<CartaoDeEntrada>'), 'recuperação não mostra evento/fornecedor e usa a moldura do login')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

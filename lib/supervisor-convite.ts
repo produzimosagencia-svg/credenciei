@@ -16,6 +16,8 @@ type EstadoConvite = {
   evento_id: string
   evento: string
   setor: string
+  /** Convite antigo (sem o campo) é de primeiro acesso. */
+  finalidade?: 'acesso' | 'recuperacao'
   expira_em: string
   usado_em: string | null
 }
@@ -27,6 +29,12 @@ export type ConviteSupervisorPublico = {
   cpf?: string
   evento?: string
   setor?: string
+  /**
+   * 'acesso' = primeiro acesso do supervisor (mostra evento e fornecedor);
+   * 'recuperacao' = "Esqueci a senha" — a tela só pede a senha nova, sem
+   * falar de evento nem de fornecedor (que, pra um admin ou master, nem fazem sentido).
+   */
+  finalidade?: 'acesso' | 'recuperacao'
   motivo?: 'invalido' | 'expirado' | 'usado'
 }
 
@@ -66,6 +74,7 @@ export async function criarConviteSenhaSupervisor(params: {
   eventoId: string
   evento: string
   setor: string
+  finalidade?: 'acesso' | 'recuperacao'
 }): Promise<string> {
   const token = randomBytes(32).toString('base64url')
   const chave = `${PREFIXO}${hashToken(token)}`
@@ -76,6 +85,7 @@ export async function criarConviteSenhaSupervisor(params: {
     evento_id: params.eventoId,
     evento: params.evento,
     setor: params.setor,
+    finalidade: params.finalidade ?? 'acesso',
     expira_em: new Date(Date.now() + VALIDADE_MS).toISOString(),
     usado_em: null,
   }
@@ -99,6 +109,7 @@ export async function consultarConviteSenhaSupervisor(token: string): Promise<Co
     cpf: formatarCpf(convite.estado.cpf),
     evento: convite.estado.evento,
     setor: convite.estado.setor,
+    finalidade: convite.estado.finalidade ?? 'acesso',
   }
 }
 

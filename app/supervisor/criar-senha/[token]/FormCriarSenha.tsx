@@ -7,6 +7,16 @@ import { criarSenhaAction, type EstadoCriarSenha } from './actions'
 
 const INICIAL: EstadoCriarSenha = { ok: false, mensagem: '' }
 
+// Mesmos campos e botão do login (components/ui/modern-stunning-sign-in.tsx).
+const CAMPO =
+  'w-full px-5 py-3.5 rounded-xl bg-white/[.06] border border-white/10 text-white placeholder-white/35 text-sm outline-none ' +
+  'focus:border-[#FF4A0F]/70 focus:ring-4 focus:ring-[#FF4A0F]/15 transition ' +
+  '[&:-webkit-autofill]:[-webkit-text-fill-color:#fff] [&:-webkit-autofill]:[box-shadow:0_0_0_1000px_#1c1a19_inset] [&:-webkit-autofill]:[caret-color:#fff]'
+const BOTAO_STYLE = {
+  background: 'linear-gradient(135deg, #A31B05 0%, #FF4A0F 60%, #FF8A4C 100%)',
+  boxShadow: '0 10px 30px rgba(255,74,15,.45), inset 0 1px 0 rgba(255,255,255,.25)',
+}
+
 export default function FormCriarSenha({ token }: { token: string }) {
   const action = criarSenhaAction.bind(null, token)
   const [estado, formAction, pendente] = useActionState(action, INICIAL)
@@ -15,12 +25,12 @@ export default function FormCriarSenha({ token }: { token: string }) {
   if (estado.ok) {
     return (
       <div className="text-center">
-        <div className="w-12 h-12 rounded-full bg-green-500/15 text-green-300 flex items-center justify-center mx-auto mb-4">
+        <div className="w-12 h-12 rounded-full bg-[#FF4A0F]/15 text-[#FF8A4C] flex items-center justify-center mx-auto mb-4">
           <CheckCircle2 className="w-6 h-6" />
         </div>
-        <h2 className="text-white text-xl font-bold">Acesso pronto</h2>
-        <p className="text-slate-400 text-sm mt-2 mb-6">Sua senha foi criada. Agora você já pode entrar usando seu CPF.</p>
-        <Link href="/login" className="btn-press block w-full bg-brand-500 hover:bg-brand-400 text-white py-3.5 rounded-xl font-semibold text-sm">
+        <h2 className="text-white text-xl font-extrabold">Senha criada</h2>
+        <p className="text-white/55 text-sm mt-2 mb-6">Pronto. Agora você já pode entrar usando seu CPF e a senha nova.</p>
+        <Link href="/login" className="btn-press block w-full px-5 py-3.5 rounded-xl text-white font-extrabold text-sm hover:brightness-110 transition" style={BOTAO_STYLE}>
           Ir para o login
         </Link>
       </div>
@@ -30,7 +40,7 @@ export default function FormCriarSenha({ token }: { token: string }) {
   return (
     <form action={formAction} className="space-y-4">
       <div className="space-y-1.5">
-        <label htmlFor="senha" className="text-sm font-medium text-slate-300">Crie sua senha</label>
+        <label htmlFor="senha" className="text-sm font-medium text-white/70">Crie sua senha</label>
         <div className="relative">
           <input
             id="senha"
@@ -41,22 +51,22 @@ export default function FormCriarSenha({ token }: { token: string }) {
             maxLength={128}
             autoComplete="new-password"
             placeholder="Mínimo de 8 caracteres"
-            className="w-full bg-slate-50 border border-transparent rounded-xl px-4 py-3 pr-11 text-slate-800 text-sm outline-none focus:ring-2 focus:ring-brand-400 transition-shadow"
+            className={`${CAMPO} pr-12`}
           />
           <button
             type="button"
             onClick={() => setMostrar(v => !v)}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/85 transition"
             aria-label={mostrar ? 'Ocultar senha' : 'Mostrar senha'}
           >
             {mostrar ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-slate-500 text-xs">Use pelo menos uma letra e um número.</p>
+        <p className="text-white/40 text-xs">Use pelo menos uma letra e um número.</p>
       </div>
 
       <div className="space-y-1.5">
-        <label htmlFor="confirmacao" className="text-sm font-medium text-slate-300">Confirme a senha</label>
+        <label htmlFor="confirmacao" className="text-sm font-medium text-white/70">Confirme a senha</label>
         <input
           id="confirmacao"
           name="confirmacao"
@@ -66,7 +76,7 @@ export default function FormCriarSenha({ token }: { token: string }) {
           maxLength={128}
           autoComplete="new-password"
           placeholder="Digite novamente"
-          className="w-full bg-slate-50 border border-transparent rounded-xl px-4 py-3 text-slate-800 text-sm outline-none focus:ring-2 focus:ring-brand-400 transition-shadow"
+          className={CAMPO}
         />
       </div>
 
@@ -79,7 +89,8 @@ export default function FormCriarSenha({ token }: { token: string }) {
       <button
         type="submit"
         disabled={pendente}
-        className="btn-press w-full bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-white py-3.5 rounded-xl font-semibold text-sm shadow-lg shadow-brand-500/30 flex items-center justify-center gap-2"
+        className="btn-press w-full px-5 py-3.5 rounded-xl text-white font-extrabold text-sm disabled:opacity-50 hover:brightness-110 transition flex items-center justify-center gap-2"
+        style={BOTAO_STYLE}
       >
         <LockKeyhole className="w-4 h-4" />
         {pendente ? 'Criando senha...' : 'Criar senha e acessar'}

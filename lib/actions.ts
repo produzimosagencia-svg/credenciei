@@ -2025,6 +2025,7 @@ export async function solicitarRecuperacaoSenha(cpfBruto: string): Promise<{ ok:
           eventoId,
           evento: (evento as { nome?: string } | null)?.nome ?? 'Credenciei',
           setor: ROLE_LABELS[perfil.role as Role] ?? 'Acesso',
+          finalidade: 'recuperacao',
         })
         const mensagemId = await agendarTemplateSupervisor({
           eventoId,
