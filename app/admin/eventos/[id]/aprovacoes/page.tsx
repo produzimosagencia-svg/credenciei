@@ -6,6 +6,7 @@ import { ehMaster, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import { PageHeader } from '@/components/ui/Superficie'
+import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalasDosFuncionarios, type EscalaDoFuncionario } from '@/lib/escala'
 import PainelAprovacoes, { type CredenciamentoLinha } from './PainelAprovacoes'
 
 export const revalidate = 0
@@ -60,6 +61,13 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
     : { data: [] as { id: string; nome: string }[] }
   const nomeDecisor = new Map((perfisDecisores ?? []).map(p => [p.id as string, p.nome as string]))
 
+  // Evento de subeventos: os dias do evento e a escala de cada pessoa (lib/escala.ts).
+  const usaEscala = await eventoUsaEscalaPorDia(eventoId)
+  const diasDoEvento = usaEscala ? await diasDaEscalaDoEvento(eventoId) : null
+  const escalas = usaEscala
+    ? await escalasDosFuncionarios((funcionarios ?? []).map(f => f.id as string))
+    : new Map<string, EscalaDoFuncionario>()
+
   const linhas: CredenciamentoLinha[] = (funcionarios ?? []).map(f => ({
     id: f.id as string,
     nome: f.nome as string,
@@ -75,6 +83,17 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
     criadoEm: f.created_at as string,
     decididoEm: (f.decidido_em as string | null) ?? null,
     decididoPor: f.decidido_por ? (nomeDecisor.get(f.decidido_por as string) ?? null) : null,
+    escala: (() => {
+      const e = escalas.get(f.id as string)
+      if (!e?.status) return null
+      return {
+        status: e.status,
+        pedidos: e.dias.filter(d => d.selecionado).map(d => d.data),
+        aprovados: e.dias.filter(d => d.aprovado).map(d => d.data),
+        decididaEm: e.decididaEm,
+        decididaPor: e.decididaPor,
+      }
+    })(),
   }))
 
   return (
@@ -101,7 +120,7 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
           </Link>
         }
       />
-      <PainelAprovacoes eventoId={eventoId} linhas={linhas} />
+      <PainelAprovacoes eventoId={eventoId} linhas={linhas} diasDoEvento={diasDoEvento} />
     </div>
   )
 }

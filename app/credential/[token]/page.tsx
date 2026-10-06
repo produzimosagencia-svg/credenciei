@@ -16,6 +16,9 @@ import {
   TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
+import { eventoUsaEscalaPorDia, escalaDoFuncionario, diasDaEscalaDoEvento } from '@/lib/escala'
+import type { DiaDaEscala } from '@/lib/escala-regras'
+import DiasLiberados from './DiasLiberados'
 import { avisosPendentesFuncionario } from '@/lib/avisos'
 import { setorExigeMeio, diaExigeMeio } from '@/lib/meio'
 import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
@@ -464,6 +467,25 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   }
 
   /*
+   * Escala por dia (eventos de subeventos) — os dias em que ESTE QR vale.
+   * Mostrado sempre que a pessoa está no fluxo, para a regra nunca ser
+   * surpresa no portão: ela vê os dias confirmados, vê quando hoje não está
+   * entre eles, e sabe que mudar é com o supervisor. A recusa de verdade é no
+   * servidor (`conferirEscalaNoDia`); isto aqui é só o aviso.
+   */
+  let escala: { pendente: boolean; aprovados: string[]; diasDoEvento: DiaDaEscala[] } | null = null
+  if (evento?.id && await eventoUsaEscalaPorDia(evento.id)) {
+    const [e, diasDoEvento] = await Promise.all([escalaDoFuncionario(funcionario.id), diasDaEscalaDoEvento(evento.id)])
+    if (e?.status) {
+      escala = {
+        pendente: e.status === 'pendente',
+        aprovados: e.dias.filter(d => d.aprovado).map(d => d.data),
+        diasDoEvento,
+      }
+    }
+  }
+
+  /*
    * Biometria autoatendimento — consulta À PARTE e tolerante (mesmo padrão
    * de `metodoIdentificacaoDoEvento`): esta página já é grande e crítica
    * (é a credencial de todo mundo), e pedir uma coluna que ainda não existe
@@ -515,7 +537,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               {/* Funcionário */}
               <div className="text-center pb-4 border-b border-slate-100" data-tutorial="cred-identidade">
                 <p className="text-slate-800 font-bold text-lg leading-tight">{funcionario.nome}</p>
-                <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>
+                {funcionario.cargo && <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>}
                 <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
                 {subeventoNome && (
                   <p className="text-slate-500 text-xs font-semibold mt-1 uppercase tracking-wide">
@@ -561,6 +583,10 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               {faltaBiometria && <CadastrarBiometriaCard token={token} />}
 
               <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso} />
+
+              {escala && (
+                <DiasLiberados pendente={escala.pendente} aprovados={escala.aprovados} diasDoEvento={escala.diasDoEvento} hoje={hoje} />
+              )}
 
               <div data-tutorial="cred-etapas">
                 {/*

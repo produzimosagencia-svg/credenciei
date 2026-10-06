@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "coerencia": "node testes/coerencia.mjs",
-    "autorizacao": "node testes/autorizacao.mjs"
+    "autorizacao": "node testes/autorizacao.mjs",
+    "escala": "node testes/escala.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

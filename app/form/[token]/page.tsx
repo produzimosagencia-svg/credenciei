@@ -6,6 +6,9 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { consultarAutorizacaoCadastroIndividual } from '@/lib/cadastro-individual'
+import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
+import { diaBRT } from '@/lib/janelas'
+import type { DiaDaEscala } from '@/lib/escala-regras'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-cadastro',
@@ -65,6 +68,17 @@ export default async function FormPage({
         .from('eventos').select('metodo_identificacao').eq('id', evento.id).maybeSingle()
       biometriaHabilitada = data?.metodo_identificacao === 'biometria' || data?.metodo_identificacao === 'biometria_qr'
     } catch { /* biometria ainda não migrada */ }
+  }
+
+  /*
+   * Escala por dia — só em evento de subeventos (ver lib/escala.ts). Dias que
+   * já passaram não aparecem: ninguém se escala para ontem. Evento normal
+   * fica com `null` e o formulário é exatamente o de sempre.
+   */
+  let diasEscala: DiaDaEscala[] | null = null
+  if (evento?.id && await eventoUsaEscalaPorDia(evento.id)) {
+    const hoje = diaBRT()
+    diasEscala = (await diasDaEscalaDoEvento(evento.id)).filter(d => d.data >= hoje)
   }
   const autorizacao = individual
     ? await consultarAutorizacaoCadastroIndividual(individual)
@@ -132,6 +146,7 @@ export default async function FormPage({
             cpfInicial={cpf}
             autorizacaoIndividual={excecaoIndividualValida ? individual : undefined}
             biometriaHabilitada={biometriaHabilitada}
+            diasEscala={diasEscala}
           />
         </div>
       </div>

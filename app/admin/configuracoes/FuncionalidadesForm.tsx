@@ -91,6 +91,26 @@ export default function FuncionalidadesForm({
         </div>
       </label>
 
+      <label className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors">
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="escala_por_dia_habilitada"
+            defaultChecked={funcionalidades.escalaPorDiaHabilitada}
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-slate-800 font-semibold text-sm">Dias de trabalho escolhidos pelo funcionário</p>
+            <p className="text-slate-600 text-xs mt-1">
+              No formulário de cadastro, a pessoa marca em quais dias do evento vai trabalhar
+              (montagem, evento, desmontagem — os dias configurados em Editar evento). O supervisor
+              confirma ou ajusta os dias na aprovação, e o QR Code só libera a entrada nos dias
+              aprovados. Por enquanto vale só para eventos com subeventos.
+            </p>
+          </div>
+        </div>
+      </label>
+
       {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
       <button type="submit" disabled={isPending} className="btn btn-primario btn-sm">

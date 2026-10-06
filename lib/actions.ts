@@ -42,6 +42,11 @@ import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
+import {
+  eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
+  gravarDiasEscolhidos, gravarEscalaAprovada, type DetalheCredenciamento,
+} from './escala'
+import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
 import { podePassar } from './limite'
 import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
@@ -3747,7 +3752,15 @@ async function exigirAcessoAAprovacao(fornecedorId: string, eventoId: string, mo
  * Só age em cima de `pendente` — REGRA 10 do pedido (negado não volta a
  * aprovado num clique do mesmo botão; reabrir uma decisão é fora de escopo).
  */
-export async function aprovarCredenciamento(funcionarioId: string, fornecedorId: string, eventoId: string): Promise<
+export async function aprovarCredenciamento(
+  funcionarioId: string, fornecedorId: string, eventoId: string,
+  /**
+   * Evento de subeventos: os dias em que o QR vai valer, confirmados pelo
+   * supervisor na própria aprovação. Ausente = confirma exatamente os dias
+   * que a pessoa escolheu. Ignorado para quem está fora da escala por dia.
+   */
+  diasAprovados?: string[],
+): Promise<
   { ok?: false; error: string } | { ok: true }
 > {
   try {
@@ -3758,6 +3771,28 @@ export async function aprovarCredenciamento(funcionarioId: string, fornecedorId:
     if (!func) return { error: 'Funcionário não encontrado.' }
     if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'pendente') {
       return { error: 'Este credenciamento já foi decidido.' }
+    }
+
+    /*
+     * ESCALA POR DIA — a escala é confirmada ANTES do credenciamento: se os
+     * dias não gravarem, a pessoa continua pendente (e não aprovada com um QR
+     * que não vale dia nenhum).
+     */
+    const escala = await escalaDoFuncionario(funcionarioId)
+    if (escala?.status && await eventoUsaEscalaPorDia(eventoId)) {
+      const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+      const pedidos = escala.dias.filter(d => d.selecionado).map(d => d.data)
+      const conferido = conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
+      if (!conferido.ok) return { error: conferido.erro }
+      const gravado = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: conferido.dias, perfilId: perfil.id })
+      if (!gravado.ok) return { error: mensagemAmigavel(gravado.erro) }
+      after(() => registrarAuditoria({
+        perfil, acao: 'APROVACAO_ESCALA', campoAlterado: 'Dias de trabalho',
+        valorAnterior: `Pedidos: ${listarDias(pedidos)}`, valorNovo: `Aprovados: ${listarDias(gravado.depois)}`,
+        funcionarioId, eventoId,
+      }))
+      // Lembretes dos dias que ficaram de fora saem da fila.
+      after(() => sincronizarAgendamentos(eventoId).catch(console.error))
     }
 
     const { error } = await supabaseAdmin.from('funcionarios').update({
@@ -3781,6 +3816,119 @@ export async function aprovarCredenciamento(funcionarioId: string, fornecedorId:
     revalidatePath(`/admin/eventos/${eventoId}/aprovacoes`)
     revalidatePath(`/credential/${func.qr_token}`)
     return { ok: true as const }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * O supervisor ajusta a escala de quem já está no evento (evento de
+ * subeventos): troca um dia, acrescenta outro. A pessoa NÃO consegue mudar os
+ * próprios dias depois do cadastro — o pedido passa por aqui. O QR passa a
+ * respeitar a escala nova na leitura seguinte (a checagem é feita na hora,
+ * em `conferirEscalaNoDia`, sem nada em cache).
+ *
+ * Mesma régua de permissão da aprovação do credenciamento.
+ */
+export async function ajustarEscalaDoFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, dias: string[], motivo?: string,
+): Promise<{ ok?: false; error: string } | { ok: true }> {
+  try {
+    const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId, motivo)
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('fornecedor_id, qr_token, fornecedores(evento_id)').eq('id', funcionarioId).maybeSingle()
+    if (!func) return { error: 'Funcionário não encontrado.' }
+    // A guarda acima confere o setor informado; aqui, que a pessoa É desse setor e desse evento.
+    if (func.fornecedor_id !== fornecedorId || (func.fornecedores as unknown as { evento_id?: string } | null)?.evento_id !== eventoId) {
+      return { error: 'Este funcionário não pertence a este fornecedor.' }
+    }
+    if (!(await eventoUsaEscalaPorDia(eventoId))) return { error: 'Este evento não usa escala por dia.' }
+
+    const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+    const conferido = conferirDiasPermitidos(dias, disponiveis)
+    if (!conferido.ok) return { error: conferido.erro }
+
+    const gravado = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: conferido.dias, perfilId: perfil.id })
+    if (!gravado.ok) return { error: mensagemAmigavel(gravado.erro) }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'AJUSTE_ESCALA', campoAlterado: 'Dias de trabalho',
+      valorAnterior: listarDias(gravado.antes), valorNovo: listarDias(gravado.depois),
+      motivo: (motivo ?? '').trim() || null, funcionarioId, eventoId,
+    }))
+    // Os lembretes acompanham a escala nova (dia tirado sai da fila, dia novo entra).
+    after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/eventos/${eventoId}/aprovacoes`)
+    revalidatePath(`/credential/${func.qr_token}`)
+    return { ok: true as const }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * Tudo que o modal de aprovação mostra de UMA pessoa: os dados do cadastro,
+ * a situação do credenciamento e — em evento com escala por dia — os dias
+ * do evento, os que ela pediu e os que já foram aprovados.
+ *
+ * Abre pelo nome, em "Aguardando aprovação" e na equipe do fornecedor. Mesma
+ * régua de permissão de aprovar (`exigirAcessoAAprovacao`); o CPF vai inteiro
+ * porque quem aprova precisa conferir a pessoa, como na tabela ao lado.
+ */
+export async function detalheDoCredenciamento(funcionarioId: string, fornecedorId: string, eventoId: string): Promise<
+  { ok?: false; error: string } | { ok: true; detalhe: DetalheCredenciamento }
+> {
+  try {
+    await exigirAcessoAAprovacao(fornecedorId, eventoId, 'consulta do credenciamento')
+    const { data: f } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, cidade, cargo, origem, created_at, foto_perfil_path, status_credenciamento, motivo_negacao, decidido_em, decidido_por, fornecedor_id, fornecedores(nome, evento_id)')
+      .eq('id', funcionarioId).maybeSingle()
+    const setor = f?.fornecedores as unknown as { nome?: string; evento_id?: string } | null
+    if (!f || f.fornecedor_id !== fornecedorId || setor?.evento_id !== eventoId) {
+      return { error: 'Este funcionário não pertence a este fornecedor.' }
+    }
+
+    const [usaEscala, foto, decisor, subevento] = await Promise.all([
+      eventoUsaEscalaPorDia(eventoId),
+      f.foto_perfil_path
+        ? supabaseAdmin.storage.from('presencas').createSignedUrl(f.foto_perfil_path as string, 60 * 60)
+        : Promise.resolve({ data: null }),
+      f.decidido_por
+        ? supabaseAdmin.from('perfis').select('nome').eq('id', f.decidido_por as string).maybeSingle()
+        : Promise.resolve({ data: null }),
+      // Coluna nova, à parte e tolerante — mesmo cuidado da credencial.
+      supabaseAdmin.from('funcionarios').select('subeventos(nome)').eq('id', funcionarioId).maybeSingle()
+        .then(r => (r.data as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null, () => null),
+    ])
+    const diasDoEvento: DiaDaEscala[] = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
+    const escala = usaEscala ? await escalaDoFuncionario(funcionarioId) : null
+
+    return {
+      ok: true,
+      detalhe: {
+        nome: f.nome as string,
+        cpf: f.cpf as string,
+        telefone: (f.telefone as string | null) ?? '',
+        cidade: (f.cidade as string | null) ?? null,
+        cargo: (f.cargo as string | null) ?? null,
+        origem: (f.origem as string | null) ?? 'formulario',
+        criadoEm: f.created_at as string,
+        fotoUrl: foto.data?.signedUrl ?? null,
+        setorNome: setor?.nome ?? '',
+        subeventoNome: subevento,
+        status: statusCredenciamentoValido(f.status_credenciamento as string),
+        motivoNegacao: (f.motivo_negacao as string | null) ?? null,
+        decididoEm: (f.decidido_em as string | null) ?? null,
+        decididoPor: (decisor.data as { nome?: string } | null)?.nome ?? null,
+        usaEscala,
+        diasDoEvento,
+        escala,
+      },
+    }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }
@@ -5639,6 +5787,13 @@ export type ResultadoScan = {
    * portaria mandar a pessoa pro portão certo em vez de achar que é fraude.
    */
   areaErrada?: boolean
+  /**
+   * Evento de subeventos: a credencial é válida, mas HOJE não está entre os
+   * dias aprovados na escala desta pessoa (ver lib/escala.ts). Categoria
+   * visual própria — não é fraude nem QR quebrado, é escala: quem resolve é
+   * o supervisor.
+   */
+  diaNaoAutorizado?: boolean
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -5780,6 +5935,7 @@ function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
+  if (r.diaNaoAutorizado) return 'dia_nao_autorizado'
   return r.qrInvalido ? 'invalido' : 'negado'
 }
 
@@ -6113,6 +6269,21 @@ async function autorizarPresenca(args: {
   // Sem setor nenhum, não escaneia ninguém.
   if (setoresDoSupervisor && !setoresDoSupervisor.some(s => s.id === func.fornecedor_id)) {
     return { success: false, message: 'Esta pessoa não é da sua equipe. Ela precisa passar pelo credenciamento do evento.', funcionario: funcInfo }
+  }
+
+  /*
+   * ESCALA POR DIA (eventos de subeventos) — o QR só vale nos dias que o
+   * supervisor aprovou para esta pessoa. O dia conferido é o do TURNO: quem
+   * entrou ontem à noite (dia aprovado) e sai às 4h de hoje está fechando o
+   * turno de ontem, não começando um dia novo. Pessoa fora do fluxo (evento
+   * normal, cadastro pelo painel) passa direto — ver `conferirEscalaNoDia`.
+   */
+  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, entradaAberta?.dataRef ?? diaTurno)
+  if (!escalaHoje.ok) {
+    return {
+      success: false, diaNaoAutorizado: true, funcionario: funcInfo,
+      message: `${escalaHoje.titulo} ${escalaHoje.mensagem}`,
+    }
   }
 
   const jaBuscado = { entrada: entradaAberta, diaTurno }
@@ -6746,6 +6917,9 @@ export async function registrarPresencaFacialLivre(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'entrada')
   if (!resolucao.ok) return { error: resolucao.erro }
+  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
+  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
+  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
   if (resolucao.jaEm) {
     return { error: `Você já registrou a entrada em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
@@ -6882,6 +7056,9 @@ export async function registrarPresencaFoto(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'meio')
   if (!resolucao.ok) return { error: resolucao.erro }
+  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
+  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
+  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
   if (resolucao.jaEm) {
     return { error: `Você já registrou o meio em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
@@ -7027,6 +7204,9 @@ export async function registrarPresencaLivre(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
   if (!resolucao.ok) return { error: resolucao.erro }
+  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
+  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
+  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
 
   /*
    * No dia principal, este caminho só existe se o admin ligou. Fora dele
@@ -7192,7 +7372,9 @@ async function resolverBiometriaNoCadastro(args: {
 export async function cadastrarFuncionarioPublico(
   fornecedorId: string,
   dados: {
-    nome: string; cpf: string; telefone: string; cargo: string; chavePix?: string; cidade?: string
+    nome: string; cpf: string; telefone: string; chavePix?: string; cidade?: string
+    /** Fora do formulário público desde 06/10/2026 (pedido do Juan) — a função fica a cargo do supervisor. */
+    cargo?: string
     consentimento?: boolean; fotoBase64?: string; origem?: string
     /**
      * O rosto (128 números), quando o evento usa biometria e a pessoa
@@ -7209,6 +7391,11 @@ export async function cadastrarFuncionarioPublico(
     biometriaDescritor?: number[]
     /** Token do widget Cloudflare Turnstile — ver `lib/turnstile.ts`. Ausente/undefined quando o captcha ainda não está configurado (tolerante). */
     turnstileToken?: string
+    /**
+     * Evento de subeventos: os dias ("YYYY-MM-DD") em que a pessoa diz que vai
+     * trabalhar. Ignorado em evento normal — ver `eventoUsaEscalaPorDia`.
+     */
+    dias?: string[]
   },
   autorizacaoIndividual?: string,
 ): Promise<{
@@ -7217,6 +7404,8 @@ export async function cadastrarFuncionarioPublico(
   temBiometria?: boolean
   /** `true` quando o rosto veio de um cadastro anterior (outro evento), sem passar pela câmera agora. */
   biometriaReaproveitada?: boolean
+  /** Os dias da escala gravados NESTE envio — vazio quando o CPF já estava cadastrado (nada foi gravado). */
+  diasSalvos?: string[]
 }> {
   /*
    * Captcha — item "Bot protection" da auditoria de 01/10/2026. Tolerante:
@@ -7320,8 +7509,8 @@ export async function cadastrarFuncionarioPublico(
   if (nome.length < 2 || nome.length > 120) return { error: 'Informe um nome válido.' }
   const telefone = dados.telefone.replace(/\D/g, '')
   if (telefone.length < 10 || telefone.length > 13) return { error: 'Informe um WhatsApp válido, com DDD.' }
-  const cargo = dados.cargo.trim()
-  if (cargo.length < 2 || cargo.length > 120) return { error: 'Informe a função que você vai exercer.' }
+  const cargo = (dados.cargo ?? '').trim() || null
+  if (cargo && cargo.length > 120) return { error: 'Função inválida — confira o que foi digitado.' }
   const chavePix = dados.chavePix?.trim() || null
   if (chavePix && chavePix.length > 140) return { error: 'Chave PIX inválida — confira o que foi digitado.' }
 
@@ -7385,6 +7574,25 @@ export async function cadastrarFuncionarioPublico(
     .from('fornecedores').select('subevento_id, quantidade_estimada').eq('id', fornecedorId).maybeSingle()
   const subeventoIdResolvido = (fornecedorCompleto as { subevento_id?: string | null } | null)?.subevento_id ?? null
 
+  /*
+   * ESCALA POR DIA (eventos de subeventos): a pessoa diz em quais dias vai
+   * trabalhar, e o QR só vai valer nos dias que o supervisor confirmar. A
+   * escolha é conferida AQUI contra os dias do evento — a tela só mostra os
+   * dias certos, mas é o servidor que recusa um dia inventado. Dias que já
+   * passaram não entram: ninguém se escala para ontem. Evento normal não
+   * passa por nada disto.
+   */
+  const usaEscala = await eventoUsaEscalaPorDia(fornecedor.evento_id as string)
+  let diasEscolhidos: string[] = []
+  if (usaEscala) {
+    const hoje = diaBRT()
+    const disponiveis = (await diasDaEscalaDoEvento(fornecedor.evento_id as string)).map(d => d.data).filter(d => d >= hoje)
+    if (!disponiveis.length) return { error: 'O período de trabalho deste evento já terminou.' }
+    const conferido = conferirDiasPermitidos(dados.dias, disponiveis)
+    if (!conferido.ok) return { error: conferido.erro }
+    diasEscolhidos = conferido.dias
+  }
+
   const organizacaoIdDoEvento = (fornecedor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
   const { travaCotaHabilitada } = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
   if (travaCotaHabilitada) {
@@ -7440,6 +7648,17 @@ export async function cadastrarFuncionarioPublico(
     if (erroSubevento) console.error('[cadastrarFuncionarioPublico] subevento_id não gravado (migração pendente?)', erroSubevento.message)
   }
 
+  // Os dias SÃO parte do cadastro num evento de subeventos (sem eles o QR
+  // nunca valeria): falhou, desfaz tudo — mesmo cuidado da foto, logo abaixo.
+  if (usaEscala) {
+    const gravado = await gravarDiasEscolhidos(data.id as string, fornecedor.evento_id as string, diasEscolhidos)
+    if (!gravado.ok) {
+      console.error('[cadastrarFuncionarioPublico] dias da escala não gravados', gravado.erro)
+      await supabaseAdmin.from('funcionarios').delete().eq('id', data.id)
+      return { error: 'Não foi possível salvar os dias escolhidos. Tente novamente.' }
+    }
+  }
+
   if (match) {
     const contentType = match[1]
     const ext = contentType.split('/')[1] || 'jpg'
@@ -7487,7 +7706,7 @@ export async function cadastrarFuncionarioPublico(
   // A mensagem de boas-vindas (com o link/QR) só dispara na APROVAÇÃO agora —
   // ver `aprovarCredenciamento`. Represada de propósito: mandar o link antes
   // de alguém aprovar entregaria uma credencial que ainda não vale.
-  return { qrToken: data.qr_token, status: 'pendente' as const, temBiometria, biometriaReaproveitada }
+  return { qrToken: data.qr_token, status: 'pendente' as const, temBiometria, biometriaReaproveitada, diasSalvos: diasEscolhidos }
 }
 
 /**
@@ -8181,6 +8400,11 @@ export async function registrarPresencaAssistida(
    * garante que nunca vira uma segunda linha.
    */
   const refAssistido = await diaDeReferencia(evento, func.id, momento)
+
+  // Escala por dia (eventos de subeventos): mesma régua do QR. Para liberar um
+  // dia fora da escala, o caminho é ajustar a escala — não contornar aqui.
+  const escalaHoje = await conferirEscalaNoDia(func.id, evento.id, refAssistido.dataRef)
+  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} Ajuste os dias de trabalho desta pessoa antes de registrar.` }
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'
@@ -9760,6 +9984,12 @@ export type FuncionalidadesOrganizacao = {
   travaCotaHabilitada: boolean
   /** Item 4 do pedido do Vital — libera o campo de aviso de uniforme/identificação em Editar evento. */
   avisoUniformeHabilitado: boolean
+  /**
+   * Funcionário escolhe os dias de trabalho no formulário, e o QR só vale nos
+   * dias que o supervisor aprovar (lib/escala.ts). Por enquanto só age em
+   * evento de subeventos — ver `eventoUsaEscalaPorDia`.
+   */
+  escalaPorDiaHabilitada: boolean
 }
 
 /**
@@ -9781,7 +10011,7 @@ async function garantirSubeventosHabilitadoNaOrg(organizacaoId: string | null) {
  * colunas, tudo se comporta como hoje — nenhum recurso novo aparece.
  */
 export async function obterFuncionalidadesOrganizacao(organizacaoId: string | null): Promise<FuncionalidadesOrganizacao> {
-  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false }
+  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false, escalaPorDiaHabilitada: false }
   if (!organizacaoId) return vazio
   const { data, error } = await supabaseAdmin
     .from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
@@ -9790,6 +10020,7 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
     subeventosHabilitado: (data as { subeventos_habilitado?: boolean }).subeventos_habilitado === true,
     travaCotaHabilitada: (data as { trava_cota_habilitada?: boolean }).trava_cota_habilitada === true,
     avisoUniformeHabilitado: (data as { aviso_uniforme_habilitado?: boolean }).aviso_uniforme_habilitado === true,
+    escalaPorDiaHabilitada: (data as { escala_por_dia_habilitada?: boolean }).escala_por_dia_habilitada === true,
   }
 }
 
@@ -9804,6 +10035,15 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
     aviso_uniforme_habilitado: formData.get('aviso_uniforme_habilitado') === 'on',
   }).eq('id', organizacaoId)
   if (error) throw new Error(mensagemAmigavel(error))
+
+  // À parte: coluna nova (upgrade-escala-por-dia.sql). Sem a migração, o resto
+  // continua salvando — só este interruptor avisa que ainda não dá.
+  const escalaLigada = formData.get('escala_por_dia_habilitada') === 'on'
+  const { error: erroEscala } = await supabaseAdmin.from('organizacoes')
+    .update({ escala_por_dia_habilitada: escalaLigada }).eq('id', organizacaoId)
+  if (erroEscala && escalaLigada) {
+    throw new Error('Os outros itens foram salvos, mas "Dias de trabalho" ainda precisa da atualização do banco (upgrade-escala-por-dia.sql).')
+  }
 
   revalidatePath('/admin/configuracoes')
 }

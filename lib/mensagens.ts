@@ -423,6 +423,46 @@ async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<D
  * a entrada real da pessoa + 4h, que só existe depois de ela bater o ponto.
  * Quem agenda é `agendarMeioAposEntrada`, chamada no momento da entrada.
  */
+/**
+ * Escala por dia (eventos de subeventos — ver lib/escala.ts): os dias de cada
+ * pessoa que está no fluxo. Aprovada → os dias aprovados; pendente → os que
+ * ela pediu (é o que vai valer se o supervisor confirmar como veio). Ausente
+ * no Map = fora do fluxo, recebe todos os dias.
+ *
+ * Consulta direta, e não via lib/escala.ts, porque este arquivo roda também
+ * no worker (sem Next). Tolerante: sem a migração, ninguém tem escala.
+ */
+async function diasDaEscalaPorFuncionario(eventoId: string): Promise<Map<string, Set<string>>> {
+  const porFuncionario = new Map<string, Set<string>>()
+  try {
+    // Paginado à mão (o `buscarTudo` mora em supabase-server, fora do alcance
+    // do worker): evento grande passa fácil do teto de 1000 linhas.
+    const paginar = async <T,>(pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: unknown }>) => {
+      const tudo: T[] = []
+      for (let de = 0; ; de += 1000) {
+        const { data, error } = await pagina(de, de + 999)
+        if (error) throw error
+        tudo.push(...(data ?? []))
+        if (!data || data.length < 1000) return tudo
+      }
+    }
+    const funcs = await paginar((de, ate) => supabase
+      .from('funcionarios').select('id, escala_status, fornecedores!inner(evento_id)')
+      .eq('fornecedores.evento_id', eventoId).not('escala_status', 'is', null).order('id').range(de, ate))
+    if (!funcs.length) return porFuncionario
+    const status = new Map(funcs.map(f => [f.id as string, f.escala_status as string]))
+    const linhas = await paginar((de, ate) => supabase
+      .from('funcionario_dias').select('funcionario_id, data, selecionado, aprovado')
+      .eq('evento_id', eventoId).order('id').range(de, ate))
+    for (const id of status.keys()) porFuncionario.set(id, new Set())
+    for (const l of linhas ?? []) {
+      const vale = status.get(l.funcionario_id as string) === 'aprovada' ? l.aprovado : l.selecionado
+      if (vale) porFuncionario.get(l.funcionario_id as string)?.add(l.data as string)
+    }
+  } catch { /* migração pendente */ }
+  return porFuncionario
+}
+
 export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   const { data: evento } = await supabase
     .from('eventos')
@@ -524,6 +564,8 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     })
   }
 
+  const diasDaEscala = await diasDaEscalaPorFuncionario(eventoId)
+
   for (const func of funcionarios) {
     // Confirmação de escala e aviso do dia falam do EVENTO, não de um dia da
     // escala: ficam presos ao dia principal, e por isso mandados uma vez só.
@@ -531,7 +573,13 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       agendarFunc(func.id, func.telefone, 'confirmacao_escala', diaPrincipal, evento.msg_pre_evento_envio as string)
     }
 
+    // Escala por dia (eventos de subeventos): só os dias DESTA pessoa geram
+    // aviso, lembrete e cobrança. Sem escala → todos os dias, como sempre.
+    const diasDaPessoa = diasDaEscala.get(func.id as string)
+
     for (const dia of dias) {
+      if (diasDaPessoa && !diasDaPessoa.has(dia.data)) continue
+
       /*
        * O aviso do dia do evento, PARA CADA dia principal.
        *

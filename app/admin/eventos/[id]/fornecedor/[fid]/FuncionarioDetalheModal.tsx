@@ -13,6 +13,7 @@ import { TelefoneInput } from '@/components/inputs'
 import SeletorLista from '@/components/SeletorLista'
 import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
+import SecaoEscala from './SecaoEscala'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -562,6 +563,13 @@ export default function FuncionarioDetalheModal({
                     </div>
                   )}
                 </div>
+
+                {/*
+                  * Dias de trabalho + aprovação, logo depois dos dados da
+                  * pessoa (pedido do Juan, 06/10/2026). Some sozinho em evento
+                  * sem escala por dia — ver SecaoEscala.tsx.
+                  */}
+                <SecaoEscala funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} />
 
                 {/*
                   * Corrigir CPF — separado do bloco acima (não inline no grid)

@@ -7,10 +7,11 @@ import { cadastrarFuncionarioPublico, buscarCadastroPorCpf } from '@/lib/actions
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import { formatCpf, formatTelefone, titleCaseNome, validarCpf } from '@/lib/format'
 import { CIDADES_ES } from '@/lib/cidades'
-import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { useCampoFormatado } from '@/components/inputs'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import FaceCapture from '@/components/FaceCapture'
+import SeletorDiasEscala, { LegendaFases } from '@/components/SeletorDiasEscala'
+import { listarDias, type DiaDaEscala } from '@/lib/escala-regras'
 import IconeInstagram from '@/components/ui/IconeInstagram'
 
 /**
@@ -37,7 +38,6 @@ const initialForm = {
   nome: '',
   cpf: '',
   telefone: '',
-  cargo: '',
   cidade: '',
   chavePix: '',
 }
@@ -67,7 +67,7 @@ function comprimir(file: File): Promise<string> {
 }
 
 export default function FormularioFuncionario({
-  fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual, biometriaHabilitada = false,
+  fornecedorId, origem = 'formulario', cpfInicial, autorizacaoIndividual, biometriaHabilitada = false, diasEscala = null,
 }: {
   fornecedorId: string
   /** De onde a pessoa veio. Guardado no cadastro para auditoria. */
@@ -83,10 +83,21 @@ export default function FormularioFuncionario({
    * o cadastro normalmente e usa o QR Code sempre.
    */
   biometriaHabilitada?: boolean
+  /**
+   * Evento de subeventos: os dias que a pessoa pode escolher para trabalhar
+   * (montagem, evento, desmontagem). `null` = evento normal, a seção nem
+   * aparece. O servidor confere a escolha de novo (`cadastrarFuncionarioPublico`).
+   */
+  diasEscala?: DiaDaEscala[] | null
 }) {
   const router = useRouter()
   const [form, setForm] = useState(() => ({ ...initialForm, cpf: cpfInicial ? formatCpf(cpfInicial) : '' }))
   const [consentimento, setConsentimento] = useState(false)
+  const [diasEscolhidos, setDiasEscolhidos] = useState<string[]>([])
+  const [diasSalvos, setDiasSalvos] = useState<string[]>([])
+  const todosMarcados = !!diasEscala?.length && diasEscolhidos.length === diasEscala.length
+  const alternarDia = (dia: string) =>
+    setDiasEscolhidos(atual => atual.includes(dia) ? atual.filter(d => d !== dia) : [...atual, dia].sort())
   const [foto, setFoto] = useState<string | null>(null)
   const [erroFoto, setErroFoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -157,7 +168,6 @@ export default function FormularioFuncionario({
    * sair errado.
    */
   const campoNome = useCampoFormatado(titleCaseNome, v => set('nome', v))
-  const campoCargo = useCampoFormatado(titleCaseNome, v => set('cargo', v))
 
   // Base central de cadastros: quando o CPF fica completo, busca o cadastro
   // mais recente da pessoa (eventos anteriores do mesmo organizador) e
@@ -178,14 +188,6 @@ export default function FormularioFuncionario({
         ...f,
         nome: f.nome || dados.nome,
         telefone: f.telefone || formatTelefone(dados.telefone),
-        /*
-         * `cargo` fica DE FORA de propósito.
-         *
-         * A função muda de evento para evento: quem foi portaria no último
-         * pode ser bar neste. Preencher com a anterior faria a pessoa confirmar
-         * sem ler, e o setor receberia gente escalada na função errada — erro
-         * que só aparece no dia, com a equipe já no local.
-         */
         cidade: f.cidade || (dados.cidade ?? ''),
         chavePix: f.chavePix || (dados.chavePix ?? ''),
       }))
@@ -242,6 +244,10 @@ export default function FormularioFuncionario({
       setErroEnvio('Confirme que você não é um robô (logo acima do botão de enviar) antes de continuar.')
       return
     }
+    if (diasEscala && !diasEscolhidos.length) {
+      setErroEnvio('Selecione pelo menos um dia em que você vai trabalhar.')
+      return
+    }
     if (biometriaHabilitada && !jaPassouPelaBiometria && !biometriaJaCadastrada) {
       setEtapaBiometria('intro')
       return
@@ -265,13 +271,13 @@ export default function FormularioFuncionario({
         nome: form.nome,
         cpf: form.cpf,
         telefone: form.telefone,
-        cargo: form.cargo,
         cidade: form.cidade,
         consentimento,
         chavePix: form.chavePix,
         fotoBase64: foto ?? undefined,
         biometriaDescritor: descritorRosto ?? undefined,
         turnstileToken: turnstileToken ?? undefined,
+        dias: diasEscala ? diasEscolhidos : undefined,
       }, autorizacaoIndividual)
 
       if (res.qrToken) {
@@ -287,6 +293,7 @@ export default function FormularioFuncionario({
           return
         }
         setStatusEnvio(res.status ?? 'pendente')
+        setDiasSalvos(res.diasSalvos ?? [])
         setQrToken(res.qrToken)
         /*
          * A tela verde de biometria aparece quando o SERVIDOR confirma que
@@ -435,6 +442,14 @@ export default function FormularioFuncionario({
         </div>
         <h2 className="text-slate-800 font-bold text-xl">{tela.titulo}</h2>
         <p className="text-slate-500 text-sm">{tela.texto}</p>
+        {diasSalvos.length > 0 && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-left">
+            <p className="text-slate-700 text-xs font-semibold">Dias que você escolheu: {listarDias(diasSalvos)}</p>
+            <p className="text-slate-500 text-2xs mt-1 leading-relaxed">
+              Seu QR Code só vai valer nos dias que o supervisor confirmar. Para mudar algum dia, fale com o seu supervisor.
+            </p>
+          </div>
+        )}
         <a
           href={`/credential/${qrToken}`}
           className="block w-full btn btn-primario btn-lg"
@@ -527,7 +542,7 @@ export default function FormularioFuncionario({
         {erroCpf && <p className="text-red-500 text-xs mt-1">{erroCpf}</p>}
         {!erroCpf && autofill && (
           <p className="flex items-center gap-1 text-brand-600 text-xs mt-1">
-            <Sparkles className="w-3 h-3 shrink-0" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo e informe a função deste evento.
+            <Sparkles className="w-3 h-3 shrink-0" /> Encontramos seu cadastro anterior e preenchemos os dados. Confira se está tudo certo.
           </p>
         )}
       </Field>
@@ -536,14 +551,6 @@ export default function FormularioFuncionario({
       </Field>
       <Field label="Telefone *" tutorial="form-telefone">
         <input required value={form.telefone} onChange={e => set('telefone', formatTelefone(e.target.value))} placeholder="(11) 99999-9999" className="input" inputMode="tel" />
-      </Field>
-      <Field label="Cargo *">
-        {/* `list` sugere a grafia certa das funções comuns sem travar texto
-            livre — evento tem função que ninguém previu. Ver lib/funcoes-constantes. */}
-        <input required value={form.cargo} {...campoCargo} list="funcoes-comuns" placeholder="Ex: Segurança, Garçom..." className="input" autoComplete="off" />
-        <datalist id="funcoes-comuns">
-          {FUNCOES_COMUNS.map(f => <option key={f} value={f} />)}
-        </datalist>
       </Field>
       <Field label="Cidade onde você mora *">
         {/* Texto livre, com as cidades do ES como sugestão — mesmo jeito do
@@ -567,6 +574,44 @@ export default function FormularioFuncionario({
       <Field label="Chave PIX (opcional)" tutorial="form-pix">
         <input value={form.chavePix} onChange={e => set('chavePix', e.target.value)} placeholder="CPF, e-mail, telefone ou chave aleatória" className="input" />
       </Field>
+
+      {/*
+        Escala por dia (evento de subeventos com o recurso ligado). A grade é a
+        mesma de Editar evento — mesmas cores por fase, mesma legenda. O aviso
+        de que o QR só vale nos dias confirmados vem ANTES do envio, não depois.
+      */}
+      {diasEscala && (
+        <Field label="Dias de trabalho *" tutorial="form-dias">
+          <p className="text-slate-500 text-xs leading-relaxed">
+            Marque os dias em que você vai trabalhar. Seu QR Code só libera a entrada nos dias
+            confirmados pelo seu supervisor — para mudar depois, fale com ele.
+          </p>
+          {diasEscala.length ? (
+            <div className="space-y-2.5 pt-1">
+              <SeletorDiasEscala dias={diasEscala} marcados={diasEscolhidos} onAlternar={alternarDia} desabilitado={loading} />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-500 text-xs">
+                  {diasEscolhidos.length
+                    ? `${diasEscolhidos.length} dia${diasEscolhidos.length === 1 ? '' : 's'} selecionado${diasEscolhidos.length === 1 ? '' : 's'}`
+                    : 'Nenhum dia selecionado'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDiasEscolhidos(todosMarcados ? [] : (diasEscala ?? []).map(d => d.data))}
+                  className="text-brand-500 text-xs font-medium hover:underline"
+                >
+                  {todosMarcados ? 'Desmarcar todos' : 'Marcar todos'}
+                </button>
+              </div>
+              <LegendaFases />
+            </div>
+          ) : (
+            <p className="text-amber-700 text-xs bg-amber-50 border border-amber-300 rounded-xl p-3">
+              O período de trabalho deste evento já terminou. Fale com o seu supervisor.
+            </p>
+          )}
+        </Field>
+      )}
 
       {/*
         Aceite da base regional.
@@ -662,7 +707,7 @@ export default function FormularioFuncionario({
       <button
         type="submit"
         data-tutorial="form-enviar"
-        disabled={loading || !consentimento || (!!TURNSTILE_SITE_KEY && !turnstileToken)}
+        disabled={loading || !consentimento || (!!TURNSTILE_SITE_KEY && !turnstileToken) || (!!diasEscala && !diasEscolhidos.length)}
         className="w-full btn btn-primario btn-lg"
       >
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}

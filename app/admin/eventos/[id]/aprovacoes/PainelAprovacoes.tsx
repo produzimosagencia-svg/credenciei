@@ -9,7 +9,9 @@ import {
   ROTULO_STATUS_CREDENCIAMENTO, TOM_STATUS_CREDENCIAMENTO, STATUS_CREDENCIAMENTO,
   type StatusCredenciamento,
 } from '@/lib/credenciamento-constantes'
+import { listarDias, type DiaDaEscala, type StatusEscala } from '@/lib/escala-regras'
 import AcoesCredenciamento from './AcoesCredenciamento'
+import ModalCredenciamento from './ModalCredenciamento'
 
 export type CredenciamentoLinha = {
   id: string
@@ -28,6 +30,14 @@ export type CredenciamentoLinha = {
   /** Quando e por quem foi aprovado/negado — nulo enquanto pendente. */
   decididoEm: string | null
   decididoPor: string | null
+  /** Evento de subeventos: os dias pedidos e os aprovados. `null` = fora da escala por dia. */
+  escala: {
+    status: StatusEscala
+    pedidos: string[]
+    aprovados: string[]
+    decididaEm: string | null
+    decididaPor: string | null
+  } | null
 }
 
 const ROTULO_ORIGEM: Record<string, string> = {
@@ -43,13 +53,17 @@ const ROTULO_ORIGEM: Record<string, string> = {
  * aqui não há isolamento a mais para aplicar.
  */
 export default function PainelAprovacoes({
-  eventoId, linhas,
+  eventoId, linhas, diasDoEvento = null,
 }: {
   eventoId: string
   linhas: CredenciamentoLinha[]
+  /** Evento de subeventos: os dias de trabalho do evento. `null` = evento normal, sem coluna de dias. */
+  diasDoEvento?: DiaDaEscala[] | null
 }) {
   const [busca, setBusca] = useState('')
   const [filtroStatus, setFiltroStatus] = useState<'' | StatusCredenciamento>('pendente')
+  // A linha cujo modal está aberto (clique no nome) — ver ModalCredenciamento.
+  const [aberta, setAberta] = useState<CredenciamentoLinha | null>(null)
 
   const contagens = useMemo(() => {
     const c: Record<StatusCredenciamento, number> = { pendente: 0, aprovado: 0, negado: 0 }
@@ -145,13 +159,22 @@ export default function PainelAprovacoes({
                   <th>Origem</th>
                   <th>Recebido em</th>
                   <th>Status</th>
+                  {diasDoEvento && <th>Dias de trabalho</th>}
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filtrados.map(l => (
                   <tr key={l.id}>
-                    <td className="text-slate-700 font-medium">{l.nome}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setAberta(l)}
+                        className="text-slate-700 font-medium text-left hover:text-brand-600 hover:underline"
+                      >
+                        {l.nome}
+                      </button>
+                    </td>
                     <td>
                       <p className="text-slate-700 text-2xs tabular-nums">{formatCpf(l.cpf)}</p>
                       <p className="text-slate-400 text-2xs tabular-nums">{formatTelefone(l.telefone)}</p>
@@ -168,9 +191,30 @@ export default function PainelAprovacoes({
                         <p className="text-slate-400 text-2xs mt-0.5 max-w-[16rem]">{l.motivoNegacao}</p>
                       )}
                     </td>
+                    {diasDoEvento && (
+                      <td className="text-2xs max-w-[14rem]">
+                        {!l.escala ? (
+                          <span className="text-slate-400">Sem escala por dia</span>
+                        ) : l.escala.status === 'aprovada' ? (
+                          <>
+                            <p className="text-green-700 font-semibold">Aprovados: {listarDias(l.escala.aprovados)}</p>
+                            {l.escala.decididaPor && (
+                              <p className="text-slate-400">
+                                por {l.escala.decididaPor}{l.escala.decididaEm ? ` · ${formatarBR(l.escala.decididaEm, 'curto')}` : ''}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-amber-700">Pediu: {listarDias(l.escala.pedidos)}</p>
+                        )}
+                      </td>
+                    )}
                     <td className="text-right">
                       {l.status === 'pendente' ? (
-                        <AcoesCredenciamento funcionarioId={l.id} fornecedorId={l.setorId} eventoId={eventoId} nome={l.nome} />
+                        <AcoesCredenciamento
+                          funcionarioId={l.id} fornecedorId={l.setorId} eventoId={eventoId} nome={l.nome}
+                          onAprovarComDias={diasDoEvento ? () => setAberta(l) : undefined}
+                        />
                       ) : (
                         <div className="text-2xs whitespace-nowrap">
                           <p className="text-slate-600">
@@ -178,6 +222,15 @@ export default function PainelAprovacoes({
                             <strong className="text-slate-800">{l.decididoPor ?? '—'}</strong>
                           </p>
                           {l.decididoEm && <p className="text-slate-400">{formatarBR(l.decididoEm, 'curto')}</p>}
+                          {l.status === 'aprovado' && diasDoEvento && (
+                            <button
+                              type="button"
+                              onClick={() => setAberta(l)}
+                              className="btn-press mt-1 inline-flex items-center gap-1 text-2xs font-semibold rounded-lg px-2 py-1 text-brand-600 hover:bg-brand-50"
+                            >
+                              Ajustar dias
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -188,6 +241,13 @@ export default function PainelAprovacoes({
           </div>
         )}
       </Secao>
+
+      {aberta && (
+        <ModalCredenciamento
+          funcionarioId={aberta.id} fornecedorId={aberta.setorId} eventoId={eventoId}
+          nome={aberta.nome} onFechar={() => setAberta(null)}
+        />
+      )}
     </div>
   )
 }

@@ -5,14 +5,21 @@ import { Check, X } from 'lucide-react'
 import { aprovarCredenciamento, negarCredenciamento } from '@/lib/actions'
 import ConfirmModal from '@/components/ConfirmModal'
 
-/** Aprovar (direto, mesma aspereza de `alternarAtivacao`) ou negar (com confirmação e motivo opcional). */
+/**
+ * Aprovar (direto, mesma aspereza de `alternarAtivacao`) ou negar (com
+ * confirmação e motivo opcional).
+ *
+ * Evento com escala por dia: aprovar sem olhar os dias não existe —
+ * `onAprovarComDias` abre o modal da pessoa (ver ModalCredenciamento.tsx).
+ */
 export default function AcoesCredenciamento({
-  funcionarioId, fornecedorId, eventoId, nome,
+  funcionarioId, fornecedorId, eventoId, nome, onAprovarComDias,
 }: {
   funcionarioId: string
   fornecedorId: string
   eventoId: string
   nome: string
+  onAprovarComDias?: () => void
 }) {
   const router = useRouter()
   const [negando, setNegando] = useState(false)
@@ -56,7 +63,7 @@ export default function AcoesCredenciamento({
       {erro && <p className="text-red-600 text-2xs w-full text-right">{erro}</p>}
 
       <button
-        onClick={aprovar} disabled={isPending}
+        onClick={onAprovarComDias ?? aprovar} disabled={isPending}
         className="btn-press inline-flex items-center gap-1 text-2xs font-semibold rounded-lg px-2 py-1 text-green-700 hover:bg-green-50 disabled:opacity-50"
       >
         <Check className="w-3.5 h-3.5" /> Aprovar
