@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle } from 'lucide-react'
 import { criarSubevento, editarSubevento, excluirSubevento, mesclarSubeventos } from '@/lib/actions'
 import { mesmoNome, nomesParecem } from '@/lib/estrutura-regras'
+import { NomeMaiusculoInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
 import { EmptyState } from '@/components/ui/Superficie'
 import ImportarEstrutura from './ImportarEstrutura'
@@ -199,7 +200,7 @@ function SubeventoModal(
             <form action={handleAction} className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome *</label>
-                <input name="nome" required defaultValue={isEditar ? props.nome : ''} placeholder="Ex: Camarote Navista" className="input" />
+                <NomeMaiusculoInput name="nome" required defaultValue={isEditar ? props.nome : ''} placeholder="Ex: CAMAROTE NAVISTA" className="input" />
               </div>
               {erro && <p className="text-red-500 text-xs">{erro}</p>}
               <button type="submit" disabled={isPending} className="btn btn-primario w-full">

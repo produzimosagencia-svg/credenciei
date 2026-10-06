@@ -233,6 +233,10 @@ organização liga "Trava de cota"; ver "Limites que não são do código"). Dá
 pra definir a trava também no cadastro manual do fornecedor ("Limite de
 pessoas por dia").
 
+**Padrão de nomes**: evento, subevento (área) e setor (fornecedor) são SEMPRE
+gravados em MAIÚSCULAS, não importa como foram digitados ou escritos na planilha
+(ex.: "Acesso Livre" vira "ACESSO LIVRE"). Não é preciso corrigir a caixa.
+
 **Nomes escritos de outro jeito não criam área nova**: o sistema reconhece
 "Camarote Na Vista" = "CAMAROTE NAVISTA", "Empresarial" = "EMPRESARIAIS",
 "Muvuka/Pega/Fervô" = "MUVUKA / PEGA / FERVÔ" (maiúscula, acento, espaço, barra,

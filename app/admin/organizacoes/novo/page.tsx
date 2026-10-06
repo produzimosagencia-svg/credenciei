@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarOrganizacoes } from '@/lib/permissions'
 import { criarOrganizacao } from '@/lib/actions'
-import { NomeInput, CpfCnpjInput } from '@/components/inputs'
+import { NomeInput, NomeMaiusculoInput, CpfCnpjInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import ValorCobradoPicker from '@/components/ValorCobradoPicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
@@ -71,7 +71,7 @@ export default async function NovaOrganizacaoPage() {
             depois — ele poderá criar até o limite de licenças definido acima.
           </p>
           <Field label="Nome do evento">
-            <NomeInput name="evento_nome" placeholder="Ex: Show da Virada 2026" className="input" />
+            <NomeMaiusculoInput name="evento_nome" placeholder="Ex: SHOW DA VIRADA 2026" className="input" />
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Data de início">

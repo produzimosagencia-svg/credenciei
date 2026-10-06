@@ -3,7 +3,7 @@ import ConferenciaDeHorarios from '../ConferenciaDeHorarios'
 import { redirect } from 'next/navigation'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil, licencasDeEventoRestantes, supabaseAdmin } from '@/lib/supabase-server'
-import { NomeInput } from '@/components/inputs'
+import { NomeInput, NomeMaiusculoInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -120,7 +120,7 @@ function EventoForm({
         </label>
       )}
       <Field label="Nome do evento *" tutorial="evt-novo-nome">
-        <NomeInput name="nome" required defaultValue={defaults?.nome} placeholder="Ex: Feira do Empreendedor 2025" className="input" />
+        <NomeMaiusculoInput name="nome" required defaultValue={defaults?.nome} placeholder="Ex: FEIRA DO EMPREENDEDOR 2025" className="input" />
       </Field>
       <Field label="Descrição">
         <textarea name="descricao" rows={2} defaultValue={defaults?.descricao ?? ''} placeholder="Descrição opcional" className="input resize-none" />

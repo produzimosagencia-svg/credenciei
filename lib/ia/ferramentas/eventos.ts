@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import { inputParaISO, formatarBR } from '@/lib/tz'
+import { nomeEmMaiusculo } from '@/lib/format'
 import { criarPlanilhaEvento } from '@/lib/google-sheets'
 import { sincronizarAgendamentos } from '@/lib/mensagens'
 import { registrarAuditoriaIA } from '../auditoria'
@@ -97,7 +98,7 @@ export function ferramentasDeEvento(ctx: ContextoIA, pedirConfirmacao: PedirConf
         }
 
         const { data: novo, error } = await supabaseAdmin.from('eventos').insert([{
-          nome: String(nome).trim(),
+          nome: nomeEmMaiusculo(String(nome)),
           descricao: descricao ? String(descricao).trim() : null,
           data_inicio: inicio,
           data_fim: fim,
@@ -151,7 +152,7 @@ export function ferramentasDeEvento(ctx: ContextoIA, pedirConfirmacao: PedirConf
         if (erro) return erro
 
         const mudancas: Record<string, unknown> = {}
-        if (nome != null) mudancas.nome = String(nome).trim()
+        if (nome != null) mudancas.nome = nomeEmMaiusculo(String(nome))
         if (descricao != null) mudancas.descricao = String(descricao).trim() || null
         if (local != null) mudancas.local = String(local).trim() || null
         if (data_inicio != null) mudancas.data_inicio = inputParaISO(data_inicio)

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { garantirAbaFornecedor } from '@/lib/google-sheets'
+import { nomeEmMaiusculo } from '@/lib/format'
 import { registrarAuditoriaIA } from '../auditoria'
 import {
   ferramenta, exigirEvento, exigirGestor, resolverSetor, urlBase, valorNumerico, brl,
@@ -52,7 +53,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
 
         const { data: novo, error } = await supabaseAdmin.from('fornecedores').insert([{
           evento_id,
-          nome: String(nome).trim(),
+          nome: nomeEmMaiusculo(String(nome)),
           quantidade_estimada: quantidade_estimada ?? null,
           valor_combinado: valorNumerico(valor_combinado),
         }]).select('id, nome, token_formulario').single()
@@ -104,7 +105,7 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         if (!r.ok) return r.erro
 
         const mudancas: Record<string, unknown> = {}
-        if (nome != null) mudancas.nome = String(nome).trim()
+        if (nome != null) mudancas.nome = nomeEmMaiusculo(String(nome))
         if (quantidade_estimada != null) mudancas.quantidade_estimada = quantidade_estimada || null
         if (valor_combinado != null) mudancas.valor_combinado = valorNumerico(valor_combinado)
         if (cpfs_autorizados != null) mudancas.cpfs_autorizados = normalizarCpfs(cpfs_autorizados)

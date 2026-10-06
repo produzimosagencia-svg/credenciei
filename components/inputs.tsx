@@ -90,6 +90,13 @@ export function useCampoFormatado(
 /** Nome próprio com Title Case (primeira letra de cada palavra maiúscula). */
 export const NomeInput = makeFormattedInput(titleCaseNome)
 
+/**
+ * Nome de evento, subevento ou setor: digita e aparece em MAIÚSCULAS (o
+ * servidor grava assim de qualquer jeito — ver `nomeEmMaiusculo`; isto só
+ * deixa a pessoa ver, enquanto digita, o que vai ser salvo).
+ */
+export const NomeMaiusculoInput = makeFormattedInput(v => v.toLocaleUpperCase('pt-BR'))
+
 /** CPF: 000.000.000-00 */
 export const CpfInput = makeFormattedInput(formatCpf, { inputMode: 'numeric' })
 

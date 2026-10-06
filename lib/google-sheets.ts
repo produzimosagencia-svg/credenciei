@@ -134,7 +134,10 @@ export async function garantirAbaFornecedor(
   const sheets = google.sheets({ version: 'v4', auth })
 
   const meta = await sheets.spreadsheets.get({ spreadsheetId })
-  const existente = meta.data.sheets?.find(s => s.properties?.title === fornecedorNome)
+  // Sem diferenciar maiúscula: o nome do setor passou a ser gravado em
+  // MAIÚSCULAS (06/10/2026), e a aba de um setor antigo continua com a grafia
+  // de quando foi criada — o Google recusa criar outra "só com a caixa diferente".
+  const existente = meta.data.sheets?.find(s => (s.properties?.title ?? '').toLocaleLowerCase('pt-BR') === fornecedorNome.toLocaleLowerCase('pt-BR'))
 
   if (existente) {
     const sheetId = existente.properties!.sheetId!

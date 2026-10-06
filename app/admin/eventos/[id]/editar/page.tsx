@@ -8,7 +8,7 @@ import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
-import { NomeInput } from '@/components/inputs'
+import { NomeInput, NomeMaiusculoInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
 import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save, MessageCircle } from 'lucide-react'
@@ -98,7 +98,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         <div className="p-6 sm:p-8 space-y-5" data-tutorial="edt-geral">
           <SectionTitle title="Informações gerais" subtitle="Nome, descrição e local do evento" />
           <Field label="Nome do evento *">
-            <NomeInput name="nome" required defaultValue={evento.nome} className="input" />
+            <NomeMaiusculoInput name="nome" required defaultValue={evento.nome} className="input" />
           </Field>
           <Field label="Descrição">
             <textarea name="descricao" rows={2} defaultValue={evento.descricao ?? ''} className="input resize-none" />

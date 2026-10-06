@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, X, Pencil, Check } from 'lucide-react'
 import { criarFornecedor, editarFornecedor, buscarSupervisorPorCpf, carregarTravasDoModal } from '@/lib/actions'
 import { rotuloDoDia, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
-import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
+import { NomeInput, NomeMaiusculoInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { mensagemAmigavel } from '@/lib/erros'
 
 type Subevento = { id: string; nome: string }
@@ -143,7 +143,7 @@ export default function FornecedorModal(props: Props) {
               )}
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Nome da empresa / Fornecedor *</label>
-                <NomeInput name="nome" required defaultValue={defaultNome} placeholder="Ex: Segurança, Limpeza, Bar..." className="input" />
+                <NomeMaiusculoInput name="nome" required defaultValue={defaultNome} placeholder="Ex: SEGURANÇA, LIMPEZA, BAR..." className="input" />
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1.5">Valor combinado por funcionário</label>

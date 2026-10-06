@@ -11,7 +11,8 @@
     "autorizacao": "node testes/autorizacao.mjs",
     "escala": "node testes/escala.mjs",
     "estrutura": "node testes/estrutura.mjs",
-    "supervisor": "node testes/supervisor.mjs"
+    "supervisor": "node testes/supervisor.mjs",
+    "nomes": "node testes/nomes.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

@@ -36,7 +36,7 @@ import {
   diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
   somarDias, TETO_TURNO_H, horariosEsperados, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
-import { chaveBusca, validarCpf, formatCpf } from './format'
+import { chaveBusca, validarCpf, formatCpf, nomeEmMaiusculo } from './format'
 import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
@@ -445,7 +445,7 @@ export async function criarOrganizacao(formData: FormData) {
 
   // Primeiro evento é OPCIONAL: o master pode já cadastrar, ou deixar o admin
   // criar depois (dentro do limite de licenças definido acima).
-  const eventoNome = ((formData.get('evento_nome') as string) || '').trim()
+  const eventoNome = nomeEmMaiusculo((formData.get('evento_nome') as string) || '')
   const dataInicio = formData.get('data_inicio') as string
   const dataFim = formData.get('data_fim') as string
   const local = ((formData.get('local') as string) || '').trim() || null
@@ -2466,7 +2466,7 @@ export async function criarEvento(formData: FormData) {
     driveFolder = org?.drive_folder_id ?? driveFolder
   }
 
-  const nome = formData.get('nome') as string
+  const nome = nomeEmMaiusculo(formData.get('nome') as string)
   const data = {
     nome,
     descricao: (formData.get('descricao') as string) || null,
@@ -2527,7 +2527,7 @@ export async function editarEvento(id: string, formData: FormData) {
   const perfil = await exigirEventoDaOrg(id)
   const db = supabaseAdmin
   const data = {
-    nome: formData.get('nome') as string,
+    nome: nomeEmMaiusculo(formData.get('nome') as string),
     descricao: (formData.get('descricao') as string) || null,
     data_inicio: inputParaISO(formData.get('data_inicio') as string),
     data_fim: inputParaISO(formData.get('data_fim') as string),
@@ -2947,7 +2947,7 @@ export async function carregarTravasDoModal(eventoId: string, fornecedorId?: str
 async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Promise<void> {
   const perfilCriador = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
-  const nomeFornecedor = formData.get('nome') as string
+  const nomeFornecedor = nomeEmMaiusculo(formData.get('nome') as string)
 
   /*
    * Validado ANTES de criar o setor — as mesmas regras de `criarSupervisor`,
@@ -3047,7 +3047,7 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
   const { error } = await db.from('fornecedores').update({
-    nome: formData.get('nome') as string,
+    nome: nomeEmMaiusculo(formData.get('nome') as string),
     valor_combinado: parseValor(formData.get('valor_combinado')),
     quantidade_estimada: parseQuantidade(formData.get('quantidade_estimada')),
   }).eq('id', id)
@@ -10421,7 +10421,7 @@ async function gravarLinhaEstrutura(
     subeventoId = (atuais ?? []).find(s => mesmoNome(s.nome as string, l.subgrupoUsado))?.id as string | undefined ?? null
     if (!subeventoId) {
       const { data, error } = await supabaseAdmin.from('subeventos')
-        .insert([{ evento_id: eventoId, nome: l.subgrupoUsado }]).select('id').single()
+        .insert([{ evento_id: eventoId, nome: nomeEmMaiusculo(l.subgrupoUsado) }]).select('id').single()
       if (error || !data) throw new Error(`Não consegui criar a área "${l.subgrupoUsado}".`)
       subeventoId = data.id as string
     }
@@ -10445,7 +10445,7 @@ async function gravarLinhaEstrutura(
     // A MESMA criação da tela: valida, cria, liga o supervisor pelo CPF e
     // desfaz o fornecedor se o supervisor falhar.
     const fd = new FormData()
-    fd.set('nome', l.fornecedor)
+    fd.set('nome', nomeEmMaiusculo(l.fornecedor))
     fd.set('subevento_id', subeventoId)
     if (teto) fd.set('quantidade_estimada', String(teto))
     fd.set('supervisor_nome', l.supervisor.nome)
@@ -10492,7 +10492,7 @@ async function gravarLinhaEstrutura(
 export async function criarSubevento(eventoId: string, formData: FormData): Promise<{ error?: string }> {
   try {
     await exigirEventoDaOrg(eventoId)
-    const nome = ((formData.get('nome') as string) ?? '').trim()
+    const nome = nomeEmMaiusculo(formData.get('nome') as string)
     if (!nome) throw new Error('Informe o nome do subevento.')
     const { error } = await supabaseAdmin.from('subeventos').insert([{ evento_id: eventoId, nome }])
     if (error) throw new Error(mensagemAmigavel(error))
@@ -10506,7 +10506,7 @@ export async function criarSubevento(eventoId: string, formData: FormData): Prom
 export async function editarSubevento(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
   try {
     await exigirEventoDaOrg(eventoId)
-    const nome = ((formData.get('nome') as string) ?? '').trim()
+    const nome = nomeEmMaiusculo(formData.get('nome') as string)
     if (!nome) throw new Error('Informe o nome do subevento.')
     const { error } = await supabaseAdmin.from('subeventos').update({ nome }).eq('id', id).eq('evento_id', eventoId)
     if (error) throw new Error(mensagemAmigavel(error))

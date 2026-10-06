@@ -89,6 +89,18 @@ const CONECTORES = new Set(['de', 'da', 'do', 'das', 'dos', 'e'])
  * Conectores comuns ("de", "da", "dos"...) ficam minúsculos, exceto no início.
  * Preserva espaços em branco enquanto o usuário digita.
  */
+/**
+ * Nome de EVENTO, SUBEVENTO (área) e SETOR (fornecedor): sempre em MAIÚSCULAS,
+ * com os espaços arrumados (pedido do Juan, 06/10/2026 — "Acesso Livre" ao
+ * lado de "ARQUIBANCADA" deixava a tela sem padrão). Aplicado no SERVIDOR, em
+ * todo caminho que grava esses nomes (telas, planilha de estrutura e
+ * assistente de IA); o campo na tela só ADIANTA o que vai ser gravado.
+ * `pt-BR` pra "Fervô" virar "FERVÔ" e não perder o acento.
+ */
+export function nomeEmMaiusculo(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR')
+}
+
 export function titleCaseNome(value: string): string {
   return value
     .toLocaleLowerCase('pt-BR')
