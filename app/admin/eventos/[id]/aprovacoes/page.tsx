@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Ban } from 'lucide-react'
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, buscarTudo, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { ehMaster, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
@@ -46,13 +46,20 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
     }
   }
 
-  let query = supabase
-    .from('funcionarios')
-    .select('id, nome, cpf, telefone, empresa, cargo, origem, status_credenciamento, motivo_negacao, decidido_em, decidido_por, created_at, fornecedor_id, fornecedores!inner(nome, evento_id)')
-    .eq('fornecedores.evento_id', eventoId)
-    .order('created_at', { ascending: false })
-  if (fornecedorIdsPermitidos) query = query.in('fornecedor_id', fornecedorIdsPermitidos)
-  const { data: funcionarios } = await query
+  /*
+   * Paginado: o Supabase corta em 1000 linhas sem avisar, e num evento de 4
+   * mil pessoas os pendentes mais antigos simplesmente sumiam desta tela (e
+   * os contadores das abas ficavam errados). `id` desempata a ordem — sem
+   * ordem única, as páginas se sobrepõem.
+   */
+  const funcionarios = await buscarTudo((de, ate) => {
+    let query = supabase
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, empresa, cargo, origem, status_credenciamento, motivo_negacao, decidido_em, decidido_por, created_at, fornecedor_id, fornecedores!inner(nome, evento_id)')
+      .eq('fornecedores.evento_id', eventoId)
+    if (fornecedorIdsPermitidos) query = query.in('fornecedor_id', fornecedorIdsPermitidos)
+    return query.order('created_at', { ascending: false }).order('id').range(de, ate)
+  })
 
   // Quem decidiu — consulta à parte, sem depender do nome da constraint.
   const decisores = [...new Set((funcionarios ?? []).map(f => f.decidido_por as string | null).filter((v): v is string => !!v))]

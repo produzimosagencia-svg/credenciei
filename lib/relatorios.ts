@@ -24,7 +24,8 @@
  * dado não existe, o campo fica vazio — nunca um valor calculado que pareça
  * um registro.
  */
-import { getPerfil, supabaseAdmin, meusSetores } from './supabase-server'
+import { getPerfil, supabaseAdmin, meusSetores, buscarTudo } from './supabase-server'
+import { emLotes } from './lotes'
 import { podeGerenciarEventos, ehMaster } from './permissions'
 import { diaBRT } from './janelas'
 
@@ -239,28 +240,59 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
     .from('fornecedores').select('id, nome').eq('id', fornecedorId).single()
   if (!fornecedor) return null
 
-  const { data: funcionarios } = await supabaseAdmin
-    .from('funcionarios').select('id, nome, cargo').eq('fornecedor_id', fornecedorId).order('nome')
+  /*
+   * PAGINADO (`buscarTudo`): o Supabase corta em 1000 linhas por resposta sem
+   * avisar, e um setor grande passa disso — o resto da equipe sumiria da
+   * planilha (nem nas linhas, nem nos ausentes). `id` desempata nomes iguais
+   * pra as páginas não se sobreporem. Tolerante como antes: falhou, vem vazio.
+   */
+  const funcionarios = await buscarTudo<{ id: string; nome: string; cargo: string | null }>((de, ate) =>
+    supabaseAdmin
+      .from('funcionarios').select('id, nome, cargo').eq('fornecedor_id', fornecedorId)
+      .order('nome').order('id').range(de, ate),
+  ).catch(() => null)
 
+  /*
+   * Batidas e pausas do período inteiro, EM LOTES de 200 ids e paginadas.
+   *
+   * Duas travas do Supabase ao mesmo tempo: o `.in('funcionario_id', ids)` vai
+   * na URL, e com milhares de UUIDs ela passa de ~16KB e a consulta falha
+   * inteira (`data: null` — a planilha sairia com todo mundo "ausente"); e
+   * cada resposta para em 1000 linhas, que um setor grande em vários dias
+   * passa fácil (~3 batidas por pessoa por dia). Os lotes são concatenados;
+   * a ordem não importa, porque tudo é agrupado por pessoa e dia logo abaixo.
+   */
   const ids = (funcionarios ?? []).map(f => f.id)
-  const [{ data: registros }, { data: pausasBrutas }] = ids.length
+  const lotes = emLotes(ids)
+  const [registros, pausasBrutas] = ids.length
     ? await Promise.all([
-        supabaseAdmin.from('registros')
-          .select('funcionario_id, tipo, data_ref, created_at')
-          .in('funcionario_id', ids)
-          .in('tipo', ['entrada', 'fim'])
-          .gte('data_ref', periodo.de)
-          .lte('data_ref', periodo.ate),
+        Promise.all(lotes.map(lote =>
+          buscarTudo<RegistroBruto>((de, ate) =>
+            supabaseAdmin.from('registros')
+              .select('funcionario_id, tipo, data_ref, created_at')
+              .in('funcionario_id', lote)
+              .in('tipo', ['entrada', 'fim'])
+              .gte('data_ref', periodo.de)
+              .lte('data_ref', periodo.ate)
+              .order('id')
+              .range(de, ate),
+          ),
+        )).then(partes => partes.flat(), () => null),
         // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio —
         // mesmo padrão de `historico.ts`.
-        supabaseAdmin.from('pausas_turno')
-          .select('funcionario_id, data_ref, saiu_em, voltou_em')
-          .in('funcionario_id', ids)
-          .gte('data_ref', periodo.de)
-          .lte('data_ref', periodo.ate)
-          .then(r => (r.error ? { data: [] as PausaBruta[] } : r)),
+        Promise.all(lotes.map(lote =>
+          buscarTudo<PausaBruta>((de, ate) =>
+            supabaseAdmin.from('pausas_turno')
+              .select('funcionario_id, data_ref, saiu_em, voltou_em')
+              .in('funcionario_id', lote)
+              .gte('data_ref', periodo.de)
+              .lte('data_ref', periodo.ate)
+              .order('id')
+              .range(de, ate),
+          ),
+        )).then(partes => partes.flat(), () => [] as PausaBruta[]),
       ])
-    : [{ data: [] as RegistroBruto[] }, { data: [] as PausaBruta[] }]
+    : [[] as RegistroBruto[], [] as PausaBruta[]]
 
   const porFuncionario = new Map<string, RegistroBruto[]>()
   for (const r of (registros ?? []) as RegistroBruto[]) {

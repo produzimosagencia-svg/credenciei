@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getPerfil, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, diaDoTurno, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
 import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
@@ -91,11 +91,17 @@ export default async function SubeventoPage({
     // Registros DESTE subevento só, no dia escolhido — por isso o join com
     // `funcionarios!inner(fornecedor_id)` em vez do `eq('evento_id', ...)`
     // puro que a página do evento usa (ali o total É o evento inteiro).
+    // PAGINADO: as batidas do dia de um subevento grande passam das 1000
+    // linhas que o Supabase devolve por resposta, e os KPIs travariam no
+    // teto. `id` desempata a ordem; falhou, vem vazio como antes.
     fornecedorIds.length
-      ? supabase.from('registros')
-          .select('funcionario_id, tipo, funcionarios!inner(fornecedor_id)')
-          .eq('evento_id', eventoId).eq('data_ref', diaEscolhido)
-          .in('funcionarios.fornecedor_id', fornecedorIds)
+      ? buscarTudo((de, ate) =>
+          supabase.from('registros')
+            .select('funcionario_id, tipo, funcionarios!inner(fornecedor_id)')
+            .eq('evento_id', eventoId).eq('data_ref', diaEscolhido)
+            .in('funcionarios.fornecedor_id', fornecedorIds)
+            .order('id').range(de, ate),
+        ).then(data => ({ data }), () => ({ data: null }))
       : Promise.resolve(vazio),
     fornecedorIds.length ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds) : Promise.resolve(vazio),
     fornecedorIds.length ? supabase.from('fornecedores').select('id, entrada_qualquer_horario').in('id', fornecedorIds) : Promise.resolve(vazio),

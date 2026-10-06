@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ClipboardPen, CalendarDays } from 'lucide-react'
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT } from '@/lib/janelas'
@@ -97,9 +97,20 @@ export default async function LancarPontoPage({
   const idsSetores = (setores ?? []).map(s => s.id as string)
   const nomeSetor = new Map((setores ?? []).map(s => [s.id as string, s.nome as string]))
 
+  /*
+   * Pessoas e batidas PAGINADAS (`buscarTudo`): o Supabase corta em 1000
+   * linhas por resposta sem avisar. Num evento grande (Vital: ~4.000 pessoas,
+   * ~3 batidas por dia, vários dias) a lista de pessoas e, principalmente, as
+   * batidas passam muito disso — sem paginar, gente sumia da busca e quem
+   * já tinha batido aparecia como se não tivesse. `id` desempata a ordem pra
+   * as páginas não se sobreporem. Tolerante como antes: falhou, vem vazio.
+   */
   const [{ data: funcionarios }, { data: dias }, { data: registros }] = await Promise.all([
     idsSetores.length
-      ? supabase.from('funcionarios').select('id, nome, cpf, cargo, ativo, fornecedor_id').in('fornecedor_id', idsSetores).order('nome')
+      ? buscarTudo((de, ate) =>
+          supabase.from('funcionarios').select('id, nome, cpf, cargo, ativo, fornecedor_id')
+            .in('fornecedor_id', idsSetores).order('nome').order('id').range(de, ate),
+        ).then(data => ({ data }), () => ({ data: null }))
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     supabase.from('jornada_dias').select('data, tipo').eq('evento_id', eventoParam).eq('cancelado', false).order('data'),
     /*
@@ -107,7 +118,10 @@ export default async function LancarPontoPage({
      * existe no dia escolhido, e o dia escolhido costuma ser no passado —
      * é justamente o caso de uso.
      */
-    supabase.from('registros').select('funcionario_id, tipo, created_at, data_ref').eq('evento_id', eventoParam),
+    buscarTudo((de, ate) =>
+      supabase.from('registros').select('funcionario_id, tipo, created_at, data_ref')
+        .eq('evento_id', eventoParam).order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
   ])
 
   const batidasPorFunc: Record<string, Record<string, string>> = {}

@@ -3791,8 +3791,8 @@ export async function aprovarCredenciamento(
         valorAnterior: `Pedidos: ${listarDias(pedidos)}`, valorNovo: `Aprovados: ${listarDias(gravado.depois)}`,
         funcionarioId, eventoId,
       }))
-      // Lembretes dos dias que ficaram de fora saem da fila.
-      after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+      // Lembretes dos dias que ficaram de fora saem da fila (só desta pessoa).
+      after(() => sincronizarAgendamentos(eventoId, { funcionarioId }).catch(console.error))
     }
 
     const { error } = await supabaseAdmin.from('funcionarios').update({
@@ -3819,6 +3819,34 @@ export async function aprovarCredenciamento(
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }
+}
+
+/**
+ * Aprova VÁRIOS credenciamentos pendentes de uma vez — "Aprovar selecionados"
+ * em Aguardando aprovação. Evento de 4 mil pessoas não se aprova um por um.
+ *
+ * Não tem regra própria: cada pessoa passa pela MESMA `aprovarCredenciamento`
+ * (permissão, auditoria, boas-vindas). Em evento com escala por dia, aprova
+ * com os dias que a pessoa pediu — quem precisa de ajuste, o supervisor abre
+ * pelo nome. Cinco em paralelo, até 200 por clique: rápido sem afogar o
+ * banco nem estourar o tempo da função.
+ */
+export async function aprovarCredenciamentosEmLote(
+  itens: { funcionarioId: string; fornecedorId: string }[], eventoId: string,
+): Promise<{ aprovados: number; falhas: { funcionarioId: string; erro: string }[] }> {
+  const lote = itens.slice(0, 200)
+  let aprovados = 0
+  const falhas: { funcionarioId: string; erro: string }[] = []
+  for (let i = 0; i < lote.length; i += 5) {
+    const resultados = await Promise.all(
+      lote.slice(i, i + 5).map(it => aprovarCredenciamento(it.funcionarioId, it.fornecedorId, eventoId)),
+    )
+    resultados.forEach((r, k) => {
+      if (r.ok) aprovados++
+      else falhas.push({ funcionarioId: lote[i + k].funcionarioId, erro: r.error })
+    })
+  }
+  return { aprovados, falhas }
 }
 
 /**
@@ -3858,7 +3886,7 @@ export async function ajustarEscalaDoFuncionario(
       motivo: (motivo ?? '').trim() || null, funcionarioId, eventoId,
     }))
     // Os lembretes acompanham a escala nova (dia tirado sai da fila, dia novo entra).
-    after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+    after(() => sincronizarAgendamentos(eventoId, { funcionarioId }).catch(console.error))
 
     revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
     revalidatePath(`/admin/eventos/${eventoId}/aprovacoes`)
@@ -7458,7 +7486,11 @@ export async function cadastrarFuncionarioPublico(
 
   // O link do formulário circula em grupo de WhatsApp: sem teto, um script
   // enche o setor de cadastros falsos e trava a operação no dia do evento.
-  if (!excecaoIndividualValida && !await podePassar(`cadastro:${fornecedorId}`, 60, 60 * 60 * 1000)) {
+  // 600/h (era 60): no Vital (4 mil pessoas, 06/10/2026) um fornecedor manda
+  // o link pra um grupo de 200 e todo mundo abre na mesma hora — com 60, 140
+  // pessoas de verdade levavam "muitos cadastros seguidos". 600 ainda barra
+  // um script despejando milhares.
+  if (!excecaoIndividualValida && !await podePassar(`cadastro:${fornecedorId}`, 600, 60 * 60 * 1000)) {
     return { error: 'Muitos cadastros seguidos por este link. Espere alguns minutos e tente de novo.' }
   }
 
@@ -7688,7 +7720,9 @@ export async function cadastrarFuncionarioPublico(
   })
 
   after(() => sincronizarFuncionarioNaPlanilha(data.id).catch(console.error))
-  after(() => sincronizarAgendamentos(fornecedor.evento_id).catch(console.error))
+  // Só esta pessoa: recalcular o evento inteiro a cada cadastro pesa demais
+  // quando milhares se inscrevem no mesmo dia (ver `sincronizarAgendamentos`).
+  after(() => sincronizarAgendamentos(fornecedor.evento_id, { funcionarioId: data.id as string }).catch(console.error))
   /*
    * Vai pra auditoria mesmo sem ninguém logado — quem "fez" foi a própria
    * pessoa, se cadastrando (pedido do Juan, 24/09/2026: "quem se cadastrou,

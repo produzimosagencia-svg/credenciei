@@ -105,7 +105,10 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
       .eq('fornecedores.evento_id', eventoId)
       .eq('ativo', true)
       .is('descredenciado_em', null)
+      // `id` desempata nomes iguais — sem ele, a mesma pessoa podia cair em
+      // duas páginas (ou em nenhuma) quando o nome se repete na virada.
       .order('nome')
+      .order('id')
       .range(de, de + 999)
     if (fornecedorId) pagina = pagina.eq('fornecedor_id', fornecedorId)
     const { data: bloco } = await pagina
@@ -117,15 +120,41 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
 
   // Os registros DAQUELE dia. `data_ref` é o que separa o dia 2 do dia 1 num
   // evento de vários dias — sem ele esta consulta traria a operação inteira.
-  const { data: registros } = await supabase
-    .from('registros')
-    .select('funcionario_id, tipo, created_at')
-    .eq('evento_id', eventoId)
-    .eq('data_ref', data)
-    .in('funcionario_id', equipe.map(f => f.id))
+  /*
+   * PAGINADO e, numa equipe grande, SEM o `.in` dos ids (preparação pro
+   * Vital: ~4.000 pessoas, ~3 batidas cada por dia).
+   *
+   * • O `.in('funcionario_id', ids)` vai na URL: com o evento inteiro (milhares
+   *   de UUIDs) a URL passa de ~16KB e a requisição falha com `data: null` —
+   *   que aqui virava "ninguém bateu nada", ou seja, o evento INTEIRO como
+   *   pendente. `evento_id` + `data_ref` já delimitam a consulta; o recorte
+   *   pela equipe passa a ser feito em memória, pelo conjunto de ids.
+   *   Equipe pequena (o setor de um supervisor) continua com o `.in`, que aí
+   *   cabe folgado na URL e evita trazer as batidas do evento todo.
+   * • Mesmo teto de 1000 linhas da equipe, acima: um dia de evento grande
+   *   passa disso fácil. Ordem por `id` pra as páginas não se sobreporem.
+   */
+  const idsDaEquipe = new Set(equipe.map(f => f.id))
+  const usarIn = equipe.length <= 200
+  const registros: { funcionario_id: string; tipo: string; created_at: string }[] = []
+  for (let de = 0; ; de += 1000) {
+    let pagina = supabase
+      .from('registros')
+      .select('funcionario_id, tipo, created_at')
+      .eq('evento_id', eventoId)
+      .eq('data_ref', data)
+    if (usarIn) pagina = pagina.in('funcionario_id', [...idsDaEquipe])
+    const { data: bloco } = await pagina.order('id').range(de, de + 999)
+    if (!bloco?.length) break
+    registros.push(...(bloco as typeof registros))
+    if (bloco.length < 1000) break
+  }
 
   const feitos = new Map<string, string>() // "funcId:etapa" → created_at
-  for (const r of registros ?? []) feitos.set(`${r.funcionario_id}:${r.tipo}`, r.created_at as string)
+  for (const r of registros) {
+    if (!idsDaEquipe.has(r.funcionario_id)) continue
+    feitos.set(`${r.funcionario_id}:${r.tipo}`, r.created_at as string)
+  }
 
   /*
    * O dia de trabalho. Se aquela data não é dia de trabalho deste evento, não

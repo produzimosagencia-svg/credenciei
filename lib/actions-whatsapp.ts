@@ -1,7 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'node:crypto'
-import { getPerfil, supabaseAdmin } from './supabase-server'
+import { getPerfil, supabaseAdmin, buscarTudo } from './supabase-server'
+import { emLotes } from './lotes'
 import { ehMaster } from './permissions'
 import { formatarNumeroWhatsApp, responderConversa, provedor } from './whatsapp'
 import {
@@ -65,16 +66,25 @@ export type PedidoDisparo = {
 export async function previaDisparo(alvo: AlvoDisparo): Promise<PreviaDisparo> {
   await exigirMaster()
 
-  let q = supabaseAdmin
-    .from('funcionarios')
-    .select('id, nome, telefone, fornecedores!inner(nome, evento_id)')
-    .eq('fornecedores.evento_id', alvo.eventoId)
-    .is('descredenciado_em', null)
-    .order('nome')
-  if (alvo.fornecedorId) q = q.eq('fornecedor_id', alvo.fornecedorId)
-  if (alvo.somenteAtivos) q = q.eq('ativo', true)
+  /*
+   * PAGINADO (`buscarTudo`): o Supabase corta em 1000 linhas por resposta sem
+   * avisar — num evento de 4.000 pessoas a prévia mostraria (e o disparo
+   * mandaria) só para os primeiros 1000 por nome. `id` desempata nomes
+   * iguais pra as páginas não se sobreporem. Tolerante como antes: se a
+   * consulta falhar, a prévia sai vazia.
+   */
+  const montar = () => {
+    let q = supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, telefone, fornecedores!inner(nome, evento_id)')
+      .eq('fornecedores.evento_id', alvo.eventoId)
+      .is('descredenciado_em', null)
+    if (alvo.fornecedorId) q = q.eq('fornecedor_id', alvo.fornecedorId)
+    if (alvo.somenteAtivos) q = q.eq('ativo', true)
+    return q.order('nome').order('id')
+  }
 
-  const { data } = await q
+  const data = await buscarTudo((de, ate) => montar().range(de, ate)).catch(() => null)
   const todos = data ?? []
   const porTelefone = new Map<string, { nome: string; telefone: string; setor: string }>()
   for (const f of todos) {
@@ -156,16 +166,28 @@ export async function dispararEmMassa(
     if ((pedido.contatosImportados?.length ?? 0) > 5000) throw new Error('O limite por arquivo é de 5.000 contatos.')
     brutos = (pedido.contatosImportados ?? []).map(c => ({ nome: c.nome, telefone: c.telefone }))
   } else {
-    let q = supabaseAdmin
-      .from('funcionarios')
-      .select('id, nome, telefone, fornecedores!inner(evento_id)')
-      .eq('fornecedores.evento_id', pedido.alvo.eventoId)
-      .is('descredenciado_em', null)
-    if (pedido.alvo.fornecedorId) q = q.eq('fornecedor_id', pedido.alvo.fornecedorId)
-    if (pedido.alvo.somenteAtivos) q = q.eq('ativo', true)
-    const { data, error } = await q
-    if (error) throw new Error(`Não consegui carregar o público: ${error.message}`)
-    brutos = data ?? []
+    /*
+     * PAGINADO, pelo mesmo teto de 1000 linhas da prévia: sem isto, um evento
+     * de 4.000 pessoas disparava só para 1000 delas, sem aviso nenhum. A
+     * ordem (nome, id) é a mesma da prévia — assim, quando dois cadastros
+     * dividem um telefone, o nome que vai na mensagem é o que a prévia
+     * mostrou — e é o que mantém as páginas sem sobreposição.
+     */
+    const montar = () => {
+      let q = supabaseAdmin
+        .from('funcionarios')
+        .select('id, nome, telefone, fornecedores!inner(evento_id)')
+        .eq('fornecedores.evento_id', pedido.alvo.eventoId)
+        .is('descredenciado_em', null)
+      if (pedido.alvo.fornecedorId) q = q.eq('fornecedor_id', pedido.alvo.fornecedorId)
+      if (pedido.alvo.somenteAtivos) q = q.eq('ativo', true)
+      return q.order('nome').order('id')
+    }
+    try {
+      brutos = await buscarTudo((de, ate) => montar().range(de, ate))
+    } catch (e) {
+      throw new Error(`Não consegui carregar o público: ${(e as Error).message}`)
+    }
   }
 
   const semTelefone = brutos.filter(c => !formatarNumeroWhatsApp(c.telefone ?? '')).length
@@ -317,12 +339,25 @@ export async function statusDoDisparo(campanhaId: string): Promise<StatusDisparo
   await exigirMaster()
   if (!/^[0-9a-f-]{36}$/i.test(campanhaId)) throw new Error('Identificador de disparo inválido.')
 
-  const { data: linhas, error } = await supabaseAdmin
-    .from('mensagens_agendadas')
-    .select('id, status, telefone')
-    .eq('tipo', 'disparo_manual')
-    .ilike('mensagem', `%${campanhaId}%`)
-  if (error) throw new Error(`Não consegui ler o status: ${error.message}`)
+  /*
+   * PAGINADO: um disparo para um evento inteiro passa das 1000 linhas que o
+   * Supabase devolve por resposta, e o acompanhamento travaria em "1000"
+   * com o resto invisível. `id` mantém as páginas sem sobreposição.
+   */
+  let linhas: { id: string; status: string; telefone: string }[]
+  try {
+    linhas = await buscarTudo((de, ate) =>
+      supabaseAdmin
+        .from('mensagens_agendadas')
+        .select('id, status, telefone')
+        .eq('tipo', 'disparo_manual')
+        .ilike('mensagem', `%${campanhaId}%`)
+        .order('id')
+        .range(de, ate),
+    )
+  } catch (e) {
+    throw new Error(`Não consegui ler o status: ${(e as Error).message}`)
+  }
 
   const conta = (s: string) => (linhas ?? []).filter(l => l.status === s).length
   const falhas = conta('falhou')
@@ -332,12 +367,28 @@ export async function statusDoDisparo(campanhaId: string): Promise<StatusDisparo
   let erros: { telefone: string; motivo: string }[] = []
   if (falhas > 0) {
     const ids = (linhas ?? []).filter(l => l.status === 'falhou').map(l => l.id)
-    const { data: logs } = await supabaseAdmin
-      .from('mensagens_log')
-      .select('mensagem_agendada_id, erro, destinatario_telefone, criado_em')
-      .in('mensagem_agendada_id', ids)
-      .eq('status', 'erro')
-      .order('criado_em', { ascending: false })
+    /*
+     * Em lotes de 200 ids e paginado: com centenas de falhas o `.in` estoura
+     * a URL (~16KB) e a consulta falha inteira; e as tentativas podem passar
+     * do teto de 1000 linhas. Como cada lote vem ordenado só dentro de si,
+     * a ordem global (mais recente primeiro) é refeita depois de juntar —
+     * é ela que decide a "última tentativa" e quais 50 erros aparecem.
+     * Tolerante como antes: um lote que falha só fica sem motivo.
+     */
+    type LogDeErro = { mensagem_agendada_id: string; erro: string | null; destinatario_telefone: string | null; criado_em: string }
+    const partes = await Promise.all(emLotes(ids).map(lote =>
+      buscarTudo<LogDeErro>((de, ate) =>
+        supabaseAdmin
+          .from('mensagens_log')
+          .select('mensagem_agendada_id, erro, destinatario_telefone, criado_em')
+          .in('mensagem_agendada_id', lote)
+          .eq('status', 'erro')
+          .order('criado_em', { ascending: false })
+          .order('id')
+          .range(de, ate),
+      ).catch(() => [] as LogDeErro[]),
+    ))
+    const logs = partes.flat().sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime())
 
     const vistos = new Set<string>()
     for (const l of logs ?? []) {

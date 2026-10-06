@@ -1,6 +1,8 @@
 'use client'
-import { useMemo, useState } from 'react'
-import { ClipboardCheck, Search, X } from 'lucide-react'
+import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import { Check, ClipboardCheck, Search, X } from 'lucide-react'
+import { aprovarCredenciamentosEmLote } from '@/lib/actions'
 import { formatCpf, formatTelefone } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -65,6 +67,18 @@ export default function PainelAprovacoes({
   // A linha cujo modal está aberto (clique no nome) — ver ModalCredenciamento.
   const [aberta, setAberta] = useState<CredenciamentoLinha | null>(null)
 
+  /*
+   * Aprovação em lote — evento de 4 mil pessoas não se aprova um por um.
+   * Só pendentes entram na seleção. A action aprova até 200 por chamada;
+   * acima disso a tela manda em levas e mostra o andamento.
+   */
+  const router = useRouter()
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [confirmandoLote, setConfirmandoLote] = useState(false)
+  const [progresso, setProgresso] = useState<string | null>(null)
+  const [resultadoLote, setResultadoLote] = useState<string | null>(null)
+  const [aprovandoLote, startLote] = useTransition()
+
   const contagens = useMemo(() => {
     const c: Record<StatusCredenciamento, number> = { pendente: 0, aprovado: 0, negado: 0 }
     for (const l of linhas) c[l.status]++
@@ -81,6 +95,45 @@ export default function PainelAprovacoes({
       return campos.includes(termo) || (!!cru && campos.replace(/[^a-z0-9]/g, '').includes(cru))
     })
   }, [busca, filtroStatus, linhas])
+
+  const pendentesFiltrados = filtrados.filter(l => l.status === 'pendente')
+  const todosPendentesMarcados = pendentesFiltrados.length > 0 && pendentesFiltrados.every(l => selecionados.has(l.id))
+  const alternarSelecao = (id: string) => setSelecionados(atual => {
+    const novo = new Set(atual)
+    if (novo.has(id)) novo.delete(id)
+    else novo.add(id)
+    return novo
+  })
+  const alternarTodos = () => setSelecionados(todosPendentesMarcados ? new Set() : new Set(pendentesFiltrados.map(l => l.id)))
+
+  const aprovarSelecionados = () => {
+    const itens = linhas
+      .filter(l => selecionados.has(l.id) && l.status === 'pendente')
+      .map(l => ({ funcionarioId: l.id, fornecedorId: l.setorId }))
+    setResultadoLote(null)
+    startLote(async () => {
+      let aprovados = 0
+      const falhas: string[] = []
+      try {
+        for (let i = 0; i < itens.length; i += 200) {
+          setProgresso(`Aprovando ${Math.min(i + 200, itens.length)} de ${itens.length}...`)
+          const r = await aprovarCredenciamentosEmLote(itens.slice(i, i + 200), eventoId)
+          aprovados += r.aprovados
+          falhas.push(...r.falhas.map(f => f.erro))
+        }
+      } catch {
+        falhas.push('A conexão caiu no meio — confira a internet; quem já foi aprovado continua aprovado.')
+      }
+      setProgresso(null)
+      setConfirmandoLote(false)
+      setSelecionados(new Set())
+      setResultadoLote(
+        `${aprovados} aprovado${aprovados === 1 ? '' : 's'}` +
+        (falhas.length ? ` · ${falhas.length} não aprovado${falhas.length === 1 ? '' : 's'} (${[...new Set(falhas)].slice(0, 2).join(' / ')})` : ''),
+      )
+      router.refresh()
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -127,6 +180,43 @@ export default function PainelAprovacoes({
         />
       </div>
 
+      {(selecionados.size > 0 || resultadoLote) && (
+        <div className="flex flex-wrap items-center gap-2 bg-white border border-brand-200 rounded-2xl p-3">
+          {selecionados.size > 0 && !confirmandoLote && (
+            <>
+              <p className="text-slate-700 text-sm font-semibold flex-1 min-w-[10rem]">
+                {selecionados.size} selecionado{selecionados.size === 1 ? '' : 's'}
+              </p>
+              <button type="button" onClick={() => setSelecionados(new Set())} className="btn btn-secundario btn-sm">Limpar</button>
+              <button type="button" onClick={() => setConfirmandoLote(true)} className="btn btn-primario btn-sm">
+                <Check className="w-3.5 h-3.5" /> Aprovar selecionados
+              </button>
+            </>
+          )}
+          {selecionados.size > 0 && confirmandoLote && (
+            <>
+              <p className="text-slate-700 text-sm flex-1 min-w-[12rem]">
+                {progresso ?? <>Aprovar <strong>{selecionados.size}</strong> pessoa{selecionados.size === 1 ? '' : 's'}?
+                  {diasDoEvento && ' Cada uma com os dias que pediu — para ajustar dias, aprove pelo nome.'}
+                  {' '}Cada uma recebe a credencial no WhatsApp.</>}
+              </p>
+              <button type="button" onClick={() => setConfirmandoLote(false)} disabled={aprovandoLote} className="btn btn-secundario btn-sm">Cancelar</button>
+              <button type="button" onClick={aprovarSelecionados} disabled={aprovandoLote} className="btn btn-primario btn-sm">
+                {aprovandoLote ? 'Aprovando...' : 'Confirmar aprovação'}
+              </button>
+            </>
+          )}
+          {!selecionados.size && resultadoLote && (
+            <>
+              <p className="text-slate-700 text-sm flex-1">{resultadoLote}</p>
+              <button type="button" onClick={() => setResultadoLote(null)} className="text-slate-400 hover:text-slate-600" aria-label="Fechar">
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <Secao
         tom="acento"
         icone={<ClipboardCheck className="w-3.5 h-3.5" />}
@@ -152,6 +242,15 @@ export default function PainelAprovacoes({
             <table className="tabela">
               <thead>
                 <tr>
+                  <th className="w-8">
+                    {pendentesFiltrados.length > 0 && (
+                      <input
+                        type="checkbox" checked={todosPendentesMarcados} onChange={alternarTodos}
+                        aria-label="Selecionar todos os pendentes"
+                        className="w-4 h-4 accent-brand-500 cursor-pointer"
+                      />
+                    )}
+                  </th>
                   <th>Nome</th>
                   <th>Contato</th>
                   <th>Empresa/Cargo</th>
@@ -166,6 +265,15 @@ export default function PainelAprovacoes({
               <tbody>
                 {filtrados.map(l => (
                   <tr key={l.id}>
+                    <td>
+                      {l.status === 'pendente' && (
+                        <input
+                          type="checkbox" checked={selecionados.has(l.id)} onChange={() => alternarSelecao(l.id)}
+                          aria-label={`Selecionar ${l.nome}`}
+                          className="w-4 h-4 accent-brand-500 cursor-pointer"
+                        />
+                      )}
+                    </td>
                     <td>
                       <button
                         type="button"

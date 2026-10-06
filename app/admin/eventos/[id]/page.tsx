@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
@@ -196,8 +196,18 @@ export default async function EventoPage({
     { data: entradaQualquerHorarioRows },
     { data: fornecedorSubeventoRows },
   ] = await Promise.all([
-    supabase.from('registros').select('funcionario_id, tipo')
-      .eq('evento_id', id).eq('data_ref', diaEscolhido),
+    /*
+     * PAGINADO: as batidas do dia de um evento grande passam fácil das 1000
+     * linhas que o Supabase devolve por resposta (Vital: ~4.000 pessoas ×
+     * ~3 batidas) — sem isso os cartões de entrada/meio/saída travavam no
+     * teto. `id` desempata pra as páginas não se sobreporem. Tolerante como
+     * antes: falhou, os números ficam zerados em vez de derrubar a tela.
+     */
+    buscarTudo((de, ate) =>
+      supabase.from('registros').select('funcionario_id, tipo')
+        .eq('evento_id', id).eq('data_ref', diaEscolhido)
+        .order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
     evento.organizacao_id
       ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo')
           .eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id)

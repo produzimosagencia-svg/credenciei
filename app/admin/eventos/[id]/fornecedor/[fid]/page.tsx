@@ -1,4 +1,5 @@
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
+import { emLotes } from '@/lib/lotes'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -67,7 +68,15 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
 
   const [{ data: fornecedor }, { data: funcionarios }, { data: registros }, { data: evento }, { data: outrosSetores }] = await Promise.all([
     supabase.from('fornecedores').select('*, eventos(nome, organizacao_id, data_inicio)').eq('id', fid).single(),
-    supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, status_credenciamento, motivo_negacao, descredenciado_em, created_at').eq('fornecedor_id', fid).order('nome'),
+    /*
+     * PAGINADO (`buscarTudo`): o Supabase corta em 1000 linhas por resposta
+     * sem avisar, e um setor grande do Vital passa disso — o resto da equipe
+     * sumiria da tabela. `id` desempata nomes iguais pra as páginas não se
+     * sobreporem. Tolerante como antes: falhou, vem vazio.
+     */
+    buscarTudo((de, ate) =>
+      supabase.from('funcionarios').select('id, nome, cpf, telefone, empresa, cargo, qr_token, valor_receber, foto_perfil_path, chave_pix, pago, pago_em, ativo, status_credenciamento, motivo_negacao, descredenciado_em, created_at').eq('fornecedor_id', fid).order('nome').order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
     /*
      * So HOJE e ONTEM.
      *
@@ -75,14 +84,22 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
      * do dia 2, todo mundo aparecer verde por causa das batidas de ontem.
      * Ontem entra junto por causa do turno que vira a madrugada: quem entrou as
      * 22:00 continua no ciclo de ontem quando o supervisor abre a tela as 02:00.
+     *
+     * PAGINADO: dois dias de batidas de um setor grande (3 por pessoa por
+     * dia) passam das 1000 linhas que o Supabase devolve por resposta. `id`
+     * desempata a ordem. Tolerante como antes: falhou, vem vazio.
      */
-    supabase
-      .from('registros')
-      .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
-      .eq('evento_id', id)
-      .eq('funcionarios.fornecedor_id', fid)
-      .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
-      .in('tipo', ['entrada', 'meio', 'fim']),
+    buscarTudo((de, ate) =>
+      supabase
+        .from('registros')
+        .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
+        .eq('evento_id', id)
+        .eq('funcionarios.fornecedor_id', fid)
+        .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
+        .in('tipo', ['entrada', 'meio', 'fim'])
+        .order('id')
+        .range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
     supabase
       .from('eventos')
       .select('data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim, metodo_identificacao')
@@ -149,9 +166,21 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   const usaBiometria = evento?.metodo_identificacao === 'biometria' || evento?.metodo_identificacao === 'biometria_qr'
   const comBiometria = new Set<string>()
   if (usaBiometria && funcionarios?.length) {
-    const { data: templates } = await supabase
-      .from('biometria_templates').select('funcionario_id').eq('evento_id', id).in('funcionario_id', funcionarios.map(f => f.id))
-    for (const t of templates ?? []) comBiometria.add(t.funcionario_id as string)
+    /*
+     * Em lotes de 200 ids e paginado: com a equipe inteira de um setor grande
+     * no `.in`, a URL passa de ~16KB e a consulta falha (`data: null` — todo
+     * mundo pareceria sem rosto cadastrado); e o resultado pode passar do
+     * teto de 1000 linhas do Supabase. Tolerante como antes: um lote que
+     * falha só deixa de marcar quem estava nele.
+     */
+    const lotes = await Promise.all(emLotes(funcionarios.map(f => f.id as string)).map(ids =>
+      buscarTudo((de, ate) =>
+        supabase
+          .from('biometria_templates').select('funcionario_id').eq('evento_id', id).in('funcionario_id', ids)
+          .order('id').range(de, ate),
+      ).catch(() => [] as { funcionario_id: unknown }[]),
+    ))
+    for (const t of lotes.flat()) comBiometria.add(t.funcionario_id as string)
   }
 
   // Assina as URLs das fotos em lote (bucket privado) — presença + avatares

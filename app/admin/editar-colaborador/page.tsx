@@ -88,17 +88,28 @@ export default async function EditarColaboradorPage({
           supabase
             .from('funcionarios')
             .select('id, nome, cpf, telefone, empresa, cargo, valor_receber, chave_pix, pago, pago_em, foto_perfil_path, ativo, fornecedor_id')
-            .in('fornecedor_id', idsSetores).order('nome').range(de, ate),
+            // `id` desempata nomes iguais: sem ele, a ordem entre homônimos
+            // não é estável e uma pessoa podia repetir ou sumir na virada
+            // de página.
+            .in('fornecedor_id', idsSetores).order('nome').order('id').range(de, ate),
         )
       : Promise.resolve([] as Record<string, unknown>[]),
     /*
      * Só hoje e ontem: a ficha mostra "Presença hoje", e ontem entra por
      * causa do turno que vira a madrugada — mesma regra da tela do setor.
+     *
+     * PAGINADO: hoje + ontem do evento inteiro (Vital: ~4.000 pessoas × ~3
+     * batidas por dia) passa muito das 1000 linhas que o Supabase devolve por
+     * resposta — quem caísse fora do primeiro lote apareceria sem presença.
+     * `id` desempata a ordem. Tolerante como antes: falhou, vem vazio.
      */
-    supabase
-      .from('registros')
-      .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, registro_manual, justificativa, criado_por_perfil_id')
-      .eq('evento_id', eventoParam).in('data_ref', [hoje, ontem]),
+    buscarTudo((de, ate) =>
+      supabase
+        .from('registros')
+        .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, registro_manual, justificativa, criado_por_perfil_id')
+        .eq('evento_id', eventoParam).in('data_ref', [hoje, ontem])
+        .order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
   ])
 
   // Nomes de quem registrou — a trilha de auditoria da batida assistida.

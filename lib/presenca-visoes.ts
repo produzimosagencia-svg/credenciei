@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from './supabase-server'
+import { supabaseAdmin as supabase, buscarTudo } from './supabase-server'
 import { pendenciasDoDia } from './pendencias'
 
 /**
@@ -79,20 +79,36 @@ export async function linhasDaVisao({
    * A equipe inteira, e não só quem bateu: "presentes" se define por AUSÊNCIA
    * de saída depois da entrada, então precisa da lista completa pra cruzar.
    */
-  let equipeQuery = supabase
-    .from('funcionarios')
-    .select('id, nome, cpf, ativo, fornecedor_id, fornecedores!inner(nome, evento_id)')
-    .eq('fornecedores.evento_id', eventoId)
-    .order('nome')
-  if (fornecedorId) equipeQuery = equipeQuery.eq('fornecedor_id', fornecedorId)
+  /*
+   * As duas PAGINADAS (`buscarTudo`): o Supabase corta em 1000 linhas por
+   * resposta sem avisar, e um evento grande passa disso tanto na equipe
+   * quanto nas batidas de um dia (~4.000 pessoas × ~3 batidas no Vital).
+   * Sem paginar, os números do dia travavam no teto em vez de mostrar o
+   * real. `id` como desempate garante que as páginas não se sobreponham.
+   *
+   * Tolerante como antes: se a consulta falhar, a lista fica vazia (era o
+   * `data: null` de sempre), em vez de derrubar a tela.
+   */
+  const montarEquipe = () => {
+    let q = supabase
+      .from('funcionarios')
+      .select('id, nome, cpf, ativo, fornecedor_id, fornecedores!inner(nome, evento_id)')
+      .eq('fornecedores.evento_id', eventoId)
+    if (fornecedorId) q = q.eq('fornecedor_id', fornecedorId)
+    return q.order('nome').order('id')
+  }
 
-  const [{ data: equipe }, { data: registros }] = await Promise.all([
-    equipeQuery,
-    supabase
-      .from('registros')
-      .select('funcionario_id, tipo, created_at, registro_manual')
-      .eq('evento_id', eventoId)
-      .eq('data_ref', dia),
+  const [equipe, registros] = await Promise.all([
+    buscarTudo((de, ate) => montarEquipe().range(de, ate)).catch(() => null),
+    buscarTudo((de, ate) =>
+      supabase
+        .from('registros')
+        .select('funcionario_id, tipo, created_at, registro_manual')
+        .eq('evento_id', eventoId)
+        .eq('data_ref', dia)
+        .order('id')
+        .range(de, ate),
+    ).catch(() => null),
   ])
 
   const porPessoa = new Map<string, Partial<Record<Etapa, { em: string; manual: boolean }>>>()

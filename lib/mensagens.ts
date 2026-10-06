@@ -412,6 +412,65 @@ async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<D
 }
 
 /**
+ * Lê TODAS as linhas de uma consulta, de 1000 em 1000.
+ *
+ * O Supabase corta qualquer select em 1000 linhas sem avisar (conferido neste
+ * projeto em 06/10/2026: 2.253 funcionários pedidos, 1000 devolvidos). Num
+ * evento de 4 mil pessoas isso agendava lembrete pra 1000 e cancelava o dos
+ * outros 3000. Mesmo papel do `buscarTudo` (lib/supabase-server.ts), que não
+ * dá pra importar aqui — este arquivo roda também no worker, sem Next.
+ * A consulta PRECISA ter `.order()` único, senão as páginas se sobrepõem.
+ */
+async function paginarTudo<T>(
+  pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const tudo: T[] = []
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await pagina(de, de + 999)
+    if (error) throw error
+    tudo.push(...(data ?? []))
+    if (!data || data.length < 1000) return tudo
+  }
+}
+
+/**
+ * Escala por dia (eventos de subeventos — ver lib/escala.ts): os dias de cada
+ * pessoa que está no fluxo. Aprovada → os dias aprovados; pendente → os que
+ * ela pediu (é o que vai valer se o supervisor confirmar como veio). Ausente
+ * no Map = fora do fluxo, recebe todos os dias.
+ *
+ * Consulta direta, e não via lib/escala.ts, porque este arquivo roda também
+ * no worker (sem Next). Tolerante: sem a migração, ninguém tem escala.
+ */
+async function diasDaEscalaPorFuncionario(eventoId: string, soFuncionarioId?: string): Promise<Map<string, Set<string>>> {
+  const porFuncionario = new Map<string, Set<string>>()
+  try {
+    const funcs = await paginarTudo((de, ate) => {
+      let q = supabase
+        .from('funcionarios').select('id, escala_status, fornecedores!inner(evento_id)')
+        .eq('fornecedores.evento_id', eventoId).not('escala_status', 'is', null)
+      if (soFuncionarioId) q = q.eq('id', soFuncionarioId)
+      return q.order('id').range(de, ate)
+    })
+    if (!funcs.length) return porFuncionario
+    const status = new Map(funcs.map(f => [f.id as string, f.escala_status as string]))
+    const linhas = await paginarTudo((de, ate) => {
+      let q = supabase
+        .from('funcionario_dias').select('funcionario_id, data, selecionado, aprovado')
+        .eq('evento_id', eventoId)
+      if (soFuncionarioId) q = q.eq('funcionario_id', soFuncionarioId)
+      return q.order('id').range(de, ate)
+    })
+    for (const id of status.keys()) porFuncionario.set(id, new Set())
+    for (const l of linhas ?? []) {
+      const vale = status.get(l.funcionario_id as string) === 'aprovada' ? l.aprovado : l.selecionado
+      if (vale) porFuncionario.get(l.funcionario_id as string)?.add(l.data as string)
+    }
+  } catch { /* migração pendente */ }
+  return porFuncionario
+}
+
+/**
  * Garante que cada funcionário e cada supervisor tenham, PARA CADA DIA da
  * operação, os avisos agendados: lembrete e reforço ao funcionário, alerta ao
  * supervisor sobre quem ficou pendente.
@@ -422,48 +481,14 @@ async function diasDaOperacao(evento: EventoJanelas & { id: string }): Promise<D
  * ⚠️ O lembrete do MEIO não é agendado aqui, e não pode ser: o horário dele é
  * a entrada real da pessoa + 4h, que só existe depois de ela bater o ponto.
  * Quem agenda é `agendarMeioAposEntrada`, chamada no momento da entrada.
- */
-/**
- * Escala por dia (eventos de subeventos — ver lib/escala.ts): os dias de cada
- * pessoa que está no fluxo. Aprovada → os dias aprovados; pendente → os que
- * ela pediu (é o que vai valer se o supervisor confirmar como veio). Ausente
- * no Map = fora do fluxo, recebe todos os dias.
  *
- * Consulta direta, e não via lib/escala.ts, porque este arquivo roda também
- * no worker (sem Next). Tolerante: sem a migração, ninguém tem escala.
+ * `opcoes.funcionarioId`: recalcula SÓ essa pessoa (e o alerta do setor
+ * dela), sem tocar no resto da fila. É o que o cadastro pelo link usa — num
+ * evento de 4 mil pessoas, recalcular o evento inteiro a cada cadastro novo
+ * eram 4 mil recálculos de 4 mil pessoas no meio da corrida de inscrições.
  */
-async function diasDaEscalaPorFuncionario(eventoId: string): Promise<Map<string, Set<string>>> {
-  const porFuncionario = new Map<string, Set<string>>()
-  try {
-    // Paginado à mão (o `buscarTudo` mora em supabase-server, fora do alcance
-    // do worker): evento grande passa fácil do teto de 1000 linhas.
-    const paginar = async <T,>(pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: unknown }>) => {
-      const tudo: T[] = []
-      for (let de = 0; ; de += 1000) {
-        const { data, error } = await pagina(de, de + 999)
-        if (error) throw error
-        tudo.push(...(data ?? []))
-        if (!data || data.length < 1000) return tudo
-      }
-    }
-    const funcs = await paginar((de, ate) => supabase
-      .from('funcionarios').select('id, escala_status, fornecedores!inner(evento_id)')
-      .eq('fornecedores.evento_id', eventoId).not('escala_status', 'is', null).order('id').range(de, ate))
-    if (!funcs.length) return porFuncionario
-    const status = new Map(funcs.map(f => [f.id as string, f.escala_status as string]))
-    const linhas = await paginar((de, ate) => supabase
-      .from('funcionario_dias').select('funcionario_id, data, selecionado, aprovado')
-      .eq('evento_id', eventoId).order('id').range(de, ate))
-    for (const id of status.keys()) porFuncionario.set(id, new Set())
-    for (const l of linhas ?? []) {
-      const vale = status.get(l.funcionario_id as string) === 'aprovada' ? l.aprovado : l.selecionado
-      if (vale) porFuncionario.get(l.funcionario_id as string)?.add(l.data as string)
-    }
-  } catch { /* migração pendente */ }
-  return porFuncionario
-}
-
-export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
+export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcionarioId?: string } = {}): Promise<void> {
+  const soFuncionarioId = opcoes.funcionarioId
   const { data: evento } = await supabase
     .from('eventos')
     .select('id, nome, msg_pre_evento_envio, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim')
@@ -473,7 +498,10 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
 
   // Só quem está ATIVADO trabalha — excedentes (acima do teto do setor) não
   // recebem lembrete nenhum até serem ativados no painel.
-  const { data: funcionarios } = await supabase
+  // Paginado (`paginarTudo`): sem isto só 1000 pessoas ganhavam lembrete, e
+  // `cancelarOqueNaoValeMais` cancelava o das outras.
+  const funcionarios = await paginarTudo<{ id: string; telefone: string; fornecedor_id: string }>((de, ate) => {
+    let q = supabase
     .from('funcionarios')
     .select('id, telefone, fornecedor_id, fornecedores!inner(evento_id)')
     .eq('fornecedores.evento_id', eventoId)
@@ -488,7 +516,10 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
      * `origem is null` precisa entrar à parte: `neq` sozinho descarta os nulos.
      */
     .or('origem.is.null,origem.neq.supervisor')
-  if (!funcionarios?.length) return
+    if (soFuncionarioId) q = q.eq('id', soFuncionarioId)
+    return q.order('id').range(de, ate)
+  })
+  if (!funcionarios.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
   const { data: supervisores } = await supabase
@@ -507,10 +538,17 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     }
   }
 
-  const { data: existentes } = await supabase
-    .from('mensagens_agendadas')
-    .select('funcionario_id, perfil_id, tipo, data_ref, status')
-    .eq('evento_id', eventoId)
+  // Só o que trava (enviado/cancelado) interessa aqui — e paginado: num
+  // evento grande a fila passa de dezenas de milhares de linhas.
+  const existentes = await paginarTudo<{ funcionario_id: string | null; perfil_id: string | null; tipo: string; data_ref: string; status: string }>((de, ate) => {
+    let q = supabase
+      .from('mensagens_agendadas')
+      .select('funcionario_id, perfil_id, tipo, data_ref, status')
+      .eq('evento_id', eventoId)
+      .in('status', ['enviado', 'cancelado'])
+    if (soFuncionarioId) q = q.or(`funcionario_id.eq.${soFuncionarioId},perfil_id.not.is.null`)
+    return q.order('id').range(de, ate)
+  })
   const travadosPorFuncionario = new Set(
     (existentes ?? [])
       .filter(m => m.funcionario_id && (m.status === 'enviado' || m.status === 'cancelado'))
@@ -550,13 +588,24 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
   }
   const linhasFuncionario: LinhaFunc[] = []
   const linhasSupervisor: LinhaSup[] = []
+  /*
+   * O que a regra AINDA gera mas cujo horário já passou — está na fila,
+   * vencido, esperando a vez de sair. Não é reagendado (o horário passou),
+   * mas também NÃO pode ser cancelado: com a fila atrasada (4 mil lembretes
+   * levam horas pra sair), qualquer cadastro novo disparava esta função e
+   * cancelava todo lembrete que ainda não tinha saído.
+   */
+  const vencidasQueValem: LinhaAgendada[] = []
 
   /** Agenda se for no futuro e ainda não estiver travada. */
   const agendarFunc = (
     funcId: string, telefone: string, tipo: TipoMensagem, dataRef: string, quando: string | null, condicao?: string
   ) => {
     if (!quando || travadosPorFuncionario.has(`${funcId}:${tipo}:${dataRef}`)) return
-    if (new Date(quando).getTime() <= agora) return
+    if (new Date(quando).getTime() <= agora) {
+      vencidasQueValem.push({ tipo, data_ref: dataRef, funcionario_id: funcId })
+      return
+    }
     linhasFuncionario.push({
       evento_id: eventoId, funcionario_id: funcId, tipo, data_ref: dataRef,
       agendado_para: new Date(quando).toISOString(), telefone, mensagem: PLACEHOLDER,
@@ -564,7 +613,7 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     })
   }
 
-  const diasDaEscala = await diasDaEscalaPorFuncionario(eventoId)
+  const diasDaEscala = await diasDaEscalaPorFuncionario(eventoId, soFuncionarioId)
 
   for (const func of funcionarios) {
     // Confirmação de escala e aviso do dia falam do EVENTO, não de um dia da
@@ -761,7 +810,13 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
       : []
 
     for (const [tipo, quando] of gatilhos) {
-      if (new Date(quando).getTime() <= agora) continue
+      if (new Date(quando).getTime() <= agora) {
+        // Vencido mas ainda válido — mesmo motivo de `vencidasQueValem` acima.
+        for (const [, supervisor] of supervisorPorFornecedor) {
+          vencidasQueValem.push({ tipo, data_ref: dia.data, perfil_id: supervisor.perfilId })
+        }
+        continue
+      }
       for (const [, supervisor] of supervisorPorFornecedor) {
         if (!supervisor.telefone) continue
         if (travadosPorSupervisor.has(`${supervisor.perfilId}:${tipo}:${dia.data}`)) continue
@@ -773,14 +828,16 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
     }
   }
 
-  if (linhasFuncionario.length) {
-    await supabase.from('mensagens_agendadas').upsert(linhasFuncionario, { onConflict: 'evento_id,funcionario_id,tipo,data_ref' })
+  // Em lotes de 500: 4 mil pessoas × dias × tipos passa de dezenas de
+  // milhares de linhas, grande demais pra uma requisição só.
+  for (let i = 0; i < linhasFuncionario.length; i += 500) {
+    await supabase.from('mensagens_agendadas').upsert(linhasFuncionario.slice(i, i + 500), { onConflict: 'evento_id,funcionario_id,tipo,data_ref' })
   }
-  if (linhasSupervisor.length) {
-    await supabase.from('mensagens_agendadas').upsert(linhasSupervisor, { onConflict: 'perfil_id,tipo,data_ref' })
+  for (let i = 0; i < linhasSupervisor.length; i += 500) {
+    await supabase.from('mensagens_agendadas').upsert(linhasSupervisor.slice(i, i + 500), { onConflict: 'perfil_id,tipo,data_ref' })
   }
 
-  await cancelarOqueNaoValeMais(eventoId, [...linhasFuncionario, ...linhasSupervisor])
+  await cancelarOqueNaoValeMais(eventoId, [...linhasFuncionario, ...linhasSupervisor, ...vencidasQueValem], soFuncionarioId)
 }
 
 /**
@@ -798,25 +855,37 @@ export async function sincronizarAgendamentos(eventoId: string): Promise<void> {
  */
 type LinhaAgendada = { tipo: string; data_ref: string; funcionario_id?: string; perfil_id?: string }
 
-async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada[]) {
+/**
+ * `soFuncionarioId`: só olha a fila DESSA pessoa — quando a sincronização foi
+ * de uma pessoa só, as linhas dos outros (e as dos supervisores) não foram
+ * recalculadas e não podem ser julgadas "órfãs".
+ */
+async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada[], soFuncionarioId?: string) {
   const TIPOS_DESTA_FUNCAO: TipoMensagem[] = [
     'lembrete_entrada', 'lembrete_fim', 'reforco_entrada', 'reforco_fim',
     'aviso_dia_evento', 'aviso_montagem', 'aviso_desmontagem', 'confirmacao_escala',
     'alerta_supervisor_entrada', 'alerta_supervisor_meio', 'alerta_supervisor_fim',
   ]
 
-  const { data: naFila } = await supabase
-    .from('mensagens_agendadas')
-    .select('id, tipo, data_ref, funcionario_id, perfil_id')
-    .eq('evento_id', eventoId)
-    .eq('status', 'pendente')
-    .in('tipo', TIPOS_DESTA_FUNCAO)
-  if (!naFila?.length) return
+  // Paginado: a fila pendente de um evento grande passa de 1000 linhas.
+  const naFila = await paginarTudo<{ id: string; tipo: string; data_ref: string; funcionario_id: string | null; perfil_id: string | null }>((de, ate) => {
+    let q = supabase
+      .from('mensagens_agendadas')
+      .select('id, tipo, data_ref, funcionario_id, perfil_id')
+      .eq('evento_id', eventoId)
+      .eq('status', 'pendente')
+      .in('tipo', TIPOS_DESTA_FUNCAO)
+    if (soFuncionarioId) q = q.eq('funcionario_id', soFuncionarioId)
+    return q.order('id').range(de, ate)
+  })
+  if (!naFila.length) return
 
   const chave = (l: LinhaAgendada) => `${l.tipo}|${l.data_ref}|${l.funcionario_id ?? ''}|${l.perfil_id ?? ''}`
   const ainda = new Set(mantidas.map(chave))
 
-  const orfas = naFila.filter(l => !ainda.has(chave(l as LinhaAgendada))).map(l => l.id as string)
+  const orfas = naFila.filter(l => !ainda.has(chave({
+    tipo: l.tipo, data_ref: l.data_ref, funcionario_id: l.funcionario_id ?? undefined, perfil_id: l.perfil_id ?? undefined,
+  }))).map(l => l.id)
   if (!orfas.length) return
 
   /*
