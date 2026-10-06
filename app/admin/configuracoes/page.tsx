@@ -144,7 +144,14 @@ export default async function ConfiguracoesPage({
           titulo={`Funcionalidade do Sistema — ${nomeDoEscopo}`}
           descricao="Recursos avançados, desligados por padrão — só aparecem pra quem ligar"
         >
-          <FuncionalidadesForm organizacaoId={organizacaoId} funcionalidades={funcionalidades} />
+          {/*
+            * `key` = a organização: trocar de cliente no topo é navegação no
+            * cliente, e sem remontar o formulário as caixas continuavam com o
+            * estado da organização ANTERIOR (06/10/2026 — a Navista aparecia
+            * toda desmarcada depois de passar por "Padrão da plataforma", e
+            * Salvar ali gravaria os valores errados por cima).
+            */}
+          <FuncionalidadesForm key={organizacaoId} organizacaoId={organizacaoId} funcionalidades={funcionalidades} />
         </Secao>
       )}
     </div>

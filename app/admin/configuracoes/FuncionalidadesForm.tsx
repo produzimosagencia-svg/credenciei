@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { Check } from 'lucide-react'
 import { editarFuncionalidadesOrganizacao, type FuncionalidadesOrganizacao } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 
@@ -16,14 +16,20 @@ export default function FuncionalidadesForm({
 }) {
   const [isPending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
-  const router = useRouter()
+  const [salvo, setSalvo] = useState(false)
 
+  /*
+   * Sem `router.refresh()` depois: a action já chama `revalidatePath`, e a
+   * resposta dela traz a página atualizada. O refresh extra renderizava a
+   * tela inteira de novo — era a maior parte da demora ao salvar.
+   */
   const salvar = (formData: FormData) => {
     setErro(null)
+    setSalvo(false)
     startTransition(async () => {
       try {
         await editarFuncionalidadesOrganizacao(organizacaoId, formData)
-        router.refresh()
+        setSalvo(true)
       } catch (e) {
         setErro(mensagemAmigavel(e))
       }
@@ -31,7 +37,7 @@ export default function FuncionalidadesForm({
   }
 
   return (
-    <form action={salvar} className="space-y-3">
+    <form action={salvar} onChange={() => setSalvo(false)} className="space-y-3">
       <label className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors">
         <div className="flex items-start gap-3">
           <input
@@ -113,9 +119,16 @@ export default function FuncionalidadesForm({
 
       {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
-      <button type="submit" disabled={isPending} className="btn btn-primario btn-sm">
-        {isPending ? 'Salvando...' : 'Salvar'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={isPending} className="btn btn-primario btn-sm">
+          {isPending ? 'Salvando...' : 'Salvar'}
+        </button>
+        {salvo && (
+          <span className="flex items-center gap-1 text-green-600 text-xs font-semibold">
+            <Check className="w-3.5 h-3.5" /> Salvo
+          </span>
+        )}
+      </div>
     </form>
   )
 }

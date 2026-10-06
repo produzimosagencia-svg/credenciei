@@ -10029,20 +10029,23 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
   const perfil = await getPerfil()
   if (!perfil || !ehMaster(perfil.role)) throw new Error('Apenas o master altera funcionalidades do sistema.')
 
-  const { error } = await supabaseAdmin.from('organizacoes').update({
+  const basicas = {
     subeventos_habilitado: formData.get('subeventos_habilitado') === 'on',
     trava_cota_habilitada: formData.get('trava_cota_habilitada') === 'on',
     aviso_uniforme_habilitado: formData.get('aviso_uniforme_habilitado') === 'on',
-  }).eq('id', organizacaoId)
-  if (error) throw new Error(mensagemAmigavel(error))
-
-  // À parte: coluna nova (upgrade-escala-por-dia.sql). Sem a migração, o resto
-  // continua salvando — só este interruptor avisa que ainda não dá.
+  }
   const escalaLigada = formData.get('escala_por_dia_habilitada') === 'on'
-  const { error: erroEscala } = await supabaseAdmin.from('organizacoes')
-    .update({ escala_por_dia_habilitada: escalaLigada }).eq('id', organizacaoId)
-  if (erroEscala && escalaLigada) {
-    throw new Error('Os outros itens foram salvos, mas "Dias de trabalho" ainda precisa da atualização do banco (upgrade-escala-por-dia.sql).')
+
+  // Uma gravação só. Se a coluna nova ainda não existe (upgrade-escala-por-dia.sql
+  // pendente), cai pra gravar só as de sempre — o resto não pode deixar de salvar.
+  const { error } = await supabaseAdmin.from('organizacoes')
+    .update({ ...basicas, escala_por_dia_habilitada: escalaLigada }).eq('id', organizacaoId)
+  if (error) {
+    const { error: erroBasicas } = await supabaseAdmin.from('organizacoes').update(basicas).eq('id', organizacaoId)
+    if (erroBasicas) throw new Error(mensagemAmigavel(erroBasicas))
+    if (escalaLigada) {
+      throw new Error('Os outros itens foram salvos, mas "Dias de trabalho" ainda precisa da atualização do banco (upgrade-escala-por-dia.sql).')
+    }
   }
 
   revalidatePath('/admin/configuracoes')
