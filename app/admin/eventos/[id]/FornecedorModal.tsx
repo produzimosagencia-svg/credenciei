@@ -39,8 +39,8 @@ export default function FornecedorModal(props: Props) {
   /*
    * Trava de pessoas POR DIA (pedido do Juan, 06/10/2026 — antes só a
    * planilha de estrutura gravava). Busca ao abrir: os dias e a trava atual
-   * vêm do servidor, e a seção só existe quando o evento usa dias de
-   * trabalho por pessoa. Evento sem isso: o modal é exatamente o de sempre.
+   * vêm do servidor. Quem não preenche nada não muda nada.
+   * Vale no portão — ver `vagaNoSetorNoDia` (lib/escala.ts).
    */
   const [travas, setTravas] = useState<{ dias: DiaDaEscala[]; atuais: Record<string, number> } | null>(null)
   const eventoIdDoModal = props.eventoId
@@ -199,9 +199,10 @@ export default function FornecedorModal(props: Props) {
                     })}
                   </div>
                   <p className="text-slate-500 text-xs mt-1">
-                    Quantas pessoas este setor aceita em cada dia. Quando o dia enche, ele aparece como
-                    &quot;lotado&quot; no formulário do funcionário e o supervisor não consegue aprovar mais.
-                    Em branco = sem limite.
+                    Máximo de pessoas deste setor que podem ENTRAR em cada dia (ex.: quinta 4, sexta 5,
+                    sábado 8). Quando o setor chega no limite, a próxima pessoa que ler o QR Code é barrada
+                    no portão, com o aviso &quot;setor lotado&quot; para quem está no credenciamento. Em branco =
+                    sem limite naquele dia.
                   </p>
                 </div>
               )}

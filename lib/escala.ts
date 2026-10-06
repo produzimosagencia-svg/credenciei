@@ -346,3 +346,43 @@ export async function gravarTravasDoFornecedor(
   }
   return { ok: true }
 }
+
+/**
+ * Ainda cabe mais UMA pessoa neste setor, neste dia? — a trava por dia no
+ * PORTÃO (pedido do Juan, 06/10/2026): quando o setor já tem o máximo de
+ * pessoas que ENTRARAM no dia, a próxima é barrada, mesmo aprovada e mesmo
+ * escalada. Quem manda é a entrada de verdade (`registros`), não a escala.
+ *
+ *   * sem trava naquele dia (ou migração pendente) → cabe, como sempre;
+ *   * quem JÁ entrou hoje nunca é barrado (reler o crachá não é nova entrada);
+ *   * o crachá do supervisor não ocupa vaga nem é barrado — ele não é da
+ *     equipe contada;
+ *   * a consulta de contagem falhar → cabe (a trava é limite de operação: um
+ *     erro de leitura não pode trancar o portão do evento inteiro).
+ */
+export async function vagaNoSetorNoDia(
+  fornecedorId: string, dia: string, funcionarioId: string, origemDaPessoa?: string | null,
+): Promise<{ ok: true } | { ok: false; maximo: number; ocupadas: number }> {
+  if (origemDaPessoa === 'supervisor') return { ok: true }
+  try {
+    const { data: trava, error } = await supabaseAdmin
+      .from('fornecedor_cotas_dia').select('maximo').eq('fornecedor_id', fornecedorId).eq('data', dia).maybeSingle()
+    if (error || !trava) return { ok: true }
+    const maximo = trava.maximo as number
+
+    const { data: jaEntrou } = await supabaseAdmin.from('registros').select('id')
+      .eq('funcionario_id', funcionarioId).eq('tipo', 'entrada').eq('data_ref', dia).limit(1)
+    if (jaEntrou?.length) return { ok: true }
+
+    const { count, error: erroContagem } = await supabaseAdmin
+      .from('registros')
+      .select('funcionario_id, funcionarios!inner(fornecedor_id, origem)', { count: 'exact', head: true })
+      .eq('tipo', 'entrada').eq('data_ref', dia).eq('funcionarios.fornecedor_id', fornecedorId)
+      .or('origem.is.null,origem.neq.supervisor', { referencedTable: 'funcionarios' })
+    if (erroContagem) return { ok: true }
+    const ocupadas = count ?? 0
+    return ocupadas >= maximo ? { ok: false, maximo, ocupadas } : { ok: true }
+  } catch {
+    return { ok: true }
+  }
+}

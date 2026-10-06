@@ -52,6 +52,8 @@ type ScanResult = {
   areaErrada?: boolean
   /** Evento de subeventos: hoje não está entre os dias aprovados na escala da pessoa. */
   diaNaoAutorizado?: boolean
+  /** O setor da pessoa já bateu o limite de entradas do dia — NÃO liberar. */
+  setorLotado?: boolean
   previa?: boolean
   /** O rosto bateu, mas com alguém credenciado em OUTRO evento — ver lib/actions.ts. */
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
@@ -104,13 +106,14 @@ const salvarAreasDoEvento = (eventoId: string, ids: string[]) => {
  */
 const REPETIDO_MS = 15_000
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'negado' | 'naoIdentificado' | 'outroEvento'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'naoIdentificado' | 'outroEvento'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
   if (r.areaErrada) return 'areaErrada'
   if (r.diaNaoAutorizado) return 'diaNaoAutorizado'
+  if (r.setorLotado) return 'setorLotado'
   if (r.cadastradoEmOutroEvento) return 'outroEvento'
   if (r.naoIdentificado) return 'naoIdentificado'
   return 'negado'
@@ -124,6 +127,7 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
   areaErrada: { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   diaNaoAutorizado: { fundo: 'bg-red-600', icone: '📅', titulo: 'DIA NÃO AUTORIZADO' },
+  setorLotado: { fundo: 'bg-red-600', icone: '⛔', titulo: 'SETOR LOTADO — NÃO LIBERAR' },
   negado:     { fundo: 'bg-red-600', icone: '✕', titulo: 'ACESSO NEGADO' },
   // Azul, não vermelho: não é um erro nem uma rejeição — é o caminho normal
   // de quem ainda não cadastrou o rosto. A biometria continua a prioridade;

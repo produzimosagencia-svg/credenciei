@@ -222,11 +222,16 @@ Subgrupo que não existe é criado. Linha com erro fica de fora; o resto entra.
 
 **Trava por dia**: "Sábado: 10 / Domingo: 8", "Sáb 10, Dom 8", "10/10: 15" ou
 só "10" (todos os dias). Em branco = sem trava. Dia que o evento não tem é
-erro na prévia. A trava por dia vale quando o evento usa escala por dia (o
-funcionário escolhe os dias em que trabalha); sem escala por dia, o MAIOR
-número da linha vira a quantidade estimada do fornecedor (o teto total — que só
-BLOQUEIA cadastro quando a organização liga "Trava de cota"; ver "Limites que
-não são do código").
+erro na prévia. A trava por dia vale NO PORTÃO: quando o setor já tem o
+máximo de pessoas que entraram naquele dia, a próxima que ler o QR Code é
+barrada ("SETOR LOTADO — NÃO LIBERAR"), mesmo aprovada. Quem já entrou hoje
+não é barrado, e o crachá do supervisor não conta vaga. Com a escala por dia
+ligada, o dia cheio também aparece "lotado" no formulário e a aprovação acima
+do limite é recusada. O MAIOR número da linha também vira a quantidade
+estimada do fornecedor (o teto total — que só BLOQUEIA cadastro quando a
+organização liga "Trava de cota"; ver "Limites que não são do código"). Dá
+pra definir a trava também no cadastro manual do fornecedor ("Limite de
+pessoas por dia").
 
 **Reimportar é seguro**: área e fornecedor são reconhecidos pelo nome (sem
 diferenciar maiúscula/acento) e supervisor pelo CPF — o que já existe é

@@ -22,6 +22,8 @@ type ScanResult = {
   areaErrada?: boolean
   /** Evento de subeventos: hoje não está entre os dias aprovados na escala da pessoa. */
   diaNaoAutorizado?: boolean
+  /** O setor da pessoa já bateu o limite de entradas do dia — NÃO liberar. */
+  setorLotado?: boolean
   /** Só da tela: a resposta não chegou no tempo — ver `TEMPO_SEM_RESPOSTA_MS`. */
   semResposta?: boolean
   /** Prévia: conferido, nada gravado — espera SALVAR / CANCELAR. */
@@ -135,7 +137,7 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'negado' | 'invalido' | 'semResposta'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.semResposta) return 'semResposta'
@@ -143,6 +145,7 @@ function categoriaDo(r: ScanResult): Categoria {
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
   if (r.areaErrada) return 'areaErrada'
   if (r.diaNaoAutorizado) return 'diaNaoAutorizado'
+  if (r.setorLotado) return 'setorLotado'
   return r.qrInvalido ? 'invalido' : 'negado'
 }
 
@@ -158,6 +161,9 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // Vermelho, é recusa de verdade — mas com título próprio: a credencial é
   // válida, o problema é a ESCALA de hoje, e quem resolve é o supervisor.
   diaNaoAutorizado: { fundo: 'bg-red-600', icone: '📅', titulo: 'DIA NÃO AUTORIZADO' },
+  // Vermelho e título direto: a pessoa é válida, mas o setor encheu — o
+  // operador precisa entender de relance que NÃO é pra deixar entrar.
+  setorLotado: { fundo: 'bg-red-600', icone: '⛔', titulo: 'SETOR LOTADO — NÃO LIBERAR' },
   negado:      { fundo: 'bg-red-600',   icone: '✕', titulo: 'ACESSO NEGADO' },
   invalido:    { fundo: 'bg-red-600',   icone: '✕', titulo: 'QR CODE INVÁLIDO' },
   semResposta: { fundo: 'bg-amber-600', icone: '⏳', titulo: 'SEM RESPOSTA AINDA' },

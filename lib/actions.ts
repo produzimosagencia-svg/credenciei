@@ -44,7 +44,7 @@ import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './v
 import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
-  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor,
+  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
   type DetalheCredenciamento,
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
@@ -2930,12 +2930,14 @@ export async function carregarTravasDoModal(eventoId: string, fornecedorId?: str
 }> {
   try {
     await exigirEventoDaOrg(eventoId)
-    if (!(await eventoUsaEscalaPorDia(eventoId))) return { usaEscala: false, dias: [], travas: {} }
+    // Vale em QUALQUER evento com dias de trabalho: a trava é conferida no
+    // portão (`vagaNoSetorNoDia`), não depende da escala por dia. Quem não
+    // preenche nenhum limite não muda nada.
     const [dias, travas] = await Promise.all([
       diasDaEscalaDoEvento(eventoId),
       fornecedorId ? travasDoFornecedor(fornecedorId) : Promise.resolve(new Map<string, number>()),
     ])
-    return { usaEscala: true, dias, travas: Object.fromEntries(travas) }
+    return { usaEscala: dias.length > 0, dias, travas: Object.fromEntries(travas) }
   } catch {
     return { usaEscala: false, dias: [], travas: {} }
   }
@@ -5971,6 +5973,12 @@ export type ResultadoScan = {
    * o supervisor.
    */
   diaNaoAutorizado?: boolean
+  /**
+   * A pessoa está credenciada e no dia certo, mas o SETOR dela já bateu o
+   * limite de pessoas que podem entrar naquele dia (trava por dia do
+   * fornecedor). O portão NÃO libera — categoria própria na tela.
+   */
+  setorLotado?: boolean
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -6113,6 +6121,7 @@ function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
   if (r.diaNaoAutorizado) return 'dia_nao_autorizado'
+  if (r.setorLotado) return 'setor_lotado'
   return r.qrInvalido ? 'invalido' : 'negado'
 }
 
@@ -6251,7 +6260,7 @@ async function validarLeituraQR(
     podeEscanearEvento(perfil, eventoId),
     supabaseAdmin
       .from('funcionarios')
-      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome, exige_meio)')
+      .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, origem, fornecedores(evento_id, nome, exige_meio)')
       .eq('qr_token', token)
       .single(),
     diaDoTurno(eventoId, agora),
@@ -6336,7 +6345,7 @@ async function autorizarPresenca(args: {
   func: {
     id: string; nome: string; cpf: string | null; cargo: string | null; telefone: string | null
     ativo: boolean | null; status_credenciamento: string | null; descredenciado_em: string | null
-    fornecedor_id: string | null; fornecedores: unknown
+    fornecedor_id: string | null; origem?: string | null; fornecedores: unknown
   } | null
   agora: Date
   escolhido?: 'entrada' | 'fim'
@@ -6615,6 +6624,23 @@ async function autorizarPresenca(args: {
       funcionario: funcInfo,
       momento,
       jaRegistrado: true,
+    }
+  }
+
+  /*
+   * SETOR LOTADO NO DIA (trava por dia do fornecedor): só ENTRADA nova — quem
+   * já entrou hoje foi devolvido acima como "já registrado", e saída/meio não
+   * ocupam vaga. A mensagem é pra quem está no portão: diz o que aconteceu e
+   * o que fazer, sem deixar dúvida de que NÃO é pra liberar.
+   */
+  if (momento === 'entrada') {
+    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem)
+    if (!vaga.ok) {
+      const setor = funcInfo.setor ?? 'este setor'
+      return {
+        success: false, setorLotado: true, funcionario: funcInfo,
+        message: `SETOR LOTADO. ${setor} já tem ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje (${listarDias([resolucao.dataRef])}). NÃO libere a entrada. Peça para a pessoa procurar o supervisor do setor.`,
+      }
     }
   }
 
@@ -7017,7 +7043,7 @@ async function validarLeituraFacial(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, fornecedores(evento_id, nome, exige_meio)')
+    .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, origem, fornecedores(evento_id, nome, exige_meio)')
     .eq('id', match.funcionarioId)
     .single()
 
@@ -7059,7 +7085,7 @@ export async function registrarPresencaFacialLivre(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, nome, cpf, telefone, ativo, status_credenciamento, fornecedor_id, fornecedores(evento_id, eventos(id, organizacao_id, metodo_identificacao, biometria_autoatendimento, ${JANELA_SELECT}))`)
+    .select(`id, nome, cpf, telefone, ativo, status_credenciamento, fornecedor_id, origem, fornecedores(evento_id, eventos(id, organizacao_id, metodo_identificacao, biometria_autoatendimento, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
@@ -7119,6 +7145,11 @@ export async function registrarPresencaFacialLivre(
   // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
   const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
+  // Trava por dia do setor: lotado, a entrada pelo celular também é recusada.
+  {
+    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null)
+    if (!vaga.ok) return { error: `Setor lotado: já há ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje. Procure o seu supervisor.` }
+  }
   if (resolucao.jaEm) {
     return { error: `Você já registrou a entrada em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
@@ -7387,7 +7418,7 @@ export async function registrarPresencaLivre(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, telefone, ativo, status_credenciamento, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
+    .select(`id, telefone, ativo, status_credenciamento, fornecedor_id, origem, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
@@ -7406,6 +7437,11 @@ export async function registrarPresencaLivre(
   // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
   const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
+  // Trava por dia do setor: lotado, a entrada pelo celular também é recusada.
+  if (momento === 'entrada') {
+    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null)
+    if (!vaga.ok) return { error: `Setor lotado: já há ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje. Procure o seu supervisor.` }
+  }
 
   /*
    * No dia principal, este caminho só existe se o admin ligou. Fora dele
