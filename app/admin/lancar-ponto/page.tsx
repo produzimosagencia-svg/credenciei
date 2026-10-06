@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ClipboardPen, CalendarDays } from 'lucide-react'
-import { getPerfil, meusSetores, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT } from '@/lib/janelas'
@@ -91,11 +91,18 @@ export default async function LancarPontoPage({
     notFound()
   }
 
-  let setoresQuery = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam)
+  let setoresQuery = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam).order('nome')
   if (setoresDoSupervisor) setoresQuery = setoresQuery.in('id', setoresDoSupervisor)
   const { data: setores } = await setoresQuery
   const idsSetores = (setores ?? []).map(s => s.id as string)
   const nomeSetor = new Map((setores ?? []).map(s => [s.id as string, s.nome as string]))
+  // Com a área (subgrupo) de cada um — o filtro de setor da lista agrupa por ela.
+  const setoresComArea = await comArea((setores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string })))
+
+  // Pra trocar de evento sem voltar à lista: os mesmos eventos que a escolha inicial oferece.
+  const eventosParaTrocar = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')
+    ? await eventosQuePossoAbrir()
+    : await eventosDosMeusSetores(meusVinculos)
 
   /*
    * Pessoas e batidas PAGINADAS (`buscarTudo`): o Supabase corta em 1000
@@ -137,6 +144,7 @@ export default async function LancarPontoPage({
     id: f.id as string,
     nome: f.nome as string,
     cpf: f.cpf as string,
+    setorId: f.fornecedor_id as string,
     setorNome: nomeSetor.get(f.fornecedor_id as string) ?? '—',
     cargo: (f.cargo as string | null) ?? '',
     ativo: f.ativo !== false,
@@ -173,7 +181,11 @@ export default async function LancarPontoPage({
           lançar ponto — sem dia, a batida não apareceria em nenhuma lista nem no relatório.
         </Aviso>
       ) : (
-        <LancarPonto pessoas={pessoas} dias={diasDaOperacao} diaPadrao={diaPadrao} />
+        <LancarPonto
+          pessoas={pessoas} dias={diasDaOperacao} diaPadrao={diaPadrao}
+          setores={setoresComArea} eventoAtualId={eventoParam}
+          eventos={eventosParaTrocar.map(e => ({ id: e.id, nome: e.nome }))}
+        />
       )}
     </div>
   )

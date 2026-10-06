@@ -645,7 +645,21 @@ async function supervisionaSetorDaOrganizacao(perfilId: string, organizacaoId: s
   return !!data?.length
 }
 
+/** Mesmo texto nos dois sentidos da regra — ver `vincularSupervisorAoSetor`. */
+const SUPERVISOR_NAO_E_GESTOR =
+  'Supervisor não pode ser Gestor de credenciamento. Este CPF já tem o outro acesso — use outro CPF, ou fale com o administrador para trocar o acesso dessa pessoa.'
+
 async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string) {
+  /*
+   * REGRA (Juan, 06/10/2026): supervisor não pode ser Gestor de credenciamento
+   * (`operador_portao`). Fica AQUI, e não em cada tela, porque todo vínculo
+   * de supervisor passa por esta função — criar fornecedor, criar supervisor,
+   * importação de estrutura e IA. Antes a regra era a oposta ("ganha o setor
+   * sem perder o acesso que já tem"), e assim nasceram os casos duplos.
+   */
+  const { data: alvo } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
+  if (alvo?.role === 'operador_portao') throw new Error(SUPERVISOR_NAO_E_GESTOR)
+
   const { error } = await supabaseAdmin
     .from('supervisor_setores')
     .upsert([{ perfil_id: perfilId, fornecedor_id: fornecedorId }], { onConflict: 'perfil_id,fornecedor_id' })
@@ -806,9 +820,11 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     .maybeSingle()
   if (existente) {
     /*
-     * CPF que já é OUTRO tipo de acesso (master, admin, operador de portão,
-     * suporte...) não bloqueia — regra do Juan (24/09/2026): a mesma pessoa
-     * pode supervisionar um setor sem perder o acesso que já tem. Ganha só
+     * CPF que já é OUTRO tipo de acesso (master, admin, suporte...) não
+     * bloqueia — regra do Juan (24/09/2026): a mesma pessoa pode
+     * supervisionar um setor sem perder o acesso que já tem. EXCETO Gestor de
+     * credenciamento (operador de portão): desde 06/10/2026 supervisor não
+     * pode ser gestor, e `vincularSupervisorAoSetor` recusa. Ganha só
      * o vínculo com o setor; a conta dela (papel, organização, e-mail,
      * senha, nome) não é tocada — ela entra com o login que já usa.
      */
@@ -1136,8 +1152,11 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
     .maybeSingle()
   if (existente) {
     if (existente.role !== 'operador_portao') {
-      throw new Error('Este CPF já pertence a outro tipo de acesso no sistema.')
+      throw new Error(existente.role === 'supervisor' ? SUPERVISOR_NAO_E_GESTOR : 'Este CPF já pertence a outro tipo de acesso no sistema.')
     }
+    // Gestor que GANHOU um vínculo de supervisor (regra antiga) também não.
+    const { data: vinculos } = await admin.from('supervisor_setores').select('fornecedor_id').eq('perfil_id', existente.id).limit(1)
+    if (vinculos?.length) throw new Error(SUPERVISOR_NAO_E_GESTOR)
     if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
       throw new Error('Este CPF já está cadastrado em outra organização.')
     }
@@ -6279,9 +6298,31 @@ async function autorizarPresenca(args: {
   if (subeventoIdsLidos?.length) {
     try {
       const { data: funcSub } = await supabaseAdmin
-        .from('funcionarios').select('subevento_id, subeventos(nome)').eq('id', func.id).maybeSingle()
+        .from('funcionarios').select('subevento_id, origem, subeventos(nome)').eq('id', func.id).maybeSingle()
       const subeventoDaCredencial = (funcSub as { subevento_id?: string | null } | null)?.subevento_id ?? null
-      if (!subeventoDaCredencial || !subeventoIdsLidos.includes(subeventoDaCredencial)) {
+
+      /*
+       * SUPERVISOR EM VÁRIAS ÁREAS (Juan, 06/10/2026): ele tem UM crachá, um
+       * QR e uma diária por evento, que nasce na área do primeiro setor. Num
+       * portão de outra área onde ele também tem setor, comparar só com essa
+       * área o barraria como "ÁREA DIFERENTE". Aqui vale qualquer área onde
+       * ele supervisiona — e só isso: ele não ganha acesso a área onde não
+       * tem setor nenhum.
+       */
+      let areaLiberada = !!subeventoDaCredencial && subeventoIdsLidos.includes(subeventoDaCredencial)
+      if (!areaLiberada && (funcSub as { origem?: string | null } | null)?.origem === 'supervisor' && func.cpf) {
+        const { data: perfilDele } = await supabaseAdmin.from('perfis').select('id').eq('cpf', func.cpf as string).maybeSingle()
+        if (perfilDele) {
+          const { data: setoresDele } = await supabaseAdmin
+            .from('supervisor_setores').select('fornecedores!inner(subevento_id, evento_id)')
+            .eq('perfil_id', perfilDele.id).eq('fornecedores.evento_id', eventoId)
+          areaLiberada = (setoresDele ?? []).some(l => {
+            const sub = (l.fornecedores as unknown as { subevento_id?: string | null } | null)?.subevento_id
+            return !!sub && subeventoIdsLidos.includes(sub)
+          })
+        }
+      }
+      if (!areaLiberada) {
         const nomeCorreto = (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
         const { data: areasAqui } = await supabaseAdmin.from('subeventos').select('nome').in('id', subeventoIdsLidos)
         const nomesAqui = (areasAqui ?? []).map(s => s.nome as string).join(' / ') || 'nenhuma área cadastrada'

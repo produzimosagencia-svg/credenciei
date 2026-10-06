@@ -1,15 +1,18 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, X, Check, ArrowLeft, ClipboardPen, AlertCircle, LogIn, Camera, LogOut } from 'lucide-react'
+import { Search, X, Check, ArrowLeft, ClipboardPen, AlertCircle, LogIn, Camera, LogOut, Users } from 'lucide-react'
 import { lancarPontoManual } from '@/lib/actions'
 import { chaveBusca, formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import DateTimePicker from '@/components/DateTimePicker'
+import SeletorLista from '@/components/SeletorLista'
 
 export type PessoaDoEvento = {
   id: string
+  /** O fornecedor/setor da pessoa — o filtro da lista usa. */
+  setorId: string
   nome: string
   cpf: string
   setorNome: string
@@ -30,6 +33,8 @@ const ETAPAS: { momento: Etapa; rotulo: string; icone: React.ElementType }[] = [
 ]
 
 const MINIMO = 2
+/** Quantas pessoas a lista mostra de cada vez ("Mostrar mais" abre o resto). */
+const POR_PAGINA = 40
 const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
 
 /**
@@ -44,13 +49,20 @@ const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}
  * madrugada a pessoa trabalhou no dia 05 e bateu às 02:00 do dia 06.
  */
 export default function LancarPonto({
-  pessoas, dias, diaPadrao,
+  pessoas, dias, diaPadrao, setores, eventos, eventoAtualId,
 }: {
   pessoas: PessoaDoEvento[]
   dias: DiaDaOperacao[]
   diaPadrao: string
+  /** Os setores que a pessoa enxerga neste evento (com a área/subgrupo de cada um). */
+  setores: { id: string; nome: string; area: string | null }[]
+  /** Os eventos entre os quais dá pra trocar sem voltar à lista. */
+  eventos: { id: string; nome: string }[]
+  eventoAtualId: string
 }) {
   const [busca, setBusca] = useState('')
+  const [setorFiltro, setSetorFiltro] = useState('')
+  const [visiveis, setVisiveis] = useState(POR_PAGINA)
   const [pessoa, setPessoa] = useState<PessoaDoEvento | null>(null)
   const [dia, setDia] = useState(diaPadrao)
   const [etapa, setEtapa] = useState<Etapa>('entrada')
@@ -59,16 +71,24 @@ export default function LancarPonto({
   const [erro, setErro] = useState<string | null>(null)
   const [feito, setFeito] = useState<string | null>(null)
   const [pendente, startTransition] = useTransition()
-  const router = useRouter()
 
   const digitos = busca.replace(/\D/g, '')
-  const encontrados = useMemo(() => {
+
+  /*
+   * A LISTA fica sempre pronta embaixo da busca (pedido do Juan, 06/10/2026):
+   * quem esqueceu o CPF ou o sobrenome acha a pessoa pelo primeiro nome,
+   * olhando a equipe. A busca só FILTRA essa lista; o filtro de setor vale
+   * pros dois.
+   */
+  const lista = useMemo(() => {
     const t = chaveBusca(busca)
-    if (t.length < MINIMO) return []
+    const buscando = t.length >= MINIMO
     return pessoas
-      .filter(p => chaveBusca(p.nome).includes(t) || (digitos.length >= 3 && p.cpf.includes(digitos)) || chaveBusca(p.setorNome).includes(t))
-      .slice(0, 30)
-  }, [pessoas, busca, digitos])
+      .filter(p => !setorFiltro || p.setorId === setorFiltro)
+      .filter(p => !buscando || chaveBusca(p.nome).includes(t) || (digitos.length >= 3 && p.cpf.includes(digitos)) || chaveBusca(p.setorNome).includes(t))
+  }, [pessoas, busca, digitos, setorFiltro])
+  const encontrados = lista.slice(0, visiveis)
+  const router = useRouter()
 
   const escolher = (p: PessoaDoEvento) => {
     setPessoa(p)
@@ -115,34 +135,63 @@ export default function LancarPonto({
 
   // ── Passo 1: achar a pessoa ────────────────────────────────────────────
   if (!pessoa) {
+    const opcoesSetor = [
+      { valor: '', rotulo: setores.length > 1 ? `Todos os meus setores (${setores.length})` : 'Todos os setores' },
+      ...setores.map(s => ({ valor: s.id, rotulo: s.nome.trim(), detalhe: s.area ?? undefined })),
+    ]
+    const buscando = busca.trim().length >= MINIMO
     return (
       <Secao
         tom="acento"
         icone={<ClipboardPen className="w-3.5 h-3.5" />}
         titulo="Quem perdeu a batida?"
-        descricao={`${pessoas.length.toLocaleString('pt-BR')} pessoas neste evento — busque por nome, CPF ou fornecedor`}
-        corpoClassName={encontrados.length ? '' : 'p-4'}
+        descricao={`${lista.length.toLocaleString('pt-BR')} ${lista.length === 1 ? 'pessoa' : 'pessoas'}${setorFiltro || buscando ? ' nesta busca' : ' na sua equipe'} — procure pelo nome, CPF ou escolha na lista`}
+        corpoClassName=""
       >
-        <div className="relative px-4 pt-4 pb-2">
-          <Search className="w-4 h-4 text-slate-400 absolute left-7 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            value={busca} onChange={e => setBusca(e.target.value)}
-            placeholder="Nome, CPF ou fornecedor…" aria-label="Buscar pessoa" autoFocus
-            className="input pl-9 pr-9"
-          />
-          {busca && (
-            <button onClick={() => setBusca('')} aria-label="Limpar busca" className="absolute right-6 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">
-              <X className="w-3.5 h-3.5" />
-            </button>
+        <div className="px-4 pt-4 pb-3 space-y-2.5">
+          {/* Trocar de evento e de setor sem sair da tela — só aparecem quando há o que escolher. */}
+          {(eventos.length > 1 || setores.length > 1) && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {eventos.length > 1 && (
+                <SeletorLista
+                  valor={eventoAtualId} titulo="Evento" placeholder="Evento"
+                  onChange={id => { if (id && id !== eventoAtualId) router.push(`/admin/lancar-ponto?evento=${id}`) }}
+                  opcoes={eventos.map(e => ({ valor: e.id, rotulo: e.nome }))}
+                />
+              )}
+              {setores.length > 1 && (
+                <SeletorLista
+                  valor={setorFiltro} titulo="Setor" placeholder="Setor"
+                  onChange={v => { setSetorFiltro(v); setVisiveis(POR_PAGINA) }}
+                  opcoes={opcoesSetor}
+                />
+              )}
+            </div>
           )}
+
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              value={busca} onChange={e => { setBusca(e.target.value); setVisiveis(POR_PAGINA) }}
+              placeholder="Nome, CPF ou fornecedor…" aria-label="Buscar pessoa" autoFocus
+              className="input pl-9 pr-9"
+            />
+            {busca && (
+              <button onClick={() => setBusca('')} aria-label="Limpar busca" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {busca.trim().length < MINIMO ? (
-          <EmptyState icone={<Search className="w-7 h-7" />} titulo="Digite para procurar" descricao="Pelo menos duas letras do nome, ou o começo do CPF." />
-        ) : !encontrados.length ? (
-          <EmptyState icone={<Search className="w-7 h-7" />} titulo={`Ninguém com "${busca}"`} />
+        {!lista.length ? (
+          <EmptyState
+            icone={buscando ? <Search className="w-7 h-7" /> : <Users className="w-7 h-7" />}
+            titulo={buscando ? `Ninguém com "${busca}"` : 'Nenhuma pessoa por aqui'}
+            descricao={buscando ? 'Confira o nome ou limpe o filtro de setor.' : 'Este setor ainda não tem ninguém cadastrado.'}
+          />
         ) : (
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-50 border-t border-slate-100">
             {encontrados.map(p => (
               <button key={p.id} onClick={() => escolher(p)} className="w-full text-left px-4 py-3 hover:bg-slate-50/60 transition-colors">
                 <p className={`text-sm font-medium truncate ${p.ativo ? 'text-slate-800' : 'text-slate-400'}`}>
@@ -154,6 +203,14 @@ export default function LancarPonto({
                 </p>
               </button>
             ))}
+            {lista.length > encontrados.length && (
+              <button
+                onClick={() => setVisiveis(v => v + POR_PAGINA)}
+                className="w-full px-4 py-3 text-center text-sm font-semibold text-brand-600 hover:bg-slate-50/60 transition-colors"
+              >
+                Mostrar mais ({(lista.length - encontrados.length).toLocaleString('pt-BR')} restantes)
+              </button>
+            )}
           </div>
         )}
       </Secao>

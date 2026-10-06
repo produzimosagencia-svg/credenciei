@@ -9,7 +9,9 @@
     "lint": "eslint",
     "coerencia": "node testes/coerencia.mjs",
     "autorizacao": "node testes/autorizacao.mjs",
-    "escala": "node testes/escala.mjs"
+    "escala": "node testes/escala.mjs",
+    "estrutura": "node testes/estrutura.mjs",
+    "supervisor": "node testes/supervisor.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",
