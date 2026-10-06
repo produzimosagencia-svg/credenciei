@@ -4762,7 +4762,24 @@ export async function diasDoEvento(eventoId: string): Promise<DiaDoEvento[]> {
  * linha é a prova de que aquele dia foi de trabalho; apagá-la transformaria a
  * ausência de alguém em "esse dia nem existia" no fechamento do pagamento.
  */
-export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]) {
+/**
+ * Devolve o erro em vez de lançar (padrão de `criarSupervisor`): em produção o
+ * Next esconde a mensagem de QUALQUER exceção de Server Action e a tela mostra
+ * só "An error occurred in the Server Components render" — o produtor nunca
+ * sabia o que corrigir (06/10/2026, dia principal extra do Vital).
+ */
+export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]): Promise<
+  | { ok: true; dias: number; preservados: number }
+  | { ok?: false; error: string }
+> {
+  try {
+    return await salvarDiasDeTrabalhoOuLanca(eventoId, datas)
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function salvarDiasDeTrabalhoOuLanca(eventoId: string, datas: string[]) {
   await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
@@ -4868,7 +4885,19 @@ export type DiaPrincipalExtra = {
  * fim em aberto cai pro campo do evento, que também está em aberto, então
  * não há mistura nenhuma.
  */
-export async function salvarDiasPrincipaisExtras(eventoId: string, dias: DiaPrincipalExtra[]) {
+export async function salvarDiasPrincipaisExtras(eventoId: string, dias: DiaPrincipalExtra[]): Promise<
+  | { ok: true; dias: number; preservados: number }
+  | { ok?: false; error: string }
+> {
+  // Devolve o erro em vez de lançar — ver `salvarDiasDeTrabalho`.
+  try {
+    return await salvarDiasPrincipaisExtrasOuLanca(eventoId, dias)
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+async function salvarDiasPrincipaisExtrasOuLanca(eventoId: string, dias: DiaPrincipalExtra[]) {
   await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
@@ -4888,6 +4917,21 @@ export async function salvarDiasPrincipaisExtras(eventoId: string, dias: DiaPrin
   for (const d of normalizados) {
     if (!d.entradaInicio || !d.saidaInicio) {
       throw new Error('Preencha ao menos o início de entrada e o início de saída de cada dia principal extra.')
+    }
+    /*
+     * Saída ANTES da entrada, sem horário de fim: o caso mais comum de dia
+     * extra que vira a madrugada — a saída das 01:30 pertence ao dia SEGUINTE,
+     * e o seletor de data não troca o dia sozinho. A regra geral logo abaixo
+     * bloquearia com "o evento está terminando antes de começar", que não diz
+     * o que fazer; aqui a mensagem aponta o campo e a data certa.
+     */
+    const antes = new Date(d.saidaInicio).getTime() < new Date(d.entradaInicio).getTime()
+    if (antes && !d.saidaFim) {
+      const diaSeguinte = somarDias(diaBRT(d.saidaInicio), 1).split('-').reverse().slice(0, 2).join('/')
+      throw new Error(
+        `A saída (${formatarBR(d.saidaInicio, 'curto')}) está antes da entrada (${formatarBR(d.entradaInicio, 'curto')}). ` +
+        `Se a saída é de madrugada, escolha o DIA SEGUINTE (${diaSeguinte}) no início da saída — ou preencha o fim da saída.`,
+      )
     }
     // Mesma checagem do dia principal automático (o erro do Kleber Andrade
     // pode acontecer em qualquer dia principal, não só no primeiro).

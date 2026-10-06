@@ -79,10 +79,12 @@ export default function DiasPrincipaisExtras({
           saidaInicio: b.saidaInicio,
           saidaFim: b.saidaFim || undefined,
         })))
+        // O servidor devolve o motivo (em produção, uma exceção chegava aqui como texto genérico).
+        if (!r.ok) { setErro(r.error); return }
         setFeito(r.dias ? `${r.dias} dia(s) principal(is) extra(s) salvos.` : 'Nenhum dia principal extra configurado.')
         router.refresh()
-      } catch (e) {
-        setErro(e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.')
+      } catch {
+        setErro('Não consegui salvar — confira a internet e tente de novo.')
       }
     })
   }

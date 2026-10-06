@@ -99,6 +99,7 @@ export default function DiasDeTrabalho({
     startTransition(async () => {
       try {
         const r = await salvarDiasDeTrabalho(eventoId, [...marcados])
+        if (!r.ok) { setErro(r.error); return }
         setFeito(
           `${r.dias} dia(s) de preparação salvos, além do dia do evento.` +
           (r.preservados > 0
@@ -106,8 +107,8 @@ export default function DiasDeTrabalho({
             : ''),
         )
         router.refresh()
-      } catch (e: unknown) {
-        setErro(e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.')
+      } catch {
+        setErro('Não consegui salvar — confira a internet e tente de novo.')
       }
     })
   }
