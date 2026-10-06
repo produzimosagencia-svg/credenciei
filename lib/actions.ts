@@ -4038,7 +4038,16 @@ export async function garantirMeuCracha(fornecedorId?: string): Promise<{ qrToke
    */
   let viaVinculo = false
   const meus = await meusSetores(perfil)
-  if (perfil.fornecedor_id && meus.some(s => s.id === perfil.fornecedor_id)) {
+  /*
+   * Escolheu um fornecedor que é DELE (supervisor em mais de um evento —
+   * "Meu Crachá" pergunta de qual evento, pedido do Juan, 06/10/2026): esse
+   * vence o setor ativo. Sem isto a escolha era ignorada e sempre abria o
+   * crachá do evento em que ele entrou por último.
+   */
+  if (fornecedorId && meus.some(s => s.id === fornecedorId)) {
+    alvoFornecedorId = fornecedorId
+    viaVinculo = perfil.role !== 'supervisor'
+  } else if (perfil.fornecedor_id && meus.some(s => s.id === perfil.fornecedor_id)) {
     alvoFornecedorId = perfil.fornecedor_id
     viaVinculo = perfil.role !== 'supervisor'
   } else if (perfil.role === 'supervisor') {

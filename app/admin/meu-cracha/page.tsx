@@ -40,7 +40,16 @@ export default async function MeuCrachaPage({
   if (perfil.role !== 'supervisor' && perfil.role !== 'admin' && perfil.role !== 'master' && !temVinculo) redirect('/admin')
 
   const vinculoAtivo = perfil.fornecedor_id && meusVinculos.some(s => s.id === perfil.fornecedor_id)
-  if (perfil.role === 'supervisor' || vinculoAtivo) {
+  const ehAdminOuMaster = perfil.role === 'admin' || perfil.role === 'master'
+  /*
+   * Vínculo em MAIS DE UM evento (pedido do Juan, 06/10/2026): pergunta de
+   * qual evento é o crachá, em vez de abrir sempre o do setor ativo — o
+   * supervisor que trabalhou no Stoked e está no Teste precisa conseguir
+   * mostrar qualquer um dos dois. Com um evento só, segue direto como sempre.
+   * Admin/master continuam no fluxo deles ("Crachá Admin").
+   */
+  const escolheEntreEventos = !ehAdminOuMaster && new Set(meusVinculos.map(s => s.evento_id)).size > 1
+  if ((perfil.role === 'supervisor' || vinculoAtivo) && !escolheEntreEventos) {
     const resultado = await garantirMeuCracha()
     if ('error' in resultado) {
       return (
@@ -56,22 +65,23 @@ export default async function MeuCrachaPage({
   const { evento: eventoParam, setor: setorParam } = await searchParams
 
   if (!eventoParam) {
-    const ehAdminOuMasterSemEvento = perfil.role === 'admin' || perfil.role === 'master'
-    const eventos = ehAdminOuMasterSemEvento
+    const eventos = ehAdminOuMaster
       ? await eventosQuePossoAbrir()
       : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="space-y-5">
         <PageHeader
-          titulo={ehAdminOuMasterSemEvento ? 'Crachá Admin' : 'Meu Crachá'}
-          descricao="Escolha o evento — o crachá é vinculado a um fornecedor dele"
+          titulo={ehAdminOuMaster ? 'Crachá Admin' : 'Meu Crachá'}
+          descricao={ehAdminOuMaster
+            ? 'Escolha o evento — o crachá é vinculado a um fornecedor dele'
+            : 'Você está em mais de um evento — escolha de qual quer ver o crachá'}
         />
         <EscolherEvento
           eventos={eventos}
           href={id => `/admin/meu-cracha?evento=${id}`}
           icone={<IdCard className="w-3.5 h-3.5" />}
           titulo="Em qual evento?"
-          descricao="Você vai escolher o fornecedor a seguir"
+          descricao={ehAdminOuMaster ? 'Você vai escolher o fornecedor a seguir' : 'O crachá de cada evento é diferente — o QR de um não vale no outro'}
           vazio={{ titulo: 'Nenhum evento ainda', descricao: 'Crie um evento no Painel antes de gerar seu crachá.' }}
           mostrarOrganizacao={veTodosEventos(perfil)}
         />
@@ -92,13 +102,26 @@ export default async function MeuCrachaPage({
    * admin/master) escolhe só ENTRE OS PRÓPRIOS — é o crachá pessoal dela,
    * não uma escolha de gestão.
    */
-  const ehAdminOuMaster = perfil.role === 'admin' || perfil.role === 'master'
   const titulo = ehAdminOuMaster ? 'Crachá Admin' : 'Meu Crachá'
 
   if (!setorParam) {
     let query = supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoParam).order('nome')
     if (!ehAdminOuMaster) query = query.in('id', idsVinculoNesteEvento)
     const { data: setores } = await query
+
+    // Crachá pessoal com um fornecedor só neste evento: não há o que escolher.
+    if (!ehAdminOuMaster && setores?.length === 1) {
+      const unico = await garantirMeuCracha(setores[0].id as string)
+      if ('error' in unico) {
+        return (
+          <div className="space-y-5">
+            <PageHeader titulo={titulo} descricao={evento.nome} />
+            <Aviso tom="atencao">{unico.error}</Aviso>
+          </div>
+        )
+      }
+      redirect(`/credential/${unico.qrToken}`)
+    }
 
     return (
       <div className="space-y-5">

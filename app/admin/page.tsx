@@ -10,6 +10,7 @@ import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, meusSetores, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluir, podeGerenciarBacklog } from '@/lib/permissions'
 import AtencaoHoje from './AtencaoHoje'
+import Redirecionar from './Redirecionar'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import { COR_ETAPA } from '@/components/charts'
@@ -219,11 +220,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
    * Manda ele direto pro scanner, que já lista os eventos dele.
    */
   if (podeAcompanhar(perfil) && !podeGerenciarEventos(perfil)) {
+    // Os destinos abaixo saem por <Redirecionar> (no navegador), não por
+    // `redirect()` — ver app/admin/Redirecionar.tsx pro erro que isso evita.
     // Suporte não é de UM setor (nem de uma organização, como o operador de
     // portão) — o escopo dele são organizações/eventos inteiros via
     // `suporte_escopo`. "Sem setor vinculado" seria a tela errada pra ele;
     // manda direto pra ferramenta que ele de fato usa.
-    if (perfil.role === 'suporte') redirect('/admin/editar-colaborador')
+    if (perfil.role === 'suporte') return <Redirecionar para="/admin/editar-colaborador" />
     /*
      * "Meus eventos" (pedido do Juan, 02/10/2026) — o supervisor trabalha em
      * mais de um evento ao longo do tempo, e ir direto pro último setor
@@ -232,7 +235,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
      * sistema. Pedir a escolha aqui, sempre, deixa explícito em qual evento
      * ele está entrando — `/admin/meus-eventos` já separa atual de passado.
      */
-    if (perfil.role === 'supervisor') redirect('/admin/meus-eventos')
+    if (perfil.role === 'supervisor') return <Redirecionar para="/admin/meus-eventos" />
     /*
      * Pode ter papel principal diferente (operador de portão, admin...) e
      * AINDA ASSIM supervisionar um setor — "a mesma pessoa pode
@@ -244,7 +247,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
      * Stoked e caiu em "nenhum evento" tentando entrar).
      */
     if (perfil.role !== 'supervisor' && (await meusSetores(perfil)).length) {
-      redirect('/admin/meus-eventos')
+      return <Redirecionar para="/admin/meus-eventos" />
     }
     const setor = await meuSetor(perfil)
     if (!setor) {
@@ -257,10 +260,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
        * feia" pra quem vê o sistema pela primeira vez. `/admin/bem-vindo`
        * mostra o evento e aponta pro Scanner/Registro de ponto no menu.
        */
-      if (perfil.role === 'operador_portao') redirect('/admin/bem-vindo')
+      if (perfil.role === 'operador_portao') return <Redirecionar para="/admin/bem-vindo" />
       return <SemSetorVinculado />
     }
-    redirect(`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`)
+    return <Redirecionar para={`/admin/eventos/${setor.evento_id}/fornecedor/${setor.id}`} />
   }
 
   const db = supabaseAdmin
