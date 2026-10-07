@@ -5,8 +5,8 @@ import { Moon, Sun } from 'lucide-react'
 /**
  * Tema claro / escuro do sistema interno.
  *
- * O escuro (Arena) é o padrão. O claro é uma escolha da pessoa, guardada no
- * navegador dela — não é configuração de conta, é conforto de leitura.
+ * O CLARO é o padrão (decisão do Juan, 07/10/2026). O escuro é uma escolha da
+ * pessoa, guardada no navegador dela — não é configuração de conta, é conforto de leitura.
  *
  * Como funciona: o atributo `data-tema="claro"` no <html> liga o bloco de
  * sobrescritas do globals.css. O layout raiz tem um script que lê o
@@ -38,7 +38,8 @@ function assinar(avisar: () => void) {
 export function useTema(): [Tema, () => void] {
   // O <html> é a fonte da verdade (é ele que o CSS lê); o servidor sempre
   // responde "escuro", e o cliente corrige na hidratação sem re-render extra.
-  const tema = useSyncExternalStore(assinar, lerTema, () => 'escuro' as Tema)
+  // O servidor responde "claro" (o padrão): quem escolheu o escuro é corrigido na hidratação.
+  const tema = useSyncExternalStore(assinar, lerTema, () => 'claro' as Tema)
   const alternar = () => aplicarTema(tema === 'claro' ? 'escuro' : 'claro')
   return [tema, alternar]
 }

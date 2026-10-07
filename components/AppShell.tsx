@@ -646,8 +646,12 @@ export default function AppShell({
               /* Só em tela grande, e mesmo lá não pode invadir a marca:
                  `truncate` + largura máxima. No mobile a função aparece no
                  menu do usuário (o avatar à direita). */
-              <span className="pilula-contexto hidden lg:inline-flex min-w-0 max-w-[28vw] truncate">
-                {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
+              /* Num invólucro à parte: `.pilula-contexto` define `display` fora das camadas do Tailwind e
+                 vencia o `hidden` — no celular a etiqueta aparecia por cima do logo (visto em print real). */
+              <span className="hidden lg:inline-flex min-w-0 max-w-[28vw]">
+                <span className="pilula-contexto min-w-0 truncate">
+                  {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
+                </span>
               </span>
             )}
             {/* Atendimento humano no WhatsApp — pra quem usa o sistema (o master É o suporte, então não vê). */}

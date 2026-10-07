@@ -35,12 +35,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // antes do React hidratar, e o servidor não tinha como saber disso.
     <html lang="pt-BR" className={`h-full ${archivo.variable}`} suppressHydrationWarning>
       <body className="min-h-full">
-        {/* Tema claro, se a pessoa escolheu (ver components/Tema.tsx). Roda
-            antes da hidratação pra tela não abrir escura e piscar. Só no
-            sistema interno: landing, login e telas públicas são sempre
-            escuras, então o atributo nem é lido lá. */}
+        {/* Tema (ver components/Tema.tsx): o CLARO é o padrão, e só fica escuro quem escolheu
+            escuro (localStorage vazio ou bloqueado também dá claro). Roda antes da hidratação
+            pra tela não abrir de um jeito e piscar pro outro. Só no sistema interno: landing,
+            login e telas públicas são sempre escuras, então o atributo nem é lido lá. */}
         <Script id="tema-credenciei" strategy="beforeInteractive">
-          {"try{var p=location.pathname;if((p.indexOf('/admin')===0||p.indexOf('/scan')===0||p.indexOf('/encarregado')===0)&&localStorage.getItem('credenciei-tema')==='claro'){document.documentElement.setAttribute('data-tema','claro')}}catch(e){}"}
+          {"var p=location.pathname;if(p.indexOf('/admin')===0||p.indexOf('/scan')===0||p.indexOf('/encarregado')===0){var t=null;try{t=localStorage.getItem('credenciei-tema')}catch(e){}if(t!=='escuro')document.documentElement.setAttribute('data-tema','claro')}"}
         </Script>
         {children}
       </body>
