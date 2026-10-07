@@ -666,6 +666,8 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
    */
   const { data: alvo } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
   if (alvo?.role === 'operador_portao') throw new Error(SUPERVISOR_NAO_E_GESTOR)
+  // Cada pessoa tem UMA função no sistema: quem é Encarregado (consulta) não vira supervisor por cima.
+  if (alvo?.role === 'encarregado') throw new Error('Esta pessoa já é Encarregada e cada pessoa tem uma função só no sistema. Remova o acesso de Encarregado antes de torná-la supervisora.')
 
   const { error } = await supabaseAdmin
     .from('supervisor_setores')

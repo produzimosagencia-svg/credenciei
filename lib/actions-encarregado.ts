@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
 import { getPerfil, supabaseAdmin, meusSetores, buscarTudo } from './supabase-server'
-import { ehMaster, podeGerenciarUsuarios } from './permissions'
+import { ehMaster, podeGerenciarUsuarios, ROLE_LABELS, type Role } from './permissions'
 import { registrarAuditoria } from './auditoria'
 import { mensagemAmigavel } from './erros'
 import { validarCpf, formatCpf } from './format'
@@ -230,7 +230,7 @@ export async function salvarEncarregado(
           .from('perfis').select('id, role, ativo, nome').eq('cpf', cpf).maybeSingle()
         if (existente) {
           if (existente.role !== 'encarregado') {
-            return { erro: `Este CPF já tem outro acesso no sistema (${existente.nome}). Quem já tem acesso próprio não pode ser Encarregado — fale com o administrador.` }
+            return { erro: `Esta pessoa já tem uma função no sistema (${ROLE_LABELS[existente.role as Role] ?? existente.role}). Cada pessoa tem uma função só — por isso ela não pode ser Encarregada.` }
           }
           perfilId = existente.id as string
           if (existente.ativo === false) {
