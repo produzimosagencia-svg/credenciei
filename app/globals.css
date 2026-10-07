@@ -1177,14 +1177,13 @@ html[data-tema="claro"] .so-escuro { display: none; }
  */
 html[data-tema="claro"] .text-white:not(
   .btn-primario, .btn-perigo, .menu-item-ia, .logo-marca, .indicador-icone,
-  [class*="bg-brand-"], [class*="bg-acento-"], [class*="bg-red-"], [class*="bg-green-"],
-  [class*="bg-amber-"], [class*="bg-blue-"], [class*="bg-slate-8"], [class*="bg-slate-9"],
-  [class*="bg-black"], [class*="bg-gradient"],
+  /* O fundo conta só quando é a classe SEM variante: `hover:bg-brand-50` não é
+     um fundo escuro — antes o `*=` pegava essa palavra no meio e deixava o
+     texto branco sobre a linha clara (nome sumindo na lista de eventos). */
+  [class^="bg-brand-"], [class*=" bg-brand-"], [class^="bg-acento-"], [class*=" bg-acento-"], [class^="bg-red-"], [class*=" bg-red-"], [class^="bg-green-"], [class*=" bg-green-"], [class^="bg-amber-"], [class*=" bg-amber-"], [class^="bg-blue-"], [class*=" bg-blue-"], [class^="bg-slate-8"], [class*=" bg-slate-8"], [class^="bg-slate-9"], [class*=" bg-slate-9"], [class^="bg-black"], [class*=" bg-black"], [class^="bg-gradient"], [class*=" bg-gradient"],
   .menu-lateral *, .evento-vivo *, .btn-primario *, .btn-perigo *, .menu-item-ia *,
   .logo-marca *, .indicador-icone *, .secao-icone *, .acoes-no-escuro *,
-  [class*="bg-brand-"] *, [class*="bg-acento-"] *, [class*="bg-red-"] *, [class*="bg-green-"] *,
-  [class*="bg-amber-"] *, [class*="bg-blue-"] *, [class*="bg-slate-8"] *, [class*="bg-slate-9"] *,
-  [class*="bg-black"] *, [class*="bg-gradient"] *
+  [class^="bg-brand-"] *, [class*=" bg-brand-"] *, [class^="bg-acento-"] *, [class*=" bg-acento-"] *, [class^="bg-red-"] *, [class*=" bg-red-"] *, [class^="bg-green-"] *, [class*=" bg-green-"] *, [class^="bg-amber-"] *, [class*=" bg-amber-"] *, [class^="bg-blue-"] *, [class*=" bg-blue-"] *, [class^="bg-slate-8"] *, [class*=" bg-slate-8"] *, [class^="bg-slate-9"] *, [class*=" bg-slate-9"] *, [class^="bg-black"] *, [class*=" bg-black"] *, [class^="bg-gradient"] *, [class*=" bg-gradient"] *
 ) { color: #201e1d; }
 html[data-tema="claro"] .ring-white { --tw-ring-color: #ffffff; }
 

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { Building2, Check, X } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
@@ -69,7 +70,9 @@ export default function MeusSetores({
         <span className="ml-auto text-2xs opacity-60 tabular-nums">{setores.length}</span>
       </button>
 
-      {aberto && (
+      {/* Portal: este item mora DENTRO do menu lateral, que redefine as cores slate pra
+          texto claro — o modal (branco) herdava isso e os nomes sumiam no tema claro. */}
+      {aberto && createPortal(
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           onClick={() => !isPending && setAberto(false)}
@@ -127,7 +130,8 @@ export default function MeusSetores({
 
             {erro && <p className="text-red-500 text-xs px-5 pb-4">{erro}</p>}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )
