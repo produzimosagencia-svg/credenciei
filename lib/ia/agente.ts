@@ -146,8 +146,16 @@ function erroDeCota(texto: string): Error | null {
   if (!semCota) return null
 
   const porDia = /PerDay|per day|daily/i.test(texto)
+  // "limit: 0" = o plano/projeto da chave NÃO tem cota nenhuma pra este modelo (faturamento
+  // desligado ou modelo fora do plano). Esperar um minuto não adianta — e dizer isso
+  // evita a pessoa tentar de novo pra sempre.
+  const semPlano = /limit:\s*0\b/i.test(texto)
   return new Error(
-    porDia
+    semPlano
+      ? 'O assistente está sem cota liberada no provedor (Gemini) — esperar não resolve. ' +
+        'Avise o administrador da plataforma para conferir o plano e o faturamento da chave. ' +
+        'O restante do sistema segue funcionando.'
+    : porDia
       ? 'O assistente atingiu o limite de uso de hoje e volta a funcionar amanhã. ' +
         'O restante do sistema continua normal — cadastro, scanner e presenças não dependem dele.'
       : 'O assistente está recebendo muitas perguntas ao mesmo tempo. ' +
@@ -165,6 +173,9 @@ async function comRetentativa<T>(fn: () => Promise<T>, tentativas = 3): Promise<
       if (!transitorio || i >= tentativas - 1) {
         // Esgotou as tentativas: a pessoa precisa saber o que fazer, e
         // sobretudo que o resto do sistema não caiu junto.
+        // O texto cru do provedor fica no log do servidor (nunca na tela): é ele que diz
+        // se foi cota por minuto, por dia ou limite zerado.
+        console.error('[ia] Gemini recusou a chamada:', texto.slice(0, 800))
         throw erroDeCota(texto) ?? e
       }
       // Teto de 30s: acima disso é melhor devolver o erro do que deixar a
