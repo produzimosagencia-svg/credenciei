@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -561,6 +561,18 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
             >
               <Settings className="w-4 h-4" />
               Configurações
+            </Link>
+          )}
+          {/* O guia animado do supervisor (acesso e cadastro de equipe), dentro do sistema. */}
+          {perfil.role === 'supervisor' && (
+            <Link
+              href="/admin/tutorial-supervisor"
+              role="menuitem"
+              onClick={() => setAberto(false)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors border-b border-slate-100"
+            >
+              <BookOpen className="w-4 h-4" />
+              Tutorial supervisor
             </Link>
           )}
           <BotaoTema className="border-b border-slate-100" />

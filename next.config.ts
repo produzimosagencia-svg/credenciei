@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+const cabecalhosComuns = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+]
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.15.123'],
   devIndicators: false,
@@ -13,6 +20,11 @@ const nextConfig: NextConfig = {
    * uma Server Action que falha aqui está falhando de verdade, não por deploy
    * antigo.
    */
+  // O guia do supervisor é lido do disco por uma rota (fs em tempo de execução): sem isto a
+  // Vercel não sabe que o arquivo faz parte do deploy e ele some do build.
+  outputFileTracingIncludes: {
+    '/guia-supervisor': ['./conteudo/guia-supervisor.html'],
+  },
   experimental: {
     // As fotos de presença são enviadas (comprimidas) via server action
     serverActions: { bodySizeLimit: '5mb' },
@@ -51,13 +63,19 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/:path*',
+        // Tudo é DENY (ninguém embute o Credenciei), exceto o guia do supervisor, que a
+        // tela "Tutorial supervisor" mostra num iframe do MESMO site (ver o bloco abaixo).
+        source: '/:path((?!guia-supervisor$).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(self)' },
-          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          ...cabecalhosComuns,
+        ],
+      },
+      {
+        source: '/guia-supervisor',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          ...cabecalhosComuns,
         ],
       },
     ]

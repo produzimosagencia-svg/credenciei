@@ -29,6 +29,8 @@ export async function proxy(request: NextRequest) {
     // Respostas de um disparo, compartilhadas com o cliente dono da lista por
     // link com prazo. Ele não tem conta: sem esta linha o link cai no login.
     pathname.startsWith('/respostas/') ||
+    // Guia do supervisor: público de propósito (decisão do Juan, 07/10/2026) — é o link que se manda a quem ainda não tem conta.
+    pathname === '/guia-supervisor' ||
     pathname === '/login' ||
     // A landing é pública: é a porta de entrada de quem ainda não tem conta.
     pathname === '/' ||
