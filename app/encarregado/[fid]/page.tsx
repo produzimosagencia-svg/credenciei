@@ -23,7 +23,7 @@ export const revalidate = 0
  */
 const TUTORIAL: TutorialConfig = {
   tela: 'encarregado-equipe',
-  versao: 1,
+  versao: 2,
   passos: [
     { alvo: 'enc-limites', titulo: 'Você é Encarregado', posicao: 'bottom', icone: 'ShieldCheck',
       descricao: 'Seu acesso é de CONSULTA. Você está aqui para ajudar o supervisor a acompanhar e organizar a equipe — não para operar. Você vê a equipe do seu setor, mas não registra ponto, não aprova, não edita e não remove ninguém.' },
@@ -34,7 +34,7 @@ const TUTORIAL: TutorialConfig = {
     { alvo: 'enc-busca', titulo: 'Procure alguém', posicao: 'bottom', icone: 'Search',
       descricao: 'Busque pelo nome ou pela função, e use os filtros para ver só quem já chegou, quem ainda falta ou quem aguarda aprovação.' },
     { alvo: 'enc-lista', titulo: 'A equipe', posicao: 'top', icone: 'ClipboardCheck',
-      descricao: 'Cada pessoa mostra o horário de entrada, do meio e da saída do dia. Precisou de algo que não é consulta? Fale com o seu supervisor — é ele quem faz.' },
+      descricao: 'Cada pessoa mostra o horário de entrada, do meio e da saída do dia. Toque no nome para ver os dados e o histórico dela — só para ler. Precisou de algo que não é consulta? Fale com o seu supervisor — é ele quem faz.' },
   ],
 }
 
@@ -120,7 +120,7 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
         </div>
 
         <div data-tutorial="enc-lista">
-          <ListaEquipe pessoas={equipe.pessoas} veContato={equipe.veContato} />
+          <ListaEquipe pessoas={equipe.pessoas} veContato={equipe.veContato} fornecedorId={fid} />
         </div>
 
       </div>

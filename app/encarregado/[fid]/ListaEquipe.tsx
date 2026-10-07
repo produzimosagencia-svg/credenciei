@@ -1,5 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Search } from 'lucide-react'
 import { chaveBusca } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -29,7 +30,7 @@ function Etapa({ rotulo, quando }: { rotulo: string; quando: string | null }) {
  * A equipe do setor, com busca e filtro. SOMENTE LEITURA: nenhuma linha abre
  * modal de edição, não há botão de ação — é a regra do Encarregado.
  */
-export default function ListaEquipe({ pessoas, veContato }: { pessoas: PessoaDaEquipe[]; veContato: boolean }) {
+export default function ListaEquipe({ pessoas, veContato, fornecedorId }: { pessoas: PessoaDaEquipe[]; veContato: boolean; fornecedorId: string }) {
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<Filtro>('todos')
 
@@ -77,7 +78,7 @@ export default function ListaEquipe({ pessoas, veContato }: { pessoas: PessoaDaE
           {lista.map(p => (
             <li key={p.id} className="px-4 py-3 flex items-center gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-slate-800 text-sm font-semibold truncate">{p.nome}</p>
+                <Link href={`/encarregado/${fornecedorId}/${p.id}`} className="block text-slate-800 text-sm font-semibold truncate hover:text-brand-600 transition-colors">{p.nome}</Link>
                 <p className="text-slate-400 text-xs truncate">
                   {[p.cargo, p.empresa].filter(Boolean).join(' · ') || 'Sem função definida'}
                 </p>

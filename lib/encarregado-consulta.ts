@@ -1,7 +1,8 @@
 import 'server-only'
 import { supabaseAdmin, buscarTudo, diaDoTurno } from './supabase-server'
 import { emLotes } from './lotes'
-import { escalasDosFuncionarios } from './escala'
+import { escalasDosFuncionarios, escalaDoFuncionario } from './escala'
+import { historicoDoFuncionario, type HistoricoNoEvento } from './historico'
 import { statusCredenciamentoValido } from './credenciamento-constantes'
 import {
   cpfMascarado, temPermissaoEncarregado,
@@ -163,4 +164,61 @@ export async function carregarEquipeParaConsulta(v: VinculoDoEncarregado): Promi
       saidas: ativos.filter(p => p.fim).length,
     },
   }
+}
+
+// ─── Uma pessoa da equipe: dados e histórico (só leitura) ────────────────────
+
+export type PessoaDetalhe = {
+  id: string
+  nome: string
+  cargo: string | null
+  empresa: string | null
+  cidade: string | null
+  status: 'aprovado' | 'pendente' | 'negado'
+  ativo: boolean
+  /** Mascarado, salvo com a permissão `ver_contato`. */
+  cpf: string
+  telefone: string | null
+  cadastradoEm: string
+  diasAprovados: string[]
+}
+
+/**
+ * Os dados de UMA pessoa da equipe do setor — só o que o Encarregado pode ver.
+ *
+ * A pessoa tem que ser deste setor (`fornecedor_id`): sem isso, trocar o id na
+ * URL abriria gente de outro setor. Ficam de FORA, sempre: chave PIX, valor a
+ * receber, foto/biometria, QR e token da credencial — dado financeiro e
+ * credencial não são consulta.
+ */
+export async function carregarPessoaParaConsulta(v: VinculoDoEncarregado, funcionarioId: string): Promise<PessoaDetalhe | null> {
+  const { data: f } = await supabaseAdmin
+    .from('funcionarios')
+    .select('id, nome, cpf, telefone, cargo, empresa, cidade, ativo, status_credenciamento, descredenciado_em, created_at, fornecedor_id')
+    .eq('id', funcionarioId).eq('fornecedor_id', v.fornecedorId).maybeSingle()
+  if (!f || f.descredenciado_em) return null
+
+  const veContato = temPermissaoEncarregado(v.permissoes, 'ver_contato' satisfies PermissaoEncarregado)
+  const escala = await escalaDoFuncionario(funcionarioId).catch(() => null)
+  return {
+    id: f.id as string, nome: f.nome as string,
+    cargo: (f.cargo as string | null) ?? null, empresa: (f.empresa as string | null) ?? null, cidade: (f.cidade as string | null) ?? null,
+    status: statusCredenciamentoValido(f.status_credenciamento as string), ativo: f.ativo !== false,
+    cpf: veContato ? ((f.cpf as string) ?? '') : cpfMascarado(f.cpf as string),
+    telefone: (f.telefone as string | null) ?? null,
+    cadastradoEm: f.created_at as string,
+    diasAprovados: (escala?.dias ?? []).filter(d => d.aprovado).map(d => d.data),
+  }
+}
+
+/**
+ * O histórico de batidas dessa pessoa NESTE evento, dia a dia. Só deste
+ * evento (é o histórico do cadastro dela aqui), e sem o CPF dentro.
+ */
+export async function carregarHistoricoParaConsulta(v: VinculoDoEncarregado, funcionarioId: string): Promise<HistoricoNoEvento | null> {
+  const { data: f } = await supabaseAdmin
+    .from('funcionarios').select('id').eq('id', funcionarioId).eq('fornecedor_id', v.fornecedorId).maybeSingle()
+  if (!f) return null
+  const h = await historicoDoFuncionario(funcionarioId)
+  return h ? { ...h, cpf: '' } : null
 }

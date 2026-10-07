@@ -36,8 +36,8 @@ export const PERMISSOES_ENCARREGADO = {
   ver_equipe: 'Ver a equipe do setor',
   /** Quem já fez entrada, meio e saída hoje. */
   ver_presenca: 'Ver a presença do dia',
-  /** Telefone e CPF completos de cada pessoa. Desligado por padrão (dado pessoal). */
-  ver_contato: 'Ver telefone e CPF da equipe',
+  /** O CPF completo de cada pessoa (sem isso, aparece mascarado). Desligado por padrão — é dado pessoal. */
+  ver_contato: 'Ver o CPF completo da equipe',
 } as const
 
 export type PermissaoEncarregado = keyof typeof PERMISSOES_ENCARREGADO

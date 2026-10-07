@@ -91,5 +91,13 @@ ok(ler('app/layout.tsx').includes("p.indexOf('/encarregado')===0"), 'o tema salv
 ok(ler('app/admin/encarregados/page.tsx').includes('voltarPara={voltarPara}') && ler('app/encarregado/[fid]/page.tsx').includes('voltarPara={todosOsVinculos.length > 1'), 'as telas têm botão de voltar')
 ok(ler('components/AppShell.tsx').includes('<BotaoSuporteWpp') && ler('app/encarregado/layout.tsx').includes('<BotaoSuporteWpp') && ler('lib/whatsapp-suporte.ts').includes("'acesso'"), 'botão de suporte (WhatsApp) no painel do administrador/supervisor e na área do Encarregado')
 
+grupo('8 · A pessoa da equipe (dados e histórico)')
+const pessoaPg = ler('app/encarregado/[fid]/[pid]/page.tsx')
+ok(pessoaPg.includes('exigirVinculo(') && pessoaPg.includes('carregarPessoaParaConsulta(vinculo, pid)') && /if \(!pessoa\) notFound\(\)/.test(pessoaPg), 'só abre pessoa do setor em que ele é Encarregado (senão 404)')
+ok(consulta.includes(".eq('fornecedor_id', v.fornecedorId)") && consulta.includes('cpf: \'\''), 'a consulta prende a pessoa ao setor e o histórico sai sem o CPF')
+ok(!/chave_pix|valor_receber|qr_token|foto_perfil|biometria/.test(consulta.slice(consulta.indexOf('carregarPessoaParaConsulta'))), 'PIX, valores, QR e biometria nunca entram na consulta da pessoa')
+ok((pessoaPg.match(/\['(dados|historico)'/g) ?? []).length === 2 && !/<button|onClick|'use client'/.test(pessoaPg + ler('app/encarregado/[fid]/[pid]/HistoricoLeitura.tsx')), 'só as abas Dados e Histórico, e a tela não tem botão nem ação')
+ok(ler('app/encarregado/[fid]/ListaEquipe.tsx').includes('/encarregado/${fornecedorId}/${p.id}'), 'o nome na lista abre a pessoa')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
