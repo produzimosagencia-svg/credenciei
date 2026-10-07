@@ -3,11 +3,14 @@
  * o suporte" na credencial. Não é o comercial (`whatsapp-comercial.ts`, de quem
  * quer contratar): aqui é quem já está no evento e precisa de ajuda na hora.
  *
- * O número vem de NEXT_PUBLIC_WHATSAPP_SUPORTE (só dígitos, com o 55 do país).
- * Sem ele configurado, o botão simplesmente não aparece: melhor sem botão do
- * que mandar a pessoa pra um número errado no meio do evento.
+ * Só dígitos, com o 55 do país. Dá pra trocar sem mexer em código pela variável
+ * NEXT_PUBLIC_WHATSAPP_SUPORTE. Se o número ficar curto demais (variável mal
+ * preenchida), o botão some: melhor sem botão do que mandar a pessoa pra um
+ * número errado no meio do evento.
  */
-const numeroSuporte = (process.env.NEXT_PUBLIC_WHATSAPP_SUPORTE ?? '').replace(/\D/g, '')
+const NUMERO_PADRAO = '5527988146143'
+
+const numeroSuporte = (process.env.NEXT_PUBLIC_WHATSAPP_SUPORTE || NUMERO_PADRAO).replace(/\D/g, '')
 
 /**
  * O link da conversa, já com a primeira mensagem escrita: quem é a pessoa,
