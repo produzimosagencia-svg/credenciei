@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { statusCredenciamentoValido, type StatusCredenciamento } from './credenciamento-constantes'
+import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
   gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
@@ -8214,15 +8214,34 @@ export async function cadastrarFuncionarioPublico(
   // onde vai trabalhar.
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('qr_token, fornecedor_id, status_credenciamento, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
+    .select('id, qr_token, fornecedor_id, status_credenciamento, decidido_em, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
     .limit(1)
+  // Pedido NEGADO que a pessoa está refazendo (passou da espera) — o fluxo continua e, no fim, REABRE este cadastro.
+  let pedidoNegadoId: string | null = null
   if (existentes && existentes.length) {
     const existente = existentes[0] as any
     if (existente.fornecedor_id === fornecedorId) {
-      return { qrToken: existente.qr_token, status: statusCredenciamentoValido(existente.status_credenciamento) }
-    }
+      const statusDoPedido = statusCredenciamentoValido(existente.status_credenciamento)
+      if (statusDoPedido !== 'negado') {
+        return { qrToken: existente.qr_token, status: statusDoPedido }
+      }
+      /*
+       * NOVA REGRA (Juan, 07/10/2026): depois que o supervisor NEGA, a pessoa
+       * pode tentar de novo pelo formulário — vira um novo pedido, "aguardando
+       * aprovação" — mas só passados 5 minutos da negativa. Antes disso o
+       * formulário diz quanto falta. Sem a espera, pedido e negativa viravam
+       * um vai-e-volta imediato na fila do supervisor.
+       */
+      const faltam = minutosParaNovoPedido(existente.decidido_em as string | null)
+      if (faltam > 0) {
+        return {
+          error: `Seu pedido foi negado há pouco. Você pode fazer um novo pedido em ${faltam} minuto${faltam === 1 ? '' : 's'} — se preferir, converse antes com o seu supervisor.`,
+        }
+      }
+      pedidoNegadoId = existente.id as string
+    } else {
     /*
      * Evento com subevento (Vital, 02/10/2026): a mensagem fala do
      * SUBGRUPO, não do fornecedor — é o que faz sentido pra quem está na
@@ -8235,6 +8254,7 @@ export async function cadastrarFuncionarioPublico(
       ? `Você já está cadastrado(a) no subgrupo ${nomeSubevento}. Procure o supervisor da sua equipe — não é permitido se cadastrar em outro subgrupo do mesmo evento.`
       : `Este CPF já está credenciado neste evento pelo fornecedor ${setorExistente}. Procure o supervisor da sua equipe — não é permitido se cadastrar em duas empresas ou funções no mesmo evento.`
     return { error: mensagem }
+    }
   }
 
   /*
@@ -8278,6 +8298,18 @@ export async function cadastrarFuncionarioPublico(
   }
 
   const organizacaoIdDoEvento = (fornecedor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
+
+  // Novo pedido de quem foi negado: reabre O MESMO cadastro (não cria outro, nem passa pela
+  // cota — a pessoa já ocupa a vaga dela). Tudo acontece dentro desta função.
+  if (pedidoNegadoId) {
+    return await reabrirPedidoNegado({
+      funcionarioId: pedidoNegadoId, eventoId: fornecedor.evento_id as string, organizacaoId: organizacaoIdDoEvento,
+      cpf, nome, telefone, cargo, chavePix, cidade, foto: match,
+      usaEscala, diasEscolhidos, origem: dados.origem === 'portaria' ? 'portaria' : 'formulario',
+      biometriaDescritor: dados.biometriaDescritor,
+    })
+  }
+
   const { travaCotaHabilitada } = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
   if (travaCotaHabilitada) {
     const cota = fornecedorCompleto?.quantidade_estimada ?? null
@@ -8396,6 +8428,79 @@ export async function cadastrarFuncionarioPublico(
   // ver `aprovarCredenciamento`. Represada de propósito: mandar o link antes
   // de alguém aprovar entregaria uma credencial que ainda não vale.
   return { qrToken: data.qr_token, status: 'pendente' as const, temBiometria, biometriaReaproveitada, diasSalvos: diasEscolhidos }
+}
+
+/**
+ * NOVO PEDIDO de quem foi NEGADO (regra de 07/10/2026: passados
+ * `ESPERA_NOVO_PEDIDO_MIN` minutos da negativa, a pessoa pode tentar de novo
+ * pelo formulário). Reabre o MESMO cadastro: volta a "aguardando aprovação",
+ * limpa o motivo e quem decidiu, e atualiza os dados que ela acabou de digitar.
+ *
+ * Nunca apaga o cadastro (ao contrário do primeiro cadastro, que desfaz o que
+ * criou se a foto falhar): aqui existe histórico a preservar. Por isso as
+ * partes que podem falhar (foto, dias) vêm ANTES da virada de status — se
+ * falhar, o pedido continua negado e a pessoa vê o erro.
+ */
+async function reabrirPedidoNegado(a: {
+  funcionarioId: string; eventoId: string; organizacaoId: string | null; cpf: string
+  nome: string; telefone: string; cargo: string | null; chavePix: string | null; cidade: string
+  foto: RegExpMatchArray | null; usaEscala: boolean; diasEscolhidos: string[]
+  origem: 'portaria' | 'formulario'; biometriaDescritor?: number[]
+}): Promise<{
+  qrToken?: string; status?: StatusCredenciamento; error?: string
+  temBiometria?: boolean; biometriaReaproveitada?: boolean; diasSalvos?: string[]
+}> {
+  const { data: linha } = await supabaseAdmin.from('funcionarios').select('qr_token').eq('id', a.funcionarioId).maybeSingle()
+  const qrToken = linha?.qr_token as string | undefined
+  if (!qrToken) return { error: 'Não foi possível reabrir o seu pedido. Tente novamente.' }
+
+  let fotoPath: string | null = null
+  if (a.foto) {
+    const contentType = a.foto[1]
+    const ext = contentType.split('/')[1] || 'jpg'
+    fotoPath = `avatares/${qrToken}.${ext}`
+    const up = await supabaseAdmin.storage.from('presencas').upload(fotoPath, Buffer.from(a.foto[2], 'base64'), { contentType, upsert: true })
+    if (up.error) return { error: 'Erro ao enviar a foto. Tente novamente.' }
+  }
+
+  if (a.usaEscala) {
+    // Os dias do pedido ANTERIOR (o que ela escolheu e o que o supervisor aprovou) saem: o novo pedido traz a escolha nova.
+    await supabaseAdmin.from('funcionario_dias').delete().eq('funcionario_id', a.funcionarioId)
+    const gravado = await gravarDiasEscolhidos(a.funcionarioId, a.eventoId, a.diasEscolhidos)
+    if (!gravado.ok) {
+      console.error('[reabrirPedidoNegado] dias da escala não gravados', gravado.erro)
+      return { error: 'Não foi possível salvar os dias escolhidos. Tente novamente.' }
+    }
+  }
+
+  const { error } = await supabaseAdmin.from('funcionarios').update({
+    nome: a.nome, telefone: a.telefone, cargo: a.cargo, chave_pix: a.chavePix, cidade: a.cidade,
+    consentimento_base: true, consentimento_em: new Date().toISOString(),
+    ...(fotoPath ? { foto_perfil_path: fotoPath } : {}),
+    ativo: true, status_credenciamento: 'pendente',
+    motivo_negacao: null, decidido_por: null, decidido_em: null,
+    origem: a.origem,
+  }).eq('id', a.funcionarioId).eq('status_credenciamento', 'negado')
+  if (error) return { error: 'Não foi possível reabrir o seu pedido. Tente novamente.' }
+
+  const { temBiometria, biometriaReaproveitada } = await resolverBiometriaNoCadastro({
+    funcionarioId: a.funcionarioId, eventoId: a.eventoId, cpf: a.cpf, descritor: a.biometriaDescritor,
+  })
+
+  after(() => sincronizarFuncionarioNaPlanilha(a.funcionarioId).catch(console.error))
+  after(() => sincronizarAgendamentos(a.eventoId, { funcionarioId: a.funcionarioId }).catch(console.error))
+  // Na auditoria mesmo sem ninguém logado: quem "fez" foi a própria pessoa (mesmo cuidado de `registrarCadastroFuncionario`).
+  after(async () => {
+    const { error: erroLog } = await supabaseAdmin.from('alteracoes_cadastro').insert([{
+      usuario_responsavel: `${a.nome} (cadastro próprio)`, usuario_responsavel_id: null,
+      organizacao_id: a.organizacaoId, evento_id: a.eventoId, funcionario_id: a.funcionarioId,
+      acao: 'NOVO_PEDIDO_CREDENCIAMENTO', campo_alterado: 'Credenciamento',
+      valor_anterior: 'Negado', valor_novo: `Novo pedido após ${ESPERA_NOVO_PEDIDO_MIN} min — aguardando aprovação`,
+    }])
+    if (erroLog) console.error('[auditoria] novo pedido não gravado', erroLog.message)
+  })
+  // Sem mensagem de boas-vindas: ela só sai na APROVAÇÃO (ver `aprovarCredenciamento`).
+  return { qrToken, status: 'pendente', temBiometria, biometriaReaproveitada, diasSalvos: a.diasEscolhidos }
 }
 
 /**

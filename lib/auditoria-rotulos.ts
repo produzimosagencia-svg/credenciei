@@ -32,6 +32,7 @@ export const ACAO_LABELS: Record<string, string> = {
   ENTRADA_VEICULO_LIBERADA: 'Entrada de veículo liberada',
   APROVACAO_CREDENCIAMENTO: 'Credenciamento aprovado',
   NEGACAO_CREDENCIAMENTO: 'Credenciamento negado',
+  NOVO_PEDIDO_CREDENCIAMENTO: 'Novo pedido de credenciamento (após negativa)',
   APROVACAO_ESCALA: 'Dias de trabalho aprovados',
   AJUSTE_ESCALA: 'Dias de trabalho ajustados',
   MESCLA_SUBEVENTO: 'Subeventos mesclados',

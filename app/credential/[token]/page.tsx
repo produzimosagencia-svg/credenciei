@@ -2,7 +2,7 @@ import { supabaseAdmin as supabase, diaDoTurno } from '@/lib/supabase-server'
 import { notFound } from 'next/navigation'
 import { QrCode, Clock, Ban, XCircle, ScanFace } from 'lucide-react'
 import QRCode from 'qrcode'
-import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
+import { statusCredenciamentoValido, minutosParaNovoPedido } from '@/lib/credenciamento-constantes'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
 import { linkDoSuporte } from '@/lib/whatsapp-suporte'
@@ -73,7 +73,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
   const { data: funcionario } = await supabase
     .from('funcionarios')
-    .select('id, nome, cpf, empresa, cargo, ativo, status_credenciamento, motivo_negacao, fornecedor_id, fornecedores(nome, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
+    .select('id, nome, cpf, empresa, cargo, ativo, status_credenciamento, motivo_negacao, decidido_em, fornecedor_id, fornecedores(nome, token_formulario, eventos(id, nome, local, data_inicio, data_fim, checkin_autonomo, token_portaria, portaria_ativa, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
     .eq('qr_token', token)
     .single()
 
@@ -121,6 +121,22 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               </div>
               <div className="p-6 space-y-3">
                 <p className="text-slate-600 text-sm text-center">{selo.texto}</p>
+                {/* Pedido negado: pode tentar de novo pelo formulário depois da espera (lib/credenciamento-constantes.ts). */}
+                {statusCred === 'negado' && fornecedor?.token_formulario && (() => {
+                  const faltam = minutosParaNovoPedido(funcionario.decidido_em as string | null)
+                  return faltam > 0 ? (
+                    <p className="text-slate-500 text-xs text-center">
+                      Você poderá fazer um novo pedido em <strong>{faltam} minuto{faltam === 1 ? '' : 's'}</strong>. Esta tela se atualiza sozinha.
+                    </p>
+                  ) : (
+                    <a
+                      href={`/form/${fornecedor.token_formulario}`}
+                      className="block w-full text-center rounded-xl bg-slate-900 text-white text-sm font-bold px-4 py-3"
+                    >
+                      Fazer um novo pedido
+                    </a>
+                  )
+                })()}
                 <div className="text-center pt-2 border-t border-slate-100">
                   <p className="text-slate-800 font-semibold">{funcionario.nome}</p>
                   <p className="text-slate-400 text-xs">{fornecedor?.nome}</p>

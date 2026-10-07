@@ -67,6 +67,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
   CORRECAO_PONTO: 'atencao',
   RESET_SENHA: 'atencao',
   // Dar acesso (mesmo de consulta) merece atenção; tirar é rotina.
+  NOVO_PEDIDO_CREDENCIAMENTO: 'atencao',
   CONCESSAO_ENCARREGADO: 'atencao',
   REMOCAO_ENCARREGADO: 'neutro',
   ALTERACAO_FUNCIONALIDADE: 'atencao',
