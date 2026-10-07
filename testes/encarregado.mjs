@@ -8,6 +8,7 @@
  * Roda com: node testes/encarregado.mjs   (Node 24 lê .ts direto)
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { ehSupervisorDaEquipe } from '../lib/format.ts'
 import {
   cpfMascarado, temPermissaoEncarregado, PERMISSOES_PADRAO, PERMISSOES_ENCARREGADO, caminhoDoSetor, ehEncarregado,
 } from '../lib/encarregado.ts'
@@ -98,6 +99,13 @@ ok(consulta.includes(".eq('fornecedor_id', v.fornecedorId)") && consulta.include
 ok(!/chave_pix|valor_receber|qr_token|foto_perfil|biometria/.test(consulta.slice(consulta.indexOf('carregarPessoaParaConsulta'))), 'PIX, valores, QR e biometria nunca entram na consulta da pessoa')
 ok((pessoaPg.match(/\['(dados|historico)'/g) ?? []).length === 2 && !/<button|onClick|'use client'/.test(pessoaPg + ler('app/encarregado/[fid]/[pid]/HistoricoLeitura.tsx')), 'só as abas Dados e Histórico, e a tela não tem botão nem ação')
 ok(ler('app/encarregado/[fid]/ListaEquipe.tsx').includes('/encarregado/${fornecedorId}/${p.id}'), 'o nome na lista abre a pessoa')
+
+grupo('9 · Linha dourada do supervisor na equipe')
+ok(ehSupervisorDaEquipe('Supervisor') && ehSupervisorDaEquipe('supervisor de bar') && ehSupervisorDaEquipe('SUPERVISOR'), 'quem tem a função de supervisor é reconhecido (qualquer caixa)')
+ok(!ehSupervisorDaEquipe('Assistente de supervisor') && !ehSupervisorDaEquipe(null) && !ehSupervisorDaEquipe('Administração'), 'só quem COMEÇA por "supervisor" — assistente, vazio e administração não')
+const tabelaEq = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioTable.tsx')
+ok((tabelaEq.match(/ehSupervisorDaEquipe\(f\.cargo\) \? 'linha-supervisor'/g) ?? []).length === 2, 'linha dourada na tabela (computador) e no cartão (celular)')
+ok(ler('app/encarregado/[fid]/ListaEquipe.tsx').includes("'linha-supervisor'") && ler('app/globals.css').includes('html[data-tema="claro"] .linha-supervisor'), 'também na lista do Encarregado, com o dourado ajustado ao tema claro')
 
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

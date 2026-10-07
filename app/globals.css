@@ -821,6 +821,30 @@ button, [role='button'], a.btn-press {
 .tabela tbody tr { transition: background-color 120ms ease; }
 .tabela tbody tr:hover { background-color: rgba(255, 74, 15, 0.05); }
 
+/*
+ * A linha do SUPERVISOR na lista da equipe: dourada de ponta a ponta, com um
+ * filete mais forte na borda esquerda — acha-se de relance quem responde pelo
+ * setor no meio de centenas de nomes. O dourado é translúcido, então o texto
+ * (que muda com o tema) continua legível nos dois temas. Vale pra tabela
+ * (`tr`) e pro cartão do celular (`div`) — por isso a classe, e não um `tr`.
+ */
+.linha-supervisor {
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.24), rgba(212, 160, 23, 0.09)) !important;
+}
+.linha-supervisor:hover {
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.34), rgba(212, 160, 23, 0.14)) !important;
+}
+.linha-supervisor:is(div, li),
+.linha-supervisor > td:first-child {
+  box-shadow: inset 3px 0 0 #D4A017;
+}
+html[data-tema="claro"] .linha-supervisor {
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.30), rgba(212, 160, 23, 0.10)) !important;
+}
+html[data-tema="claro"] .linha-supervisor:hover {
+  background: linear-gradient(90deg, rgba(212, 160, 23, 0.40), rgba(212, 160, 23, 0.16)) !important;
+}
+
 /* ============================================================
    ABAS — sublinhado laranja com brilho no item ativo.
    ============================================================ */

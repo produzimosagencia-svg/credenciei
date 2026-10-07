@@ -72,6 +72,16 @@ export function formatTelefone(value: string): string {
  * comparação perde diacríticos e diferença de caixa, fazendo "Julia" e
  * "Júlia" (ou "JOAO" e "João") retornarem os mesmos resultados.
  */
+/**
+ * Quem tem a FUNÇÃO de supervisor na equipe — a linha dele aparece toda dourada
+ * (classe `.linha-supervisor`). O crachá do supervisor nasce com a função
+ * "Supervisor"; vale também "Supervisor de bar" etc. Começa por "supervisor":
+ * "Assistente de supervisor" não é supervisor.
+ */
+export function ehSupervisorDaEquipe(cargo: string | null | undefined): boolean {
+  return /^supervisor\b/.test(chaveBusca(cargo))
+}
+
 export function chaveBusca(value: string | null | undefined): string {
   return (value ?? '')
     .normalize('NFD')

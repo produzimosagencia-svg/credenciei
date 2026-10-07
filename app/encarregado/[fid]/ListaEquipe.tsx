@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import { chaveBusca } from '@/lib/format'
+import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Badge } from '@/components/ui/Superficie'
 import type { PessoaDaEquipe } from '@/lib/encarregado-consulta'
@@ -76,7 +76,7 @@ export default function ListaEquipe({ pessoas, veContato, fornecedorId }: { pess
       ) : (
         <ul className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden">
           {lista.map(p => (
-            <li key={p.id} className="px-4 py-3 flex items-center gap-3">
+            <li key={p.id} className={`px-4 py-3 flex items-center gap-3 ${ehSupervisorDaEquipe(p.cargo) ? 'linha-supervisor' : ''}`}>
               <div className="min-w-0 flex-1">
                 <Link href={`/encarregado/${fornecedorId}/${p.id}`} className="block text-slate-800 text-sm font-semibold truncate hover:text-brand-600 transition-colors">{p.nome}</Link>
                 <p className="text-slate-400 text-xs truncate">

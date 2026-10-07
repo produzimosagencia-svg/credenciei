@@ -9,7 +9,7 @@ import { deletarFuncionario, alternarAtivacao, descredenciarFuncionario, recrede
 import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
-import { chaveBusca } from '@/lib/format'
+import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
@@ -323,7 +323,7 @@ export default function FuncionarioTable({
               lado pra ler é pior do que ler um cartão de cima pra baixo. */}
           <div className="md:hidden divide-y divide-slate-100">
             {paginated.map(f => (
-              <div key={f.id} className="p-4 space-y-2.5">
+              <div key={f.id} className={`p-4 space-y-2.5 ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <FuncionarioDetalheModal
                     funcionario={f}
@@ -467,7 +467,7 @@ export default function FuncionarioTable({
               </thead>
               <tbody>
                 {paginated.map(f => (
-                <tr key={f.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : 'hover:bg-slate-50'}`}>
                   <td className="px-4 py-3">
                     <FuncionarioDetalheModal
                       funcionario={f}
