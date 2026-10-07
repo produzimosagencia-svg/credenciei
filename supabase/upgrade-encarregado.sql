@@ -37,14 +37,14 @@ alter table perfis add constraint perfis_role_check
     'operador_portao', 'suporte', 'produtor', 'encarregado'
   ));
 
--- Quem é Encarregado de quê. Uma pessoa da equipe (funcionario_id) vale uma
--- linha; o mesmo acesso (perfil) pode ser Encarregado de vários setores.
+-- Quem é Encarregado de quê. Cada linha é uma pessoa da equipe (funcionario_id)
+-- em UM setor; a mesma pessoa pode ter várias linhas (um setor cada).
 create table if not exists encarregados_setor (
   id               uuid primary key default gen_random_uuid(),
   perfil_id        uuid not null references perfis(id) on delete cascade,
   fornecedor_id    uuid not null references fornecedores(id) on delete cascade,
   -- A pessoa da equipe que recebeu a função. Apagou da equipe → some o acesso.
-  funcionario_id   uuid not null unique references funcionarios(id) on delete cascade,
+  funcionario_id   uuid not null references funcionarios(id) on delete cascade,
   -- O que este Encarregado pode consultar. Hoje só leitura da equipe do setor;
   -- a lista existe pra a gente liberar mais coisas no futuro (ex.: 'ver_contato')
   -- sem mexer na estrutura. Ver lib/encarregado.ts (PERMISSOES_ENCARREGADO).
@@ -56,6 +56,9 @@ create table if not exists encarregados_setor (
 
 create unique index if not exists encarregados_setor_perfil_fornecedor
   on encarregados_setor (perfil_id, fornecedor_id);
+-- Uma pessoa da equipe pode ser Encarregada de VÁRIOS setores (um cadastro, uma mensagem).
+create unique index if not exists encarregados_setor_funcionario_fornecedor
+  on encarregados_setor (funcionario_id, fornecedor_id);
 create index if not exists encarregados_setor_fornecedor on encarregados_setor (fornecedor_id);
 create index if not exists encarregados_setor_perfil on encarregados_setor (perfil_id);
 

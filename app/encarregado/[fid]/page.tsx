@@ -52,6 +52,8 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
     vinculosDoEncarregado(perfil.id as string),
   ])
   const { resumo } = equipe
+  const irmaos = todosOsVinculos.filter(v => v.eventoId === vinculo.eventoId)
+  const eventos = new Set(todosOsVinculos.map(v => v.eventoId))
 
   return (
     <TutorialProvider tutorial={TUTORIAL}>
@@ -60,9 +62,26 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
         <PageHeader
           titulo={vinculo.setor}
           descricao={caminhoDoSetor({ evento: vinculo.evento, subevento: vinculo.subevento, setor: '' }) || vinculo.evento}
-          voltarPara={todosOsVinculos.length > 1 ? '/encarregado' : undefined}
+          // Trocar de evento (só quando há mais de um) — o setor se troca nos chips logo abaixo.
+          voltarPara={eventos.size > 1 ? '/encarregado' : undefined}
           acoes={<TutorialButton />}
         />
+
+        {/* Os outros setores do MESMO evento em que ele foi designado — a troca é só entre os dele. */}
+        {irmaos.length > 1 && (
+          <div className="flex flex-wrap gap-1.5">
+            {irmaos.map(v => (
+              <Link
+                key={v.vinculoId} href={`/encarregado/${v.fornecedorId}`}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                  v.fornecedorId === fid ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
+                }`}
+              >
+                {v.subevento ? `${v.subevento} › ` : ''}{v.setor}
+              </Link>
+            ))}
+          </div>
+        )}
 
         <div data-tutorial="enc-limites" className="rounded-2xl border border-brand-200 bg-brand-50 p-4 space-y-3">
           <p className="flex items-center gap-2 text-brand-700 text-sm font-extrabold">

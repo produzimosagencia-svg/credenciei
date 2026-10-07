@@ -59,20 +59,39 @@ export function cpfMascarado(cpf: string | null | undefined): string {
   return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`
 }
 
-/** Um vínculo já pronto pra tela (quem é, de qual setor). */
-export type EncarregadoDoSetor = {
-  id: string
+/** Um setor que o supervisor pode dar em consulta (do evento aberto), com a área (subevento) quando houver. */
+export type SetorOpcao = { id: string; nome: string; area: string | null }
+
+/** "SUBEVENTO › SETOR" — ou só o setor, sem subevento. */
+export function nomeDoSetorComArea(s: Pick<SetorOpcao, 'nome' | 'area'> | null | undefined): string {
+  if (!s) return '—'
+  return [s.area, s.nome].filter(Boolean).join(' › ')
+}
+
+/** ["A", "B", "C"] → "A, B e C" — pra mensagem e auditoria. */
+export function listarEmTexto(itens: string[]): string {
+  if (itens.length <= 1) return itens[0] ?? ''
+  return `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`
+}
+
+/** Um Encarregado já pronto pra tela: a pessoa e TODOS os setores em que ela tem a função. */
+export type EncarregadoDoEvento = {
+  funcionarioId: string
   nome: string
   cargo: string | null
+  setores: SetorOpcao[]
   concedidoPorNome: string | null
   concedidoEm: string
 }
 
-/** Uma pessoa da equipe que pode ser promovida. */
+/** Uma pessoa da equipe que pode ser promovida (de qualquer dos setores do supervisor). */
 export type CandidatoEncarregado = {
   funcionarioId: string
   nome: string
   cargo: string | null
+  /** O setor (com a área) em que ela já trabalha — vem pré-marcado ao escolher os setores. */
+  setorId: string
+  setorNome: string
   /** Sem telefone não dá pra mandar o acesso pelo WhatsApp. */
   temTelefone: boolean
 }
