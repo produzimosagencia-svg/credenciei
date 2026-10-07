@@ -131,30 +131,35 @@ export default function QrProtegido(
         Este é o seu QR da {faseLabel}. A credencial é pessoal — emprestar é uso indevido.
       </p>
 
-      {/* Instagram e suporte lado a lado — embaixo do QR, nunca em cima dele: cobrir
-          parte da imagem arrisca a câmera do portão não ler o código. */}
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+      {/* Suporte: botão de verdade, largo e verde (cor do WhatsApp) — é o que a pessoa
+          procura quando algo dá errado, então não pode parecer um link qualquer.
+          Fica embaixo do QR, nunca em cima dele: cobrir parte da imagem arrisca a
+          câmera do portão não ler o código. */}
+      {linkSuporte && (
         <a
-          href="https://www.instagram.com/credenciei"
+          href={linkSuporte}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
+          className="btn-press mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-sm px-4 py-3 shadow-sm"
         >
-          <IconeInstagram size={14} />
-          Siga a gente no Instagram
+          <MessageCircle className="w-5 h-5 shrink-0" />
+          Falar com o suporte
         </a>
-        {linkSuporte && (
-          <a
-            href={linkSuporte}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
-            Falar com o suporte
-          </a>
-        )}
-      </div>
+      )}
+      {linkSuporte && (
+        <p className="text-slate-400 text-2xs mt-1.5">Atendimento humano pelo WhatsApp — conte o que está acontecendo.</p>
+      )}
+
+      {/* Convite pro Instagram — secundário, abaixo do suporte. */}
+      <a
+        href="https://www.instagram.com/credenciei"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-3 inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
+      >
+        <IconeInstagram size={14} />
+        Siga a gente no Instagram
+      </a>
     </div>
   )
 }
