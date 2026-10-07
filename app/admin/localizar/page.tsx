@@ -57,7 +57,8 @@ export default async function LocalizarPage({
      * dos próprios setores — `eventosQuePossoAbrir` daria o escopo largo da
      * organização, que não é o dela de verdade pra registrar ponto.
      */
-    const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte')
+    // Operador de portão não tem setor: o escopo dele é a organização inteira (como no Scanner).
+    const eventos = (podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte' || perfil.role === 'operador_portao')
       ? await eventosQuePossoAbrir()
       : await eventosDosMeusSetores(meusVinculos)
     return (

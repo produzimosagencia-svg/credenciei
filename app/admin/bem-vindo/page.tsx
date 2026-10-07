@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, ClipboardCheck } from 'lucide-react'
-import { getPerfil, eventosEscaneaveisSemData } from '@/lib/supabase-server'
+import { ScanLine, ClipboardCheck, CalendarDays } from 'lucide-react'
+import { getPerfil, eventosEscaneaveisSemData, eventosAcontecendoHoje } from '@/lib/supabase-server'
 import { podeAcompanhar } from '@/lib/permissions'
 
 export const revalidate = 0
@@ -30,6 +30,9 @@ export default async function BemVindoPage() {
   if (!podeAcompanhar(perfil)) redirect('/admin')
 
   const eventos = await eventosEscaneaveisSemData(perfil)
+  const hoje = await eventosAcontecendoHoje(eventos.map(e => e.id))
+  // Quem está acontecendo hoje vem primeiro: é nele que o operador provavelmente vai trabalhar.
+  const ordenados = [...eventos].sort((a, b) => Number(hoje.has(b.id)) - Number(hoje.has(a.id)))
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
@@ -48,33 +51,45 @@ export default async function BemVindoPage() {
           </p>
         )}
 
-        <div className="mt-4 space-y-3">
-          <Link
-            href="/scan"
-            className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-brand-300 transition-colors"
-          >
-            <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
-              <ScanLine className="w-5 h-5 text-brand-500" />
+        {/*
+          * O operador escolhe o EVENTO em que vai trabalhar (pedido do Juan, 07/10/2026): antes
+          * a tela não dizia qual evento estava valendo, e o menu levava a telas sem evento. Cada
+          * evento abre direto o Scanner ou o Registro de ponto JÁ dentro dele.
+          */}
+        {ordenados.length > 0 && (
+          <div className="mt-5 text-left">
+            <p className="text-slate-800 font-semibold text-sm flex items-center gap-1.5">
+              <CalendarDays className="w-4 h-4 text-brand-500" /> Em qual evento você vai trabalhar?
+            </p>
+            <div className="mt-3 space-y-3">
+              {ordenados.map(e => (
+                <div key={e.id} className="bg-white border border-slate-200 rounded-2xl p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-slate-800 font-semibold text-sm min-w-0 break-words">{e.nome}</p>
+                    {hoje.has(e.id)
+                      ? <span className="indicador-selo selo-sucesso shrink-0">Acontecendo hoje</span>
+                      : <span className="indicador-selo selo-neutro shrink-0">Fora do dia</span>}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {/* O Scanner só lista evento que está acontecendo hoje: fora do dia o botão não levaria a lugar nenhum. */}
+                    {hoje.has(e.id) ? (
+                      <Link href={`/scan?evento=${e.id}`} className="btn btn-primario justify-center">
+                        <ScanLine className="w-4 h-4 shrink-0" /> Scanner
+                      </Link>
+                    ) : (
+                      <span className="btn btn-secundario justify-center opacity-50 cursor-not-allowed" aria-disabled="true">
+                        <ScanLine className="w-4 h-4 shrink-0" /> Scanner
+                      </span>
+                    )}
+                    <Link href={`/admin/localizar?evento=${e.id}`} className="btn btn-secundario justify-center">
+                      <ClipboardCheck className="w-4 h-4 shrink-0" /> Registrar ponto
+                    </Link>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="min-w-0">
-              <p className="text-slate-800 font-semibold text-sm">Scanner</p>
-              <p className="text-slate-500 text-xs mt-0.5">Leia o QR Code da credencial no portão</p>
-            </div>
-          </Link>
-
-          <Link
-            href="/admin/localizar"
-            className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-brand-300 transition-colors"
-          >
-            <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
-              <ClipboardCheck className="w-5 h-5 text-brand-500" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-slate-800 font-semibold text-sm">Registro de ponto</p>
-              <p className="text-slate-500 text-xs mt-0.5">Procure por nome ou CPF e registre manualmente</p>
-            </div>
-          </Link>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
