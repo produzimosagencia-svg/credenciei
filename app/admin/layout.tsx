@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getPerfil, meusSetoresDoEventoAtual, meusSetores, comArea, supabaseAdmin } from '@/lib/supabase-server'
-import { podeGerenciarEventos } from '@/lib/permissions'
+import { podeGerenciarEventos, podeGerenciarUsuarios, ehMaster } from '@/lib/permissions'
 import AppShell from '@/components/AppShell'
-import { encarregadosLigadosParaSetor } from '@/lib/encarregado-flag'
+import { encarregadosLigadosParaSetor, encarregadosLigadosParaOrganizacao } from '@/lib/encarregado-flag'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const perfil = await getPerfil()
@@ -34,8 +34,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     meusSetoresDoEventoAtual(perfil).then(comArea),
     organizacaoUsaBiometria(perfil.organizacao_id as string | null, podeGerenciarEventos(perfil)),
     meusSetores(perfil),
-    // "Criar Encarregado" no menu do supervisor — só pergunta ao banco quem é supervisor.
-    perfil.role === 'supervisor' ? encarregadosLigadosParaSetor(perfil.fornecedor_id as string | null) : Promise.resolve(false),
+    // "Encarregados" no menu: supervisor (pelo setor dele), administrador (pela organização) e
+    // master (sempre — a tela mostra, evento a evento, se a função está liberada).
+    perfil.role === 'supervisor'
+      ? encarregadosLigadosParaSetor(perfil.fornecedor_id as string | null)
+      : ehMaster(perfil.role)
+        ? Promise.resolve(true)
+        : podeGerenciarUsuarios(perfil)
+          ? encarregadosLigadosParaOrganizacao(perfil.organizacao_id as string | null)
+          : Promise.resolve(false),
   ])
 
   const org = orgResult.data

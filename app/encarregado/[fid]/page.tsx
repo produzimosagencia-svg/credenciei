@@ -53,7 +53,6 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
   ])
   const { resumo } = equipe
   const irmaos = todosOsVinculos.filter(v => v.eventoId === vinculo.eventoId)
-  const eventos = new Set(todosOsVinculos.map(v => v.eventoId))
 
   return (
     <TutorialProvider tutorial={TUTORIAL}>
@@ -62,8 +61,8 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
         <PageHeader
           titulo={vinculo.setor}
           descricao={caminhoDoSetor({ evento: vinculo.evento, subevento: vinculo.subevento, setor: '' }) || vinculo.evento}
-          // Trocar de evento (só quando há mais de um) — o setor se troca nos chips logo abaixo.
-          voltarPara={eventos.size > 1 ? '/encarregado' : undefined}
+          // Volta pra lista de onde ele veio: os setores do evento (se há mais de um) ou os eventos.
+          voltarPara={todosOsVinculos.length > 1 ? (irmaos.length > 1 ? `/encarregado?evento=${vinculo.eventoId}` : '/encarregado') : undefined}
           acoes={<TutorialButton />}
         />
 
@@ -87,7 +86,7 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
           <p className="flex items-center gap-2 text-brand-700 text-sm font-extrabold">
             <Eye className="w-4 h-4 shrink-0" /> Acesso de consulta
           </p>
-          <p className="text-brand-900/80 text-xs leading-relaxed">
+          <p className="text-slate-600 text-xs leading-relaxed">
             Você ajuda o supervisor a acompanhar a equipe deste setor. Aqui você só <strong>vê</strong> — as ações ficam com o supervisor.
           </p>
           <div className="grid sm:grid-cols-2 gap-3 text-xs">
@@ -124,9 +123,6 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
           <ListaEquipe pessoas={equipe.pessoas} veContato={equipe.veContato} />
         </div>
 
-        <p className="text-center text-slate-300 text-2xs pt-2">
-          <Link href="/login" className="hover:text-slate-400">Credenciei</Link>
-        </p>
       </div>
     </TutorialProvider>
   )

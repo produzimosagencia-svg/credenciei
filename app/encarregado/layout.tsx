@@ -4,6 +4,7 @@ import { getPerfil } from '@/lib/supabase-server'
 import { ehEncarregado } from '@/lib/encarregado'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import BotaoSair from '@/app/gastos/BotaoSair'
+import BotaoTemaTopo from './BotaoTemaTopo'
 
 /**
  * Shell próprio do Encarregado — enxuto de propósito, como o do Gastos.
@@ -22,18 +23,21 @@ export default async function EncarregadoLayout({ children }: { children: React.
   if (!ehEncarregado(perfil.role)) redirect('/admin')
 
   return (
-    <div className="min-h-screen bg-neutro-50 flex flex-col">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur sticky top-0 z-30">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-          <Link href="/encarregado" className="flex items-center gap-2 min-w-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/marca/logo-preto.png" alt="Credenciei" className="so-claro h-[18px] w-auto" />
+    <div className="min-h-screen flex flex-col">
+      {/* `topo-app` é a barra do sistema e muda com o tema: a cor escrita à mão que havia aqui
+          ficava clara no tema escuro, com logo e texto sumindo. */}
+      <header className="topo-app sticky top-0 z-30 h-14 shrink-0">
+        <div className="max-w-3xl mx-auto h-full px-4 flex items-center justify-between gap-3">
+          <Link href="/encarregado" className="flex items-center gap-2 min-w-0" aria-label="Início">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/marca/logo-branco.png" alt="Credenciei" className="so-escuro h-[18px] w-auto" />
-            <span className="text-slate-400 text-sm font-medium shrink-0">· Encarregado</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/marca/logo-preto.png" alt="Credenciei" className="so-claro h-[18px] w-auto" />
+            <span className="pilula-contexto shrink-0">Encarregado</span>
           </Link>
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             <span className="hidden sm:block text-slate-500 text-xs font-medium truncate max-w-[160px]">{perfil.nome}</span>
+            <BotaoTemaTopo />
             <BotaoSair />
           </div>
         </div>

@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, X, Search, Eye, ShieldCheck, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
-import { listarCandidatosEncarregado, salvarEncarregado, removerEncarregado } from '@/lib/actions-encarregado'
+import { UserPlus, X, Search, Eye, ShieldCheck, Trash2, Check, AlertTriangle, Pencil, KeyRound, Copy } from 'lucide-react'
+import { listarCandidatosEncarregado, salvarEncarregado, removerEncarregado, gerarLinkNovaSenhaEncarregado } from '@/lib/actions-encarregado'
 import {
   nomeDoSetorComArea, type CandidatoEncarregado, type EncarregadoDoEvento, type SetorOpcao,
 } from '@/lib/encarregado'
@@ -29,6 +29,7 @@ export default function GerenciarEncarregados({ eventoId, eventoNome, setores, e
   const [criando, setCriando] = useState(false)
   const [editando, setEditando] = useState<EncarregadoDoEvento | null>(null)
   const [removendo, setRemovendo] = useState<EncarregadoDoEvento | null>(null)
+  const [novaSenha, setNovaSenha] = useState<EncarregadoDoEvento | null>(null)
   const [erroRemover, setErroRemover] = useState<string | null>(null)
   const [pendente, iniciar] = useTransition()
   const [aviso, setAviso] = useState<{ tom: 'ok' | 'atencao'; texto: string } | null>(null)
@@ -89,6 +90,13 @@ export default function GerenciarEncarregados({ eventoId, eventoNome, setores, e
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
+                  type="button" onClick={() => { setAviso(null); setNovaSenha(e) }}
+                  className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  title={`Gerar link de nova senha para ${e.nome}`} aria-label={`Gerar link de nova senha para ${e.nome}`}
+                >
+                  <KeyRound className="w-4 h-4" />
+                </button>
+                <button
                   type="button" onClick={() => { setAviso(null); setEditando(e) }}
                   className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                   title={`Mudar os setores de ${e.nome}`} aria-label={`Mudar os setores de ${e.nome}`}
@@ -120,6 +128,10 @@ export default function GerenciarEncarregados({ eventoId, eventoNome, setores, e
       >
         {erroRemover && <p className="text-red-500 text-xs mt-2">{erroRemover}</p>}
       </ConfirmModal>
+
+      {novaSenha && (
+        <ModalNovaSenha eventoId={eventoId} encarregado={novaSenha} onFechar={() => setNovaSenha(null)} />
+      )}
 
       {(criando || editando) && (
         <ModalEncarregado
@@ -329,6 +341,89 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Link novo de criar senha — master, administrador e o supervisor dos setores
+ * podem gerar. Mostra o link pra copiar; e, se o WhatsApp da pessoa estiver
+ * certo, manda também por lá. O link vale 24h e é de uso único; a senha antiga
+ * continua valendo até a pessoa criar a nova.
+ */
+function ModalNovaSenha({ eventoId, encarregado, onFechar }: {
+  eventoId: string
+  encarregado: EncarregadoDoEvento
+  onFechar: () => void
+}) {
+  const [resultado, setResultado] = useState<{ link: string; cpf: string; enviado: boolean } | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState(false)
+  const [pendente, iniciar] = useTransition()
+
+  const gerar = (enviarWhatsApp: boolean) => {
+    setErro(null)
+    iniciar(async () => {
+      const r = await gerarLinkNovaSenhaEncarregado(encarregado.funcionarioId, eventoId, enviarWhatsApp)
+      if ('erro' in r) { setErro(r.erro); return }
+      setResultado({ link: r.link, cpf: r.cpf, enviado: r.enviado })
+      setCopiado(false)
+    })
+  }
+
+  const copiar = async () => {
+    if (!resultado) return
+    try {
+      await navigator.clipboard.writeText(resultado.link)
+      setCopiado(true)
+    } catch {
+      setErro('Não consegui copiar sozinho — selecione o link e copie.')
+    }
+  }
+
+  return (
+    <div className="overlay-fade-in fixed inset-0 bg-black/45 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => !pendente && onFechar()}>
+      <div className="modal-pop-in bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
+          <h3 className="text-slate-800 font-bold text-base">Nova senha — {encarregado.nome}</h3>
+          <button onClick={onFechar} disabled={pendente} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" aria-label="Fechar">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          {!resultado ? (
+            <>
+              <p className="text-slate-600 text-sm">
+                Gera um link para {encarregado.nome} criar uma senha nova. O link vale <strong>24 horas</strong> e só funciona uma vez;
+                a senha atual continua valendo até ela criar a nova.
+              </p>
+              {erro && <p role="alert" className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>}
+              <button onClick={() => gerar(false)} disabled={pendente} className="btn btn-primario w-full">
+                <KeyRound className="w-3.5 h-3.5" /> {pendente ? 'Gerando…' : 'Gerar link'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-600 text-sm">
+                {resultado.enviado ? 'Link enviado pelo WhatsApp e gerado aqui também.' : 'Link gerado. Envie para a pessoa — quem abrir define a senha.'}
+                {' '}O login dela é o CPF <strong className="tabular-nums">{resultado.cpf}</strong>.
+              </p>
+              <input readOnly value={resultado.link} onFocus={e => e.currentTarget.select()} className="input w-full text-xs" aria-label="Link de nova senha" />
+              {erro && <p role="alert" className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>}
+              <div className="flex flex-wrap gap-2">
+                <button onClick={copiar} className="btn btn-primario flex-1">
+                  {copiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} {copiado ? 'Copiado' : 'Copiar link'}
+                </button>
+                {!resultado.enviado && (
+                  <button onClick={() => gerar(true)} disabled={pendente} className="btn btn-secundario">
+                    {pendente ? 'Enviando…' : 'Enviar por WhatsApp'}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

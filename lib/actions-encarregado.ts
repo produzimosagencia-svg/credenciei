@@ -368,3 +368,64 @@ export async function removerEncarregado(funcionarioId: string, eventoId: string
   const r = await salvarEncarregado(funcionarioId, eventoId, [])
   return 'erro' in r ? { erro: r.erro } : { ok: true }
 }
+
+/**
+ * Link novo de criar senha para um Encarregado — "esqueci a senha" resolvido
+ * por quem está do lado dele. Master, administrador (da organização) e o
+ * supervisor DOS SETORES em que a pessoa é Encarregada podem gerar; é a mesma
+ * régua de designar (`escopoDoGestor`), então ninguém mexe em Encarregado de
+ * setor que não é seu.
+ *
+ * NÃO invalida a senha atual (quem lembra continua entrando). O link é de uso
+ * único e vale 24h, como todo convite de senha. Com `enviarWhatsApp`, o mesmo
+ * link vai também pro WhatsApp cadastrado, pelo modelo de recuperação de senha
+ * que já existe e está aprovado.
+ */
+export async function gerarLinkNovaSenhaEncarregado(
+  funcionarioId: string, eventoId: string, enviarWhatsApp = false,
+): Promise<{ ok: true; link: string; nome: string; cpf: string; enviado: boolean } | { erro: string }> {
+  try {
+    const g = await escopoDoGestor(eventoId)
+    if (!g.ok) return { erro: g.erro }
+
+    const { data: vinculo } = await supabaseAdmin
+      .from('encarregados_setor')
+      .select('perfil_id, perfis(nome, cpf, telefone, ativo, role)')
+      .eq('funcionario_id', funcionarioId).in('fornecedor_id', g.setores.map(s => s.id)).limit(1).maybeSingle()
+    const alvo = vinculo?.perfis as unknown as { nome: string; cpf: string | null; telefone: string | null; ativo: boolean | null; role: string } | null
+    if (!vinculo || !alvo || alvo.role !== 'encarregado') {
+      return { erro: 'Esta pessoa não é Encarregada de nenhum dos seus setores.' }
+    }
+    if (alvo.ativo === false) return { erro: 'O acesso desta pessoa está desativado.' }
+    const cpf = normalizarCpf(alvo.cpf ?? '')
+    if (cpf.length !== 11) return { erro: 'O CPF deste acesso está inválido. Fale com o suporte.' }
+
+    const link = await criarConviteSenhaSupervisor({
+      perfilId: vinculo.perfil_id as string, nome: alvo.nome, cpf, eventoId,
+      evento: g.evento.nome, setor: 'Encarregado', finalidade: 'recuperacao', papel: 'encarregado',
+    })
+
+    let enviado = false
+    if (enviarWhatsApp) {
+      const telefone = normalizarCpf(alvo.telefone ?? '')
+      if (telefone.length < 10 || telefone.length > 13) {
+        return { erro: 'O WhatsApp desta pessoa não está válido no cadastro — copie o link e envie por outro canal.' }
+      }
+      const mensagemId = await agendarTemplateSupervisor({
+        eventoId, telefone, template: 'recuperar_senha_cpf_link', parametros: [alvo.nome, link],
+      })
+      if (mensagemId) after(() => enviarMensagemAgora(mensagemId).catch(e => console.error('[encarregado] link de senha: envio imediato falhou', e)))
+      enviado = true
+    }
+
+    after(() => registrarAuditoria({
+      perfil: g.perfil, acao: 'RESET_SENHA', funcionarioId,
+      campoAlterado: 'Link de nova senha — Encarregado',
+      valorNovo: `${alvo.nome} — CPF ${formatCpf(cpf)}${enviado ? ' (enviado por WhatsApp)' : ''}`,
+      eventoId, organizacaoId: g.evento.organizacaoId ?? undefined,
+    }))
+    return { ok: true, link, nome: alvo.nome, cpf: formatCpf(cpf), enviado }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}

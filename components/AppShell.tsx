@@ -140,6 +140,10 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   if (role === 'supervisor' && encarregadosHabilitado) {
     doEvento.push({ href: '/admin/encarregados', label: 'Criar Encarregado', icon: UserPlus })
   }
+  // Administrador e master também designam e dão nova senha ao Encarregado (de qualquer setor da organização).
+  if (podeGerenciarUsuarios(perfil) && encarregadosHabilitado) {
+    doEvento.push({ href: '/admin/encarregados', label: 'Encarregados', icon: UserPlus })
+  }
   /*
    * "Criar porteiro" é o acesso que o sistema chama de operador de portão —
    * o nome do menu usa a palavra de quem contrata, e a tela explica o que o

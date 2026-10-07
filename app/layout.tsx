@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             sistema interno: landing, login e telas públicas são sempre
             escuras, então o atributo nem é lido lá. */}
         <Script id="tema-credenciei" strategy="beforeInteractive">
-          {"try{var p=location.pathname;if((p.indexOf('/admin')===0||p.indexOf('/scan')===0)&&localStorage.getItem('credenciei-tema')==='claro'){document.documentElement.setAttribute('data-tema','claro')}}catch(e){}"}
+          {"try{var p=location.pathname;if((p.indexOf('/admin')===0||p.indexOf('/scan')===0||p.indexOf('/encarregado')===0)&&localStorage.getItem('credenciei-tema')==='claro'){document.documentElement.setAttribute('data-tema','claro')}}catch(e){}"}
         </Script>
         {children}
       </body>
