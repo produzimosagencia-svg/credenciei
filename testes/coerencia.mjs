@@ -69,7 +69,9 @@ confere('o servidor não bloqueia', /Registre o meio antes de sair/.test(C.actio
 confere('e a mensagem não afirma isso', /saída não libera|saída só libera/.test(C.modelos), false)
 
 grupo('5 · Batida livre solta o HORÁRIO, não o CALENDÁRIO')
-confere('dia não marcado é checado antes', /if \(!dia\) \{[\s\S]{0,200}não está marcado/.test(C.janelas), true)
+// Decisão do Juan (28/09/2026): dia que não foi marcado como dia de trabalho NÃO recusa a batida — a pessoa
+// bate, e o dia só deixa de contar nos "dias escalados" do fechamento (lib/historico.ts). Era recusa; deixou de ser.
+confere('dia não marcado NÃO recusa a batida (livre, como a preparação)', /if \(!dia\) return \{ ok: true \}/.test(C.janelas), true)
 confere('dia cancelado é checado antes', /if \(dia\.cancelado\)[\s\S]{0,120}cancelado/.test(C.janelas), true)
 confere('batida_livre vem depois dos dois',
   C.janelas.indexOf('batida_livre === true') > C.janelas.indexOf('dia.cancelado'), true)
@@ -88,7 +90,7 @@ for (const rota of ['/form/', '/credential/', '/portaria/', '/supervisor/criar-s
 
 grupo('7 · Montagem tem entrada e saída livres')
 confere('o servidor libera', /if \(dia\.tipo !== 'principal'\) return \{ ok: true \}/.test(C.janelas), true)
-confere('nada é cobrado sem horário esperado', /esperado\.entrada && !desligado/.test(C.mensagens), true)
+confere('nada é cobrado sem horário esperado', /esperado\.entrada && prazoEntradaReal && !desligado\(fluxos, 'reforco'\)/.test(C.mensagens), true)
 
 grupo('8 · No dia principal, o registro livre exige checkin_autonomo ligado')
 confere('a tela só oferece o botão fora do dia principal ou com o auto-atendimento ligado',

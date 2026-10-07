@@ -23,9 +23,10 @@ export default async function GastosLayout({ children }: { children: React.React
   if (!podeRegistrarGastos(perfil)) redirect('/admin')
 
   return (
-    <div className="min-h-screen bg-neutro-50 flex flex-col">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur sticky top-0 z-30">
-        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+    <div className="min-h-screen flex flex-col">
+      {/* `topo-app` é a barra do sistema (muda com o tema): a cor escrita à mão que havia aqui ficava clara no tema escuro, com o logo sumindo. */}
+      <header className="topo-app sticky top-0 z-30 h-14 shrink-0">
+        <div className="max-w-3xl mx-auto h-full px-4 flex items-center justify-between gap-3">
           <Link href="/gastos" className="flex items-center gap-2 min-w-0">
             <img src="/marca/logo-preto.png" alt="Credenciei" className="so-claro h-[18px] w-auto" />
             <img src="/marca/logo-branco.png" alt="Credenciei" className="so-escuro h-[18px] w-auto" />
