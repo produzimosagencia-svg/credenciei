@@ -47,7 +47,7 @@ ok(acoes.includes('escolhidos.some(id => !setorPorId.has(id))'), 'só dá acesso
 ok((acoes.match(/template: 'cadastro_encarregado_cpf_link'/g) ?? []).length === 1 && acoes.includes('primeiroAcesso'), 'UMA mensagem por pessoa e evento, com todos os setores (ajustar a lista não manda outra)')
 ok(acoes.includes('encarregadosHabilitado') && acoes.includes('MSG_FUNCIONALIDADE_DESLIGADA'), 'recusa quando a funcionalidade está desligada')
 ok(/organizacao_id: null, fornecedor_id: null/.test(acoes), 'a conta nasce sem organização e sem setor ativo no perfil')
-ok(acoes.includes("existente.role !== 'encarregado'"), 'CPF que já tem outra função (supervisor, gestor de credenciamento…) é recusado no servidor')
+ok(acoes.includes("garantirFuncaoExtra(perfilId, 'encarregado'") && acoes.includes('podeReceberFuncaoExtra'), 'quem já tem outra função (supervisor, Gestor…) ganha a de Encarregado como EXTRA; só master/suporte/produtor recusam')
 ok(acoes.includes('funcaoAtual') && ler('app/admin/encarregados/GerenciarEncarregados.tsx').includes('!!c.funcaoAtual'), 'a lista mostra quem já tem função mas não deixa escolher')
 ok(acoes.includes("erro: 'Nada mudou"), 'não grava de novo o que já está igual')
 ok(acoes.includes('escopoDoGestor') && (acoes.match(/escopoDoGestor\(/g) ?? []).length >= 3, 'toda ação passa pelo porteiro do escopo (setores do chamador)')

@@ -12,13 +12,13 @@ const ok = (c, m) => { if (c) console.log(`  \x1b[32m✓\x1b[0m ${m}`); else { c
 const actions = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
 const trecho = (inicio, tam = 1400) => { const i = actions.indexOf(inicio); return i < 0 ? '' : actions.slice(i, i + tam) }
 
-console.log('\n\x1b[1m1 · Supervisor não é Gestor de credenciamento\x1b[0m')
+console.log('\n\x1b[1m1 · Supervisor e Gestor de credenciamento SE COMBINAM (regra de 07/10/2026) — com troca de perfil\x1b[0m')
 const vincular = trecho('async function vincularSupervisorAoSetor')
-ok(/role === 'operador_portao'\) throw new Error\(SUPERVISOR_NAO_E_GESTOR\)/.test(vincular),
-  'todo vínculo de supervisor (tela, importação, IA) recusa quem é Gestor')
+ok(vincular.includes("garantirFuncaoExtra(perfilId, 'supervisor'") && !vincular.includes('SUPERVISOR_NAO_E_GESTOR'),
+  'todo vínculo de supervisor (tela, importação, IA) dá a função de supervisor como EXTRA a quem já tem outra — não recusa mais')
 const operador = trecho('async function criarOperadorPortariaOuLanca', 4000)
-ok(operador.includes('SUPERVISOR_NAO_E_GESTOR') && operador.includes("from('supervisor_setores')"),
-  'criar Gestor recusa CPF que é supervisor ou que ainda tem vínculo de supervisor')
+ok(operador.includes("garantirFuncaoExtra(existente.id, 'operador_portao'") && !operador.includes('SUPERVISOR_NAO_E_GESTOR'),
+  'criar Gestor para quem já é supervisor dá a função de Gestor como EXTRA, sem tocar na conta dela')
 
 console.log('\n\x1b[1m2 · Um QR, vários setores, uma diária\x1b[0m')
 const area = trecho('SUPERVISOR EM VÁRIAS ÁREAS', 2200)

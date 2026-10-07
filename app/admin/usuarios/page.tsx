@@ -116,7 +116,16 @@ export default async function UsuariosPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const totalGeral = (qtdAtivos ?? 0) + (qtdInativos ?? 0)
 
+  // As funções EXTRAS de cada pessoa da página (supervisor + Gestor de credenciamento…) — tolerante à migração pendente.
+  const extrasPorPerfil = new Map<string, Role[]>()
+  const idsDaPagina = (usuarios ?? []).map(u => u.id as string)
+  if (idsDaPagina.length) {
+    const { data: extras } = await supabaseAdmin.from('perfil_funcoes').select('perfil_id, role').in('perfil_id', idsDaPagina)
+    for (const e of extras ?? []) extrasPorPerfil.set(e.perfil_id as string, [...(extrasPorPerfil.get(e.perfil_id as string) ?? []), e.role as Role])
+  }
+
   const linhas = (usuarios ?? []).map(u => ({
+    extras: extrasPorPerfil.get(u.id as string) ?? [],
     id: u.id as string,
     nome: u.nome as string,
     email: u.email as string,
@@ -237,6 +246,11 @@ export default async function UsuariosPage({
                     >
                       {ROLE_LABELS[u.role] ?? u.role}
                     </span>
+                    {u.extras.map(r => (
+                      <span key={r} className="indicador-selo selo-neutro" title="Função extra — troca de perfil pela foto do usuário">
+                        + {ROLE_LABELS[r] ?? r}
+                      </span>
+                    ))}
                   </div>
 
                   {/* Metadados numa linha só, separados por ícone — é o que dá

@@ -249,6 +249,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
      * portão do Henrique e Juliano, ganhou um setor pra supervisionar na
      * Stoked e caiu em "nenhum evento" tentando entrar).
      */
+    // (Quem tem mais de uma função usa o seletor de perfil: fora do modo supervisor, `meusSetores` já vem vazio.)
     if (perfil.role !== 'supervisor' && (await meusSetores(perfil)).length) {
       return <Redirecionar para="/admin/meus-eventos" />
     }

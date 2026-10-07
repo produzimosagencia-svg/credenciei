@@ -16,6 +16,7 @@ import {
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
+import { ListaDePerfis } from '@/components/TrocarPerfil'
 import BadgeAprovacoesPendentes from '@/components/BadgeAprovacoesPendentes'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -33,6 +34,8 @@ type Perfil = {
   permissoes?: Record<string, boolean> | null
   /** Overrides deste acesso (perfis.permissoes_usuario), chaveados por `chave`. */
   permissoes_usuario?: Record<string, boolean> | null
+  /** As funções que esta pessoa tem (a de base e as extras) — mais de uma = pode trocar de perfil pela foto. */
+  funcoes?: { role: string; base?: boolean }[]
 }
 
 // Criado uma única vez por sessão de browser
@@ -535,6 +538,13 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
           <div className="px-3 py-2 border-b border-slate-100">
             <span className="indicador-selo selo-neutro">{ROLE_LABELS[perfil.role] ?? perfil.role}</span>
           </div>
+          {/* Mais de uma função (supervisor e Gestor de credenciamento, por exemplo): troca o perfil sem sair do sistema. */}
+          {(perfil.funcoes?.length ?? 0) > 1 && (
+            <div className="border-b border-slate-100 py-1">
+              <p className="px-3 pt-1.5 pb-1 text-2xs uppercase tracking-wide font-semibold text-slate-400">Trocar de perfil</p>
+              <ListaDePerfis funcoes={perfil.funcoes!} ativa={perfil.role} aoEscolher={() => setAberto(false)} />
+            </div>
+          )}
           {/*
             * Saiu da barra lateral e entrou aqui (pedido do Juan, 09/09/2026).
             * Mesmo motivo de "Sair" morar neste menu, e não na barra:

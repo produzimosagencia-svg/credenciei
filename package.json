@@ -18,7 +18,8 @@
     "depoimentos": "node testes/depoimentos.mjs",
     "encarregado": "node testes/encarregado.mjs",
     "novo-pedido": "node testes/novo-pedido.mjs",
-    "seguranca": "node testes/seguranca.mjs"
+    "seguranca": "node testes/seguranca.mjs",
+    "funcoes": "node testes/funcoes.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

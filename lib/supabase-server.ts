@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { ehMaster, podeGerenciarEventos, podeEscanear, podeAcompanhar } from './permissions'
 import { diaBRT, periodoDoEvento, somarDias, fimDoTurnoNaMadrugada, type DiaDaJornada } from './janelas'
+import { COOKIE_FUNCAO, type FuncaoDoPerfil } from './funcoes'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -115,9 +116,53 @@ export const getPerfil = cache(async () => {
    * comportou. Uma falha aqui não pode virar "ninguém pode nada" no meio de
    * um evento.
    */
+  /*
+   * MAIS DE UMA FUNÇÃO (supabase/upgrade-funcoes-multiplas.sql). A pessoa tem uma
+   * função de BASE (`perfis.role`) e, às vezes, extras. Quem escolhe qual está
+   * valendo é ela, na foto do usuário (cookie) — e a escolha só vale se ela
+   * REALMENTE tiver essa função; senão cai na base. O resto do sistema continua
+   * lendo `perfil.role` como sempre: aqui ele já vem como a função ATIVA, então
+   * cada checagem de permissão vale pra UMA função só, nunca pra soma das duas.
+   *
+   * Sem a tabela (migração pendente), a pessoa só tem a base e nada muda.
+   */
+  const funcoes: FuncaoDoPerfil[] = [
+    { role: data.role as string, base: true, organizacaoId: (data.organizacao_id as string | null) ?? null },
+    ...(await funcoesExtrasDaPessoa(data.id as string)).map(f => ({ role: f.role, base: false, organizacaoId: f.organizacao_id })),
+  ]
+  data.funcoes = funcoes
+  data.funcao_base = data.role
+  if (funcoes.length > 1) {
+    const escolhida = (await cookies()).get(COOKIE_FUNCAO)?.value
+    const ativa = funcoes.find(f => f.role === escolhida) ?? funcoes[0]
+    if (!ativa.base) {
+      data.role = ativa.role
+      data.organizacao_id = ativa.organizacaoId
+      // O setor aberto agora é coisa do supervisor; nas outras funções ele não existe.
+      if (ativa.role !== 'supervisor') data.fornecedor_id = null
+    }
+  }
+
   data.permissoes = await excecoesDePermissao(data.organizacao_id as string | null)
   return data
 })
+
+/** Sem a tabela, a primeira consulta marca isto e as seguintes nem saem (mesmo cuidado de `excecoesDePermissao`). */
+let tabelaDeFuncoesAusente = false
+
+async function funcoesExtrasDaPessoa(perfilId: string): Promise<{ role: string; organizacao_id: string | null }[]> {
+  if (tabelaDeFuncoesAusente) return []
+  try {
+    const { data, error } = await admin.from('perfil_funcoes').select('role, organizacao_id').eq('perfil_id', perfilId)
+    if (error) {
+      if (/does not exist|schema cache|PGRST205/i.test(`${error.code ?? ''} ${error.message}`)) tabelaDeFuncoesAusente = true
+      return []
+    }
+    return (data ?? []).map(f => ({ role: f.role as string, organizacao_id: (f.organizacao_id as string | null) ?? null }))
+  } catch {
+    return []
+  }
+}
 
 /*
  * Uma consulta por requisição já é barata; uma consulta que SEMPRE falha,
@@ -227,6 +272,11 @@ export async function meuSetor(perfil: any): Promise<{ id: string; nome: string;
  */
 export async function meusSetores(perfil: any): Promise<{ id: string; nome: string; evento_id: string }[]> {
   if (!perfil) return []
+  // Quem tem MAIS DE UMA função trabalha com UMA por vez (troca de perfil pela foto do usuário): fora do
+  // modo supervisor, os vínculos de supervisor não valem — é o que mantém o Encarregado estritamente
+  // só-leitura mesmo quando a mesma pessoa também é supervisora. Perfil sem `funcoes` (lido direto do
+  // banco) segue como sempre.
+  if (Array.isArray(perfil.funcoes) && perfil.funcoes.length > 1 && perfil.role !== 'supervisor') return []
 
   const { data: vinculos, error } = await admin
     .from('supervisor_setores').select('fornecedor_id').eq('perfil_id', perfil.id)

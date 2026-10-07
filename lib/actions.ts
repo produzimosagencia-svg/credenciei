@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra } from './internos-servidor'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
@@ -654,9 +654,6 @@ async function supervisionaSetorDaOrganizacao(perfilId: string, organizacaoId: s
 }
 
 /** Mesmo texto nos dois sentidos da regra — ver `vincularSupervisorAoSetor`. */
-const SUPERVISOR_NAO_E_GESTOR =
-  'Supervisor não pode ser Gestor de credenciamento. Este CPF já tem o outro acesso — use outro CPF, ou fale com o administrador para trocar o acesso dessa pessoa.'
-
 async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string) {
   /*
    * REGRA (Juan, 06/10/2026): supervisor não pode ser Gestor de credenciamento
@@ -665,10 +662,20 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
    * importação de estrutura e IA. Antes a regra era a oposta ("ganha o setor
    * sem perder o acesso que já tem"), e assim nasceram os casos duplos.
    */
+  /*
+   * NOVA REGRA (Juan, 07/10/2026): o CPF PODE ter mais de uma função — Gestor de
+   * credenciamento, Encarregado e supervisor se combinam. Quem tem outra função de
+   * base GANHA a de supervisor como função EXTRA e passa a trocar de perfil pela
+   * foto do usuário. Só as identidades próprias (master, suporte, produtor) não se
+   * misturam. (Antes: "supervisor não pode ser Gestor de credenciamento".)
+   */
   const { data: alvo } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
-  if (alvo?.role === 'operador_portao') throw new Error(SUPERVISOR_NAO_E_GESTOR)
-  // Cada pessoa tem UMA função no sistema: quem é Encarregado (consulta) não vira supervisor por cima.
-  if (alvo?.role === 'encarregado') throw new Error('Esta pessoa já é Encarregada e cada pessoa tem uma função só no sistema. Remova o acesso de Encarregado antes de torná-la supervisora.')
+  if (alvo && alvo.role !== 'supervisor') {
+    const { data: forn } = await supabaseAdmin.from('fornecedores').select('eventos(organizacao_id)').eq('id', fornecedorId).maybeSingle()
+    const orgDoSetor = (forn?.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
+    const funcao = await garantirFuncaoExtra(perfilId, 'supervisor', orgDoSetor)
+    if (!funcao.ok) throw new Error(funcao.erro)
+  }
 
   const { error } = await supabaseAdmin
     .from('supervisor_setores')
@@ -1212,20 +1219,24 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
     .maybeSingle()
   if (existente) {
     if (existente.role !== 'operador_portao') {
-      throw new Error(existente.role === 'supervisor' ? SUPERVISOR_NAO_E_GESTOR : 'Este CPF já pertence a outro tipo de acesso no sistema.')
+      /*
+       * Quem já tem OUTRA função (supervisor, Encarregado, administrador…) ganha a de
+       * Gestor de credenciamento como função EXTRA e troca de perfil pela foto do
+       * usuário (regra de 07/10/2026). A conta dele NÃO é tocada — nome, organização,
+       * senha e função de base continuam; só entra a função a mais.
+       */
+      const funcao = await garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)
+      if (!funcao.ok) throw new Error(funcao.erro)
+    } else {
+      if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
+        throw new Error('Este CPF já está cadastrado em outra organização.')
+      }
+      const { error: erroAtualizacao } = await admin.from('perfis').update({
+        nome, telefone, ativo, organizacao_id: organizacaoId,
+        permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
+      }).eq('id', existente.id)
+      if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
     }
-    // Gestor que GANHOU um vínculo de supervisor (regra antiga) também não.
-    const { data: vinculos } = await admin.from('supervisor_setores').select('fornecedor_id').eq('perfil_id', existente.id).limit(1)
-    if (vinculos?.length) throw new Error(SUPERVISOR_NAO_E_GESTOR)
-    if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
-      throw new Error('Este CPF já está cadastrado em outra organização.')
-    }
-
-    const { error: erroAtualizacao } = await admin.from('perfis').update({
-      nome, telefone, ativo, organizacao_id: organizacaoId,
-      permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
-    }).eq('id', existente.id)
-    if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
 
     const linkSenha = await criarConviteSenhaSupervisor({
       perfilId: existente.id, nome, cpf, eventoId, evento: evento.nome, setor: 'Portão',

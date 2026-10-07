@@ -3,6 +3,7 @@ import { supabaseAdmin } from './supabase-server'
 import { adicionarFuncionarioNaPlanilha, registrarPresencaNaPlanilha } from './google-sheets'
 import { formatarBR } from './tz'
 import { normalizarCpf } from './usuario'
+import { podeReceberFuncaoExtra, FUNCOES_EXTRAS, MSG_FUNCAO_NAO_COMBINA, type FuncaoExtra } from './funcoes'
 import type { DiaDoEvento, FuncionalidadesOrganizacao } from './actions'
 
 /**
@@ -180,4 +181,46 @@ export async function diasComBatida(eventoId: string, datas: string[]): Promise<
     return { data, tem: !!error || (linhas?.length ?? 0) > 0 }
   }))
   return new Set(respostas.filter(r => r.tem).map(r => r.data))
+}
+
+// ─── Mais de uma função por pessoa ───────────────────────────────────────────
+
+
+/**
+ * Dá a uma pessoa que JÁ TEM acesso uma função a mais (ver
+ * supabase/upgrade-funcoes-multiplas.sql). Idempotente: dar de novo a mesma
+ * função só confirma. Recusa as identidades que não se misturam (master,
+ * suporte, produtor) e quem já TEM essa função como base.
+ *
+ * Devolve `ok: false` com a frase pronta pra tela — nunca lança.
+ */
+export async function garantirFuncaoExtra(
+  perfilId: string, role: FuncaoExtra, organizacaoId: string | null,
+): Promise<{ ok: true; jaTinha: boolean } | { ok: false; erro: string }> {
+  if (!FUNCOES_EXTRAS.includes(role)) return { ok: false, erro: 'Função inválida.' }
+  const { data: perfil } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
+  if (!perfil) return { ok: false, erro: 'Acesso não encontrado.' }
+  if (perfil.role === role) return { ok: true, jaTinha: true }
+  if (!podeReceberFuncaoExtra(perfil.role as string)) return { ok: false, erro: MSG_FUNCAO_NAO_COMBINA }
+
+  const { data: existente } = await supabaseAdmin
+    .from('perfil_funcoes').select('id').eq('perfil_id', perfilId).eq('role', role).maybeSingle()
+  if (existente) return { ok: true, jaTinha: true }
+
+  const { error } = await supabaseAdmin.from('perfil_funcoes').insert([{ perfil_id: perfilId, role, organizacao_id: organizacaoId }])
+  if (error) {
+    if (/perfil_funcoes|does not exist|schema cache/i.test(error.message)) {
+      return { ok: false, erro: 'Falta rodar a atualização do banco (upgrade-funcoes-multiplas.sql).' }
+    }
+    return { ok: false, erro: error.message }
+  }
+  return { ok: true, jaTinha: false }
+}
+
+/** Tira uma função EXTRA (a de base não sai por aqui). Tolerante: sem a tabela, não há o que tirar. */
+export async function removerFuncaoExtra(perfilId: string, role: FuncaoExtra): Promise<void> {
+  const { error } = await supabaseAdmin.from('perfil_funcoes').delete().eq('perfil_id', perfilId).eq('role', role)
+  if (error && !/perfil_funcoes|does not exist|schema cache/i.test(error.message)) {
+    console.error('[funcoes] não consegui tirar a função extra', error.message)
+  }
 }

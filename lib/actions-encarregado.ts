@@ -4,6 +4,7 @@ import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
 import { getPerfil, supabaseAdmin, meusSetores, buscarTudo } from './supabase-server'
 import { ehMaster, podeGerenciarUsuarios, ROLE_LABELS, type Role } from './permissions'
+import { podeReceberFuncaoExtra } from './funcoes'
 import { registrarAuditoria } from './auditoria'
 import { mensagemAmigavel } from './erros'
 import { validarCpf, formatCpf } from './format'
@@ -11,7 +12,7 @@ import { cpfParaEmail, normalizarCpf } from './usuario'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import { emLotes } from './lotes'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
-import { obterFuncionalidadesOrganizacao } from './internos-servidor'
+import { obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
 import {
   PERMISSOES_PADRAO, MSG_FUNCIONALIDADE_DESLIGADA, listarEmTexto, nomeDoSetorComArea,
   type CandidatoEncarregado, type EncarregadoDoEvento, type SetorOpcao,
@@ -153,7 +154,8 @@ export async function listarCandidatosEncarregado(eventoId: string): Promise<
     for (const lote of emLotes(cpfsDaEquipe, 200)) {
       const { data: perfis } = await supabaseAdmin.from('perfis').select('cpf, role').in('cpf', lote)
       for (const p of perfis ?? []) {
-        if (p.role !== 'encarregado') funcaoPorCpf.set(p.cpf as string, ROLE_LABELS[p.role as Role] ?? (p.role as string))
+        // Só as identidades próprias (master, suporte, produtor) não podem ser Encarregadas; as demais funções se combinam.
+        if (!podeReceberFuncaoExtra(p.role as string)) funcaoPorCpf.set(p.cpf as string, ROLE_LABELS[p.role as Role] ?? (p.role as string))
       }
     }
 
@@ -221,6 +223,7 @@ export async function salvarEncarregado(
     // Remover é sempre permitido; dar acesso depende da funcionalidade ligada e de a pessoa estar apta.
     let perfilId = (atuais ?? [])[0]?.perfil_id as string | undefined
     let criouAgora = false
+    let criouFuncaoExtra = false
     const cpf = normalizarCpf((func.cpf as string) ?? '')
     const telefone = normalizarCpf((func.telefone as string) ?? '')
 
@@ -242,11 +245,19 @@ export async function salvarEncarregado(
         const { data: existente } = await supabaseAdmin
           .from('perfis').select('id, role, ativo, nome').eq('cpf', cpf).maybeSingle()
         if (existente) {
-          if (existente.role !== 'encarregado') {
-            return { erro: `Esta pessoa já tem uma função no sistema (${ROLE_LABELS[existente.role as Role] ?? existente.role}). Cada pessoa tem uma função só — por isso ela não pode ser Encarregada.` }
-          }
           perfilId = existente.id as string
-          if (existente.ativo === false) {
+          if (existente.role !== 'encarregado') {
+            /*
+             * Quem já tem OUTRA função (supervisor, Gestor de credenciamento…) ganha a de
+             * Encarregado como função EXTRA e troca de perfil pela foto do usuário (regra de
+             * 07/10/2026). Só as identidades próprias (master, suporte, produtor) recusam.
+             * A conta dela não é tocada — a função de base, a organização e a senha ficam.
+             */
+            if (existente.ativo === false) return { erro: 'O acesso desta pessoa está desativado. Reative antes de designá-la.' }
+            const funcao = await garantirFuncaoExtra(perfilId, 'encarregado', null)
+            if (!funcao.ok) return { erro: funcao.erro }
+            criouFuncaoExtra = true
+          } else if (existente.ativo === false) {
             await supabaseAdmin.from('perfis').update({ ativo: true, telefone }).eq('id', perfilId)
           }
         } else {
@@ -288,6 +299,7 @@ export async function salvarEncarregado(
         })),
       )
       if (erroVinculo) {
+        if (criouFuncaoExtra && perfilId) await removerFuncaoExtra(perfilId, 'encarregado')
         if (criouAgora && perfilId) {
           await supabaseAdmin.from('perfis').delete().eq('id', perfilId)
           await supabaseAdmin.auth.admin.deleteUser(perfilId).catch(() => {})
@@ -307,7 +319,11 @@ export async function salvarEncarregado(
     if (perfilId) {
       const { count } = await supabaseAdmin
         .from('encarregados_setor').select('id', { count: 'exact', head: true }).eq('perfil_id', perfilId)
-      if (!count) await supabaseAdmin.from('perfis').update({ ativo: false }).eq('id', perfilId).eq('role', 'encarregado')
+      if (!count) {
+        // Sem setor nenhum: quem só era Encarregado perde o acesso; quem tem outra função de base só perde a função extra.
+        await supabaseAdmin.from('perfis').update({ ativo: false }).eq('id', perfilId).eq('role', 'encarregado')
+        await removerFuncaoExtra(perfilId, 'encarregado')
+      }
     }
 
     const nomesDosSetores = (ids: string[]) => ids.map(id => nomeDoSetorComArea(setorPorId.get(id)))
