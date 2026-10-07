@@ -131,35 +131,32 @@ export default function QrProtegido(
         Este é o seu QR da {faseLabel}. A credencial é pessoal — emprestar é uso indevido.
       </p>
 
-      {/* Suporte: botão de verdade, largo e verde (cor do WhatsApp) — é o que a pessoa
-          procura quando algo dá errado, então não pode parecer um link qualquer.
-          Fica embaixo do QR, nunca em cima dele: cobrir parte da imagem arrisca a
-          câmera do portão não ler o código. */}
-      {linkSuporte && (
+      {/* Instagram de um lado e suporte do OUTRO, pequenos e discretos: o suporte é
+          humano, então não pode chamar mais atenção que o QR — senão todo mundo
+          clica em vez de resolver sozinho. Embaixo do QR, nunca em cima dele:
+          cobrir parte da imagem arrisca a câmera do portão não ler o código. */}
+      <div className="mt-3 flex items-center justify-between gap-3">
         <a
-          href={linkSuporte}
+          href="https://www.instagram.com/credenciei"
           target="_blank"
           rel="noopener noreferrer"
-          className="btn-press mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-sm px-4 py-3 shadow-sm"
+          className="inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
         >
-          <MessageCircle className="w-5 h-5 shrink-0" />
-          Falar com o suporte
+          <IconeInstagram size={14} />
+          Siga a gente no Instagram
         </a>
-      )}
-      {linkSuporte && (
-        <p className="text-slate-400 text-2xs mt-1.5">Atendimento humano pelo WhatsApp — conte o que está acontecendo.</p>
-      )}
-
-      {/* Convite pro Instagram — secundário, abaixo do suporte. */}
-      <a
-        href="https://www.instagram.com/credenciei"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-3 inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"
-      >
-        <IconeInstagram size={14} />
-        Siga a gente no Instagram
-      </a>
+        {linkSuporte && (
+          <a
+            href={linkSuporte}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-600 text-2xs font-medium"
+          >
+            <MessageCircle className="w-3 h-3" />
+            Suporte
+          </a>
+        )}
+      </div>
     </div>
   )
 }
