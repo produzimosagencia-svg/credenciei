@@ -15,6 +15,7 @@ import {
   podeVerPerformance, podeRegistrarGastos, type Role,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
+import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
 import BadgeAprovacoesPendentes from '@/components/BadgeAprovacoesPendentes'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
@@ -638,6 +639,13 @@ export default function AppShell({
               <span className="pilula-contexto hidden lg:inline-flex min-w-0 max-w-[28vw] truncate">
                 {contexto} · {ROLE_LABELS[perfil.role] ?? perfil.role}
               </span>
+            )}
+            {/* Atendimento humano no WhatsApp — pra quem usa o sistema (o master É o suporte, então não vê). */}
+            {!ehMaster(perfil.role) && (
+              <BotaoSuporteWpp
+                nome={perfil.nome} funcao={ROLE_LABELS[perfil.role] ?? perfil.role} organizacao={orgNome}
+                setor={setores.find(s => s.id === setorAtualId)?.nome ?? null}
+              />
             )}
             {podeVerPerformance(perfil) && <SinoAlertas />}
             <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />

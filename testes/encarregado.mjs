@@ -89,6 +89,7 @@ ok(ler('components/AppShell.tsx').includes("podeGerenciarUsuarios(perfil) && enc
 ok(ler('app/encarregado/layout.tsx').includes('topo-app') && !ler('app/encarregado/layout.tsx').includes('bg-white/90') && ler('app/encarregado/layout.tsx').includes('BotaoTemaTopo'), 'a barra do Encarregado usa as superfícies do tema e tem o botão claro/escuro')
 ok(ler('app/layout.tsx').includes("p.indexOf('/encarregado')===0"), 'o tema salvo também vale na área do Encarregado')
 ok(ler('app/admin/encarregados/page.tsx').includes('voltarPara={voltarPara}') && ler('app/encarregado/[fid]/page.tsx').includes('voltarPara={todosOsVinculos.length > 1'), 'as telas têm botão de voltar')
+ok(ler('components/AppShell.tsx').includes('<BotaoSuporteWpp') && ler('app/encarregado/layout.tsx').includes('<BotaoSuporteWpp') && ler('lib/whatsapp-suporte.ts').includes("'acesso'"), 'botão de suporte (WhatsApp) no painel do administrador/supervisor e na área do Encarregado')
 
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

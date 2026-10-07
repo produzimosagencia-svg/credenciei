@@ -5,6 +5,7 @@ import { ehEncarregado } from '@/lib/encarregado'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import BotaoSair from '@/app/gastos/BotaoSair'
 import BotaoTemaTopo from './BotaoTemaTopo'
+import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
 
 /**
  * Shell próprio do Encarregado — enxuto de propósito, como o do Gastos.
@@ -37,6 +38,7 @@ export default async function EncarregadoLayout({ children }: { children: React.
           </Link>
           <div className="flex items-center gap-3 shrink-0">
             <span className="hidden sm:block text-slate-500 text-xs font-medium truncate max-w-[160px]">{perfil.nome}</span>
+            <BotaoSuporteWpp nome={perfil.nome} funcao="Encarregado" />
             <BotaoTemaTopo />
             <BotaoSair />
           </div>

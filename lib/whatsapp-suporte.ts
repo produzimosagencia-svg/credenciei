@@ -17,11 +17,19 @@ const numeroSuporte = (process.env.NEXT_PUBLIC_WHATSAPP_SUPORTE || NUMERO_PADRAO
  * em qual evento e setor, e uma linha em aberto pra ela contar o que está
  * acontecendo. Sem CPF no texto — o atendente pede se precisar.
  */
-export function linkDoSuporte(dados: { nome?: string | null; evento?: string | null; setor?: string | null }): string | null {
+export function linkDoSuporte(
+  dados: { nome?: string | null; evento?: string | null; setor?: string | null; funcao?: string | null; organizacao?: string | null },
+  /** 'credencial' = a pessoa da equipe; 'acesso' = quem usa o sistema (administrador, supervisor, Encarregado). */
+  assunto: 'credencial' | 'acesso' = 'credencial',
+): string | null {
   if (numeroSuporte.length < 12) return null
   const linhas = [
-    'Olá! Gostaria de suporte com a minha credencial.',
+    assunto === 'acesso'
+      ? 'Olá! Gostaria de suporte com o meu acesso ao Credenciei.'
+      : 'Olá! Gostaria de suporte com a minha credencial.',
     dados.nome ? `Nome: ${dados.nome}` : null,
+    dados.funcao ? `Função: ${dados.funcao}` : null,
+    dados.organizacao ? `Organização: ${dados.organizacao}` : null,
     dados.evento ? `Evento: ${dados.evento}` : null,
     dados.setor ? `Setor: ${dados.setor}` : null,
     '',
