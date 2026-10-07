@@ -17,9 +17,10 @@ export default function BotaoSair() {
         await supabase.auth.signOut()
         router.push('/login')
       }}
-      className="flex items-center gap-1.5 text-slate-400 hover:text-slate-600 text-xs font-medium"
+      aria-label="Sair" title="Sair"
+      className="flex items-center justify-center gap-1.5 w-9 h-9 sm:w-auto sm:h-auto text-slate-400 hover:text-slate-600 text-xs font-medium"
     >
-      <LogOut className="w-3.5 h-3.5" /> Sair
+      <LogOut className="w-4 h-4 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Sair</span>
     </button>
   )
 }

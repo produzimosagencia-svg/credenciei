@@ -107,5 +107,9 @@ const tabelaEq = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioTable.t
 ok((tabelaEq.match(/ehSupervisorDaEquipe\(f\.cargo\) \? 'linha-supervisor'/g) ?? []).length === 2, 'linha dourada na tabela (computador) e no cartão (celular)')
 ok(ler('app/encarregado/[fid]/ListaEquipe.tsx').includes("'linha-supervisor'") && ler('app/globals.css').includes('html[data-tema="claro"] .linha-supervisor'), 'também na lista do Encarregado, com o dourado ajustado ao tema claro')
 
+grupo('10 · O topo no celular')
+const lay = ler('app/encarregado/layout.tsx')
+ok(lay.includes('hidden sm:inline-flex shrink-0"><span className="pilula-contexto">') && lay.includes('shrink-0" aria-label="Início"'), 'no celular a etiqueta some (em invólucro, pois .pilula-contexto vence o `hidden`) e o logo nunca encolhe')
+ok(ler('app/gastos/BotaoSair.tsx').includes('hidden sm:inline">Sair'), 'o "Sair" vira só o ícone no celular')
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

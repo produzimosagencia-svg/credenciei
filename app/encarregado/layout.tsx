@@ -29,15 +29,17 @@ export default async function EncarregadoLayout({ children }: { children: React.
       {/* `topo-app` é a barra do sistema e muda com o tema: a cor escrita à mão que havia aqui
           ficava clara no tema escuro, com logo e texto sumindo. */}
       <header className="topo-app sticky top-0 z-30 h-14 shrink-0">
-        <div className="max-w-3xl mx-auto h-full px-4 flex items-center justify-between gap-3">
-          <Link href="/encarregado" className="flex items-center gap-2 min-w-0" aria-label="Início">
+        <div className="max-w-3xl mx-auto h-full px-3 sm:px-4 flex items-center justify-between gap-2">
+          <Link href="/encarregado" className="flex items-center gap-2 shrink-0" aria-label="Início">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/marca/logo-branco.png" alt="Credenciei" className="so-escuro h-[18px] w-auto" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/marca/logo-preto.png" alt="Credenciei" className="so-claro h-[18px] w-auto" />
-            <span className="pilula-contexto shrink-0">Encarregado</span>
+            {/* No celular a barra só comporta o logo e os ícones: a etiqueta da função aparece de `sm` pra cima. */}
+            {/* Num invólucro à parte: `.pilula-contexto` define `display` fora das camadas do Tailwind e venceria o `hidden`. */}
+            <span className="hidden sm:inline-flex shrink-0"><span className="pilula-contexto">Encarregado</span></span>
           </Link>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <span className="hidden sm:block text-slate-500 text-xs font-medium truncate max-w-[160px]">{perfil.nome}</span>
             <BotaoSuporteWpp nome={perfil.nome} funcao="Encarregado" />
             <MenuTrocarPerfil funcoes={(perfil.funcoes ?? []) as { role: string; base?: boolean }[]} ativa={perfil.role as string} />
