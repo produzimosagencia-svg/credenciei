@@ -7,7 +7,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesOrganizacao } from '@/lib/actions'
+import { obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'

@@ -11,7 +11,7 @@ import { cpfParaEmail, normalizarCpf } from './usuario'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import { emLotes } from './lotes'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
-import { obterFuncionalidadesOrganizacao } from './actions'
+import { obterFuncionalidadesOrganizacao } from './internos-servidor'
 import {
   PERMISSOES_PADRAO, MSG_FUNCIONALIDADE_DESLIGADA, listarEmTexto, nomeDoSetorComArea,
   type CandidatoEncarregado, type EncarregadoDoEvento, type SetorOpcao,

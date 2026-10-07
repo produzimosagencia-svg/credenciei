@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sincronizarRegistroNaPlanilha } from '@/lib/actions'
+import { sincronizarRegistroNaPlanilha } from '@/lib/internos-servidor'
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, ehMaster } from '@/lib/permissions'
 

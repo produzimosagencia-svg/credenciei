@@ -1,6 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, diasDoEvento, obterConfiguracaoDoMeio, obterFuncionalidadesOrganizacao } from '@/lib/actions'
+import { editarEvento, obterConfiguracaoDoMeio } from '@/lib/actions'
+import { diasDoEvento, obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'

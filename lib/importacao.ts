@@ -6,7 +6,7 @@ import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/men
 import { validarCpf } from '@/lib/format'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
-import { obterFuncionalidadesOrganizacao } from '@/lib/actions'
+import { obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
