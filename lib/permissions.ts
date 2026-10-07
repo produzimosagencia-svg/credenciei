@@ -105,6 +105,14 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** Dono da plataforma: acesso irrestrito a todas as organizações. */
 export const ehMaster = (role?: string) => role === 'master'
 
+/**
+ * O SUPERVISOR só bate o MEIO (pedido do Juan, 06/10/2026): entrada e saída
+ * são do portão/gestão — ele não registra nem corrige essas duas batidas, nem
+ * no lançamento manual, nem no registro de ponto, nem no histórico. É a régua
+ * única: as telas escondem as outras etapas e as ações recusam no servidor.
+ */
+export const soBateMeio = (role?: string) => role === 'supervisor'
+
 /** Enxerga todos os eventos do sistema (não só os da própria organização). */
 export const veTodosEventos = capacidade('ver_todos_eventos', role => role === 'master')
 

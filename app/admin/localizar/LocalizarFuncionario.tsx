@@ -57,7 +57,7 @@ function mascarar(valor: string): string {
   return /^[\d.\-\s]*$/.test(valor) ? formatCpf(valor) : valor
 }
 
-export default function LocalizarFuncionario({ eventoId }: { eventoId: string }) {
+export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eventoId: string; soMeio?: boolean }) {
   const [termo, setTermo] = useState('')
   const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
   const [candidatos, setCandidatos] = useState<CandidatoLocalizado[] | null>(null)
@@ -91,7 +91,7 @@ export default function LocalizarFuncionario({ eventoId }: { eventoId: string })
     setFunc(f)
     // Sugestão pré-marcada; some se a pessoa já tem tudo registrado — aí o
     // operador escolhe manualmente qual corrigir.
-    setMomento(f.proximaPendente?.momento ?? null)
+    setMomento(soMeio ? 'meio' : (f.proximaPendente?.momento ?? null))
     setFoto(null)
   }
 
@@ -330,8 +330,8 @@ export default function LocalizarFuncionario({ eventoId }: { eventoId: string })
                   Ver o comentário em registrarPresencaAssistida. */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-etapa">
                 <p className="text-sm font-medium text-slate-700">Que batida é esta?</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {func.etapas.map(e => {
+                <div className={`grid gap-2 ${soMeio ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                  {func.etapas.filter(e => !soMeio || e.momento === 'meio').map(e => {
                     const feita = !!e.quandoISO
                     const ativo = momento === e.momento
                     return (
@@ -356,7 +356,7 @@ export default function LocalizarFuncionario({ eventoId }: { eventoId: string })
                     )
                   })}
                 </div>
-                {jaSaiu && (
+                {jaSaiu && !soMeio && (
                   <button
                     type="button"
                     onClick={() => setMomento('entrada')}

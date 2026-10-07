@@ -57,6 +57,8 @@ export default function HistoricoBatidas({
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  // Supervisor só corrige o MEIO — entrada e saída ficam sem o lápis (e o servidor recusa).
+  const somenteMeio = role === 'supervisor'
   const motivoObrigatorio = role === 'suporte'
   /*
    * Apagar é mais restrito que corrigir: corrigir troca um horário por
@@ -156,7 +158,7 @@ export default function HistoricoBatidas({
           </thead>
           <tbody>
             {h.dias.map(d => (
-              <Linha key={d.data} dia={d} podeEditar={podeEditar} onEditar={abrirEdicao} temPausas={temPausas} />
+              <Linha key={d.data} dia={d} podeEditar={podeEditar} somenteMeio={somenteMeio} onEditar={abrirEdicao} temPausas={temPausas} />
             ))}
           </tbody>
         </table>
@@ -365,10 +367,12 @@ function HoraFeita({ em }: { em: string }) {
 }
 
 function Linha({
-  dia, podeEditar, onEditar, temPausas = false,
+  dia, podeEditar, somenteMeio = false, onEditar, temPausas = false,
 }: {
   dia: DiaDoHistorico
   podeEditar: boolean
+  /** Supervisor: só o meio tem o lápis de edição. */
+  somenteMeio?: boolean
   onEditar: (data: string, momento: MomentoPresenca, atual: string | null) => void
   /** A tabela tem as colunas "Nova entrada" / "Nova saída". */
   temPausas?: boolean
@@ -406,7 +410,7 @@ function Linha({
       </td>
       <td><StatusDoDia dia={dia} /></td>
       <td className="text-slate-600 text-xs">
-        <Celula batida={dia.entrada} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'entrada', dia.entrada?.em ?? null) : undefined} />
+        <Celula batida={dia.entrada} silencioso={!dia.compareceu} onEditar={editavel && !somenteMeio ? () => onEditar(dia.data, 'entrada', dia.entrada?.em ?? null) : undefined} />
       </td>
       <td className="text-slate-600 text-xs">
         {/* Silencioso pelo mesmo motivo da entrada: quem nem apareceu não tem
@@ -425,7 +429,7 @@ function Linha({
           <HoraFeita em={pausas[0].saiu} />
         ) : (
           <>
-            <Celula batida={dia.fim} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
+            <Celula batida={dia.fim} silencioso={!dia.compareceu} onEditar={editavel && !somenteMeio ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
             {dia.fim && dia.tipo === 'principal' && (
               <LogOut className="w-3 h-3 text-slate-400 inline-block ml-1" />
             )}
@@ -444,7 +448,7 @@ function Linha({
           {comPausa ? (
             <span className="space-y-1 block">
               {pausas.slice(1).map(p => <HoraFeita key={p.saiu} em={p.saiu} />)}
-              <Celula batida={dia.fim} silencioso={false} onEditar={editavel ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
+              <Celula batida={dia.fim} silencioso={false} onEditar={editavel && !somenteMeio ? () => onEditar(dia.data, 'fim', dia.fim?.em ?? null) : undefined} />
             </span>
           ) : (
             <span className="text-slate-300">—</span>

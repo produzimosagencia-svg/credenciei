@@ -49,7 +49,7 @@ const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}
  * madrugada a pessoa trabalhou no dia 05 e bateu às 02:00 do dia 06.
  */
 export default function LancarPonto({
-  pessoas, dias, diaPadrao, setores, eventos, eventoAtualId,
+  pessoas, dias, diaPadrao, setores, eventos, eventoAtualId, soMeio = false,
 }: {
   pessoas: PessoaDoEvento[]
   dias: DiaDaOperacao[]
@@ -59,13 +59,16 @@ export default function LancarPonto({
   /** Os eventos entre os quais dá pra trocar sem voltar à lista. */
   eventos: { id: string; nome: string }[]
   eventoAtualId: string
+  /** Supervisor: só a batida do meio (o servidor recusa as outras). */
+  soMeio?: boolean
 }) {
   const [busca, setBusca] = useState('')
   const [setorFiltro, setSetorFiltro] = useState('')
   const [visiveis, setVisiveis] = useState(POR_PAGINA)
   const [pessoa, setPessoa] = useState<PessoaDoEvento | null>(null)
   const [dia, setDia] = useState(diaPadrao)
-  const [etapa, setEtapa] = useState<Etapa>('entrada')
+  const [etapa, setEtapa] = useState<Etapa>(soMeio ? 'meio' : 'entrada')
+  const etapasVisiveis = soMeio ? ETAPAS.filter(e => e.momento === 'meio') : ETAPAS
   const [quando, setQuando] = useState(`${diaPadrao}T08:00`)
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -253,8 +256,8 @@ export default function LancarPonto({
 
       <div>
         <label className="text-sm font-medium text-slate-700 block mb-1.5">Etapa</label>
-        <div className="grid grid-cols-3 gap-2">
-          {ETAPAS.map(e => {
+        <div className={`grid gap-2 ${soMeio ? 'grid-cols-1' : 'grid-cols-3'}`}>
+          {etapasVisiveis.map(e => {
             const marcada = etapa === e.momento
             const existente = atual?.batidas[`${dia}:${e.momento}`]
             return (

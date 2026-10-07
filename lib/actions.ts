@@ -28,6 +28,7 @@ import {
   podeEscanear,
   podeAcompanhar,
   ehMaster,
+  soBateMeio,
   ROLE_LABELS,
   type Role,
 } from './permissions'
@@ -9044,6 +9045,9 @@ export async function registrarPresencaAssistida(
   if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
   const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
   if (!etapaEscolhida) return { error: 'Etapa inválida.' }
+  if (soBateMeio(perfil.role) && momento !== 'meio') {
+    return { error: 'O supervisor só pode registrar a batida do meio.' }
+  }
 
   const match = dados.fotoBase64?.match(/^data:(image\/\w+);base64,(.+)$/)
   if (!match) return { error: 'A foto da pessoa é obrigatória — é ela que comprova que o colaborador estava presente.' }
@@ -9232,6 +9236,15 @@ export async function lancarPontoManual(
 
   const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
   if (!etapaEscolhida) return { error: 'Etapa inválida.' }
+
+  /*
+   * Quem chegou aqui sem ser gestor nem suporte age como SUPERVISOR (o papel
+   * ou só o vínculo de setor, caso da Mara Lúcia) — e supervisor só lança o meio.
+   */
+  const agindoComoSupervisor = soBateMeio(perfil.role) || (!podeGerenciarEventos(perfil) && perfil.role !== 'suporte')
+  if (agindoComoSupervisor && momento !== 'meio') {
+    return { error: 'O supervisor só pode lançar a batida do meio. Entrada e saída são registradas pela gestão.' }
+  }
 
   const justificativa = (motivo ?? '').trim()
   if (justificativa.length < 5) {

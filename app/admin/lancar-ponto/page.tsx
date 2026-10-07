@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ClipboardPen, CalendarDays } from 'lucide-react'
 import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarEventos, soBateMeio } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT } from '@/lib/janelas'
 import { PageHeader, Aviso } from '@/components/ui/Superficie'
@@ -185,6 +185,8 @@ export default async function LancarPontoPage({
           pessoas={pessoas} dias={diasDaOperacao} diaPadrao={diaPadrao}
           setores={setoresComArea} eventoAtualId={eventoParam}
           eventos={eventosParaTrocar.map(e => ({ id: e.id, nome: e.nome }))}
+          // Supervisor (papel ou só vínculo de setor) lança apenas o meio — mesma régua da action.
+          soMeio={soBateMeio(perfil.role) || (!podeGerenciarEventos(perfil) && perfil.role !== 'suporte')}
         />
       )}
     </div>

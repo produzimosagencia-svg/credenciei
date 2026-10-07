@@ -67,5 +67,15 @@ const login = readFileSync(new URL('../app/api/auth/login/route.ts', import.meta
 ok(login.includes('auth.admin.getUserById') && login.includes('soDigitos && digitos.length === 11'), 'CPF que não bate com o e-mail interno procura a conta pelo CPF cadastrado')
 ok(login.indexOf('signInWithPassword({\n    email: identificador') < login.indexOf('getUserById'), 'a primeira tentativa continua sendo a de sempre; a busca só entra se ela falhar')
 
+console.log('\n\x1b[1m8 · Supervisor só bate o MEIO\x1b[0m')
+const perm = readFileSync(new URL('../lib/permissions.ts', import.meta.url), 'utf8')
+ok(perm.includes("soBateMeio = (role?: string) => role === 'supervisor'"), 'a régua única existe e vale pro papel supervisor')
+ok(trecho('export async function lancarPontoManual', 6000).includes("agindoComoSupervisor && momento !== 'meio'"), 'lançamento manual recusa entrada/saída do supervisor no servidor')
+ok(trecho('export async function registrarPresencaAssistida', 1500).includes("soBateMeio(perfil.role) && momento !== 'meio'"), 'registro de ponto recusa entrada/saída do supervisor no servidor')
+const hist = readFileSync(new URL('../components/HistoricoBatidas.tsx', import.meta.url), 'utf8')
+ok((hist.match(/editavel && !somenteMeio/g) ?? []).length === 3, 'histórico tira o lápis de entrada e saída do supervisor')
+ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta.url), 'utf8').includes('etapasVisiveis')
+  && readFileSync(new URL('../app/admin/localizar/LocalizarFuncionario.tsx', import.meta.url), 'utf8').includes('soMeio'), 'as duas telas só oferecem o meio')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

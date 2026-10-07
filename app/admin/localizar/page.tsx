@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { UserSearch, CalendarDays } from 'lucide-react'
 
 import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
-import { podeAcompanhar, ehMaster, podeGerenciarEventos, veTodosEventos } from '@/lib/permissions'
+import { podeAcompanhar, ehMaster, podeGerenciarEventos, veTodosEventos, soBateMeio } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import LocalizarFuncionario from './LocalizarFuncionario'
@@ -117,7 +117,7 @@ export default async function LocalizarPage({
             </>
           }
         />
-        <LocalizarFuncionario eventoId={eventoParam} />
+        <LocalizarFuncionario eventoId={eventoParam} soMeio={soBateMeio(perfil.role)} />
       </div>
     </TutorialProvider>
   )
