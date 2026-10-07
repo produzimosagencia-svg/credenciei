@@ -145,6 +145,8 @@ export default function FormularioFuncionario({
    */
   const [embutido, setEmbutido] = useState(false)
   const [linkCopiado, setLinkCopiado] = useState(false)
+  // Só no navegador (ver o comentário acima): lido em efeito de propósito, pra o SSR e a hidratação coincidirem.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setEmbutido(emNavegadorEmbutido()) }, [])
 
   /*

@@ -45,8 +45,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
 
-      - name: Coerência (regra × texto que fala dela)
-        run: node testes/coerencia.mjs
-
-      - name: Matriz de autorização
-        run: node testes/autorizacao.mjs
+      - name: Testes (todos — nenhum toca banco nem rede)
+        # Antes só rodavam `coerencia` e `autorizacao`; os testes de segurança, funções
+        # por pessoa, Encarregado, novo pedido, paginação (Vital) etc. ficavam de fora.
+        # `npm run testes` roda os 13 em sequência e para no primeiro que falhar.
+        run: npm run testes

@@ -206,6 +206,8 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
 
   const mensagens = conversa.mensagens
 
+  // O histórico mora no localStorage (só existe no navegador): carregado em efeito, não no render.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setConversas(carregarConversas(usuarioId)) }, [usuarioId])
   useEffect(() => { fimDaLista.current?.scrollIntoView({ behavior: 'smooth' }) }, [mensagens])
 
@@ -288,6 +290,8 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   // Guarda no histórico sempre que a conversa para de ser escrita.
   useEffect(() => {
     if (ocupado || !mensagens.length) return
+    // Grava no localStorage e devolve a lista atualizada — efeito de sincronização com o navegador.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConversas(salvarConversa(usuarioId, { ...conversa, mensagens }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ocupado, mensagens.length, usuarioId])

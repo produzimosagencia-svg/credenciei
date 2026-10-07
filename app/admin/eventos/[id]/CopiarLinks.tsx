@@ -78,6 +78,8 @@ export default function CopiarLinks({ setores }: { setores: SetorParaCopiar[] })
   // menos trabalho do que marcar cinco.
   useEffect(() => {
     if (aberto) {
+      // Estado inicial do modal ao ABRIR (efeito, e não valor derivado: depois a pessoa desmarca à vontade).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMarcados(new Set(comLink.map(s => s.id)))
       setBusca('')
     }

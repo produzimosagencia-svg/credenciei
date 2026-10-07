@@ -455,7 +455,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       {/* A avaliação por estrelas abre quando o evento termina (o master avalia a qualquer hora). */}
       {(ehMaster(perfil.role) || (() => {
         const fim = (evento?.data_fim ?? evento?.data_inicio) as string | null
-        return !!fim && new Date(fim).getTime() < Date.now()
+        return !!fim && new Date(fim).getTime() < agoraDoRender.getTime()
       })()) && funcionariosEnriquecidos.length > 0 && (
         <AvaliarEquipe
           fornecedorId={fid}
