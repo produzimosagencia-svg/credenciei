@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
+import { linkDoSuporte } from '@/lib/whatsapp-suporte'
 import CadastrarBiometriaCard from './CadastrarBiometriaCard'
 import ManterAtualizado from '@/components/ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -582,7 +583,10 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
               {faltaBiometria && <CadastrarBiometriaCard token={token} />}
 
-              <QrProtegido dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso} />
+              <QrProtegido
+                dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}
+                linkSuporte={linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome })}
+              />
 
               {escala && (
                 <DiasLiberados pendente={escala.pendente} aprovados={escala.aprovados} diasDoEvento={escala.diasDoEvento} hoje={hoje} />
