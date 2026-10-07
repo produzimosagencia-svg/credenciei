@@ -50,6 +50,8 @@ const ROLE_BADGE: Record<Role, string> = {
   // Produtor é cliente de outro produto (Gastos) — cor própria pra separar do
   // resto na lista de acessos do credenciamento.
   produtor: 'selo-sucesso',
+  // Encarregado é consulta delegada pelo supervisor — neutro, não é acesso de gestão.
+  encarregado: 'selo-neutro',
 }
 
 type Aba = 'todos' | 'ativos' | 'inativos'

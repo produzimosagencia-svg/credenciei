@@ -15,7 +15,8 @@
     "nomes": "node testes/nomes.mjs",
     "eventos": "node testes/eventos.mjs",
     "paginacao": "node testes/paginacao.mjs",
-    "depoimentos": "node testes/depoimentos.mjs"
+    "depoimentos": "node testes/depoimentos.mjs",
+    "encarregado": "node testes/encarregado.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

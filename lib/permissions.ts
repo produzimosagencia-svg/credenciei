@@ -30,7 +30,7 @@
 // Papéis legados ('gerente', 'cliente') continuam válidos no banco, mas não
 // são mais oferecidos na UI. Tratamos 'gerente' como equivalente a admin.
 
-export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao' | 'suporte' | 'produtor'
+export type Role = 'master' | 'admin' | 'supervisor' | 'gerente' | 'cliente' | 'operador_portao' | 'suporte' | 'produtor' | 'encarregado'
 
 // ─── Permissões editáveis por organização ────────────────────────────────────
 
@@ -100,6 +100,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   operador_portao: 'Operador de portão',
   suporte: 'Suporte de Sistema',
   produtor: 'Produtor',
+  encarregado: 'Encarregado',
 }
 
 /** Dono da plataforma: acesso irrestrito a todas as organizações. */

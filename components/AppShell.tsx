@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
-  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog,
+  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
   FileText, Gauge, IdCard, ScanFace, CalendarDays,
 } from 'lucide-react'
@@ -57,7 +57,7 @@ type Grupo = { titulo?: string; itens: NavItem[] }
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
  * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
-function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSupervisor: boolean): Grupo[] {
+function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSupervisor: boolean, encarregadosHabilitado: boolean): Grupo[] {
   const role = perfil.role
   const grupos: Grupo[] = []
 
@@ -129,6 +129,16 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (role === 'supervisor' || temVinculoSupervisor) {
     doEvento.push({ href: '/admin/meu-cracha', label: 'Meu Crachá', icon: IdCard })
+  }
+  /*
+   * "Criar Encarregado" — o supervisor delega a CONSULTA do setor a alguém da
+   * equipe. Só aparece quando a organização liberou (Configurações →
+   * Funcionalidades): desligado, a opção não existe pra ele. O papel
+   * 'supervisor' é o que vale aqui; quem só ganhou um vínculo mantém o papel
+   * principal e não é oferecido.
+   */
+  if (role === 'supervisor' && encarregadosHabilitado) {
+    doEvento.push({ href: '/admin/encarregados', label: 'Criar Encarregado', icon: UserPlus })
   }
   /*
    * "Criar porteiro" é o acesso que o sistema chama de operador de portão —
@@ -563,7 +573,7 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
  */
 export default function AppShell({
   perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null,
-  temEventoComBiometria = true, temVinculoSupervisor = false, children,
+  temEventoComBiometria = true, temVinculoSupervisor = false, encarregadosHabilitado = false, children,
 }: {
   perfil: Perfil
   fotoOrgUrl?: string | null
@@ -575,12 +585,14 @@ export default function AppShell({
   temEventoComBiometria?: boolean
   /** Se este perfil tem QUALQUER vínculo de `supervisor_setores`, mesmo sem ser supervisor de papel — mostra "Meus eventos". */
   temVinculoSupervisor?: boolean
+  /** A organização liberou "Criar Encarregado" — mostra o item no menu do supervisor. */
+  encarregadosHabilitado?: boolean
   children: React.ReactNode
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [menuAberto, setMenuAberto] = useState(false)
-  const grupos = gruposPara(perfil, temEventoComBiometria, temVinculoSupervisor)
+  const grupos = gruposPara(perfil, temEventoComBiometria, temVinculoSupervisor, encarregadosHabilitado)
 
   // O master não pertence a organização nenhuma — pra ele o contexto é a
   // plataforma inteira, e dizer isso é mais honesto que repetir a marca.

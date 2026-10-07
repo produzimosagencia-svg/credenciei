@@ -25,14 +25,14 @@ export default function ConteudoCriarSenha({ convite, token }: { convite: Convit
           <p className="text-sm text-white/55 mt-2 mb-6 text-center">
             {recuperacao
               ? <>Olá, {convite.nome}. Escolha a senha que você vai usar para entrar.</>
-              : <>Olá, {convite.nome}. Finalize seu acesso de supervisor.</>}
+              : <>Olá, {convite.nome}. Finalize seu acesso de {convite.papel === 'encarregado' ? 'Encarregado' : 'supervisor'}.</>}
           </p>
 
           {/* Primeiro acesso: onde a pessoa vai atuar. Na recuperação isso não é assunto. */}
           {!recuperacao && (
             <div className="mb-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
               <p className="text-white/90 font-medium">{convite.evento}</p>
-              <p className="text-white/45 text-xs mt-1">Fornecedor: {convite.setor}</p>
+              <p className="text-white/45 text-xs mt-1">{convite.papel === 'encarregado' ? 'Setor' : 'Fornecedor'}: {convite.setor}</p>
             </div>
           )}
 

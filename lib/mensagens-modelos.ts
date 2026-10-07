@@ -319,6 +319,24 @@ Motivo: ${motivo}.
 
 Procure o seu supervisor ${supervisor} para resolver antes do evento.`,
 
+  /**
+   * Encarregado designado pelo supervisor. PRECISA ser cadastrado e aprovado
+   * na Meta com EXATAMENTE este texto e estas 5 variáveis (nome, setor,
+   * evento, cpf, link) — sem isso a Meta recusa o envio e a mensagem fica
+   * como "falhou" na fila (o acesso em si já foi criado, e o supervisor é
+   * avisado disso). `setor` já vem com o subevento quando há:
+   * "SUBEVENTO › SETOR".
+   */
+  cadastro_encarregado_cpf_link: ([nome, setor, evento, cpf, link]) =>
+`Olá, ${nome}. Você foi cadastrado como Encarregado do setor ${setor} no evento ${evento}.
+
+O acesso de Encarregado é de consulta: serve para acompanhar a equipe e apoiar a organização do evento, sem ações operacionais.
+
+Use seu CPF no link abaixo (${cpf}) para criar a sua senha:
+${link}
+
+Este endereço é pessoal. Se você não reconhece esta mensagem, ignore.`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 

@@ -205,6 +205,9 @@ function CartoesMestreCarregando() {
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
+  // Defesa em profundidade: o layout já manda o Encarregado embora, mas esta
+  // tela cairia no painel do administrador se ele chegasse aqui por outro caminho.
+  if (perfil.role === 'encarregado') redirect('/encarregado')
   /*
    * Supervisor não administra: vai direto para o painel do PRÓPRIO SETOR.
    *

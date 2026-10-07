@@ -42,6 +42,11 @@ export async function POST(request: NextRequest) {
   if (!perfil) {
     return Response.json({ error: 'Faça login para usar o assistente.' }, { status: 401 })
   }
+  // Encarregado é acesso de CONSULTA: o assistente pode criar, editar e apagar,
+  // e as ferramentas dele só distinguem "supervisor" de "o resto".
+  if (perfil.role === 'encarregado') {
+    return Response.json({ error: 'O assistente não está disponível para o acesso de Encarregado.' }, { status: 403 })
+  }
   if (!process.env.GEMINI_API_KEY) {
     return Response.json(
       { error: 'O assistente ainda não foi configurado neste ambiente. Fale com o administrador da plataforma.' },

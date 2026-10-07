@@ -10691,6 +10691,11 @@ export type FuncionalidadesOrganizacao = {
    * evento de subeventos — ver `eventoUsaEscalaPorDia`.
    */
   escalaPorDiaHabilitada: boolean
+  /**
+   * O supervisor pode delegar a CONSULTA do setor a alguém da equipe
+   * (Encarregado — lib/encarregado.ts). Nasce desligado.
+   */
+  encarregadosHabilitado: boolean
 }
 
 /**
@@ -10712,7 +10717,7 @@ async function garantirSubeventosHabilitadoNaOrg(organizacaoId: string | null) {
  * colunas, tudo se comporta como hoje — nenhum recurso novo aparece.
  */
 export async function obterFuncionalidadesOrganizacao(organizacaoId: string | null): Promise<FuncionalidadesOrganizacao> {
-  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false, escalaPorDiaHabilitada: false }
+  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false, escalaPorDiaHabilitada: false, encarregadosHabilitado: false }
   if (!organizacaoId) return vazio
   const { data, error } = await supabaseAdmin
     .from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
@@ -10722,6 +10727,7 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
     travaCotaHabilitada: (data as { trava_cota_habilitada?: boolean }).trava_cota_habilitada === true,
     avisoUniformeHabilitado: (data as { aviso_uniforme_habilitado?: boolean }).aviso_uniforme_habilitado === true,
     escalaPorDiaHabilitada: (data as { escala_por_dia_habilitada?: boolean }).escala_por_dia_habilitada === true,
+    encarregadosHabilitado: (data as { encarregados_habilitado?: boolean }).encarregados_habilitado === true,
   }
 }
 
@@ -10736,6 +10742,12 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
     aviso_uniforme_habilitado: formData.get('aviso_uniforme_habilitado') === 'on',
   }
   const escalaLigada = formData.get('escala_por_dia_habilitada') === 'on'
+  const encarregadosLigados = formData.get('encarregados_habilitado') === 'on'
+
+  // Colunas das funcionalidades mais novas: gravadas à parte, pra uma migração
+  // pendente (upgrade-encarregado.sql) nunca impedir o resto de salvar.
+  const { error: erroEncarregados } = await supabaseAdmin.from('organizacoes')
+    .update({ encarregados_habilitado: encarregadosLigados }).eq('id', organizacaoId)
 
   // Uma gravação só. Se a coluna nova ainda não existe (upgrade-escala-por-dia.sql
   // pendente), cai pra gravar só as de sempre — o resto não pode deixar de salvar.
@@ -10747,6 +10759,9 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
     if (escalaLigada) {
       throw new Error('Os outros itens foram salvos, mas "Dias de trabalho" ainda precisa da atualização do banco (upgrade-escala-por-dia.sql).')
     }
+  }
+  if (erroEncarregados && encarregadosLigados) {
+    throw new Error('Os outros itens foram salvos, mas "Encarregados" ainda precisa da atualização do banco (upgrade-encarregado.sql).')
   }
 
   revalidatePath('/admin/configuracoes')
@@ -11053,7 +11068,8 @@ export async function desdeQuandoNaBase(cpfDigitado: string): Promise<{
   totalEventos: number
 } | null> {
   const perfil = await getPerfil()
-  if (!perfil) return null
+  // Encarregado é só consulta do próprio setor: não pesquisa a base por CPF.
+  if (!perfil || perfil.role === 'encarregado') return null
   const cpf = normalizarCpf(cpfDigitado ?? '')
   if (cpf.length !== 11) return null
 

@@ -273,5 +273,9 @@ export async function podeVerHistoricoDe(
   const meus = await meusSetores(perfil)
   if (meus.some(s => s.id === vinculo.fornecedor_id)) return true
   if (perfil.role === 'supervisor') return false
+  // Encarregado é consulta do setor dele (telas de /encarregado): o histórico
+  // completo e o QR da pessoa não são dele — e `org === organizacao_id` casaria
+  // um evento sem organização com a conta sem organização.
+  if (perfil.role === 'encarregado') return false
   return veTodosEventos(perfil) || org === perfil.organizacao_id
 }

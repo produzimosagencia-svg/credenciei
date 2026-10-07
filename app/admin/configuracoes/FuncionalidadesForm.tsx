@@ -117,6 +117,26 @@ export default function FuncionalidadesForm({
         </div>
       </label>
 
+      <label className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors">
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="encarregados_habilitado"
+            defaultChecked={funcionalidades.encarregadosHabilitado}
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-slate-800 font-semibold text-sm">Permitir criação de Encarregados</p>
+            <p className="text-slate-600 text-xs mt-1">
+              O supervisor passa a ter, no menu, &quot;Criar Encarregado&quot;: ele escolhe alguém que já está na
+              equipe do setor e libera para essa pessoa um acesso de CONSULTA — ela vê só a equipe daquele
+              setor, sem nenhuma ação operacional. Desligar esconde a opção e impede novos Encarregados;
+              quem já foi designado continua com o acesso.
+            </p>
+          </div>
+        </div>
+      </label>
+
       {erro && <p className="text-red-500 text-xs">{erro}</p>}
 
       <div className="flex items-center gap-3">

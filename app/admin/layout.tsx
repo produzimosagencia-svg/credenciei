@@ -2,12 +2,15 @@ import { redirect } from 'next/navigation'
 import { getPerfil, meusSetoresDoEventoAtual, meusSetores, comArea, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos } from '@/lib/permissions'
 import AppShell from '@/components/AppShell'
+import { encarregadosLigadosParaSetor } from '@/lib/encarregado-flag'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   // Produtor é cliente do produto Gastos — não navega pelo credenciamento.
   if (perfil.role === 'produtor') redirect('/gastos')
+  // Encarregado é consulta delegada: tem a casca dele (/encarregado) e não entra no painel.
+  if (perfil.role === 'encarregado') redirect('/encarregado')
 
   // Nome e foto da organização no cabeçalho, e os setores do supervisor pro
   // "Meus setores" do menu — buscados em paralelo: um não depende do outro, e
@@ -20,7 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // mesmo sem papel de supervisor (achado ao vivo, 04/10/2026, caso da Mara
   // Lúcia: ela é operadora de portão, sem `fornecedor_id`, e o vínculo dela
   // com a Stoked nunca aparecia no menu por causa disso).
-  const [orgResult, setores, temEventoComBiometria, meusVinculos] = await Promise.all([
+  const [orgResult, setores, temEventoComBiometria, meusVinculos, encarregadosLigados] = await Promise.all([
     perfil.organizacao_id
       ? supabaseAdmin
           .from('organizacoes')
@@ -31,6 +34,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     meusSetoresDoEventoAtual(perfil).then(comArea),
     organizacaoUsaBiometria(perfil.organizacao_id as string | null, podeGerenciarEventos(perfil)),
     meusSetores(perfil),
+    // "Criar Encarregado" no menu do supervisor — só pergunta ao banco quem é supervisor.
+    perfil.role === 'supervisor' ? encarregadosLigadosParaSetor(perfil.fornecedor_id as string | null) : Promise.resolve(false),
   ])
 
   const org = orgResult.data
@@ -52,6 +57,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       setorAtualId={(perfil.fornecedor_id as string | null) ?? null}
       temEventoComBiometria={temEventoComBiometria}
       temVinculoSupervisor={meusVinculos.length > 0}
+      encarregadosHabilitado={encarregadosLigados}
     >
       {children}
     </AppShell>

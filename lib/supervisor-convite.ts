@@ -18,6 +18,8 @@ type EstadoConvite = {
   setor: string
   /** Convite antigo (sem o campo) é de primeiro acesso. */
   finalidade?: 'acesso' | 'recuperacao'
+  /** Convite antigo (sem o campo) é de supervisor. */
+  papel?: 'supervisor' | 'encarregado'
   expira_em: string
   usado_em: string | null
 }
@@ -35,6 +37,8 @@ export type ConviteSupervisorPublico = {
    * falar de evento nem de fornecedor (que, pra um admin ou master, nem fazem sentido).
    */
   finalidade?: 'acesso' | 'recuperacao'
+  /** O acesso que está sendo criado — a tela troca o texto de "supervisor" por "Encarregado". */
+  papel?: 'supervisor' | 'encarregado'
   motivo?: 'invalido' | 'expirado' | 'usado'
 }
 
@@ -75,6 +79,7 @@ export async function criarConviteSenhaSupervisor(params: {
   evento: string
   setor: string
   finalidade?: 'acesso' | 'recuperacao'
+  papel?: 'supervisor' | 'encarregado'
 }): Promise<string> {
   const token = randomBytes(32).toString('base64url')
   const chave = `${PREFIXO}${hashToken(token)}`
@@ -86,6 +91,7 @@ export async function criarConviteSenhaSupervisor(params: {
     evento: params.evento,
     setor: params.setor,
     finalidade: params.finalidade ?? 'acesso',
+    papel: params.papel ?? 'supervisor',
     expira_em: new Date(Date.now() + VALIDADE_MS).toISOString(),
     usado_em: null,
   }
@@ -110,6 +116,7 @@ export async function consultarConviteSenhaSupervisor(token: string): Promise<Co
     evento: convite.estado.evento,
     setor: convite.estado.setor,
     finalidade: convite.estado.finalidade ?? 'acesso',
+    papel: convite.estado.papel ?? 'supervisor',
   }
 }
 
