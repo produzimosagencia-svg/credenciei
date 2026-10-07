@@ -96,13 +96,8 @@ export async function diasDoEvento(eventoId: string): Promise<DiaDoEvento[]> {
 
   if (!dias?.length) return []
 
-  // Quais desses dias já têm batida. Uma consulta só, em vez de uma por dia.
-  const { data: comBatida } = await supabaseAdmin
-    .from('registros')
-    .select('data_ref')
-    .eq('evento_id', eventoId)
-    .in('data_ref', dias.map(d => d.data as string))
-  const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+  // Quais desses dias já têm batida (ver `diasComBatida` — não dá pra ler as batidas e montar um conjunto).
+  const batidos = await diasComBatida(eventoId, dias.map(d => d.data as string))
 
   return dias.map(d => ({
     data: d.data as string,
@@ -163,4 +158,26 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
     escalaPorDiaHabilitada: (data as { escala_por_dia_habilitada?: boolean }).escala_por_dia_habilitada === true,
     encarregadosHabilitado: (data as { encarregados_habilitado?: boolean }).encarregados_habilitado === true,
   }
+}
+
+/**
+ * Quais destes dias JÁ TÊM alguma batida no evento.
+ *
+ * É a trava que impede apagar ou rebaixar um dia de trabalho com prova de
+ * presença. Por isso NÃO pode ser "lê as batidas e monta um conjunto": o banco
+ * corta qualquer resposta em 1.000 linhas, e num evento grande (milhares de
+ * pessoas × 3 batidas) as batidas de um dia podiam nunca entrar nas primeiras
+ * 1.000 — o dia parecia vazio e podia ser removido com ponto registrado.
+ * Aqui é uma pergunta por dia ("existe ao menos uma?"), que não depende do
+ * tamanho do evento.
+ */
+export async function diasComBatida(eventoId: string, datas: string[]): Promise<Set<string>> {
+  const unicas = [...new Set(datas)]
+  const respostas = await Promise.all(unicas.map(async data => {
+    const { data: linhas, error } = await supabaseAdmin
+      .from('registros').select('id').eq('evento_id', eventoId).eq('data_ref', data).limit(1)
+    // Na dúvida (erro de consulta), trata como COM batida: o erro mais seguro é preservar o dia.
+    return { data, tem: !!error || (linhas?.length ?? 0) > 0 }
+  }))
+  return new Set(respostas.filter(r => r.tem).map(r => r.data))
 }

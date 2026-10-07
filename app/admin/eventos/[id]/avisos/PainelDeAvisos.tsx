@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { diaBRT } from '@/lib/janelas'
 import AvisoFormModal from './AvisoFormModal'
 import TabelaAvisos, { type LinhaAviso } from './TabelaAvisos'
@@ -24,9 +24,12 @@ export default async function PainelDeAvisos({ eventoId }: { eventoId: string })
       .select('id, titulo, mensagem, ativo, data_inicio, data_fim, publico, cpf_pessoa, recorrente, created_at')
       .eq('evento_id', eventoId).order('created_at', { ascending: false }),
     supabase.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome'),
-    supabase.from('funcionarios')
-      .select('id, nome, cpf, fornecedor_id, fornecedores!inner(evento_id)')
-      .eq('fornecedores.evento_id', eventoId).order('nome'),
+    // Paginado: a lista de pessoas do evento serve pra mostrar o NOME de quem recebe um aviso individual.
+    buscarTudo<{ id: string; nome: string; cpf: string; fornecedor_id: string }>((de, ate) =>
+      supabase.from('funcionarios')
+        .select('id, nome, cpf, fornecedor_id, fornecedores!inner(evento_id)')
+        .eq('fornecedores.evento_id', eventoId).order('nome').order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
     supabase.from('aviso_setores').select('aviso_id, fornecedor_id'),
   ])
 

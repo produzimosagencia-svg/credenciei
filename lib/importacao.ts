@@ -1,6 +1,7 @@
 import { after } from 'next/server'
 import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
-import { supabaseAdmin } from '@/lib/supabase-server'
+import { supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
+import { emLotes } from '@/lib/lotes'
 import { ehMaster, type Role } from '@/lib/permissions'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
@@ -151,12 +152,16 @@ export async function importarFuncionarios(
 
   const jaCadastrados = new Map<string, { nome: string; setor: string | null }>()
   if (semRepetidos.length) {
-    const { data: existentes } = await supabaseAdmin
-      .from('funcionarios')
-      .select('cpf, nome, fornecedores!inner(evento_id, nome)')
-      .eq('fornecedores.evento_id', eventoId)
-      .in('cpf', semRepetidos.map(f => f.cpf))
-    for (const e of existentes ?? []) {
+    // Em lotes e paginado: uma planilha de 4 mil CPFs num `.in(...)` só estoura o tamanho da
+    // URL (a resposta vinha vazia e NENHUM duplicado era detectado) e passa do teto de 1.000 linhas.
+    const existentes: { cpf: string; nome: string; fornecedores: unknown }[] = []
+    for (const lote of emLotes(semRepetidos.map(f => f.cpf), 200)) {
+      existentes.push(...await buscarTudo<{ cpf: string; nome: string; fornecedores: unknown }>((de, ate) =>
+        supabaseAdmin.from('funcionarios')
+          .select('cpf, nome, fornecedores!inner(evento_id, nome)')
+          .eq('fornecedores.evento_id', eventoId).in('cpf', lote).order('id').range(de, ate)))
+    }
+    for (const e of existentes) {
       jaCadastrados.set(e.cpf as string, {
         nome: e.nome as string,
         setor: (e.fornecedores as unknown as { nome: string } | null)?.nome ?? null,
@@ -228,14 +233,17 @@ export async function importarFuncionarios(
   // a planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
   // equipe dele no primeiro evento.
   let reaproveitados = 0
-  const { data: conhecidos } = await supabaseAdmin
-    .from('funcionarios')
-    .select('cpf, telefone, cargo, chave_pix, cidade')
-    .in('cpf', finalPayload.map(f => f.cpf))
-    .order('created_at', { ascending: false })
+  // Em lotes por CPF (todas as linhas de um CPF caem no mesmo lote, então "o primeiro é o mais recente" continua valendo).
+  const conhecidos: { cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }[] = []
+  for (const lote of emLotes(finalPayload.map(f => f.cpf), 200)) {
+    conhecidos.push(...await buscarTudo<{ cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>((de, ate) =>
+      supabaseAdmin.from('funcionarios')
+        .select('cpf, telefone, cargo, chave_pix, cidade')
+        .in('cpf', lote).order('created_at', { ascending: false }).order('id').range(de, ate)))
+  }
 
   const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>()
-  for (const c of conhecidos ?? []) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
+  for (const c of conhecidos) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
 
   for (const f of finalPayload) {
     const anterior = base.get(f.cpf)

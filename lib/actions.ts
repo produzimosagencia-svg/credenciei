@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, cpfEstaBloqueado, obterFuncionalidadesOrganizacao } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao } from './internos-servidor'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
@@ -3326,24 +3326,39 @@ export async function exportarFuncionariosDoSetor(
   if (!fornecedor) throw new Error('Fornecedor não encontrado')
   if (fornecedor.evento_id !== eventoId) throw new Error('Este fornecedor não pertence ao evento informado')
 
-  const { data: funcionarios, error } = await supabaseAdmin
-    .from('funcionarios')
-    .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo, created_at')
-    .eq('fornecedor_id', fornecedorId)
-    .order('nome')
-  if (error) throw new Error(mensagemAmigavel(error))
+  // Paginado: um setor do Vital pode passar de 1.000 pessoas, e a planilha sairia cortada sem aviso.
+  let funcionarios: { id: string; nome: string; cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; valor_receber: number | null; pago: boolean | null; pago_em: string | null; ativo: boolean | null; created_at: string }[]
+  try {
+    funcionarios = await buscarTudo((de, ate) =>
+      supabaseAdmin
+        .from('funcionarios')
+        .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, pago, pago_em, ativo, created_at')
+        .eq('fornecedor_id', fornecedorId)
+        .order('nome').order('id').range(de, ate))
+  } catch (e) {
+    throw new Error(mensagemAmigavel(e))
+  }
 
   const porFuncionario: Record<string, Record<'entrada' | 'meio' | 'fim', string | null>> = {}
   if (filtro && filtro.tipos.length > 0 && funcionarios?.length) {
-    const { data: registros, error: erroRegistros } = await supabaseAdmin
-      .from('registros')
-      .select('funcionario_id, tipo, created_at')
-      .eq('data_ref', filtro.dataRef)
-      .in('tipo', filtro.tipos)
-      .in('funcionario_id', funcionarios.map(f => f.id))
-    if (erroRegistros) throw new Error(mensagemAmigavel(erroRegistros))
-    for (const r of registros ?? []) {
-      (porFuncionario[r.funcionario_id] ??= { entrada: null, meio: null, fim: null })[r.tipo as 'entrada' | 'meio' | 'fim'] = r.created_at
+    // Em lotes de pessoas (um `.in(...)` com centenas de ids estoura a URL) e paginado por lote.
+    for (const lote of emLotes(funcionarios.map(f => f.id), 200)) {
+      let registros: { funcionario_id: string; tipo: string; created_at: string }[]
+      try {
+        registros = await buscarTudo((de, ate) =>
+          supabaseAdmin
+            .from('registros')
+            .select('funcionario_id, tipo, created_at')
+            .eq('data_ref', filtro.dataRef)
+            .in('tipo', filtro.tipos)
+            .in('funcionario_id', lote)
+            .order('id').range(de, ate))
+      } catch (e) {
+        throw new Error(mensagemAmigavel(e))
+      }
+      for (const r of registros) {
+        (porFuncionario[r.funcionario_id] ??= { entrada: null, meio: null, fim: null })[r.tipo as 'entrada' | 'meio' | 'fim'] = r.created_at
+      }
     }
   }
 
@@ -4259,9 +4274,11 @@ async function setoresComAcessoAAprovacao(perfil: Awaited<ReturnType<typeof getP
   }
 
   if (podeGerenciarEventos(perfil) && perfil.organizacao_id) {
-    const { data } = await supabaseAdmin
-      .from('fornecedores').select('id, eventos!inner(organizacao_id)').eq('eventos.organizacao_id', perfil.organizacao_id)
-    return (data ?? []).map(f => f.id as string)
+    // Paginado: todos os setores de TODOS os eventos da organização passam fácil de 1.000.
+    const data = await buscarTudo<{ id: string }>((de, ate) =>
+      supabaseAdmin.from('fornecedores').select('id, eventos!inner(organizacao_id)')
+        .eq('eventos.organizacao_id', perfil.organizacao_id).order('id').range(de, ate))
+    return data.map(f => f.id)
   }
 
   if (perfil.role === 'suporte') {
@@ -4269,12 +4286,14 @@ async function setoresComAcessoAAprovacao(perfil: Awaited<ReturnType<typeof getP
     const eventoIds = (escopos ?? []).map(e => e.evento_id as string | null).filter((v): v is string => !!v)
     const orgIds = (escopos ?? []).map(e => e.organizacao_id as string | null).filter((v): v is string => !!v)
     if (!eventoIds.length && !orgIds.length) return []
-    const query = supabaseAdmin.from('fornecedores').select('id, evento_id, eventos!inner(organizacao_id)')
     const condicoes: string[] = []
     if (eventoIds.length) condicoes.push(`evento_id.in.(${eventoIds.join(',')})`)
     if (orgIds.length) condicoes.push(`eventos.organizacao_id.in.(${orgIds.join(',')})`)
-    const { data } = await query.or(condicoes.join(','))
-    return (data ?? []).map(f => f.id as string)
+    // A consulta é montada DENTRO do callback: o construtor do Supabase é mutável e reaproveitá-lo entre páginas empilha filtros.
+    const data = await buscarTudo<{ id: string }>((de, ate) =>
+      supabaseAdmin.from('fornecedores').select('id, evento_id, eventos!inner(organizacao_id)')
+        .or(condicoes.join(',')).order('id').range(de, ate))
+    return data.map(f => f.id)
   }
 
   /*
@@ -4297,10 +4316,30 @@ export async function contarPendentesDeAprovacao(): Promise<number> {
   const setorIds = await setoresComAcessoAAprovacao(perfil)
   if (setorIds && !setorIds.length) return 0
 
-  let query = supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true }).eq('status_credenciamento', 'pendente')
-  if (setorIds) query = query.in('fornecedor_id', setorIds)
-  const { count } = await query
-  return count ?? 0
+  return contarPendentes({ setorIds })
+}
+
+/**
+ * Pendentes de aprovação, por CONTAGEM no banco (nunca lendo as linhas: o banco corta em
+ * 1.000). Com lista de setores, soma por lotes — um `.in(...)` com centenas de setores
+ * estoura o tamanho da URL e a resposta vinha vazia (o número do menu sumia).
+ * `eventoId` restringe a um evento; `setorIds` nulo = sem restrição de setor (master).
+ */
+async function contarPendentes(filtro: { setorIds: string[] | null; eventoId?: string }): Promise<number> {
+  const { setorIds, eventoId } = filtro
+  const contar = async (ids: string[] | null) => {
+    let q = supabaseAdmin
+      .from('funcionarios').select('id, fornecedores!inner(evento_id)', { count: 'exact', head: true })
+      .eq('status_credenciamento', 'pendente')
+    if (eventoId) q = q.eq('fornecedores.evento_id', eventoId)
+    if (ids) q = q.in('fornecedor_id', ids)
+    const { count } = await q
+    return count ?? 0
+  }
+  if (!setorIds) return contar(null)
+  let total = 0
+  for (const lote of emLotes(setorIds, 200)) total += await contar(lote)
+  return total
 }
 
 /**
@@ -4323,8 +4362,11 @@ export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; no
 
   let eventosQuery = supabaseAdmin.from('eventos').select('id, nome, ativo').order('data_inicio', { ascending: false })
   if (setorIds) {
-    const { data: fornecedores } = await supabaseAdmin.from('fornecedores').select('evento_id').in('id', setorIds)
-    const eventoIds = [...new Set((fornecedores ?? []).map(f => f.evento_id as string))]
+    const eventoIds: string[] = []
+    for (const lote of emLotes(setorIds, 200)) {
+      const { data: fornecedores } = await supabaseAdmin.from('fornecedores').select('evento_id').in('id', lote)
+      for (const f of fornecedores ?? []) if (!eventoIds.includes(f.evento_id as string)) eventoIds.push(f.evento_id as string)
+    }
     if (!eventoIds.length) return []
     eventosQuery = eventosQuery.in('id', eventoIds)
   } else if (!ehMaster(perfil.role) && perfil.organizacao_id) {
@@ -4333,20 +4375,11 @@ export async function eventosComPendentesDeAprovacao(): Promise<{ id: string; no
   const { data: eventosData } = await eventosQuery
   if (!eventosData?.length) return []
 
-  let query = supabaseAdmin
-    .from('funcionarios')
-    .select('fornecedor_id, fornecedores!inner(evento_id)')
-    .eq('status_credenciamento', 'pendente')
-    .in('fornecedores.evento_id', eventosData.map(e => e.id as string))
-  if (setorIds) query = query.in('fornecedor_id', setorIds)
-  const { data } = await query
-
+  // Uma CONTAGEM por evento (nunca as linhas: o banco corta em 1.000 e o número de cada evento ficaria errado).
   const pendentesPorEvento = new Map<string, number>()
-  for (const f of data ?? []) {
-    const eid = (f.fornecedores as unknown as { evento_id: string } | null)?.evento_id
-    if (!eid) continue
-    pendentesPorEvento.set(eid, (pendentesPorEvento.get(eid) ?? 0) + 1)
-  }
+  await Promise.all(eventosData.map(async e => {
+    pendentesPorEvento.set(e.id as string, await contarPendentes({ setorIds, eventoId: e.id as string }))
+  }))
 
   return eventosData
     .map(e => ({
@@ -4758,11 +4791,7 @@ async function salvarDiasDeTrabalhoOuLanca(eventoId: string, datas: string[]) {
 
   let preservados = 0
   if (paraRemover.length) {
-    const { data: comBatida } = await supabaseAdmin
-      .from('registros').select('data_ref')
-      .eq('evento_id', eventoId)
-      .in('data_ref', paraRemover.map(d => d.data as string))
-    const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+    const batidos = await diasComBatida(eventoId, paraRemover.map(d => d.data as string))
 
     const removiveis = paraRemover.filter(d => !batidos.has(d.data as string))
     preservados = paraRemover.length - removiveis.length
@@ -4880,10 +4909,7 @@ async function salvarDiasPrincipaisExtrasOuLanca(eventoId: string, dias: DiaPrin
   const { data: existentes } = await supabaseAdmin
     .from('jornada_dias').select('id, data').eq('evento_id', eventoId).eq('tipo', 'principal').neq('data', diaAutomatico)
 
-  const { data: comBatida } = await supabaseAdmin
-    .from('registros').select('data_ref').eq('evento_id', eventoId)
-    .in('data_ref', (existentes ?? []).map(e => e.data as string))
-  const batidos = new Set((comBatida ?? []).map(r => r.data_ref as string))
+  const batidos = await diasComBatida(eventoId, (existentes ?? []).map(e => e.data as string))
 
   // Sai da lista + sem batida = volta a ser preparação. Com batida, preserva
   // (mesma régua de `salvarDiasDeTrabalho`).
@@ -7286,10 +7312,13 @@ async function validarLeituraFacial(
    * (pedido do Juan): um rosto cadastrado no evento A nunca é comparado
    * contra o evento B, porque a consulta abaixo nem TRAZ os templates de B.
    */
-  const { data: templates } = await supabaseAdmin
-    .from('biometria_templates').select('funcionario_id, vetor').eq('evento_id', eventoId)
+  // Paginada: o banco corta em 1.000 linhas, e num evento com milhares de rostos quem estava
+  // além da primeira página dava "não identificado" no totem sem nenhum erro.
+  const templates = await buscarTudo<{ funcionario_id: string; vetor: unknown }>((de, ate) =>
+    supabaseAdmin.from('biometria_templates').select('funcionario_id, vetor')
+      .eq('evento_id', eventoId).order('id').range(de, ate))
 
-  const candidatos: Candidato[] = (templates ?? [])
+  const candidatos: Candidato[] = templates
     .filter(t => descritorValido(t.vetor))
     .map(t => ({ funcionarioId: t.funcionario_id as string, distancia: distanciaEuclidiana(descritor, t.vetor as number[]) }))
 
@@ -7311,19 +7340,21 @@ async function validarLeituraFacial(
      */
     const organizacaoId = (evento as { organizacao_id?: string | null }).organizacao_id
     if (organizacaoId) {
-      const { data: templatesOutroEvento } = await supabaseAdmin
-        .from('biometria_templates')
-        .select('funcionario_id, vetor, evento_id, eventos!inner(nome, local, data_inicio, organizacao_id)')
-        .eq('eventos.organizacao_id', organizacaoId)
-        .neq('evento_id', eventoId)
+      const templatesOutroEvento = await buscarTudo<{ funcionario_id: string; vetor: unknown; evento_id: string; eventos: unknown }>((de, ate) =>
+        supabaseAdmin
+          .from('biometria_templates')
+          .select('funcionario_id, vetor, evento_id, eventos!inner(nome, local, data_inicio, organizacao_id)')
+          .eq('eventos.organizacao_id', organizacaoId)
+          .neq('evento_id', eventoId)
+          .order('id').range(de, ate))
 
-      const candidatosFora: Candidato[] = (templatesOutroEvento ?? [])
+      const candidatosFora: Candidato[] = templatesOutroEvento
         .filter(t => descritorValido(t.vetor))
         .map(t => ({ funcionarioId: t.funcionario_id as string, distancia: distanciaEuclidiana(descritor, t.vetor as number[]) }))
       const matchFora = decidirMatch(candidatosFora)
 
       if (matchFora.encontrado) {
-        const linha = templatesOutroEvento!.find(t => t.funcionario_id === matchFora.funcionarioId)
+        const linha = templatesOutroEvento.find(t => t.funcionario_id === matchFora.funcionarioId)
         const eventoAlheio = linha?.eventos as unknown as { nome: string; local: string | null; data_inicio: string | null } | undefined
         after(() => gravarTentativaBiometrica({
           eventoId, perfilId: perfil.id as string, funcionarioId: matchFora.funcionarioId,

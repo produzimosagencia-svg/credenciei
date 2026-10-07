@@ -931,13 +931,17 @@ async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada
  * aquela mensagem não saiu.
  */
 export async function cancelarMeioDesligado(eventoId: string): Promise<number> {
-  const { data: naFila } = await supabase
-    .from('mensagens_agendadas')
-    .select('id, funcionario_id, data_ref')
-    .eq('evento_id', eventoId)
-    .eq('status', 'pendente')
-    .in('tipo', ['lembrete_meio', 'reforco_meio'])
-  if (!naFila?.length) return 0
+  // Paginado: com milhares de pessoas a fila de lembretes do meio passa de 1.000, e lendo só a
+  // primeira página o resto continuava saindo depois de o meio ser desligado.
+  const naFila = await paginarTudo<{ id: string; funcionario_id: string | null; data_ref: string }>((de, ate) =>
+    supabase
+      .from('mensagens_agendadas')
+      .select('id, funcionario_id, data_ref')
+      .eq('evento_id', eventoId)
+      .eq('status', 'pendente')
+      .in('tipo', ['lembrete_meio', 'reforco_meio'])
+      .order('id').range(de, ate))
+  if (!naFila.length) return 0
 
   // Os dias que AINDA pedem meio. Um dia desligado derruba todo mundo dele,
   // independente do setor.
@@ -1193,12 +1197,15 @@ export async function agendarAlertasSupervisorCredenciamento(): Promise<void> {
   if (!eventoPorContagem.size) return
 
   const eventoIds = [...eventoPorContagem.keys()]
-  const { data: pendentes } = await supabase
-    .from('funcionarios')
-    .select('fornecedor_id, fornecedores!inner(evento_id)')
-    .eq('status_credenciamento', 'pendente')
-    .in('fornecedores.evento_id', eventoIds)
-  if (!pendentes?.length) return
+  // Paginado: com mais de 1.000 pendentes, os setores além da primeira página nunca recebiam o alerta.
+  const pendentes = await paginarTudo<{ fornecedor_id: string; fornecedores: unknown }>((de, ate) =>
+    supabase
+      .from('funcionarios')
+      .select('fornecedor_id, fornecedores!inner(evento_id)')
+      .eq('status_credenciamento', 'pendente')
+      .in('fornecedores.evento_id', eventoIds)
+      .order('id').range(de, ate))
+  if (!pendentes.length) return
 
   const fornecedorIds = [...new Set(pendentes.map(p => p.fornecedor_id as string))]
   const { data: supervisores } = await supabase

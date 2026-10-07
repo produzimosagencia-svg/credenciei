@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldBan, CalendarDays, Info } from 'lucide-react'
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
@@ -99,12 +99,18 @@ export default async function BloquearCpfPage({
    * Tolerante à migração pendente: sem a tabela, a lista vem vazia e a tela
    * abre. O erro real aparece ao tentar bloquear, com a mensagem certa.
    */
-  const { data: linhas, error } = await supabase
-    .from('cpfs_bloqueados')
-    .select('id, cpf, motivo, created_at, perfis(nome)')
-    .eq('evento_id', eventoParam)
-    .order('created_at', { ascending: false })
-  if (error) console.error('[bloquear-cpf] lista falhou (migração pendente?):', error.message)
+  let linhas: { id: unknown; cpf: unknown; motivo: unknown; created_at: unknown; perfis: unknown }[] = []
+  try {
+    // Paginado: a lista é tratada como COMPLETA (é o que o supervisor vê como "quem está bloqueado").
+    linhas = await buscarTudo((de, ate) =>
+      supabase
+        .from('cpfs_bloqueados')
+        .select('id, cpf, motivo, created_at, perfis(nome)')
+        .eq('evento_id', eventoParam)
+        .order('created_at', { ascending: false }).order('id').range(de, ate))
+  } catch (e) {
+    console.error('[bloquear-cpf] lista falhou (migração pendente?):', (e as Error).message)
+  }
 
   const bloqueados: CpfBloqueado[] = (linhas ?? []).map(b => ({
     id: b.id as string,

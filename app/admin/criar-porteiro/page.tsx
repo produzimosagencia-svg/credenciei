@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, KeyRound } from 'lucide-react'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
+import { emLotes } from '@/lib/lotes'
 import { veTodosEventos, podeGerenciarUsuarios, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
@@ -68,8 +69,17 @@ export default async function CriarPorteiroPage({
       ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo')
           .eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id).order('nome')
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    // Paginado (e em lotes de setor): a lista de quem pode virar gestor passa de 1.000 num evento grande.
     idsSetores.length
-      ? supabase.from('funcionarios').select('id, nome, cpf, telefone').in('fornecedor_id', idsSetores).order('nome')
+      ? (async () => {
+          const todos: Record<string, unknown>[] = []
+          for (const lote of emLotes(idsSetores, 200)) {
+            todos.push(...await buscarTudo<Record<string, unknown>>((de, ate) =>
+              supabase.from('funcionarios').select('id, nome, cpf, telefone')
+                .in('fornecedor_id', lote).order('nome').order('id').range(de, ate)))
+          }
+          return { data: todos.sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR')) }
+        })().catch(() => ({ data: [] as Record<string, unknown>[] }))
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 

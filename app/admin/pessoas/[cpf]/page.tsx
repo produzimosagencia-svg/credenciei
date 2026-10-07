@@ -4,7 +4,7 @@ import {
   CalendarDays, Building2, Briefcase, MapPin, Phone, MessageCircle, IdCard, CalendarPlus,
   ShieldCheck, ShieldAlert, UserPlus, MessageSquareText,
 } from 'lucide-react'
-import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
+import { getPerfil, supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -168,7 +168,10 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
    */
   const [{ data: eventosBrutos }, { data: setoresBrutos }] = await Promise.all([
     supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio').order('data_inicio', { ascending: false }).limit(100),
-    supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('nome'),
+    // Paginado: todos os setores da plataforma passam de 1.000 depois de alguns eventos grandes.
+    buscarTudo<{ id: string; nome: string; evento_id: string }>((de, ate) =>
+      supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('nome').order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
   ])
 
   const eventosOpcoes = (eventosBrutos ?? []).map(e => ({

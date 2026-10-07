@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
-import { supabaseAdmin } from '@/lib/supabase-server'
+import { supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { numerosWhatsApp, templatesAprovados } from '@/lib/whatsapp-painel'
 import FormDisparo from './FormDisparo'
 
@@ -20,7 +20,10 @@ export default async function DisparoPage() {
     templatesAprovados(),
     numerosWhatsApp(),
   ])
-  const { data: setores } = await supabaseAdmin.from('fornecedores').select('id, nome, evento_id')
+  // Paginado: todos os setores da plataforma passam de 1.000 depois de alguns eventos grandes.
+  const setores = await buscarTudo<{ id: string; nome: string; evento_id: string }>((de, ate) =>
+    supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('id').range(de, ate),
+  ).catch(() => [] as { id: string; nome: string; evento_id: string }[])
 
   const aprovados = templates.filter(t => t.status === 'APPROVED' && t.categoria !== 'AUTHENTICATION')
   if (!eventos?.length) redirect('/admin')
