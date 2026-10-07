@@ -585,7 +585,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
               <QrProtegido
                 dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}
-                linkSuporte={linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome })}
+                // Só pra quem já foi aprovado (quem não foi nem chega aqui: sai antes, na tela de pendente/negado).
+                linkSuporte={statusCred === 'aprovado' ? linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome }) : null}
               />
 
               {escala && (
