@@ -150,9 +150,9 @@ export default function QrProtegido(
             href={linkSuporte}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-600 text-2xs font-medium"
+            className="btn-press inline-flex items-center gap-1.5 rounded-full border border-green-600 text-green-700 hover:bg-green-50 text-xs font-semibold px-3 py-1.5"
           >
-            <MessageCircle className="w-3 h-3" />
+            <MessageCircle className="w-3.5 h-3.5" />
             Suporte
           </a>
         )}
