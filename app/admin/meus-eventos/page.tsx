@@ -74,12 +74,15 @@ export default async function MeusEventosPage() {
         </div>
         {atuais.length === 1 ? (
           <>
-            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo ao</h1>
-            <p className="text-brand-500 font-extrabold text-3xl mt-1">{atuais[0].nome}</p>
+            <h1 className="text-slate-800 font-bold text-2xl">Boas-vindas ao</h1>
+            <p className="text-brand-500 font-extrabold text-3xl mt-1">Credenciei</p>
+            {/* O evento continua à vista, só que como contexto — o título é sempre o do sistema. */}
+            <p className="text-slate-500 text-sm mt-2">Seu evento agora: <strong className="text-slate-700">{atuais[0].nome}</strong></p>
           </>
         ) : atuais.length > 1 ? (
           <>
-            <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo!</h1>
+            <h1 className="text-slate-800 font-bold text-2xl">Boas-vindas ao</h1>
+            <p className="text-brand-500 font-extrabold text-3xl mt-1">Credenciei</p>
             <p className="text-slate-500 text-sm mt-2">Você pode atuar nestes eventos agora:</p>
             <p className="text-brand-500 font-bold text-lg mt-1">{atuais.map(e => e.nome).join(' · ')}</p>
           </>

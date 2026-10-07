@@ -37,7 +37,7 @@ export default async function BemVindoPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/marca/logo-laranja.png" alt="Credenciei" className="h-10 w-auto mx-auto mb-6" />
 
-        <h1 className="text-slate-800 font-bold text-2xl">Bem-vindo!</h1>
+        <h1 className="text-slate-800 font-bold text-2xl">Boas-vindas ao <span className="text-brand-500">Credenciei</span></h1>
         {eventos.length === 0 ? (
           <p className="text-slate-500 text-sm mt-2">
             Você ainda não está vinculado a nenhum evento. Fale com quem te deu acesso.

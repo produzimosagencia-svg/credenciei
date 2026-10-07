@@ -14,7 +14,7 @@ const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-cadastro',
   versao: 1,
   passos: [
-    { alvo: 'form-titulo', titulo: 'Bem-vindo!', posicao: 'bottom',
+    { alvo: 'form-titulo', titulo: 'Boas-vindas ao Credenciei', posicao: 'bottom',
       descricao: 'Este cadastro é o seu credenciamento no evento. Leva menos de dois minutos e, no fim, você recebe sua credencial com QR Code. É rápido — vamos passar campo por campo.' },
     { alvo: 'form-foto', titulo: 'Sua foto', posicao: 'bottom',
       descricao: 'É opcional, mas ajuda o credenciamento a te identificar na hora da entrada. Ao tocar em "Tirar foto", seu celular abre a câmera frontal.' },
