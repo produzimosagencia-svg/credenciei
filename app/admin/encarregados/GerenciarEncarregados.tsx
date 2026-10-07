@@ -245,12 +245,13 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
                 {lista.map(c => (
                   <li key={c.funcionarioId}>
                     <button
-                      type="button" disabled={!c.temTelefone} onClick={() => escolherPessoa(c)}
+                      type="button" disabled={!c.temTelefone || !!c.funcaoAtual} onClick={() => escolherPessoa(c)}
                       className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <span className="block text-slate-800 text-sm font-semibold truncate">{c.nome}</span>
                       <span className="block text-slate-400 text-xs truncate">
-                        {c.cargo ? `${c.cargo} · ` : ''}{c.setorNome}{!c.temTelefone ? ' · sem WhatsApp cadastrado' : ''}
+                        {c.cargo ? `${c.cargo} · ` : ''}{c.setorNome}
+                        {c.funcaoAtual ? ` · já tem a função de ${c.funcaoAtual}` : !c.temTelefone ? ' · sem WhatsApp cadastrado' : ''}
                       </span>
                     </button>
                   </li>

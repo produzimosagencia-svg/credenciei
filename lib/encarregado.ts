@@ -94,6 +94,12 @@ export type CandidatoEncarregado = {
   setorNome: string
   /** Sem telefone não dá pra mandar o acesso pelo WhatsApp. */
   temTelefone: boolean
+  /**
+   * A função que a pessoa JÁ tem no sistema ("Supervisor", "Operador de portão"…),
+   * quando tem. Cada pessoa tem uma função só: com isso, ela aparece na lista mas
+   * não dá pra escolher — melhor que descobrir só na hora de confirmar.
+   */
+  funcaoAtual: string | null
 }
 
 /** Onde o Encarregado atua: evento › subevento (quando houver) › setor. */

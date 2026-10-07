@@ -9,6 +9,7 @@ import { mensagemAmigavel } from './erros'
 import { validarCpf, formatCpf } from './format'
 import { cpfParaEmail, normalizarCpf } from './usuario'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
+import { emLotes } from './lotes'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
 import { obterFuncionalidadesOrganizacao } from './actions'
 import {
@@ -145,6 +146,17 @@ export async function listarCandidatosEncarregado(eventoId: string): Promise<
     const meuCpf = normalizarCpf((g.perfil.cpf as string | null) ?? '')
     const setorPorId = new Map(g.setores.map(s => [s.id, s]))
 
+    // Quem já tem uma função no sistema (supervisor, operador de portão…) não pode ser Encarregado:
+    // a lista mostra, mas não deixa escolher. O servidor confere de novo ao gravar.
+    const funcaoPorCpf = new Map<string, string>()
+    const cpfsDaEquipe = [...new Set(equipe.map(f => normalizarCpf((f.cpf as string) ?? '')).filter(c => c.length === 11))]
+    for (const lote of emLotes(cpfsDaEquipe, 200)) {
+      const { data: perfis } = await supabaseAdmin.from('perfis').select('cpf, role').in('cpf', lote)
+      for (const p of perfis ?? []) {
+        if (p.role !== 'encarregado') funcaoPorCpf.set(p.cpf as string, ROLE_LABELS[p.role as Role] ?? (p.role as string))
+      }
+    }
+
     const candidatos: CandidatoEncarregado[] = equipe
       .filter(f => f.ativo !== false && f.status_credenciamento === 'aprovado' && !f.descredenciado_em)
       .filter(f => !excluidos.has(f.id as string))
@@ -153,6 +165,7 @@ export async function listarCandidatosEncarregado(eventoId: string): Promise<
         funcionarioId: f.id as string, nome: f.nome as string, cargo: (f.cargo as string | null) ?? null,
         setorId: f.fornecedor_id as string, setorNome: nomeDoSetorComArea(setorPorId.get(f.fornecedor_id as string)),
         temTelefone: normalizarCpf((f.telefone as string) ?? '').length >= 10,
+        funcaoAtual: funcaoPorCpf.get(normalizarCpf((f.cpf as string) ?? '')) ?? null,
       }))
     return { ok: true, candidatos }
   } catch (e) {
