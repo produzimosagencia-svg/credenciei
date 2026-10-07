@@ -40,6 +40,7 @@ export const ACAO_LABELS: Record<string, string> = {
   AVALIACAO_COLABORADOR: 'Colaborador avaliado (estrelas)',
   CONCESSAO_ENCARREGADO: 'Encarregado designado',
   REMOCAO_ENCARREGADO: 'Encarregado removido',
+  ALTERACAO_FUNCIONALIDADE: 'Funcionalidade alterada',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */

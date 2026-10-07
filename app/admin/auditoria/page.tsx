@@ -66,6 +66,10 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
   REGISTRO_SAIDA_ASSISTIDA: 'atencao',
   CORRECAO_PONTO: 'atencao',
   RESET_SENHA: 'atencao',
+  // Dar acesso (mesmo de consulta) merece atenção; tirar é rotina.
+  CONCESSAO_ENCARREGADO: 'atencao',
+  REMOCAO_ENCARREGADO: 'neutro',
+  ALTERACAO_FUNCIONALIDADE: 'atencao',
   REABERTURA_TURNO: 'atencao',
   ENTRADA_VEICULO_LIBERADA: 'positivo',
   APROVACAO_CREDENCIAMENTO: 'positivo',

@@ -10744,6 +10744,10 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
   const escalaLigada = formData.get('escala_por_dia_habilitada') === 'on'
   const encarregadosLigados = formData.get('encarregados_habilitado') === 'on'
 
+  // O valor de antes, só pra auditar a MUDANÇA (ligar/desligar Encarregados muda quem pode dar acesso).
+  const { data: antes } = await supabaseAdmin.from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
+  const encarregadosAntes = (antes as { encarregados_habilitado?: boolean } | null)?.encarregados_habilitado === true
+
   // Colunas das funcionalidades mais novas: gravadas à parte, pra uma migração
   // pendente (upgrade-encarregado.sql) nunca impedir o resto de salvar.
   const { error: erroEncarregados } = await supabaseAdmin.from('organizacoes')
@@ -10759,6 +10763,13 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
     if (escalaLigada) {
       throw new Error('Os outros itens foram salvos, mas "Dias de trabalho" ainda precisa da atualização do banco (upgrade-escala-por-dia.sql).')
     }
+  }
+  if (!erroEncarregados && encarregadosAntes !== encarregadosLigados) {
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_FUNCIONALIDADE', campoAlterado: 'Permitir criação de Encarregados',
+      valorAnterior: encarregadosAntes ? 'Ativado' : 'Desativado', valorNovo: encarregadosLigados ? 'Ativado' : 'Desativado',
+      organizacaoId,
+    }))
   }
   if (erroEncarregados && encarregadosLigados) {
     throw new Error('Os outros itens foram salvos, mas "Encarregados" ainda precisa da atualização do banco (upgrade-encarregado.sql).')
