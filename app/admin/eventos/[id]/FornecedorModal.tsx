@@ -53,6 +53,8 @@ export default function FornecedorModal(props: Props) {
       .catch(() => { /* sem a seção — o resto do modal segue */ })
     return () => { vivo = false }
   }, [open, eventoIdDoModal, fornecedorIdDoModal])
+  // Zera ao ABRIR (não no efeito): senão o modal reabre mostrando o limite de ANTES e o salvar regrava o valor antigo.
+  const abrir = () => { setTravas(null); setOpen(true) }
   const defaultNome = isEditar ? (props as any).nome : ''
   const defaultValor = isEditar ? (props as any).valor_combinado ?? '' : ''
   const defaultQuantidade = isEditar ? (props as any).quantidade_estimada ?? '' : ''
@@ -100,7 +102,8 @@ export default function FornecedorModal(props: Props) {
     startTransition(async () => {
       try {
         if (isEditar) {
-          await editarFornecedor((props as any).fornecedorId, props.eventoId, formData)
+          const r = await editarFornecedor((props as any).fornecedorId, props.eventoId, formData)
+          if (r?.error) { setErro(r.error); router.refresh(); return }
         } else {
           const r = await criarFornecedor(props.eventoId, formData)
           if (r?.error) { setErro(r.error); return }
@@ -116,11 +119,11 @@ export default function FornecedorModal(props: Props) {
   return (
     <>
       {isEditar ? (
-        <button onClick={() => setOpen(true)} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor">
+        <button onClick={abrir} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor">
           <Pencil className="w-3.5 h-3.5" />
         </button>
       ) : (
-        <button onClick={() => setOpen(true)} className="btn btn-primario btn-sm">
+        <button onClick={abrir} className="btn btn-primario btn-sm">
           <Plus className="w-3.5 h-3.5 shrink-0" />
           <span className="hidden sm:inline">Novo Fornecedor</span>
           <span className="sm:hidden">Novo</span>
@@ -190,6 +193,7 @@ export default function FornecedorModal(props: Props) {
                             {r.semanaCurta} {r.curto} <span className="opacity-60">· {ROTULO_FASE[d.fase]}</span>
                           </span>
                           <input
+                            key={`${d.data}-${travas.atuais[d.data] ?? ''}`}
                             name={`trava_${d.data}`} type="number" min="1" step="1"
                             defaultValue={travas.atuais[d.data] ?? ''} placeholder="Sem limite"
                             className="input tabular-nums"
@@ -199,10 +203,9 @@ export default function FornecedorModal(props: Props) {
                     })}
                   </div>
                   <p className="text-slate-500 text-xs mt-1">
-                    Máximo de pessoas deste setor que podem ENTRAR em cada dia (ex.: quinta 4, sexta 5,
-                    sábado 8). Quando o setor chega no limite, a próxima pessoa que ler o QR Code é barrada
-                    no portão, com o aviso &quot;setor lotado&quot; para quem está no credenciamento. Em branco =
-                    sem limite naquele dia.
+                    Quantidade de pessoas combinada para este setor em cada dia (ex.: quinta 4, sexta 5,
+                    sábado 8). É só referência: o sistema não barra ninguém por causa deste número. Em
+                    branco = sem número naquele dia.
                   </p>
                 </div>
               )}

@@ -3076,10 +3076,12 @@ export async function criarFornecedor(eventoId: string, formData: FormData): Pro
  * Lê do formulário do fornecedor as travas por dia (`trava_YYYY-MM-DD`) e
  * grava. Só age quando a seção apareceu na tela (`trava_presente`) — modal
  * de evento sem dias de trabalho não manda nada, e nada é apagado por engano.
- * Erro aqui NUNCA derruba o cadastro do fornecedor (já salvo): só vai pro log.
+ * O cadastro do fornecedor já foi salvo quando isto roda; se a gravação do
+ * limite falhar, devolve a frase pra quem chamou AVISAR (antes ia só pro log e
+ * o limite "não mudava" sem ninguém saber por quê).
  */
-async function gravarTravasDoFormulario(fornecedorId: string, formData: FormData) {
-  if (!formData.has('trava_presente')) return
+async function gravarTravasDoFormulario(fornecedorId: string, formData: FormData): Promise<string | null> {
+  if (!formData.has('trava_presente')) return null
   const porDia: Record<string, number | null> = {}
   for (const [campo, valor] of formData.entries()) {
     const dia = campo.match(/^trava_(\d{4}-\d{2}-\d{2})$/)?.[1]
@@ -3087,9 +3089,11 @@ async function gravarTravasDoFormulario(fornecedorId: string, formData: FormData
     const n = Math.floor(Number(String(valor).trim()))
     porDia[dia] = String(valor).trim() !== '' && Number.isFinite(n) && n > 0 ? n : null
   }
-  if (!Object.keys(porDia).length) return
+  if (!Object.keys(porDia).length) return null
   const r = await gravarTravasDoFornecedor(fornecedorId, porDia)
-  if (!r.ok) console.error('[fornecedor] trava por dia não gravada (migração upgrade-trava-por-dia.sql pendente?)', r.erro)
+  if (r.ok) return null
+  console.error('[fornecedor] trava por dia não gravada (migração upgrade-trava-por-dia.sql pendente?)', r.erro)
+  return 'Os dados do setor foram salvos, mas o limite por dia não foi gravado. Peça ao suporte para rodar a atualização do banco (upgrade-trava-por-dia.sql).'
 }
 
 /** Os dias do evento e a trava atual do fornecedor — o que o modal de fornecedor mostra ao abrir. */
@@ -3179,6 +3183,7 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
     if (erroSubevento) console.error('[criarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
   }
 
+  // No cadastro novo o erro já foi pro log; avisar aqui deixaria o modal aberto e convidaria a criar o setor duas vezes.
   await gravarTravasDoFormulario(novo.id as string, formData)
 
   if (exigeSupervisor) {
@@ -3210,7 +3215,7 @@ async function garantirAbaFornecedorAsync(eventoId: string, nomeFornecedor: stri
   }
 }
 
-export async function editarFornecedor(id: string, eventoId: string, formData: FormData) {
+export async function editarFornecedor(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
   await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
   const { error } = await db.from('fornecedores').update({
@@ -3244,7 +3249,7 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
       .eq('id', id)
     if (erroSubevento) console.error('[editarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
   }
-  await gravarTravasDoFormulario(id, formData)
+  const avisoTrava = await gravarTravasDoFormulario(id, formData)
 
   /*
    * Ligar/desligar o meio muda o que está AGENDADO daqui pra frente:
@@ -3255,6 +3260,8 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
    */
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
   revalidatePath(`/admin/eventos/${eventoId}`)
+  // Devolvido (não lançado): em produção o Next esconde a mensagem de uma exceção de Server Action.
+  return avisoTrava ? { error: avisoTrava } : {}
 }
 
 /**
@@ -6896,7 +6903,9 @@ async function autorizarPresenca(args: {
    * validado" nem "QR inválido" nem o "negado" genérico: a credencial é
    * válida, só pertence a outro portão.
    */
-  if (subeventoIdsLidos?.length) {
+  if (subeventoIdsLidos?.length && (await obterFuncionalidadesOrganizacao(evento.organizacao_id)).areaNoScannerHabilitada) {
+    // Só confere a área se a organização LIGOU a seleção de área no leitor. Desligada (padrão), um leitor com áreas
+    // guardadas de antes (localStorage) também não barra ninguém: o leitor só registra quem entra.
     try {
       const { data: funcSub } = await supabaseAdmin
         .from('funcionarios').select('subevento_id, origem, subeventos(nome)').eq('id', func.id).maybeSingle()
@@ -10943,6 +10952,12 @@ export type FuncionalidadesOrganizacao = {
    * (Encarregado — lib/encarregado.ts). Nasce desligado.
    */
   encarregadosHabilitado: boolean
+  /**
+   * O leitor de QR pede a ÁREA (subevento) de quem vai atuar e recusa credencial
+   * de outra área ("ÁREA DIFERENTE"). Nasce desligado: o leitor só lê a câmera e
+   * registra quem entra (pedido do Juan, 08/10/2026 — dias de entrada única).
+   */
+  areaNoScannerHabilitada: boolean
 }
 
 /**
@@ -10973,10 +10988,16 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
   }
   const escalaLigada = formData.get('escala_por_dia_habilitada') === 'on'
   const encarregadosLigados = formData.get('encarregados_habilitado') === 'on'
+  const areaNoScannerLigada = formData.get('area_no_scanner_habilitada') === 'on'
 
   // O valor de antes, só pra auditar a MUDANÇA (ligar/desligar Encarregados muda quem pode dar acesso).
   const { data: antes } = await supabaseAdmin.from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
   const encarregadosAntes = (antes as { encarregados_habilitado?: boolean } | null)?.encarregados_habilitado === true
+  const areaNoScannerAntes = (antes as { area_no_scanner_habilitada?: boolean } | null)?.area_no_scanner_habilitada === true
+
+  // À parte, como as outras colunas novas: migração pendente (upgrade-area-no-scanner.sql) não pode impedir o resto de salvar.
+  const { error: erroAreaScanner } = await supabaseAdmin.from('organizacoes')
+    .update({ area_no_scanner_habilitada: areaNoScannerLigada }).eq('id', organizacaoId)
 
   // Colunas das funcionalidades mais novas: gravadas à parte, pra uma migração
   // pendente (upgrade-encarregado.sql) nunca impedir o resto de salvar.
@@ -11000,6 +11021,16 @@ export async function editarFuncionalidadesOrganizacao(organizacaoId: string, fo
       valorAnterior: encarregadosAntes ? 'Ativado' : 'Desativado', valorNovo: encarregadosLigados ? 'Ativado' : 'Desativado',
       organizacaoId,
     }))
+  }
+  if (!erroAreaScanner && areaNoScannerAntes !== areaNoScannerLigada) {
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_FUNCIONALIDADE', campoAlterado: 'Selecionar a área no leitor',
+      valorAnterior: areaNoScannerAntes ? 'Ativado' : 'Desativado', valorNovo: areaNoScannerLigada ? 'Ativado' : 'Desativado',
+      organizacaoId,
+    }))
+  }
+  if (erroAreaScanner && areaNoScannerLigada) {
+    throw new Error('Os outros itens foram salvos, mas "Selecionar a área no leitor" ainda precisa da atualização do banco (upgrade-area-no-scanner.sql).')
   }
   if (erroEncarregados && encarregadosLigados) {
     throw new Error('Os outros itens foram salvos, mas "Encarregados" ainda precisa da atualização do banco (upgrade-encarregado.sql).')

@@ -248,7 +248,8 @@ export default function ScannerView({
    */
   const areasSalvasRaw = useSyncExternalStore(semAssinatura, lerAreasSalvasRaw, () => '{}')
   const [areasOverride, setAreasOverride] = useState<string[] | null>(null)
-  const subeventoIds = areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)
+  // Sem subeventos neste leitor (seleção de área desligada na organização), áreas guardadas de antes não valem.
+  const subeventoIds = subeventosDoEvento.length ? (areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)) : []
   const subeventoIdsRef = useRef<string[]>([])
   useEffect(() => { subeventoIdsRef.current = subeventoIds }, [subeventoIds])
   const confirmarAreas = (ids: string[]) => {

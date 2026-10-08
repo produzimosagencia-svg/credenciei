@@ -4,6 +4,7 @@ import { getPerfil, eventosEscaneaveis, supabaseAdmin } from '@/lib/supabase-ser
 import { podeEscanear, ehMaster } from '@/lib/permissions'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import ScannerRouter from '@/app/scan/ScannerRouter'
+import { eventosComAreaNoScanner } from '@/lib/internos-servidor'
 
 export const revalidate = 0
 
@@ -57,6 +58,9 @@ export default async function ScannerNoPainelPage({
         }
       }
     } catch { /* subeventos ainda não migrado — nenhum evento mostra seletor */ }
+    // Seleção de área no leitor é uma funcionalidade da organização (desligada por padrão): sem ela, nenhum evento pergunta área.
+    const comArea = await eventosComAreaNoScanner(eventos.map(e => e.id))
+    for (const id of Object.keys(subeventosPorEvento)) if (!comArea.has(id)) delete subeventosPorEvento[id]
   }
 
   return (

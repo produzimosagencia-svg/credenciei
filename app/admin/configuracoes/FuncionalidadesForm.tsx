@@ -5,7 +5,7 @@ import { editarFuncionalidadesOrganizacao, type FuncionalidadesOrganizacao } fro
 import { mensagemAmigavel } from '@/lib/erros'
 
 /**
- * Dois interruptores, um cliente. Nasce tudo desligado (pedido do Vital,
+ * Interruptores por cliente. Nasce tudo desligado (pedido do Vital,
  * 30/09/2026) — a maioria dos clientes nunca vai ver nada disto ligado.
  */
 export default function FuncionalidadesForm({
@@ -132,6 +132,26 @@ export default function FuncionalidadesForm({
               equipe do setor e libera para essa pessoa um acesso de CONSULTA — ela vê só a equipe daquele
               setor, sem nenhuma ação operacional. Desligar esconde a opção e impede novos Encarregados;
               quem já foi designado continua com o acesso.
+            </p>
+          </div>
+        </div>
+      </label>
+
+      <label className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer hover:border-brand-300 transition-colors">
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="area_no_scanner_habilitada"
+            defaultChecked={funcionalidades.areaNoScannerHabilitada}
+            className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-slate-800 font-semibold text-sm">Selecionar a área no leitor de QR Code</p>
+            <p className="text-slate-600 text-xs mt-1">
+              Ligado: ao abrir o leitor, o operador escolhe em qual área (subevento) vai atuar, e a
+              credencial de outra área é recusada com &quot;ÁREA DIFERENTE&quot;. Desligado (padrão): o leitor
+              só abre a câmera e registra quem está entrando, sem perguntar área e sem recusar por área.
+              Use ligado nos dias com mais de uma entrada.
             </p>
           </div>
         </div>

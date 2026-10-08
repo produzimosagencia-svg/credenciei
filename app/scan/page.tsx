@@ -2,6 +2,7 @@ import { getPerfil, eventosEscaneaveis, meuSetor, supabaseAdmin } from '@/lib/su
 import { redirect } from 'next/navigation'
 import { podeEscanear, podeGerenciarEventos, podeAcompanhar } from '@/lib/permissions'
 import ScannerRouter from './ScannerRouter'
+import { eventosComAreaNoScanner } from '@/lib/internos-servidor'
 import { QrCode, Users, ClipboardCheck } from 'lucide-react'
 import Link from 'next/link'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -79,6 +80,9 @@ export default async function ScanPage({
         }
       }
     } catch { /* subeventos ainda não migrado — nenhum evento mostra seletor */ }
+    // Seleção de área no leitor é uma funcionalidade da organização (desligada por padrão): sem ela, nenhum evento pergunta área.
+    const comArea = await eventosComAreaNoScanner(eventos.map(e => e.id))
+    for (const id of Object.keys(subeventosPorEvento)) if (!comArea.has(id)) delete subeventosPorEvento[id]
   }
 
   /*

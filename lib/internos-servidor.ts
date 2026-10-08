@@ -148,7 +148,7 @@ export async function cpfEstaBloqueado(
  * colunas, tudo se comporta como hoje — nenhum recurso novo aparece.
  */
 export async function obterFuncionalidadesOrganizacao(organizacaoId: string | null): Promise<FuncionalidadesOrganizacao> {
-  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false, escalaPorDiaHabilitada: false, encarregadosHabilitado: false }
+  const vazio = { subeventosHabilitado: false, travaCotaHabilitada: false, avisoUniformeHabilitado: false, escalaPorDiaHabilitada: false, encarregadosHabilitado: false, areaNoScannerHabilitada: false }
   if (!organizacaoId) return vazio
   const { data, error } = await supabaseAdmin
     .from('organizacoes').select('*').eq('id', organizacaoId).maybeSingle()
@@ -159,6 +159,28 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
     avisoUniformeHabilitado: (data as { aviso_uniforme_habilitado?: boolean }).aviso_uniforme_habilitado === true,
     escalaPorDiaHabilitada: (data as { escala_por_dia_habilitada?: boolean }).escala_por_dia_habilitada === true,
     encarregadosHabilitado: (data as { encarregados_habilitado?: boolean }).encarregados_habilitado === true,
+    areaNoScannerHabilitada: (data as { area_no_scanner_habilitada?: boolean }).area_no_scanner_habilitada === true,
+  }
+}
+
+/**
+ * Dos eventos dados, em quais o leitor deve pedir/conferir a ÁREA (subevento)
+ * de quem entra. Vem da organização do evento — Configurações → Funcionalidades
+ * ("Selecionar a área no leitor"), desligada por padrão: o leitor só lê a câmera
+ * e registra quem entra. Tolerante à migração pendente (sem a coluna = desligado).
+ */
+export async function eventosComAreaNoScanner(eventoIds: string[]): Promise<Set<string>> {
+  if (!eventoIds.length) return new Set()
+  try {
+    const { data: eventos } = await supabaseAdmin.from('eventos').select('id, organizacao_id').in('id', eventoIds)
+    const orgs = [...new Set((eventos ?? []).map(e => e.organizacao_id as string | null).filter((o): o is string => !!o))]
+    if (!orgs.length) return new Set()
+    const { data, error } = await supabaseAdmin.from('organizacoes').select('*').in('id', orgs)
+    if (error) return new Set()
+    const ligadas = new Set((data ?? []).filter(o => (o as { area_no_scanner_habilitada?: boolean }).area_no_scanner_habilitada === true).map(o => o.id as string))
+    return new Set((eventos ?? []).filter(e => ligadas.has(e.organizacao_id as string)).map(e => e.id as string))
+  } catch {
+    return new Set()
   }
 }
 

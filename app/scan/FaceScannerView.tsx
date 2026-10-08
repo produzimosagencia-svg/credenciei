@@ -165,7 +165,8 @@ export default function FaceScannerView({
   // completo em `ScannerView.tsx`; mesma chave de aparelho, mesma lógica.
   const areasSalvasRaw = useSyncExternalStore(semAssinatura, lerAreasSalvasRaw, () => '{}')
   const [areasOverride, setAreasOverride] = useState<string[] | null>(null)
-  const subeventoIds = areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)
+  // Sem subeventos neste leitor (seleção de área desligada na organização), áreas guardadas de antes não valem.
+  const subeventoIds = subeventosDoEvento.length ? (areasOverride ?? areasDoEvento(areasSalvasRaw, eventoId)) : []
   const confirmarAreas = (ids: string[]) => {
     salvarAreasDoEvento(eventoId, ids)
     setAreasOverride(ids)
