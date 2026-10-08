@@ -8,6 +8,7 @@ import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
 import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao } from '@/lib/internos-servidor'
+import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
@@ -332,13 +333,15 @@ export default async function EventoPage({
   const fornecedoresSemSubevento = usaSubeventos
     ? fornecedoresEnriquecidos.filter(f => !f.subevento_id)
     : []
+  // Supervisor conta como pessoa do setor que cobre, mesmo com o crachá em outro (ver lib/equipe.ts).
+  const supervisoresSemCracha = supervisoresSemCrachaPorSetor(supervisoresPorFornecedor, (funcionariosDoEventoRows ?? []) as { cpf?: string | null; fornecedor_id?: string }[])
   const contagensPorSubevento: Record<string, { fornecedores: number; equipe: number }> = {}
   if (usaSubeventos) {
     for (const f of fornecedoresEnriquecidos) {
       if (!f.subevento_id) continue
       const c = (contagensPorSubevento[f.subevento_id] ??= { fornecedores: 0, equipe: 0 })
       c.fornecedores++
-      c.equipe += f.funcionarios?.[0]?.count ?? 0
+      c.equipe += (f.funcionarios?.[0]?.count ?? 0) + (supervisoresSemCracha[f.id] ?? 0)
     }
   }
 
@@ -608,6 +611,7 @@ export default async function EventoPage({
                     fornecedores={fornecedoresSemSubevento}
                     eventoId={id}
                     supervisoresPorFornecedor={supervisoresPorFornecedor}
+                    supervisoresSemCracha={supervisoresSemCracha}
                     funcionariosDoEvento={funcionariosDoEventoRows ?? []}
                     diasDoEvento={diasTrabalho ?? []}
                     setoresComMeio={setoresComMeio}
@@ -632,6 +636,7 @@ export default async function EventoPage({
               fornecedores={fornecedoresEnriquecidos}
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
+              supervisoresSemCracha={supervisoresSemCracha}
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}

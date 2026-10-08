@@ -5,6 +5,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
+import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import StatCard from '@/components/StatCard'
@@ -158,6 +159,9 @@ export default async function SubeventoPage({
   }
   for (const lista of Object.values(supervisoresPorFornecedor)) lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 
+  // Supervisor conta como pessoa do setor que cobre, mesmo com o crachá em outro (ver lib/equipe.ts).
+  const supervisoresSemCracha = supervisoresSemCrachaPorSetor(supervisoresPorFornecedor, (candidatosRows ?? []) as { cpf?: string | null; fornecedor_id?: string }[])
+
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
@@ -231,6 +235,7 @@ export default async function SubeventoPage({
             fornecedores={fornecedores}
             eventoId={eventoId}
             supervisoresPorFornecedor={supervisoresPorFornecedor}
+            supervisoresSemCracha={supervisoresSemCracha}
             funcionariosDoEvento={funcionariosDoEventoRows ?? []}
             candidatosASupervisor={candidatosRows ?? []}
             diasDoEvento={diasTrabalho ?? []}

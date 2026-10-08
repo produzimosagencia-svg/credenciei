@@ -31,6 +31,7 @@ export default function FornecedorCard({
   fornecedor: f,
   eventoId,
   supervisores = [],
+  supervisoresSemCracha = 0,
   funcionariosDoEvento = [],
   diasDoEvento = [],
   exigeMeio = false,
@@ -43,6 +44,8 @@ export default function FornecedorCard({
   fornecedor: Fornecedor
   eventoId: string
   supervisores?: Supervisor[]
+  /** Supervisores deste setor com o crachá em OUTRO setor do evento — contam como pessoa aqui (ver lib/equipe.ts). */
+  supervisoresSemCracha?: number
   /**
    * Todo mundo credenciado no EVENTO — o "Criar Supervisor" busca aqui.
    *
@@ -102,9 +105,12 @@ export default function FornecedorCard({
   const [erroExclusao, setErroExclusao] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
+  // Quem tem crachá neste setor (base do valor total)...
   const count = f.funcionarios?.[0]?.count ?? 0
+  // ...e quem CONTA como pessoa dele: o supervisor também, mesmo com o crachá em outro setor do evento.
+  const pessoas = count + supervisoresSemCracha
   const estimado = f.quantidade_estimada ?? 0
-  const pct = estimado > 0 ? Math.min(100, Math.round((count / estimado) * 100)) : null
+  const pct = estimado > 0 ? Math.min(100, Math.round((pessoas / estimado) * 100)) : null
   const valor = f.valor_combinado ?? null
 
   /*
@@ -163,7 +169,7 @@ export default function FornecedorCard({
           <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500 text-xs mt-1">
             <span className="inline-flex items-center gap-1 tabular-nums">
               <Users className="w-3 h-3 shrink-0" />
-              {count} {count === 1 ? 'pessoa' : 'pessoas'}
+              {pessoas} {pessoas === 1 ? 'pessoa' : 'pessoas'}
               {estimado > 0 && <span className="text-slate-400"> de {estimado}</span>}
             </span>
             {valor !== null && (
