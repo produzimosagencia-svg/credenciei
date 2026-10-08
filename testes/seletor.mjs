@@ -27,9 +27,9 @@ console.log('Operador por função extra')
 ok(/operadoresDaOrganizacao\(evento\.organizacao_id/.test(evento), 'a página do evento lista operadores de base E de função extra')
 ok(/operadoresDaOrganizacao\(evento\.organizacao_id/.test(porteiro), 'a tela Gestor de credenciamento também')
 ok(/from\('perfil_funcoes'\)[\s\S]{0,120}eq\('role', 'operador_portao'\)/.test(servidor), 'a lista consulta perfil_funcoes')
-ok(/export async function removerFuncaoOperador/.test(acoes) && /removerFuncaoExtra\(perfilId, 'operador_portao'\)/.test(acoes), 'existe a ação que tira só a função')
+ok(/export async function removerFuncaoOperador/.test(acoes) && /removerFuncaoExtra\(perfilId, 'operador_portao', funcao\.organizacao_id/.test(acoes), 'existe a ação que tira só a função')
 ok(/podeGerenciarUsuarios\(perfil\)\) return \{ error: 'Sem permissão\.' \}/.test(acoes), 'a ação confere a permissão')
-ok(/o\.funcaoExtra \?/.test(card) && /removerFuncaoOperador\(removendoFuncao\.id\)/.test(card), 'o cartão trata a função extra sem oferecer excluir a conta')
+ok(/o\.funcaoExtra \?/.test(card) && /removerFuncaoOperador\(removendoFuncao\.id, eventoId\)/.test(card), 'o cartão trata a função extra sem oferecer excluir a conta')
 
 console.log('Seletor de evento')
 ok(/<SeletorDeEvento contexto=\{contextoEventos\}/.test(shell), 'o topo do painel tem o seletor')
@@ -38,6 +38,18 @@ ok(/<SeletorDeEvento contexto=\{contextoEventos\}/.test(layoutEnc), 'o Encarrega
 ok(/role === 'encarregado'[\s\S]{0,80}doEncarregado/.test(contexto) && /role === 'supervisor'[\s\S]{0,80}doSupervisor/.test(contexto), 'supervisor e Encarregado montam a árvore pelos vínculos deles')
 ok(/'operador_portao'\]\.includes\(perfil\.role\)/.test(contexto), 'Gestor de credenciamento e administrador usam os eventos da organização')
 ok(/catch \(e\) \{[\s\S]{0,80}return null/.test(contexto), 'uma falha no seletor nunca derruba o painel')
+
+console.log('Gestor de credenciamento em mais de uma organização (08/10/2026)')
+{
+  const sql = ler('supabase/upgrade-funcoes-varias-organizacoes.sql')
+  const funcoes = ler('lib/funcoes.ts')
+  const trocar = ler('lib/actions-funcoes.ts')
+  ok(/drop constraint if exists perfil_funcoes_perfil_id_role_key/.test(sql) && /unique index[\s\S]{0,80}perfil_funcoes[\s\S]{0,120}organizacao_id/.test(sql), 'a migração troca a chave única para pessoa + função + organização')
+  ok(/operador_portao@\$\{f\.organizacaoId\}/.test(funcoes), 'o Gestor extra é identificado também pela organização')
+  ok(/funcoes\.find\(f => f\.chave === chave\)/.test(trocar), 'trocar de perfil escolhe pela chave (organização incluída)')
+  ok(/if \(role === 'operador_portao'\) busca = organizacaoId/.test(servidor), 'ganhar a função numa organização nova grava uma linha nova, em vez de dizer "já tinha"')
+  ok(/upgrade-funcoes-varias-organizacoes\.sql/.test(servidor), 'sem a migração, o erro diz o que rodar — e a mensagem não é enviada')
+}
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

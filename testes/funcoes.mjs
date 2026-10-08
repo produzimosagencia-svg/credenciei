@@ -25,7 +25,7 @@ ok(sb.includes('data.role = ativa.role') && sb.includes('data.organizacao_id = a
 ok(/if \(ativa\.role !== 'supervisor'\) data\.fornecedor_id = null/.test(sb), 'fora do supervisor não existe "setor aberto agora"')
 ok(sb.indexOf('data.role = ativa.role') < sb.indexOf('excecoesDePermissao(data.organizacao_id'), 'as permissões da organização são lidas da organização da função ATIVA')
 const troca = ler('lib/actions-funcoes.ts')
-ok(troca.includes("funcoes.some(f => f.role === role)") && troca.includes("'Você não tem este perfil.'"), 'trocar de perfil recusa função que a pessoa não tem')
+ok(troca.includes("funcoes.find(f => f.role === chave)") && troca.includes("if (!escolhida) return { erro: 'Você não tem este perfil.' }"), 'trocar de perfil recusa função que a pessoa não tem')
 ok(troca.includes("acao: 'TROCA_DE_PERFIL'") && !/throw new Error/.test(troca), 'a troca fica na auditoria e a ação devolve { erro } (nada lança)')
 ok(ler('lib/funcoes.ts').includes(`'${COOKIE_FUNCAO}'`), 'cookie próprio da função escolhida')
 

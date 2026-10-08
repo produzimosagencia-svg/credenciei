@@ -2203,16 +2203,20 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
  * Encarregado que também opera o portão). A conta, o login e a função de base ficam intactos —
  * `deletarUsuario` apagaria a pessoa inteira, que é o que NÃO se quer aqui.
  */
-export async function removerFuncaoOperador(perfilId: string): Promise<{ ok: true } | { error: string }> {
+export async function removerFuncaoOperador(perfilId: string, eventoId: string): Promise<{ ok: true } | { error: string }> {
   try {
     const perfil = await getPerfil()
     if (!podeGerenciarUsuarios(perfil)) return { error: 'Sem permissão.' }
+    // A organização vem do EVENTO da tela: o mesmo CPF pode ser Gestor em duas organizações, e só a deste evento sai.
+    const { data: evento } = await supabaseAdmin.from('eventos').select('organizacao_id').eq('id', eventoId).maybeSingle()
+    if (!evento?.organizacao_id) return { error: 'Evento não encontrado.' }
     const { data: funcao } = await supabaseAdmin
-      .from('perfil_funcoes').select('organizacao_id').eq('perfil_id', perfilId).eq('role', 'operador_portao').maybeSingle()
-    if (!funcao) return { error: 'Esta pessoa não tem a função de operador como extra.' }
+      .from('perfil_funcoes').select('organizacao_id').eq('perfil_id', perfilId).eq('role', 'operador_portao')
+      .eq('organizacao_id', evento.organizacao_id as string).maybeSingle()
+    if (!funcao) return { error: 'Esta pessoa não tem a função de operador como extra nesta organização.' }
     if (!ehMaster(perfil!.role) && funcao.organizacao_id !== perfil!.organizacao_id) return { error: 'Sem permissão sobre este acesso.' }
     const { data: alvo } = await supabaseAdmin.from('perfis').select('nome').eq('id', perfilId).maybeSingle()
-    await removerFuncaoExtra(perfilId, 'operador_portao')
+    await removerFuncaoExtra(perfilId, 'operador_portao', funcao.organizacao_id as string)
     after(() => registrarAuditoria({
       perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
       campoAlterado: 'Função de operador de portão',

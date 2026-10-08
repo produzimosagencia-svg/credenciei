@@ -204,14 +204,26 @@ export async function garantirFuncaoExtra(
   if (perfil.role === role) return { ok: true, jaTinha: true }
   if (!podeReceberFuncaoExtra(perfil.role as string)) return { ok: false, erro: MSG_FUNCAO_NAO_COMBINA }
 
-  const { data: existente } = await supabaseAdmin
-    .from('perfil_funcoes').select('id').eq('perfil_id', perfilId).eq('role', role).maybeSingle()
+  /*
+   * Gestor de credenciamento é POR ORGANIZAÇÃO: quem já é Gestor na Navista e ganha o papel na
+   * Homologação precisa de uma segunda linha. Antes isto olhava só o papel, achava a linha da
+   * Navista, respondia "já tinha" e não gravava nada — a tela dizia que deu certo, a mensagem
+   * saía, e a pessoa nunca aparecia na lista do evento (achado ao vivo, 08/10/2026). Supervisor e
+   * Encarregado seguem com uma linha só.
+   */
+  let busca = supabaseAdmin.from('perfil_funcoes').select('id').eq('perfil_id', perfilId).eq('role', role)
+  if (role === 'operador_portao') busca = organizacaoId ? busca.eq('organizacao_id', organizacaoId) : busca.is('organizacao_id', null)
+  const { data: existente } = await busca.limit(1).maybeSingle()
   if (existente) return { ok: true, jaTinha: true }
 
   const { error } = await supabaseAdmin.from('perfil_funcoes').insert([{ perfil_id: perfilId, role, organizacao_id: organizacaoId }])
   if (error) {
-    if (/perfil_funcoes|does not exist|schema cache/i.test(error.message)) {
+    if (/perfil_funcoes|does not exist|schema cache/i.test(error.message) && !/duplicate|unique/i.test(error.message)) {
       return { ok: false, erro: 'Falta rodar a atualização do banco (upgrade-funcoes-multiplas.sql).' }
+    }
+    // Já tem a função em OUTRA organização e o banco ainda só aceita uma por papel.
+    if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+      return { ok: false, erro: 'Esta pessoa já tem essa função em outra organização. Falta rodar a atualização do banco (upgrade-funcoes-varias-organizacoes.sql) para ela ter nas duas.' }
     }
     return { ok: false, erro: error.message }
   }
@@ -219,8 +231,11 @@ export async function garantirFuncaoExtra(
 }
 
 /** Tira uma função EXTRA (a de base não sai por aqui). Tolerante: sem a tabela, não há o que tirar. */
-export async function removerFuncaoExtra(perfilId: string, role: FuncaoExtra): Promise<void> {
-  const { error } = await supabaseAdmin.from('perfil_funcoes').delete().eq('perfil_id', perfilId).eq('role', role)
+export async function removerFuncaoExtra(perfilId: string, role: FuncaoExtra, organizacaoId?: string | null): Promise<void> {
+  // Com a organização, tira só a função DESSA organização (Gestor em duas: sai de uma, continua na outra).
+  let consulta = supabaseAdmin.from('perfil_funcoes').delete().eq('perfil_id', perfilId).eq('role', role)
+  if (organizacaoId) consulta = consulta.eq('organizacao_id', organizacaoId)
+  const { error } = await consulta
   if (error && !/perfil_funcoes|does not exist|schema cache/i.test(error.message)) {
     console.error('[funcoes] não consegui tirar a função extra', error.message)
   }

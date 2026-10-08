@@ -25,6 +25,19 @@ export type FuncaoDoPerfil = {
   /** `true` na função de base (a de `perfis.role`). */
   base: boolean
   organizacaoId: string | null
+  /**
+   * Quem identifica a função na troca de perfil. Quase sempre é o próprio `role`; o Gestor de
+   * credenciamento EXTRA leva a organização junto (`operador_portao@<org>`), porque a mesma pessoa
+   * pode ser Gestor em mais de uma organização (supabase/upgrade-funcoes-varias-organizacoes.sql).
+   */
+  chave: string
+  /** Só no Gestor de credenciamento extra: o nome da organização, pra distinguir na lista. */
+  organizacaoNome?: string | null
+}
+
+/** A chave de uma função (ver `FuncaoDoPerfil.chave`). */
+export function chaveDaFuncao(f: { role: string; base?: boolean; organizacaoId?: string | null }): string {
+  return !f.base && f.role === 'operador_portao' && f.organizacaoId ? `operador_portao@${f.organizacaoId}` : f.role
 }
 
 /** Pra onde a pessoa vai quando troca pra esta função. */

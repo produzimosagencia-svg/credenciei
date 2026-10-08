@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { cache } from 'react'
 import { ehMaster, podeGerenciarEventos, podeEscanear, podeAcompanhar } from './permissions'
 import { diaBRT, periodoDoEvento, somarDias, fimDoTurnoNaMadrugada, type DiaDaJornada } from './janelas'
-import { COOKIE_FUNCAO, type FuncaoDoPerfil } from './funcoes'
+import { COOKIE_FUNCAO, chaveDaFuncao, type FuncaoDoPerfil } from './funcoes'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -126,15 +126,31 @@ export const getPerfil = cache(async () => {
    *
    * Sem a tabela (migração pendente), a pessoa só tem a base e nada muda.
    */
+  const baseOrg = (data.organizacao_id as string | null) ?? null
   const funcoes: FuncaoDoPerfil[] = [
-    { role: data.role as string, base: true, organizacaoId: (data.organizacao_id as string | null) ?? null },
-    ...(await funcoesExtrasDaPessoa(data.id as string)).map(f => ({ role: f.role, base: false, organizacaoId: f.organizacao_id })),
+    { role: data.role as string, base: true, organizacaoId: baseOrg, chave: data.role as string },
+    ...(await funcoesExtrasDaPessoa(data.id as string)).map(f => ({
+      role: f.role, base: false, organizacaoId: f.organizacao_id,
+      chave: chaveDaFuncao({ role: f.role, base: false, organizacaoId: f.organizacao_id }),
+    })),
   ]
+  // O nome da organização só nos Gestores de credenciamento extras — é o que os distingue na lista de perfis.
+  const orgsDosGestores = [...new Set(funcoes.filter(f => !f.base && f.role === 'operador_portao' && f.organizacaoId).map(f => f.organizacaoId as string))]
+  if (orgsDosGestores.length) {
+    try {
+      const { data: orgs } = await admin.from('organizacoes').select('id, nome').in('id', orgsDosGestores)
+      const nomes = new Map((orgs ?? []).map(o => [o.id as string, o.nome as string]))
+      for (const f of funcoes) if (!f.base && f.role === 'operador_portao' && f.organizacaoId) f.organizacaoNome = nomes.get(f.organizacaoId) ?? null
+    } catch { /* o nome é só rótulo */ }
+  }
   data.funcoes = funcoes
   data.funcao_base = data.role
+  data.funcao_chave = data.role
   if (funcoes.length > 1) {
     const escolhida = (await cookies()).get(COOKIE_FUNCAO)?.value
-    const ativa = funcoes.find(f => f.role === escolhida) ?? funcoes[0]
+    // Cookie antigo guarda só o `role`: vale pra primeira função com esse papel.
+    const ativa = funcoes.find(f => f.chave === escolhida) ?? funcoes.find(f => f.role === escolhida) ?? funcoes[0]
+    data.funcao_chave = ativa.chave
     if (!ativa.base) {
       data.role = ativa.role
       data.organizacao_id = ativa.organizacaoId

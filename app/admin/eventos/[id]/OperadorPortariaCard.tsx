@@ -173,7 +173,7 @@ export default function OperadorPortariaCard({
         onConfirm={() => {
           if (!removendoFuncao) return
           startRemocao(async () => {
-            const r = await removerFuncaoOperador(removendoFuncao.id)
+            const r = await removerFuncaoOperador(removendoFuncao.id, eventoId)
             if ('error' in r) { setErroRemocao(r.error); return }
             setRemovendoFuncao(null)
             router.refresh()

@@ -46,7 +46,7 @@ export default async function EncarregadoLayout({ children }: { children: React.
             <span className="hidden sm:block text-slate-500 text-xs font-medium truncate max-w-[160px]">{perfil.nome}</span>
             <SeletorDeEvento contexto={contextoEventos} />
             <BotaoSuporteWpp nome={perfil.nome} funcao="Encarregado" />
-            <MenuTrocarPerfil funcoes={(perfil.funcoes ?? []) as { role: string; base?: boolean }[]} ativa={perfil.role as string} />
+            <MenuTrocarPerfil funcoes={(perfil.funcoes ?? []) as { role: string; base?: boolean; chave?: string; organizacaoNome?: string | null }[]} ativa={(perfil.funcao_chave as string | undefined) ?? (perfil.role as string)} />
             <BotaoTemaTopo />
             <BotaoSair />
           </div>

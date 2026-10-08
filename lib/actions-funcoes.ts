@@ -16,14 +16,18 @@ import { ROLE_LABELS, type Role } from './permissions'
  * nome da função; mesmo adulterado, `getPerfil` ignora o que a pessoa não tem.
  * Nada lança: devolve `{ erro }` (o Next mascara exceção de Server Action).
  */
-export async function trocarFuncao(role: string): Promise<{ ok: true; destino: string } | { erro: string }> {
+export async function trocarFuncao(chave: string): Promise<{ ok: true; destino: string } | { erro: string }> {
   try {
     const perfil = await getPerfil()
     if (!perfil) return { erro: 'Sessão expirada. Entre de novo.' }
     const funcoes = (perfil.funcoes ?? []) as FuncaoDoPerfil[]
-    if (!funcoes.some(f => f.role === role)) return { erro: 'Você não tem este perfil.' }
+    // `chave` = o papel, ou `operador_portao@<organização>` (Gestor em mais de uma organização).
+    const escolhida = funcoes.find(f => f.chave === chave) ?? funcoes.find(f => f.role === chave)
+    if (!escolhida) return { erro: 'Você não tem este perfil.' }
+    const role = escolhida.role
+    const rotuloNovo = (ROLE_LABELS[role as Role] ?? role) + (escolhida.organizacaoNome ? ` · ${escolhida.organizacaoNome}` : '')
 
-    ;(await cookies()).set(COOKIE_FUNCAO, role, {
+    ;(await cookies()).set(COOKIE_FUNCAO, escolhida.chave, {
       httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production',
       path: '/', maxAge: 60 * 60 * 24 * 30,
     })
@@ -31,7 +35,7 @@ export async function trocarFuncao(role: string): Promise<{ ok: true; destino: s
       perfil: { id: perfil.id as string, nome: perfil.nome as string },
       acao: 'TROCA_DE_PERFIL', campoAlterado: 'Perfil em uso',
       valorAnterior: ROLE_LABELS[perfil.role as Role] ?? (perfil.role as string),
-      valorNovo: ROLE_LABELS[role as Role] ?? role,
+      valorNovo: rotuloNovo,
       organizacaoId: (perfil.organizacao_id as string | null) ?? undefined,
     }))
     revalidatePath('/', 'layout')

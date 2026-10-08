@@ -4,7 +4,8 @@ import { Check, Repeat } from 'lucide-react'
 import { trocarFuncao } from '@/lib/actions-funcoes'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
 
-type Funcao = { role: string; base?: boolean }
+type Funcao = { role: string; base?: boolean; chave?: string; organizacaoNome?: string | null }
+const chaveDe = (f: Funcao) => f.chave ?? f.role
 
 /**
  * Trocar de perfil — pra quem tem mais de uma função (supervisor e Gestor de
@@ -23,11 +24,11 @@ export function ListaDePerfis({ funcoes, ativa, aoEscolher }: {
   const [pendente, iniciar] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
 
-  const escolher = (role: string) => {
-    if (role === ativa || pendente) return
+  const escolher = (chave: string) => {
+    if (chave === ativa || pendente) return
     setErro(null)
     iniciar(async () => {
-      const r = await trocarFuncao(role)
+      const r = await trocarFuncao(chave)
       if ('erro' in r) { setErro(r.erro); return }
       aoEscolher?.()
       window.location.assign(r.destino)
@@ -37,17 +38,17 @@ export function ListaDePerfis({ funcoes, ativa, aoEscolher }: {
   return (
     <div role="group" aria-label="Trocar de perfil">
       {funcoes.map(f => {
-        const atual = f.role === ativa
+        const atual = chaveDe(f) === ativa
         return (
           <button
-            key={f.role} type="button" role="menuitemradio" aria-checked={atual} disabled={pendente}
-            onClick={() => escolher(f.role)}
+            key={chaveDe(f)} type="button" role="menuitemradio" aria-checked={atual} disabled={pendente}
+            onClick={() => escolher(chaveDe(f))}
             className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors disabled:opacity-60 ${
               atual ? 'text-brand-600 font-semibold bg-brand-50' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
             }`}
           >
             {atual ? <Check className="w-4 h-4 shrink-0" /> : <span className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{ROLE_LABELS[f.role as Role] ?? f.role}</span>
+            <span className="truncate">{ROLE_LABELS[f.role as Role] ?? f.role}{f.organizacaoNome ? ` · ${f.organizacaoNome}` : ''}</span>
             {pendente && !atual && <span className="ml-auto text-2xs text-slate-400">…</span>}
           </button>
         )
