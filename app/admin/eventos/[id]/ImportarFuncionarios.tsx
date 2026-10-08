@@ -57,6 +57,8 @@ export default function ImportarFuncionarios({
         router.refresh()
       } else {
         setStatus({ ok: false, error: json.error ?? 'Erro ao importar.', ignorados: json.ignorados })
+        // Recarrega também na recusa: "já cadastrado" quer dizer que a pessoa EXISTE, e a lista aberta pode estar desatualizada.
+        router.refresh()
       }
     } catch {
       setStatus({ ok: false, error: 'Erro ao ler o arquivo.' })
