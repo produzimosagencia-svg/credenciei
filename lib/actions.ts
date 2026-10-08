@@ -2199,6 +2199,100 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
 }
 
 /**
+ * Tira o supervisor de UM setor — e só dele.
+ *
+ * Antes, o botão de excluir do cartão do setor chamava `deletarUsuario`, que apaga o LOGIN inteiro: quem
+ * supervisionava outros setores (até de outros eventos) perdia todos e a senha deixava de valer. Foi o que
+ * aconteceu com o próprio Juan e com a Lucy (08/10/2026). A conta é de uma PESSOA e só some quando alguém a
+ * exclui em Acessos ou a bloqueia; sair de um setor é apagar um vínculo.
+ *
+ *   - tira o vínculo daquele setor (`supervisor_setores`); os outros continuam;
+ *   - se aquele era o setor aberto na tela dele, passa para outro dele (ou nenhum);
+ *   - o crachá de supervisor daquele evento (um por CPF) acompanha: vai para outro setor dele no MESMO evento, e só
+ *     é desativado quando ele não supervisiona mais nada ali;
+ *   - se o supervisor era uma função EXTRA e acabaram os setores, a função sai — a conta e a função de base ficam.
+ */
+export async function removerSupervisorDoSetor(perfilId: string, fornecedorId: string): Promise<{ ok: true; restantes: number } | { error: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil) return { error: 'Sessão expirada. Entre de novo.' }
+
+    const { data: setor } = await supabaseAdmin
+      .from('fornecedores').select('id, nome, evento_id, eventos(organizacao_id)').eq('id', fornecedorId).maybeSingle()
+    if (!setor) return { error: 'Setor não encontrado.' }
+    const organizacaoId = ((setor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null) as string | null
+    const eventoId = setor.evento_id as string
+
+    if (podeGerenciarUsuarios(perfil)) {
+      if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) return { error: 'Sem permissão sobre este setor.' }
+    } else if (perfil.role === 'suporte') {
+      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+        return { error: 'Este evento não está no seu escopo de atendimento.' }
+      }
+    } else {
+      return { error: 'Sem permissão.' }
+    }
+
+    const { data: alvo } = await supabaseAdmin.from('perfis').select('id, nome, cpf, role, fornecedor_id').eq('id', perfilId).maybeSingle()
+    if (!alvo) return { error: 'Este acesso não existe mais.' }
+
+    const { error: erroVinculo } = await supabaseAdmin
+      .from('supervisor_setores').delete().eq('perfil_id', perfilId).eq('fornecedor_id', fornecedorId)
+    if (erroVinculo) return { error: mensagemAmigavel(erroVinculo) }
+
+    // O que sobrou dos vínculos dele (todos os eventos).
+    const { data: sobraram } = await supabaseAdmin.from('supervisor_setores').select('fornecedor_id').eq('perfil_id', perfilId)
+    const idsRestantes = (sobraram ?? []).map(v => v.fornecedor_id as string)
+    const { data: setoresRestantes } = idsRestantes.length
+      ? await supabaseAdmin.from('fornecedores').select('id, evento_id').in('id', idsRestantes)
+      : { data: [] as { id: string; evento_id: string }[] }
+    const restantes = (setoresRestantes ?? []) as { id: string; evento_id: string }[]
+    const doMesmoEvento = restantes.find(r => r.evento_id === eventoId) ?? null
+
+    // O setor aberto na tela dele era este? Passa pra outro (de preferência do mesmo evento) ou nenhum.
+    if (alvo.fornecedor_id === fornecedorId) {
+      await supabaseAdmin.from('perfis').update({ fornecedor_id: (doMesmoEvento ?? restantes[0])?.id ?? null }).eq('id', perfilId)
+    }
+
+    // O crachá de supervisor deste evento (um por CPF) acompanha o vínculo.
+    try {
+      const cpf = (alvo.cpf as string | null) ?? ''
+      if (cpf) {
+        const { data: crachas } = await supabaseAdmin
+          .from('funcionarios').select('id, fornecedor_id, cargo, origem, fornecedores!inner(evento_id)')
+          .eq('cpf', cpf).eq('fornecedor_id', fornecedorId).eq('fornecedores.evento_id', eventoId)
+        for (const c of crachas ?? []) {
+          if (c.origem !== 'supervisor') continue   // quem se cadastrou como equipe (pelo link/planilha) segue na equipe
+          if (doMesmoEvento) {
+            const { data: forn } = await supabaseAdmin.from('fornecedores').select('subevento_id').eq('id', doMesmoEvento.id).maybeSingle()
+            await supabaseAdmin.from('funcionarios')
+              .update({ fornecedor_id: doMesmoEvento.id, subevento_id: (forn as { subevento_id?: string | null } | null)?.subevento_id ?? null })
+              .eq('id', c.id)
+          } else {
+            await supabaseAdmin.from('funcionarios').update({ ativo: false }).eq('id', c.id)
+          }
+        }
+      }
+    } catch (e) { console.error('[removerSupervisorDoSetor] crachá não ajustado', e) }
+
+    // Sem nenhum setor e a função de supervisor era EXTRA: ela sai. A conta (e a função de base) ficam.
+    if (!restantes.length && alvo.role !== 'supervisor') await removerFuncaoExtra(perfilId, 'supervisor')
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_SUPERVISOR',
+      campoAlterado: `Supervisor do fornecedor ${setor.nome}`,
+      valorNovo: `${alvo.nome} — removido deste fornecedor (a conta e os outros ${restantes.length} fornecedor${restantes.length === 1 ? '' : 'es'} dele continuam)`,
+      eventoId, organizacaoId: organizacaoId ?? undefined,
+    }))
+    revalidatePath('/admin/usuarios')
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true, restantes: restantes.length }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
  * Tira SÓ a função de operador de portão de quem a recebeu como função extra (um supervisor ou
  * Encarregado que também opera o portão). A conta, o login e a função de base ficam intactos —
  * `deletarUsuario` apagaria a pessoa inteira, que é o que NÃO se quer aqui.

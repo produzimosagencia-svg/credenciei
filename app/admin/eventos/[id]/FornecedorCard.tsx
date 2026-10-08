@@ -326,7 +326,7 @@ export default function FornecedorCard({
           {supervisores.length > 0 && (
             <div className="-mx-1">
               {supervisores.map(s => (
-                <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} supervisor={s} podeExcluir={podeExcluir} />
+                <SupervisorModal key={s.id} mode="editar" eventoId={eventoId} fornecedorId={f.id} setorNome={f.nome} supervisor={s} podeExcluir={podeExcluir} />
               ))}
             </div>
           )}

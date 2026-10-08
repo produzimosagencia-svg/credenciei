@@ -157,6 +157,8 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
   const [candidatos, setCandidatos] = useState<CandidatoEncarregado[] | null>(null)
   const [erroCarga, setErroCarga] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
+  // Filtro por setor (só quando o supervisor tem mais de um no evento): '' = todos.
+  const [filtroSetor, setFiltroSetor] = useState('')
   const [pessoa, setPessoa] = useState<{ funcionarioId: string; nome: string; setorId: string | null } | null>(
     existente ? { funcionarioId: existente.funcionarioId, nome: existente.nome, setorId: null } : null,
   )
@@ -177,8 +179,10 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
 
   const lista = useMemo(() => {
     const t = chaveBusca(busca)
-    return (candidatos ?? []).filter(c => !t || chaveBusca(c.nome).includes(t) || chaveBusca(c.cargo).includes(t) || chaveBusca(c.setorNome).includes(t))
-  }, [candidatos, busca])
+    return (candidatos ?? []).filter(c =>
+      (!filtroSetor || c.setorId === filtroSetor) &&
+      (!t || chaveBusca(c.nome).includes(t) || chaveBusca(c.cargo).includes(t) || chaveBusca(c.setorNome).includes(t)))
+  }, [candidatos, busca, filtroSetor])
 
   const escolherPessoa = (c: CandidatoEncarregado) => {
     setErro(null)
@@ -235,8 +239,22 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
         {!pessoa ? (
           <div className="p-4 space-y-3 overflow-y-auto">
             <p className="text-slate-500 text-xs">
-              Escolha alguém que <strong>já está na sua equipe</strong>. No próximo passo você marca em quais setores ela vai consultar.
+              Evento <strong>{eventoNome}</strong>. Escolha alguém que <strong>já está na sua equipe</strong>. No próximo passo você marca em quais setores ela vai consultar.
             </p>
+            {/* Mais de um setor no evento: filtra a equipe pelo setor de onde a pessoa vem. */}
+            {setores.length > 1 && (
+              <label className="block">
+                <span className="text-slate-400 text-2xs uppercase tracking-wide font-semibold">Setor</span>
+                <select value={filtroSetor} onChange={e => setFiltroSetor(e.target.value)} className="input w-full mt-1">
+                  <option value="">Todos os meus setores</option>
+                  {porArea.map(([area, lista]) => (
+                    <optgroup key={area || 'sem-area'} label={area || 'Sem subevento'}>
+                      {lista.map(st => <option key={st.id} value={st.id}>{st.nome}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
-import { UserPlus, Eye } from 'lucide-react'
-import { getPerfil, meusSetoresDoEventoAtual } from '@/lib/supabase-server'
+import Link from 'next/link'
+import { UserPlus, Eye, CalendarDays } from 'lucide-react'
+import { getPerfil, meusSetoresDoEventoAtual, meusSetores, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarUsuarios, ehMaster } from '@/lib/permissions'
 import { listarEncarregadosDoEvento } from '@/lib/actions-encarregado'
 import { EmptyState, PageHeader, Aviso } from '@/components/ui/Superficie'
@@ -33,11 +34,24 @@ export default async function EncarregadosPage({ searchParams }: { searchParams:
   let eventoId: string | undefined
   let voltarPara = '/admin'
 
+  // Os eventos em que o supervisor tem setor — o filtro "Em qual evento?" desta tela (pedido do Juan, 08/10/2026).
+  let eventosDoSupervisor: { id: string; nome: string }[] = []
+
   if (ehSupervisor) {
-    const setoresDoEvento = await meusSetoresDoEventoAtual(perfil)
-    eventoId = setoresDoEvento[0]?.evento_id
+    const meus = await meusSetores(perfil)
+    const idsEventos = [...new Set(meus.map(s => s.evento_id))]
+    if (idsEventos.length) {
+      const { data } = await supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio').in('id', idsEventos)
+      eventosDoSupervisor = (data ?? [])
+        .sort((a, b) => Number(b.ativo !== false) - Number(a.ativo !== false) || String(b.data_inicio ?? '').localeCompare(String(a.data_inicio ?? '')))
+        .map(e => ({ id: e.id as string, nome: e.nome as string }))
+    }
+    // O escolhido na tela; senão o evento em que ele está agora; senão o primeiro.
+    const atual = (await meusSetoresDoEventoAtual(perfil))[0]?.evento_id
+    eventoId = [eventoParam, atual, eventosDoSupervisor[0]?.id].find(id => !!id && eventosDoSupervisor.some(e => e.id === id))
     // De volta ao painel do setor dele (o mesmo destino do resto das telas do supervisor).
-    voltarPara = eventoId ? `/admin/eventos/${eventoId}/fornecedor/${(perfil.fornecedor_id as string | null) ?? setoresDoEvento[0].id}` : '/admin/meus-eventos'
+    const setorDeVolta = meus.find(s => s.id === perfil.fornecedor_id && s.evento_id === eventoId) ?? meus.find(s => s.evento_id === eventoId)
+    voltarPara = eventoId && setorDeVolta ? `/admin/eventos/${eventoId}/fornecedor/${setorDeVolta.id}` : '/admin/meus-eventos'
     if (!eventoId) {
       return (
         <div className="space-y-5">
@@ -77,6 +91,27 @@ export default async function EncarregadosPage({ searchParams }: { searchParams:
         descricao={'erro' in painel ? 'Delegue a consulta dos setores a alguém da equipe' : painel.evento.nome}
         voltarPara={voltarPara}
       />
+
+      {/* Supervisor com setor em mais de um evento: escolhe aqui em qual evento está criando o Encarregado. */}
+      {ehSupervisor && eventosDoSupervisor.length > 1 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-3">
+          <p className="text-slate-400 text-2xs uppercase tracking-wide font-semibold px-1 pb-2">Em qual evento?</p>
+          <div className="flex flex-wrap gap-2">
+            {eventosDoSupervisor.map(e => (
+              <Link
+                key={e.id}
+                href={`/admin/encarregados?evento=${e.id}`}
+                aria-current={e.id === eventoId ? 'true' : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                  e.id === eventoId ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5 shrink-0" /> {e.nome}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {'erro' in painel ? (
         <Aviso tom="atencao">{painel.erro}</Aviso>

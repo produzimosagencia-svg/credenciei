@@ -2,7 +2,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, Pencil, X, Trash2, ArrowLeft, Search, ChevronRight } from 'lucide-react'
-import { criarSupervisor, editarSupervisor, deletarUsuario } from '@/lib/actions'
+import { criarSupervisor, editarSupervisor, removerSupervisorDoSetor } from '@/lib/actions'
 import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -24,7 +24,7 @@ type Variante = 'botao' | 'discreto' | 'vazio'
 
 type Props =
   | { mode: 'criar'; eventoId: string; fornecedorId: string; setorNome: string; funcionariosDoEvento?: FuncionarioDoEvento[]; variante?: Variante }
-  | { mode: 'editar'; eventoId: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean } }
+  | { mode: 'editar'; eventoId: string; fornecedorId: string; setorNome: string; podeExcluir?: boolean; supervisor: { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean } }
 
 /** A partir de quantos nomes a lista de escolha ganha busca. */
 const MINIMO_PARA_BUSCAR = 6
@@ -100,7 +100,9 @@ export default function SupervisorModal(props: Props) {
     setConfirmOpen(false)
     startTransition(async () => {
       try {
-        await deletarUsuario(props.supervisor.id)
+        // Tira o supervisor SÓ deste setor — a conta, a senha e os outros setores dele ficam.
+        const r = await removerSupervisorDoSetor(props.supervisor.id, props.fornecedorId)
+        if ('error' in r) { setErro(r.error); return }
         setOpen(false)
         router.refresh()
       } catch (e: any) {
@@ -286,17 +288,17 @@ export default function SupervisorModal(props: Props) {
                   >
                     {isPending ? 'Salvando...' : isEditar ? 'Salvar alterações' : 'Criar supervisor'}
                   </button>
-                  {/* Excluir supervisor apaga o acesso E o histórico dele. Desativar
-                      bloqueia o login e preserva os registros — é o caminho do admin. */}
-                  {isEditar && props.podeExcluir && (
+                  {/* Tira o supervisor SÓ deste setor. A conta e a senha dele continuam: ela só deixa de existir
+                      quando alguém exclui ou bloqueia o acesso em Acessos. */}
+                  {isEditar && (
                     <button
                       type="button"
                       onClick={handleDelete}
                       disabled={isPending}
-                      className="btn-press w-12 h-12 flex items-center justify-center shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl disabled:opacity-50 disabled:active:scale-100"
-                      title="Excluir supervisor"
+                      className="btn-press h-12 px-3 flex items-center justify-center gap-1.5 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-semibold disabled:opacity-50 disabled:active:scale-100"
+                      title="Tirar este supervisor só deste fornecedor"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" /> Tirar do setor
                     </button>
                   )}
                 </div>
@@ -312,7 +314,7 @@ export default function SupervisorModal(props: Props) {
           onConfirm={confirmarExclusao}
           isPending={isPending}
           zIndexClassName="z-[60]"
-          mensagem={`Excluir o supervisor "${props.supervisor.nome}"?`}
+          mensagem={`Tirar "${props.supervisor.nome}" do fornecedor "${props.setorNome}"? Ele continua com o acesso dele e com os outros setores — só deixa de supervisionar este.`}
         />
       )}
     </>

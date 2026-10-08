@@ -112,5 +112,14 @@ const lay = ler('app/encarregado/layout.tsx')
 ok(lay.includes('hidden sm:inline-flex shrink-0"><span className="pilula-contexto">') && lay.includes('shrink-0" aria-label="Início"'), 'no celular a etiqueta some (em invólucro, pois .pilula-contexto vence o `hidden`) e o logo nunca encolhe')
 ok(ler('app/gastos/BotaoSair.tsx').includes('hidden sm:inline">Sair'), 'o "Sair" vira só o ícone no celular')
 ok(ler('components/AppShell.tsx').includes('<span className="hidden lg:inline-flex min-w-0 max-w-[28vw]">\n                <span className="pilula-contexto'), 'a etiqueta de contexto do painel some no celular (invólucro; a classe vencia o `hidden` e ficava sobre o logo)')
+// ── Criar Encarregado: o supervisor escolhe o EVENTO e, com mais de um setor, o SETOR (Juan, 08/10/2026) ──
+{
+  const pagina = readFileSync(new URL('../app/admin/encarregados/page.tsx', import.meta.url), 'utf8')
+  const modal = readFileSync(new URL('../app/admin/encarregados/GerenciarEncarregados.tsx', import.meta.url), 'utf8')
+  ok(/Em qual evento\?/.test(pagina) && /eventosDoSupervisor\.length > 1/.test(pagina), 'supervisor com mais de um evento escolhe o evento na própria tela')
+  ok(/eventosDoSupervisor\.some\(e => e\.id === id\)/.test(pagina), 'o evento escolhido só vale se o supervisor tem setor nele')
+  ok(/filtroSetor/.test(modal) && /setores\.length > 1/.test(modal) && /c\.setorId === filtroSetor/.test(modal), 'com mais de um setor, a equipe se filtra pelo setor')
+}
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

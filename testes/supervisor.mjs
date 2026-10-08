@@ -94,5 +94,19 @@ ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta
   ok(/\.eq\('evento_id', eventoId\)\s*\.eq\('tipo', 'disparo_manual'\)/.test(a), 'o corte é por EVENTO (evento novo continua avisando)')
 }
 
+// ── Tirar supervisor de UM setor NÃO apaga a conta nem os outros setores (Juan, 08/10/2026) ──
+{
+  const a = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
+  const modal = readFileSync(new URL('../app/admin/eventos/[id]/SupervisorModal.tsx', import.meta.url), 'utf8')
+  const card = readFileSync(new URL('../app/admin/eventos/[id]/FornecedorCard.tsx', import.meta.url), 'utf8')
+  const i = a.indexOf('export async function removerSupervisorDoSetor')
+  const corpo = a.slice(i, a.indexOf('/**\n * Tira SÓ a função de operador de portão', i))
+  ok(i > 0 && /from\('supervisor_setores'\)\.delete\(\)\.eq\('perfil_id', perfilId\)\.eq\('fornecedor_id', fornecedorId\)/.test(corpo.replace(/\s+/g, ' ')), 'a remoção apaga só o vínculo daquele setor')
+  ok(!/deleteUser|from\('perfis'\)\.delete|deletarUsuario/.test(corpo), 'a remoção nunca apaga a conta nem o login')
+  ok(!/deletarUsuario/.test(modal) && /removerSupervisorDoSetor\(props\.supervisor\.id, props\.fornecedorId\)/.test(modal), 'o botão do cartão do setor usa a remoção por setor')
+  ok(/fornecedorId=\{f\.id\}/.test(card), 'o cartão passa o setor que está sendo editado')
+  ok(/if \(!restantes\.length && alvo\.role !== 'supervisor'\) await removerFuncaoExtra\(perfilId, 'supervisor'\)/.test(corpo), 'só a função de supervisor sai quando acabam os setores — as outras funções ficam')
+}
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
