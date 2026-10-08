@@ -4064,6 +4064,54 @@ export async function editarCpfFuncionario(
 }
 
 /**
+ * Corrige o NOME de uma pessoa NESTE cadastro (um evento) — pedido do Juan, 08/10/2026: a ficha do colaborador já
+ * deixava corrigir CPF, telefone e função, mas não o nome, que é exatamente o mesmo tipo de erro de digitação
+ * (ou nome incompleto) no cadastro público. Mesma régua de `editarCpfFuncionario`: identidade é sensível, então
+ * só master (e suporte, dentro do escopo, com motivo) corrige — não é o mesmo tanto gente de `editarTelefoneFuncionario`.
+ *
+ * Para trocar o nome em TODOS os eventos da pessoa de uma vez, o caminho é a Base de funcionários
+ * (`editarDadosDaPessoaNaBase`); aqui corrige só este cadastro.
+ */
+export async function editarNomeFuncionario(
+  funcionarioId: string, fornecedorId: string, eventoId: string, novoNomeBruto: string, motivo?: string,
+): Promise<{ ok: true } | { erro: string }> {
+  const perfil = await getPerfil()
+  if (!podeEditarIdentidade(perfil)) return { erro: 'Sem permissão para corrigir o nome.' }
+
+  const novoNome = (novoNomeBruto ?? '').replace(/\s+/g, ' ').trim()
+  if (novoNome.length < 2 || novoNome.length > 120) return { erro: 'Informe um nome válido.' }
+
+  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
+  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
+
+  // Suporte só corrige dentro do próprio escopo — master passa direto.
+  if (perfil!.role === 'suporte') {
+    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+    const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+    if (!(await suporteTemEscopo(perfil!.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { erro: 'Este evento não está no seu escopo de atendimento.' }
+    }
+  }
+
+  const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, nome, fornecedor_id').eq('id', funcionarioId).single()
+  if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste fornecedor.' }
+  if (atual.nome === novoNome) return { ok: true } // nada mudou
+
+  const { error } = await supabaseAdmin.from('funcionarios').update({ nome: novoNome }).eq('id', funcionarioId)
+  if (error) return { erro: mensagemAmigavel(error) }
+
+  after(() => registrarAuditoria({
+    perfil: perfil!, acao: 'ALTERACAO_NOME', campoAlterado: 'nome',
+    valorAnterior: atual.nome as string, valorNovo: novoNome, motivo: motivo ?? null,
+    funcionarioId, eventoId,
+  }))
+  after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
+
+  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+  return { ok: true }
+}
+
+/**
  * Edita os DADOS DA PESSOA na Base de funcionários — só o master (pedido do
  * Juan, 06/10/2026): nome, telefone, cidade, chave PIX e CPF.
  *

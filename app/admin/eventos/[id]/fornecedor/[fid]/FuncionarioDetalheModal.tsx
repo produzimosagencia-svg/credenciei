@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
@@ -204,6 +204,37 @@ export default function FuncionarioDetalheModal({
       setEditandoCargo(false)
       setOkCargo('Função atualizada.')
       router.refresh()
+    })
+  }
+
+  // ── Corrigir nome ──────────────────────────────────────────────────────────
+  /** Mesma permissão de `editarCpfFuncionario` — ver `podeEditarIdentidade`: nome é identidade, não é qualquer correção. */
+  const [editandoNome, setEditandoNome] = useState(false)
+  const [novoNome, setNovoNome] = useState(f.nome)
+  const [motivoNome, setMotivoNome] = useState('')
+  const [erroNome, setErroNome] = useState<string | null>(null)
+  const [isPendingNome, startTransitionNome] = useTransition()
+
+  const abrirEditarNome = () => {
+    setErroNome(null)
+    setNovoNome(f.nome)
+    setMotivoNome('')
+    setEditandoNome(true)
+  }
+
+  const salvarNome = () => {
+    setErroNome(null)
+    if (motivoObrigatorio && !motivoNome.trim()) { setErroNome('Informe o motivo da correção.'); return }
+    if (novoNome.trim().length < 2) { setErroNome('Informe um nome válido.'); return }
+    startTransitionNome(async () => {
+      try {
+        const r = await editarNomeFuncionario(f.id, fornecedorId, eventoId, novoNome, motivoNome || undefined)
+        if ('erro' in r) { setErroNome(r.erro); return }
+        router.refresh()
+        setEditandoNome(false)
+      } catch (e: any) {
+        setErroNome(mensagemAmigavel(e))
+      }
     })
   }
 
@@ -465,7 +496,18 @@ export default function FuncionarioDetalheModal({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h2 className="text-slate-800 font-bold truncate">{f.nome}</h2>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h2 className="text-slate-800 font-bold truncate">{f.nome}</h2>
+                    {podeEditarCpf && (
+                      <button
+                        onClick={abrirEditarNome}
+                        className="p-0.5 text-slate-300 hover:text-brand-500 shrink-0"
+                        title="Corrigir nome"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                   <p className="text-slate-400 text-xs mt-0.5 truncate">
                     {eventoNome}{setorNome ? ` · ${setorNome}` : ''}
                   </p>
@@ -670,6 +712,47 @@ export default function FuncionarioDetalheModal({
                       <button onClick={() => setEditandoCargo(false)} disabled={isPendingCargo} className="btn btn-secundario btn-sm">Cancelar</button>
                     </div>
                     {erroCargo && <p className="text-red-500 text-xs">{erroCargo}</p>}
+                  </div>
+                )}
+
+                {editandoNome && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                    <p className="text-amber-800 text-xs">
+                      Corrige o nome neste cadastro — o QR, o histórico de batidas e o pagamento continuam os mesmos.
+                    </p>
+                    <input
+                      type="text"
+                      value={novoNome}
+                      onChange={e => setNovoNome(e.target.value)}
+                      className="input text-sm"
+                      placeholder="Nome completo"
+                    />
+                    {motivoObrigatorio && (
+                      <input
+                        type="text"
+                        value={motivoNome}
+                        onChange={e => setMotivoNome(e.target.value)}
+                        className="input text-sm"
+                        placeholder="Motivo da correção (obrigatório)"
+                      />
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={salvarNome}
+                        disabled={isPendingNome || novoNome.trim().length < 2}
+                        className="btn btn-primario btn-sm disabled:opacity-50"
+                      >
+                        {isPendingNome ? 'Salvando…' : 'Confirmar'}
+                      </button>
+                      <button
+                        onClick={() => setEditandoNome(false)}
+                        disabled={isPendingNome}
+                        className="btn btn-secundario btn-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {erroNome && <p className="text-red-500 text-xs">{erroNome}</p>}
                   </div>
                 )}
 
