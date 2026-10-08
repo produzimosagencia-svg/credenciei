@@ -32,10 +32,21 @@ export async function registrarAuditoria(args: {
     // (a Vercel preenche). Sem isso, ip fica nulo — não é erro.
     const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
 
+    /*
+     * Sem organização, a linha só aparece para o master: o administrador da organização filtra a auditoria pela
+     * dele. Várias ações (a exclusão de funcionário entre elas) gravavam só o evento — achado em 08/10/2026, quando
+     * uma exclusão no VITAL não aparecia para quem procurava. Quando falta, vem do evento.
+     */
+    let organizacaoId = args.organizacaoId ?? null
+    if (!organizacaoId && args.eventoId) {
+      const { data: ev } = await supabaseAdmin.from('eventos').select('organizacao_id').eq('id', args.eventoId).maybeSingle()
+      organizacaoId = (ev?.organizacao_id as string | null) ?? null
+    }
+
     const { error } = await supabaseAdmin.from('alteracoes_cadastro').insert([{
       usuario_responsavel: args.perfil.nome,
       usuario_responsavel_id: args.perfil.id,
-      organizacao_id: args.organizacaoId ?? null,
+      organizacao_id: organizacaoId,
       evento_id: args.eventoId ?? null,
       funcionario_id: args.funcionarioId ?? null,
       acao: args.acao,

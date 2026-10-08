@@ -44,6 +44,7 @@ export const ACAO_LABELS: Record<string, string> = {
   CONCESSAO_ENCARREGADO: 'Encarregado designado',
   REMOCAO_ENCARREGADO: 'Encarregado removido',
   ALTERACAO_FUNCIONALIDADE: 'Funcionalidade alterada',
+  RESTAURACAO_FUNCIONARIO: 'Funcionário restaurado da lixeira',
   ALTERACAO_LINK_PEDIDO_SETOR: 'Link de pedido de setor alterado',
   APROVACAO_PEDIDO_SETOR: 'Pedido de setor aprovado',
   NEGACAO_PEDIDO_SETOR: 'Pedido de setor negado',

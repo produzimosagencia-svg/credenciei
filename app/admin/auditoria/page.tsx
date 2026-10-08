@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ClipboardList, ArrowRight, User, MapPin, Clock } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
-import { podeGerenciarUsuarios, ROLE_LABELS, type Role } from '@/lib/permissions'
+import { podeGerenciarUsuarios, ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { obterAuditoria, opcoesDaAuditoria } from '@/lib/actions'
 import { ACAO_LABELS } from '@/lib/suporte'
 import { formatCpf } from '@/lib/format'
@@ -75,6 +75,7 @@ const TOM_DA_ACAO: Record<string, 'negativo' | 'atencao' | 'positivo' | 'neutro'
   ENTRADA_VEICULO_LIBERADA: 'positivo',
   APROVACAO_CREDENCIAMENTO: 'positivo',
   NEGACAO_CREDENCIAMENTO: 'negativo',
+  RESTAURACAO_FUNCIONARIO: 'positivo',
 }
 
 export default async function AuditoriaPage({
@@ -221,6 +222,13 @@ export default async function AuditoriaPage({
                         <span className="text-amber-600">Ainda não entrou no evento</span>
                       )}
                     </p>
+                  )}
+
+                  {/* Exclusão: o master restaura a pessoa (mesmo QR, batidas e dias) pela lixeira. */}
+                  {l.acao === 'EXCLUSAO_FUNCIONARIO' && ehMaster(perfil.role) && l.valorAnterior && (
+                    <Link href={`/admin/excluidos?busca=${encodeURIComponent((l.valorAnterior.match(/CPF ([\d.-]+)/)?.[1] ?? l.valorAnterior).replace(/\D/g, '') || l.valorAnterior)}`} className="inline-flex items-center gap-1 text-brand-600 text-xs font-semibold hover:underline">
+                      Restaurar esta pessoa →
+                    </Link>
                   )}
 
                   {l.motivo && (

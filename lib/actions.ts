@@ -66,6 +66,7 @@ import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
+import { guardarNaLixeira } from './lixeira'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -1752,54 +1753,79 @@ export async function obterAuditoria(
   const termoNome = (opcoes.nome ?? '').trim()
   const digitosNome = termoNome.replace(/\D/g, '')
 
-  let query = supabaseAdmin
-    .from('alteracoes_cadastro')
-    /*
-     * `perfis` e `fornecedores` entram no mesmo select porque a linha sozinha
-     * não respondia o que se pergunta na frente dela: "quem é esse nome?" e
-     * "de qual setor era a pessoa?". São dois joins por chave estrangeira que
-     * já existem — nenhuma coluna nova, nada que dependa de migração.
-     *
-     * `funcionarios!inner` só quando há busca por nome: precisa virar INNER
-     * pra o `.or()` de baixo filtrar no banco (embutido em LEFT JOIN o
-     * Postgres não filtra a linha pai) — sem busca, continua LEFT (a
-     * maioria das ações nem tem pessoa afetada, ex. RESET_SENHA de supervisor).
-     */
-    .select(`id, acao, usuario_responsavel, usuario_responsavel_id, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, funcionario_id, eventos(nome), perfis(role), funcionarios${termoNome ? '!inner' : ''}(nome, cpf, fornecedores(nome))`)
-    .order('created_at', { ascending: false })
-    .limit(opcoes.limite ?? 100)
-
-  if (opcoes.eventoId) query = query.eq('evento_id', opcoes.eventoId)
-  if (opcoes.autorId) query = query.eq('usuario_responsavel_id', opcoes.autorId)
-  if (opcoes.acao) query = query.eq('acao', opcoes.acao)
-  if (termoNome) {
-    const condicoes = [`nome.ilike.%${termoNome}%`]
-    if (digitosNome) condicoes.push(`cpf.ilike.%${digitosNome}%`)
-    query = query.or(condicoes.join(','), { foreignTable: 'funcionarios' })
-  }
-
   /*
-   * O corte é por DIA, e o dia é o de Brasília.
-   *
-   * "Hoje" (dias = 1) começa à meia-noite daqui, não 24 horas atrás: quem
-   * abre a tela às 9h da manhã quer o que aconteceu hoje, e não metade de
-   * ontem junto. Em UTC a virada cairia às 21h, e a auditoria da noite de
-   * ontem apareceria como sendo de hoje.
+   * Duas consultas quando há busca por nome/CPF, somadas:
+   *   1. pela PESSOA (cadastro atual, via `funcionarios!inner`);
+   *   2. pelo TEXTO da linha (`valor_anterior`/`valor_novo`).
+   * A 2ª existe porque quem foi EXCLUÍDO não tem mais cadastro — `funcionario_id` vira nulo — e o nome e o CPF
+   * dele só ficam escritos no texto ("Fulano — CPF 000.000.000-00"). Só com a 1ª, procurar o excluído pelo nome
+   * dava "nada encontrado" mesmo com a exclusão registrada (achado em 08/10/2026, no VITAL).
    */
-  if (opcoes.dias && opcoes.dias > 0) {
-    const inicio = new Date(`${diaBRT()}T00:00:00-03:00`)
-    inicio.setUTCDate(inicio.getUTCDate() - (opcoes.dias - 1))
-    query = query.gte('created_at', inicio.toISOString())
+  const montar = (pelaPessoa: boolean) => {
+    let q = supabaseAdmin
+      .from('alteracoes_cadastro')
+      /*
+       * `perfis` e `fornecedores` entram no mesmo select porque a linha sozinha
+       * não respondia o que se pergunta na frente dela: "quem é esse nome?" e
+       * "de qual setor era a pessoa?". São dois joins por chave estrangeira que
+       * já existem — nenhuma coluna nova, nada que dependa de migração.
+       *
+       * `funcionarios!inner` só na busca pela pessoa: precisa virar INNER
+       * pra o `.or()` de baixo filtrar no banco (embutido em LEFT JOIN o
+       * Postgres não filtra a linha pai).
+       */
+      .select(`id, acao, usuario_responsavel, usuario_responsavel_id, campo_alterado, valor_anterior, valor_novo, motivo, ip, created_at, funcionario_id, eventos(nome), perfis(role), funcionarios${pelaPessoa && termoNome ? '!inner' : ''}(nome, cpf, fornecedores(nome))`)
+      .order('created_at', { ascending: false })
+      .limit(opcoes.limite ?? 100)
+
+    if (opcoes.eventoId) q = q.eq('evento_id', opcoes.eventoId)
+    if (opcoes.autorId) q = q.eq('usuario_responsavel_id', opcoes.autorId)
+    if (opcoes.acao) q = q.eq('acao', opcoes.acao)
+    if (termoNome && pelaPessoa) {
+      const condicoes = [`nome.ilike.%${termoNome}%`]
+      if (digitosNome) condicoes.push(`cpf.ilike.%${digitosNome}%`)
+      q = q.or(condicoes.join(','), { foreignTable: 'funcionarios' })
+    }
+    if (termoNome && !pelaPessoa) {
+      // No texto o CPF está FORMATADO; 11 dígitos digitados viram "000.000.000-00". Aspas: o valor tem ponto.
+      const alvo = digitosNome.length === 11 ? formatCpf(digitosNome) : termoNome
+      const valor = `"%${alvo.replace(/"/g, '')}%"`
+      q = q.or(`valor_anterior.ilike.${valor},valor_novo.ilike.${valor}`)
+    }
+
+    /*
+     * O corte é por DIA, e o dia é o de Brasília.
+     *
+     * "Hoje" (dias = 1) começa à meia-noite daqui, não 24 horas atrás: quem
+     * abre a tela às 9h da manhã quer o que aconteceu hoje, e não metade de
+     * ontem junto. Em UTC a virada cairia às 21h, e a auditoria da noite de
+     * ontem apareceria como sendo de hoje.
+     */
+    if (opcoes.dias && opcoes.dias > 0) {
+      const inicio = new Date(`${diaBRT()}T00:00:00-03:00`)
+      inicio.setUTCDate(inicio.getUTCDate() - (opcoes.dias - 1))
+      q = q.gte('created_at', inicio.toISOString())
+    }
+
+    if (perfil.role === 'suporte') {
+      q = q.eq('usuario_responsavel_id', perfil.id)
+    } else if (!ehMaster(perfil.role)) {
+      q = q.eq('organizacao_id', perfil.organizacao_id)
+    }
+    return q
   }
 
-  if (perfil.role === 'suporte') {
-    query = query.eq('usuario_responsavel_id', perfil.id)
-  } else if (!ehMaster(perfil.role)) {
-    if (!podeGerenciarUsuarios(perfil)) return []
-    query = query.eq('organizacao_id', perfil.organizacao_id)
-  }
+  if (perfil.role !== 'suporte' && !ehMaster(perfil.role) && !podeGerenciarUsuarios(perfil)) return []
 
-  const { data } = await query
+  const [pelaPessoa, peloTexto] = await Promise.all([
+    montar(true),
+    termoNome ? montar(false) : Promise.resolve({ data: [] as never[] }),
+  ])
+  const vistos = new Set<string>()
+  const data = [...(pelaPessoa.data ?? []), ...(peloTexto.data ?? [])]
+    .filter(a => (vistos.has(a.id as string) ? false : (vistos.add(a.id as string), true)))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, opcoes.limite ?? 100)
 
   /*
    * De onde o autor é — numa consulta só, pro lote inteiro.
@@ -3745,6 +3771,9 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
         throw new Error(`${alvo.nome} já registrou ponto neste evento e não pode ser excluída — isso apagaria as batidas dela e o QR que ela está usando. Use "Tirar da equipe": o QR para de valer e o histórico fica.`)
       }
     }
+
+    // Cópia completa ANTES de apagar — é o que deixa o master restaurar (lixeira, lib/lixeira.ts).
+    await guardarNaLixeira(id, { id: perfil.id, nome: perfil.nome }, motivo)
 
     const { error } = await db.from('funcionarios').delete().eq('id', id)
     if (error) throw new Error(mensagemAmigavel(error))

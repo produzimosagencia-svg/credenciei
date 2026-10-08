@@ -4,6 +4,7 @@ import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/men
 import { importarFuncionarios } from '@/lib/importacao'
 import { resumirPlanilha } from '@/lib/planilha'
 import { registrarAuditoriaIA } from '../auditoria'
+import { guardarNaLixeira } from '@/lib/lixeira'
 import {
   ferramenta, exigirGestor, resolverSetor, resolverFuncionario,
   urlBase, valorNumerico, brl,
@@ -408,6 +409,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           ))
         }
 
+        await guardarNaLixeira(funcionario_id, { id: perfil.id, nome: perfil.nome }, 'Excluído pelo assistente de IA')
         await supabaseAdmin.from('funcionarios').delete().eq('id', funcionario_id)
         await registrarAuditoriaIA(perfil, 'excluir_funcionario', {
           funcionario_id, nome: r.func.nome, cpf: r.func.cpf, registros_apagados: registros ?? 0,

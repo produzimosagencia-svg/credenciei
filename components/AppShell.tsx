@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -241,6 +241,10 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (podeGerenciarUsuarios(perfil) || role === 'suporte') {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
+  }
+  // Lixeira de funcionários: só o master restaura quem foi excluído (lib/lixeira.ts).
+  if (ehMaster(role)) {
+    administrativo.push({ href: '/admin/excluidos', label: 'Excluídos (restaurar)', icon: RotateCcw })
   }
   /*
    * Gastos virou produto à parte, do papel `produtor` (que nem usa o AppShell).
