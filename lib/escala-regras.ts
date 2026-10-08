@@ -17,6 +17,19 @@ import type { FaseDoDia } from './janelas'
  * painel, ou anterior a este recurso) — para essa pessoa nada muda.
  */
 
+/**
+ * A TRAVA POR DIA (limite de pessoas por fornecedor em cada dia) está DESLIGADA.
+ *
+ * Decisão do Juan em 08/10/2026: a quantidade de gente em cada dia é LIVRE, em nenhum dia há máximo —
+ * quem quiser pode se cadastrar em qualquer dia, inclusive no dia do evento. Pessoas estavam vendo
+ * "o dia já atingiu o limite" no formulário porque a importação de estrutura (planilha com "Sábado: 10 /
+ * Domingo: 1") gravava esses números como limite de verdade (45 fornecedores do VITAL, 91 limites).
+ *
+ * Desligada aqui, nada barra por quantidade: nem o formulário, nem a aprovação, nem o portão. Os números
+ * continuam guardados (nada foi apagado) e voltam a valer se isto for religado.
+ */
+export const TRAVA_POR_DIA_ATIVA = false
+
 export type StatusEscala = 'pendente' | 'aprovada'
 
 export function statusEscalaValido(v: unknown): StatusEscala | null {

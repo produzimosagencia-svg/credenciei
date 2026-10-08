@@ -1,7 +1,7 @@
 import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { faseDoDia, periodoDoEvento, somarDias } from './janelas'
 import {
-  planejarAprovacao, statusEscalaValido, vereditoDaEscala,
+  TRAVA_POR_DIA_ATIVA, planejarAprovacao, statusEscalaValido, vereditoDaEscala,
   type DiaDaEscala, type DiaEscolhido, type StatusEscala, type VereditoEscala,
 } from './escala-regras'
 
@@ -292,6 +292,8 @@ export async function travasDoFornecedor(fornecedorId: string): Promise<Map<stri
 export async function diasLotados(
   fornecedorId: string, modo: 'pedido' | 'aprovado', ignorarFuncionarioId?: string,
 ): Promise<string[]> {
+  // Trava por dia desligada (lib/escala-regras.ts): nenhum dia fica lotado.
+  if (!TRAVA_POR_DIA_ATIVA) return []
   const travas = await travasDoFornecedor(fornecedorId)
   if (!travas.size) return []
   try {
@@ -363,6 +365,7 @@ export async function gravarTravasDoFornecedor(
 export async function vagaNoSetorNoDia(
   fornecedorId: string, dia: string, funcionarioId: string, origemDaPessoa?: string | null,
 ): Promise<{ ok: true } | { ok: false; maximo: number; ocupadas: number }> {
+  if (!TRAVA_POR_DIA_ATIVA) return { ok: true }   // a quantidade por dia é livre: o portão não barra por lotação
   if (origemDaPessoa === 'supervisor') return { ok: true }
   try {
     const { data: trava, error } = await supabaseAdmin

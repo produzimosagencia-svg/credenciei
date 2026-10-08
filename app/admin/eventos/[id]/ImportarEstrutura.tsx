@@ -136,7 +136,7 @@ function Modal({ eventoId, onFechar }: { eventoId: string; onFechar: () => void 
           <div className="space-y-3">
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
               <p>Colunas: <strong>Fornecedor · Subgrupo · Trava do setor por dia · Nome Supervisor · CPF Supervisor · Telefone Supervisor</strong>.</p>
-              <p>Trava: &quot;Sábado: 10 / Domingo: 8&quot;, &quot;Sáb 10, Dom 8&quot;, &quot;10/10: 15&quot; ou só &quot;10&quot; (todos os dias). Em branco = sem trava.</p>
+              <p>Trava: &quot;Sábado: 10 / Domingo: 8&quot;, &quot;Sáb 10, Dom 8&quot;, &quot;10/10: 15&quot; ou só &quot;10&quot; (todos os dias). Em branco = sem número. A trava está desligada: o número é só uma referência e não impede ninguém de se cadastrar nem de entrar.</p>
               <p>Subgrupo que não existir é criado. O mesmo CPF em várias linhas = um supervisor só, com um acesso.</p>
             </div>
             <div className="flex flex-wrap gap-2">
