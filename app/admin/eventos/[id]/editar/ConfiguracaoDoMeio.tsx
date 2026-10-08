@@ -79,7 +79,8 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
           <p className="text-slate-500 text-2xs mt-1">
             Não tem horário pra configurar — a equipe não entra junta, e um horário fixo cobraria de
             quem acabou de chegar. O que se escolhe aqui é <strong>quais fornecedores</strong> pedem e{' '}
-            <strong>em quais dias</strong>.
+            <strong>em quais dias</strong>. Montagem e desmontagem nunca pedem o meio — por isso só os dias
+            do evento aparecem aqui.
           </p>
         </div>
       </div>

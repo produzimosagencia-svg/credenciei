@@ -57,24 +57,32 @@ export async function setorExigeMeio(fornecedorId: string | null | undefined): P
 }
 
 /**
- * Este dia da operação pede o meio? Erro/migração pendente ⇒ SIM.
+ * MONTAGEM E DESMONTAGEM NUNCA PEDEM O MEIO — só o DIA DO EVENTO (`jornada_dias.tipo = 'principal'`). Regra do
+ * Juan, repetida em 08/10/2026 (VITAL: montagem de quinta a sexta, evento sábado e domingo). Vale antes da chave do
+ * dia: um dia de montagem com `exige_meio` ligado continua sem meio.
+ */
+const ehDiaDoEvento = (tipo: unknown) => tipo === 'principal'
+
+/**
+ * Este dia da operação pede o meio? Só se for dia DO EVENTO e a chave do dia estiver ligada.
  *
- * O `true` no fallback não é descuido: é o padrão da coluna. Antes da
- * migração, todo dia pedia o meio — devolver `false` aqui silenciaria o meio
- * do evento inteiro em vez de preservar o comportamento anterior.
+ * Erro/migração pendente ⇒ SIM. O `true` no fallback não é descuido: é o padrão da coluna. Antes da migração, todo
+ * dia pedia o meio — devolver `false` aqui silenciaria o meio do evento inteiro em vez de preservar o
+ * comportamento anterior. Data sem linha nenhuma (evento sem dias configurados) também segue o padrão.
  */
 export async function diaExigeMeio(eventoId: string, data: string): Promise<boolean> {
-  const { data: dia, error } = await supabase
-    .from('jornada_dias').select('exige_meio')
-    .eq('evento_id', eventoId).eq('data', data).limit(1).maybeSingle()
+  const { data: linhas, error } = await supabase
+    .from('jornada_dias').select('tipo, exige_meio')
+    .eq('evento_id', eventoId).eq('data', data).eq('cancelado', false)
   if (error) return true
-  return dia?.exige_meio !== false
+  if (!linhas?.length) return true
+  return linhas.some(d => ehDiaDoEvento(d.tipo) && d.exige_meio !== false)
 }
 
-/** Os dias deste evento que pedem o meio. Erro ⇒ todos (mesmo motivo acima). */
+/** Os dias deste evento que pedem o meio — só dias DO EVENTO, com a chave ligada. Erro ⇒ todos (mesmo motivo acima). */
 export async function diasComMeio(eventoId: string): Promise<{ ok: boolean; dias: Set<string> }> {
   const { data, error } = await supabase
-    .from('jornada_dias').select('data, exige_meio').eq('evento_id', eventoId)
+    .from('jornada_dias').select('data, tipo, exige_meio').eq('evento_id', eventoId)
   if (error) return { ok: false, dias: new Set() }
-  return { ok: true, dias: new Set((data ?? []).filter(d => d.exige_meio !== false).map(d => d.data as string)) }
+  return { ok: true, dias: new Set((data ?? []).filter(d => ehDiaDoEvento(d.tipo) && d.exige_meio !== false).map(d => d.data as string)) }
 }

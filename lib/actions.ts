@@ -10106,7 +10106,8 @@ export async function obterConfiguracaoDoMeio(eventoId: string): Promise<Configu
 
   const [{ data: setoresBase }, { data: diasBase }] = await Promise.all([
     supabaseAdmin.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome'),
-    supabaseAdmin.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).order('data'),
+    // Só os dias DO EVENTO: montagem e desmontagem nunca pedem o meio (lib/meio.ts), então nem aparecem para marcar.
+    supabaseAdmin.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).eq('tipo', 'principal').order('data'),
   ])
 
   const comMeio = await setoresComMeio((setoresBase ?? []).map(s => s.id as string))
