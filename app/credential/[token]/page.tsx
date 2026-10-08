@@ -653,10 +653,11 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                     ? momentos.map(m => (m.momento === 'entrada' && m.status === 'feito' ? { ...m, feitoEm: entradaAtualEm } : m))
                     : momentos}
                   turnosAnteriores={turnosAnteriores}
-                  podeAutoRegistrar={!diaPrincipal || evento?.checkin_autonomo === true}
+                  // Entrada e saída só pelo operador de portão (08/10/2026): a credencial não oferece mais o botão.
+                  podeAutoRegistrar={false}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
-                  biometriaAutoatendimento={biometriaAutoatendimento}
+                  biometriaAutoatendimento={false}
                   metodoAcesso={metodoAcesso}
                   // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
                   bloqueadoHoje={!!escala && (escala.pendente || !escala.aprovados.includes(hoje))}

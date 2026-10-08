@@ -7809,10 +7809,16 @@ async function validarLeituraFacial(
  * (ver supabase/upgrade-biometria-modos.sql); ligar ou não é decisão do
  * produtor, tela de Editar evento.
  */
+/** Entrada e saída só no portão, pelo operador (scanner ou manual) — ver `registrarPresencaLivre`. */
+const ENTRADA_E_SAIDA_SO_PELO_OPERADOR = true
+
 export async function registrarPresencaFacialLivre(
   token: string, descritor: number[], latitude: number | null, longitude: number | null,
 ): Promise<{ ok?: boolean; error?: string; nome?: string }> {
   // Mesmo teto de `registrarPresencaLivre`: ação pública, só o token protege.
+  if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
+    return { error: 'A entrada é registrada no portão, pelo operador. Mostre o QR Code da sua credencial.' }
+  }
   if (!await podePassar(`livre-face:${token}`, 20, 10 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
@@ -8125,6 +8131,14 @@ export async function registrarPresencaLivre(
   tokenDoLocal?: string
 ): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
   if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
+  /*
+   * ENTRADA E SAÍDA SÓ PELO OPERADOR DE PORTÃO (decisão do Juan, 08/10/2026, VITAL): a pessoa registrava a própria
+   * entrada pelo botão da credencial, sem ninguém conferir. Agora quem registra é o operador — no scanner ou de
+   * forma manual pelo perfil dele. A credencial só mostra o QR.
+   */
+  if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
+    return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
+  }
   /*
    * SAÍDA livre desligada — decisão do Juan, não limitação técnica.
    *

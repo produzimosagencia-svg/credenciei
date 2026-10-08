@@ -92,9 +92,11 @@ grupo('7 · Montagem tem entrada e saída livres')
 confere('o servidor libera', /if \(dia\.tipo !== 'principal'\) return \{ ok: true \}/.test(C.janelas), true)
 confere('nada é cobrado sem horário esperado', /esperado\.entrada && prazoEntradaReal && !desligado\(fluxos, 'reforco'\)/.test(C.mensagens), true)
 
-grupo('8 · No dia principal, o registro livre exige checkin_autonomo ligado')
-confere('a tela só oferece o botão fora do dia principal ou com o auto-atendimento ligado',
-  /!diaPrincipal \|\| evento\?\.checkin_autonomo === true/.test(C.credencial), true)
+grupo('8 · Entrada e saída só pelo operador de portão (Juan, 08/10/2026) — a credencial não registra sozinha')
+confere('a tela não oferece o botão de registrar entrada/saída',
+  /podeAutoRegistrar=\{false\}/.test(C.credencial), true)
+confere('e o servidor recusa o registro pela credencial',
+  /if \(ENTRADA_E_SAIDA_SO_PELO_OPERADOR\) \{/.test(C.actions ?? ''), true)
 confere('e o servidor recusa mesmo chamado direto, sem a coluna ligada',
   /resolucao\.diaPrincipal && evento\.checkin_autonomo !== true/.test(C.actions), true)
 
