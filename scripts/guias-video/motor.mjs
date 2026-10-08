@@ -6,17 +6,42 @@ const FF = createRequire(import.meta.url)('ffmpeg-static')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 /** segmentos: [{ t: 'texto falado', a: async (p) => {...} }] */
+const VOZ_GEMINI = process.env.VOZ_GEMINI || 'Sulafat'
+/** Voz natural do Gemini (TTS). A chave vem do .env.local do projeto e nunca é impressa. */
+async function sintetizarGemini(texto, pcm, wav) {
+  const env = Object.fromEntries(readFileSync('/Users/juanmuzy/Documents/Credenciei/credenciei/.env.local', 'utf8').split('\n').filter(l => l.includes('=') && !l.startsWith('#')).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^"|"$/g, '')]))
+  for (let tentativa = 1; tentativa <= 6; tentativa++) {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({ contents: [{ parts: [{ text: texto }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOZ_GEMINI } } } } }),
+    })
+    const j = await r.json().catch(() => ({}))
+    const b64 = j?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
+    if (r.ok && b64) {
+      writeFileSync(pcm, Buffer.from(b64, 'base64'))
+      // um pouco mais devagar (0.92x), sem mudar o tom: mais fácil de acompanhar
+      execFileSync(FF, ['-y', '-loglevel', 'error', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', pcm, '-af', 'atempo=0.92,apad=pad_dur=0.5', '-ar', '44100', wav])
+      return
+    }
+    console.log(`  (TTS ${r.status}, tentativa ${tentativa})`); await sleep(2500 * tentativa)
+  }
+  throw new Error('o TTS não respondeu: ' + texto.slice(0, 40))
+}
+
 export async function produzir({ html, saida, segmentos, voz = 'Luciana', taxa = 150, trabalho }) {
   rmSync(trabalho, { recursive: true, force: true }); mkdirSync(trabalho, { recursive: true })
   // 1) narração: um arquivo por segmento
   const dur = []
-  segmentos.forEach((s, i) => {
+  for (const [i, s] of segmentos.entries()) {
     const aiff = `${trabalho}/s${i}.aiff`, wav = `${trabalho}/s${i}.wav`
-    execFileSync('say', ['-v', voz, '-r', String(taxa), '-o', aiff, s.t])
-    execFileSync(FF, ['-y', '-loglevel', 'error', '-i', aiff, '-ar', '44100', '-ac', '1', '-af', 'apad=pad_dur=0.45', wav])
+    if (voz === 'gemini') await sintetizarGemini(s.t, `${trabalho}/s${i}.pcm`, wav)
+    else {
+      execFileSync('say', ['-v', voz, '-r', String(taxa), '-o', aiff, s.t])
+      execFileSync(FF, ['-y', '-loglevel', 'error', '-i', aiff, '-ar', '44100', '-ac', '1', '-af', 'apad=pad_dur=0.45', wav])
+    }
     const info = execFileSync('afinfo', [wav]).toString()
     dur.push(parseFloat(info.match(/estimated duration: ([\d.]+)/)[1]))
-  })
+  }
   writeFileSync(`${trabalho}/lista.txt`, segmentos.map((_, i) => `file 's${i}.wav'`).join('\n'))
   execFileSync(FF, ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', `${trabalho}/lista.txt`, '-c', 'copy', `${trabalho}/audio.wav`])
   const total = dur.reduce((a, b) => a + b, 0)

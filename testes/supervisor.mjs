@@ -108,5 +108,13 @@ ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta
   ok(/if \(!restantes\.length && alvo\.role !== 'supervisor'\) await removerFuncaoExtra\(perfilId, 'supervisor'\)/.test(corpo), 'só a função de supervisor sai quando acabam os setores — as outras funções ficam')
 }
 
+// ── Credencial do supervisor com vários setores: um QR só, e o topo mostra o evento e os setores (Juan, 08/10/2026) ──
+{
+  const cred = readFileSync(new URL('../app/credential/[token]/page.tsx', import.meta.url), 'utf8')
+  ok(/from\('supervisor_setores'\)[\s\S]{0,160}eq\('fornecedores\.evento_id', evento\.id\)/.test(cred), 'a credencial busca os setores do supervisor NESTE evento')
+  ok(/Supervisor de \{setoresDoSupervisor\.join\(' • '\)\}/.test(cred), 'o topo mostra "Supervisor de" e todos os setores')
+  ok(/variosSetores \? '' : fornecedor\?\.nome/.test(cred), 'com vários setores, o setor do crachá não aparece sozinho')
+}
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

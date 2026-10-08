@@ -2,7 +2,7 @@
 
 Gera `public/videos/guias/guia-<perfil>.mp4` a partir do HTML do guia (`conteudo/`) e de um roteiro falado (`roteiros.mjs`).
 
-- A voz vem do `say` do macOS (voz Luciana, pt-BR). Para uma voz humana, grave o áudio e troque o .mp4.
+- A voz é a do Gemini TTS (voz `Sulafat`, pt-BR, 0,92x), com a chave `GEMINI_API_KEY` do `.env.local`. Para outra voz: `VOZ_GEMINI=Achird`. Para a voz do macOS: `VOZ=Luciana`. Para uma voz humana de verdade, grave o áudio e troque o .mp4.
 - A imagem é a gravação da própria página do guia (Playwright), rolando e clicando nos passos no ritmo da fala.
 - `ffmpeg` junta tudo (H.264 + AAC, 960x540).
 

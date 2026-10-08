@@ -484,6 +484,29 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   }
 
   /*
+   * Supervisor em mais de um setor do evento: o QR é UM só (a credencial é por pessoa e por evento) e o
+   * topo mostra o evento e TODOS os setores a que ele está ligado — em vez de só o do crachá (pedido do
+   * Juan, 08/10/2026). Consulta à parte e tolerante, como as outras daqui: falhou, a credencial abre igual.
+   */
+  let setoresDoSupervisor: string[] = []
+  if (evento?.id && funcionario.cpf) {
+    try {
+      const { data: perfilDoCpf } = await supabase.from('perfis').select('id').eq('cpf', funcionario.cpf).maybeSingle()
+      if (perfilDoCpf?.id) {
+        const { data: vinculos } = await supabase
+          .from('supervisor_setores').select('fornecedores!inner(nome, evento_id, subeventos(nome))')
+          .eq('perfil_id', perfilDoCpf.id).eq('fornecedores.evento_id', evento.id)
+        setoresDoSupervisor = (vinculos ?? [])
+          .map(v => v.fornecedores as unknown as { nome?: string; subeventos?: { nome?: string } | null } | null)
+          .filter((f): f is { nome: string; subeventos?: { nome?: string } | null } => !!f?.nome)
+          .map(f => (f.subeventos?.nome ? `${f.nome.trim()} (${f.subeventos.nome})` : f.nome.trim()))
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      }
+    } catch { /* migração dos vínculos pendente */ }
+  }
+  const variosSetores = setoresDoSupervisor.length > 1
+
+  /*
    * Escala por dia (eventos de subeventos) — os dias em que ESTE QR vale.
    * Mostrado sempre que a pessoa está no fluxo, para a regra nunca ser
    * surpresa no portão: ela vê os dias confirmados, vê quando hoje não está
@@ -548,6 +571,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               <p className="text-brand-100 text-xs uppercase tracking-widest font-semibold">Credencial oficial</p>
               <h1 className="text-white font-bold text-xl mt-1">{evento?.nome ?? 'Evento'}</h1>
               {evento?.local && <p className="text-brand-100 text-sm mt-0.5">{evento.local}</p>}
+              {/* Supervisor: o evento e o(s) setor(es) a que ele está ligado. */}
+              {setoresDoSupervisor.length > 0 && (
+                <p className="text-white/90 text-xs font-semibold mt-2 leading-snug" data-testid="setores-do-supervisor">
+                  Supervisor de {setoresDoSupervisor.join(' • ')}
+                </p>
+              )}
             </div>
 
             <div className="px-6 py-6 space-y-5">
@@ -555,7 +584,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               <div className="text-center pb-4 border-b border-slate-100" data-tutorial="cred-identidade">
                 <p className="text-slate-800 font-bold text-lg leading-tight">{funcionario.nome}</p>
                 {funcionario.cargo && <p className="text-brand-500 text-sm font-semibold mt-0.5">{funcionario.cargo}</p>}
-                <p className="text-slate-400 text-xs mt-0.5">{fornecedor?.nome}{funcionario.empresa ? ` • ${funcionario.empresa}` : ''}</p>
+                {/* Com vários setores, o do crachá sozinho confundiria: a lista inteira já está no topo. */}
+                <p className="text-slate-400 text-xs mt-0.5">{variosSetores ? '' : fornecedor?.nome}{variosSetores ? (funcionario.empresa ?? '') : (funcionario.empresa ? ` • ${funcionario.empresa}` : '')}</p>
                 {subeventoNome && (
                   <p className="text-slate-500 text-xs font-semibold mt-1 uppercase tracking-wide">
                     Subgrupo: {subeventoNome}
