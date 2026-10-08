@@ -51,7 +51,7 @@ export default function BuscarColaborador({
   colaboradores: ColaboradorDoEvento[]
   eventoId: string
   eventoNome: string
-  outrosSetores: { id: string; nome: string }[]
+  outrosSetores: { id: string; nome: string; area?: string | null }[]
   podeMoverDeSetor: boolean
   podeCriarSupervisor: boolean
   podeEditarCpf: boolean

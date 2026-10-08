@@ -161,6 +161,11 @@ export default async function SubeventoPage({
   for (const lista of Object.values(supervisoresPorFornecedor)) lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 
   // Supervisor conta como pessoa do setor que cobre, mesmo com o crachá em outro (ver lib/equipe.ts).
+  // O "Mover de fornecedor" precisa dos fornecedores do EVENTO inteiro (de todos os subeventos), não só dos deste.
+  const { data: todosDoEvento } = await supabase.from('fornecedores').select('id, nome, subeventos(nome)').eq('evento_id', eventoId).order('nome')
+  const setoresParaMover = (todosDoEvento ?? []).map(f => ({
+    id: f.id as string, nome: (f.nome as string).trim(), area: (f.subeventos as unknown as { nome?: string } | null)?.nome ?? null,
+  }))
   const supervisoresSemCracha = supervisoresSemCrachaPorSetor(supervisoresPorFornecedor, (candidatosRows ?? []) as { cpf?: string | null; fornecedor_id?: string }[])
 
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
@@ -241,6 +246,7 @@ export default async function SubeventoPage({
             eventoId={eventoId}
             supervisoresPorFornecedor={supervisoresPorFornecedor}
             supervisoresSemCracha={supervisoresSemCracha}
+            setoresParaMover={setoresParaMover}
             funcionariosDoEvento={funcionariosDoEventoRows ?? []}
             candidatosASupervisor={candidatosRows ?? []}
             diasDoEvento={diasTrabalho ?? []}

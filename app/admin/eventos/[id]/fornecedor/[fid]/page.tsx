@@ -1,4 +1,4 @@
-import { getPerfil, meusSetores, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { emLotes } from '@/lib/lotes'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
@@ -113,7 +113,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
      * consulta por carga da página, não por funcionário — a lista é a mesma
      * para todo mundo listado aqui.
      */
-    supabase.from('fornecedores').select('id, nome').eq('evento_id', id).neq('id', fid).order('nome'),
+    supabase.from('fornecedores').select('id, nome, subeventos(nome)').eq('evento_id', id).neq('id', fid).order('nome'),
   ])
 
   if (!fornecedor) notFound()
@@ -489,8 +489,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
                * recusar (`moverFuncionarioDeSetor` já barra isso), e pior:
                * ia contra o isolamento entre eventos que a tela promete.
                */
-              ? setoresDoSupervisor.filter(s => s.id !== fid && s.evento_id === id).map(s => ({ id: s.id, nome: s.nome }))
-              : (outrosSetores ?? [])
+              ? (await comArea(setoresDoSupervisor.filter(s => s.id !== fid && s.evento_id === id))).map(s => ({ id: s.id, nome: s.nome, area: s.area }))
+              : (outrosSetores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string, area: (s.subeventos as unknown as { nome?: string } | null)?.nome ?? null }))
           }
           /*
            * Admin/master move qualquer um. O supervisor também — mas só quando

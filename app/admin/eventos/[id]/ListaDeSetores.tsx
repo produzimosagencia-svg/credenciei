@@ -62,6 +62,7 @@ export default function ListaDeSetores({
   funcionariosDoEvento,
   candidatosASupervisor,
   supervisoresSemCracha = {},
+  setoresParaMover,
   diasDoEvento,
   setoresComMeio,
   setoresComEntradaQualquerHorario,
@@ -84,6 +85,8 @@ export default function ListaDeSetores({
   candidatosASupervisor?: FuncionarioDoSetor[]
   /** Por setor: quantos supervisores contam como pessoa da equipe sem terem crachá ali (ver lib/equipe.ts). */
   supervisoresSemCracha?: Record<string, number>
+  /** Para onde dá para mover uma pessoa: TODOS os fornecedores do evento, com o subevento de cada um (na página de um subevento, `fornecedores` só traz os dele). */
+  setoresParaMover?: { id: string; nome: string; area?: string | null }[]
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
@@ -152,8 +155,8 @@ export default function ListaDeSetores({
   /* O cardápio de "mover para" no modal — cada setor exclui a si mesmo,
      calculado por pessoa lá embaixo (o setor atual varia por linha). */
   const todosOsSetores = useMemo(
-    () => fornecedores.map(f => ({ id: f.id, nome: f.nome })),
-    [fornecedores],
+    () => setoresParaMover ?? fornecedores.map(f => ({ id: f.id, nome: f.nome, area: null as string | null })),
+    [fornecedores, setoresParaMover],
   )
 
   const paraCopiar: SetorParaCopiar[] = fornecedores.map(f => ({

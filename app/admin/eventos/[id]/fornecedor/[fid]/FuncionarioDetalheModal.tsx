@@ -10,6 +10,7 @@ import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
 import { TelefoneInput } from '@/components/inputs'
+import { areasDeDestino, destinosDaArea, rotuloDoDestino } from '@/lib/destinos-mover'
 import SeletorLista from '@/components/SeletorLista'
 import type { HistoricoNoEvento } from '@/lib/historico'
 import type { Presenca } from './FuncionarioTable'
@@ -63,7 +64,7 @@ export default function FuncionarioDetalheModal({
   valorCombinado: number | null
   trigger: React.ReactNode
   /** Os demais setores do evento — o cardápio de para onde mover. */
-  outrosSetores?: { id: string; nome: string }[]
+  outrosSetores?: { id: string; nome: string; /** O subevento do fornecedor, quando o evento usa subeventos. */ area?: string | null }[]
   /** Só admin/master: mover afeta a equipe de outro supervisor. */
   podeMoverDeSetor?: boolean
   /** Mesma permissão que `criarSupervisor` exige no servidor. */
@@ -107,10 +108,16 @@ export default function FuncionarioDetalheModal({
 
   // ── Mover para outro setor ────────────────────────────────────────────────
   const [destino, setDestino] = useState('')
+  // Evento com subeventos: primeiro o subevento, depois o fornecedor dele ('' = ainda não escolheu; SEM_AREA = fornecedores sem subevento).
+  const [areaDestino, setAreaDestino] = useState('')
   const [confirmandoMover, setConfirmandoMover] = useState(false)
   const [motivoMover, setMotivoMover] = useState('')
   const [erroMover, setErroMover] = useState<string | null>(null)
   const [isPendingMover, startTransitionMover] = useTransition()
+
+  // Os subeventos de destino (com quantos fornecedores cada um) e os fornecedores do subevento escolhido — ver lib/destinos-mover.ts.
+  const areasMover = areasDeDestino(outrosSetores)
+  const setoresDaArea = destinosDaArea(outrosSetores, areaDestino)
 
   const moverPara = (novoFornecedorId: string) => {
     setErroMover(null)
@@ -725,14 +732,30 @@ export default function FuncionarioDetalheModal({
 
                     {!confirmandoMover ? (
                       <div className="flex items-center gap-2">
+                        {/*
+                          * Evento com SUBEVENTOS (pedido do Juan, 08/10/2026): primeiro o subevento, depois só os
+                          * fornecedores DELE. Antes era uma lista única só com o nome — e, com o mesmo fornecedor em
+                          * vários subeventos (GOTE - LIMPEZA no Bloco, na Arquibancada…), não dava para saber qual era qual.
+                          */}
+                        {areasMover.length > 0 && (
+                          <SeletorLista
+                            className="text-sm flex-1"
+                            valor={areaDestino}
+                            onChange={a => { setAreaDestino(a); setDestino('') }}
+                            placeholder="Subevento…"
+                            titulo="Mover para qual subevento?"
+                            busca
+                            opcoes={areasMover.map(a => ({ valor: a.chave, rotulo: `${a.rotulo} (${a.total})` }))}
+                          />
+                        )}
                         <SeletorLista
                           className="text-sm flex-1"
                           valor={destino}
                           onChange={setDestino}
-                          placeholder="Mover para…"
+                          placeholder={areasMover.length > 0 && !areaDestino ? 'Escolha o subevento antes' : 'Fornecedor…'}
                           titulo="Mover para qual fornecedor?"
                           busca
-                          opcoes={outrosSetores.map(s => ({ valor: s.id, rotulo: s.nome }))}
+                          opcoes={setoresDaArea.map(s => ({ valor: s.id, rotulo: s.nome }))}
                         />
                         <button
                           onClick={() => destino && setConfirmandoMover(true)}
@@ -746,7 +769,7 @@ export default function FuncionarioDetalheModal({
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
                         <p className="text-amber-800 text-xs">
                           {f.nome} passa a fazer parte de{' '}
-                          <strong>{outrosSetores.find(s => s.id === destino)?.nome}</strong>.
+                          <strong>{rotuloDoDestino(outrosSetores.find(s => s.id === destino))}</strong>.
                           O QR code, o CPF e as batidas já feitas continuam os mesmos — só o
                           fornecedor muda.
                         </p>

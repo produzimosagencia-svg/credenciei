@@ -345,6 +345,10 @@ export default async function EventoPage({
     }
   }
 
+  // Destinos do "Mover de fornecedor": todos os fornecedores do evento, com o subevento de cada um (quando o evento usa).
+  const nomeDoSubevento = new Map(subeventos.map(x => [x.id, x.nome]))
+  const setoresParaMover = fornecedoresEnriquecidos.map(f => ({ id: f.id as string, nome: (f.nome as string).trim(), area: f.subevento_id ? (nomeDoSubevento.get(f.subevento_id) ?? null) : null }))
+
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
 
   /*
@@ -612,6 +616,7 @@ export default async function EventoPage({
                     eventoId={id}
                     supervisoresPorFornecedor={supervisoresPorFornecedor}
                     supervisoresSemCracha={supervisoresSemCracha}
+                    setoresParaMover={setoresParaMover}
                     funcionariosDoEvento={funcionariosDoEventoRows ?? []}
                     diasDoEvento={diasTrabalho ?? []}
                     setoresComMeio={setoresComMeio}
@@ -637,6 +642,7 @@ export default async function EventoPage({
               eventoId={id}
               supervisoresPorFornecedor={supervisoresPorFornecedor}
               supervisoresSemCracha={supervisoresSemCracha}
+              setoresParaMover={setoresParaMover}
               funcionariosDoEvento={funcionariosDoEventoRows ?? []}
               diasDoEvento={diasTrabalho ?? []}
               setoresComMeio={setoresComMeio}

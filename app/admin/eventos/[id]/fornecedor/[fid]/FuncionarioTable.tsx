@@ -102,7 +102,7 @@ export default function FuncionarioTable({
   usaBiometria?: boolean
   valorCombinado: number | null
   /** Os demais setores do evento, para o "mover para outro setor" do modal. */
-  outrosSetores?: { id: string; nome: string }[]
+  outrosSetores?: { id: string; nome: string; area?: string | null }[]
   /** Só admin/master: mover afeta a equipe de outro supervisor. */
   podeMoverDeSetor?: boolean
   /** Mesma permissão que `criarSupervisor` exige no servidor. */

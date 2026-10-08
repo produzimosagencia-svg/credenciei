@@ -72,7 +72,7 @@ export default async function EditarColaboradorPage({
   const ontem = diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))
 
   const { data: setores } = await supabase
-    .from('fornecedores').select('id, nome, valor_combinado').eq('evento_id', eventoParam).order('nome')
+    .from('fornecedores').select('id, nome, valor_combinado, subeventos(nome)').eq('evento_id', eventoParam).order('nome')
   const idsSetores = (setores ?? []).map(s => s.id as string)
 
   const [funcionarios, { data: registros }] = await Promise.all([
@@ -204,7 +204,7 @@ export default async function EditarColaboradorPage({
         colaboradores={colaboradores}
         eventoId={eventoParam}
         eventoNome={evento.nome as string}
-        outrosSetores={(setores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string }))}
+        outrosSetores={(setores ?? []).map(s => ({ id: s.id as string, nome: s.nome as string, area: (s.subeventos as unknown as { nome?: string } | null)?.nome ?? null }))}
         /* Já provamos o escopo de suporte acima (senão a página nem chegava
            aqui) — dentro dele, ele pode as mesmas três coisas de admin/master. */
         podeMoverDeSetor={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
