@@ -4467,10 +4467,16 @@ export async function aprovarCredenciamento(
      * dias não gravarem, a pessoa continua pendente (e não aprovada com um QR
      * que não vale dia nenhum).
      */
+    /*
+     * SEMPRE confere os dias quando o evento usa escala — não só quando a pessoa já tinha um `escala.status`
+     * (pedido do Juan, 08/10/2026: "os dias precisa ser algo obrigatório"). Antes, cadastro sem dias escolhidos
+     * (planilha, ou evento que ligou a escala depois) aprovava direto com ZERO dias — e o QR "valia todo dia", o
+     * oposto do que se queria. `conferirDiasPermitidos` já recusa lista vazia com a frase pronta.
+     */
     const escala = await escalaDoFuncionario(funcionarioId)
-    if (escala?.status && await eventoUsaEscalaPorDia(eventoId)) {
+    if (await eventoUsaEscalaPorDia(eventoId)) {
       const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
-      const pedidos = escala.dias.filter(d => d.selecionado).map(d => d.data)
+      const pedidos = (escala?.dias ?? []).filter(d => d.selecionado).map(d => d.data)
       const conferido = conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
       if (!conferido.ok) return { error: conferido.erro }
       const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, [])

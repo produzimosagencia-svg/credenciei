@@ -60,7 +60,13 @@ export default function AprovacaoComDias({
     })
   }
 
-  const exigeDias = detalhe.usaEscala && !!detalhe.escala?.status
+  /*
+   * SEMPRE exige pelo menos 1 dia quando o evento usa escala (pedido do Juan, 08/10/2026: "os dias precisa ser
+   * algo obrigatório ... trava, manda mensagem de erro"). Antes, cadastro sem `escala.status` (planilha, ou
+   * evento que ligou a escala depois) podia ser aprovado com ZERO dias marcados — "QR vale todo dia", o oposto
+   * do que se quer agora. O mesmo vale pra `salvarDias`, que já recusava lista vazia.
+   */
+  const exigeDias = detalhe.usaEscala
   const aprovar = () => {
     if (exigeDias && !marcados.length) { setErro('Marque pelo menos um dia de trabalho.'); return }
     executar(async () => {
@@ -108,8 +114,8 @@ export default function AprovacaoComDias({
               Pediu para trabalhar em <strong>{listarDias(pedidos)}</strong>. Confirme, acrescente ou tire dias antes de aprovar.
             </p>
           ) : (
-            <p className="text-slate-500 text-xs">
-              Sem dias escolhidos no cadastro — o QR vale em todos os dias do evento. Marcar dias aqui passa a limitar o QR a eles.
+            <p className="text-amber-700 text-xs">
+              Nenhum dia escolhido ainda — marque pelo menos um antes de aprovar ou salvar.
             </p>
           )}
 
