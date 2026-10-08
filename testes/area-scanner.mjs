@@ -39,6 +39,13 @@ for (const [nome, src] of [['QR', leitor], ['rosto', rosto]]) {
   ok(/subeventosDoEvento\.length \? \(areasOverride \?\? areasDoEvento\(areasSalvasRaw, eventoId\)\) : \[\]/.test(src), `leitor de ${nome}: áreas guardadas não valem sem subeventos`)
 }
 
+console.log('Supervisor de vários setores aprova em todos eles')
+const aprov = acoes.slice(acoes.indexOf('async function exigirAcessoAAprovacao'), acoes.indexOf('export async function aprovarCredenciamento'))
+const ativ = acoes.slice(acoes.indexOf('export async function alternarAtivacao'), acoes.indexOf('async function exigirAcessoAAprovacao'))
+for (const [nome, trecho] of [['aprovar/negar', aprov], ['ativar/desativar', ativ]]) {
+  ok(/alcancaSetor\(perfil, fornecedorId\)/.test(trecho) && !/perfil\.fornecedor_id !== fornecedorId/.test(trecho), `${nome}: vale qualquer setor do supervisor, não só o ativo`)
+}
+
 console.log('Limite por dia no setor')
 ok(/const abrir = \(\) => \{ setTravas\(null\); setOpen\(true\) \}/.test(modal) && !/onClick=\{\(\) => setOpen\(true\)\}/.test(modal), 'o modal zera o limite ao abrir (não mostra valor velho)')
 ok(/key=\{`\$\{d\.data\}-\$\{travas\.atuais\[d\.data\] \?\? ''\}`\}/.test(modal), 'campo remonta quando o valor muda')

@@ -43,6 +43,7 @@ import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
+import { alcancaSetor } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
@@ -4081,16 +4082,21 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
   if (!perfil) throw new Error('Sem permissão')
 
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este fornecedor')
+    // Todos os setores onde ele é supervisor, não só o ativo no momento (supervisor de vários setores era recusado nos outros).
+    if (!(await alcancaSetor(perfil, fornecedorId))) throw new Error('Sem permissão sobre este fornecedor')
   } else {
     const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
     if (!evento) throw new Error('Evento não encontrado')
     const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
     if (!podeSempre) {
-      if (perfil.role !== 'suporte') throw new Error('Sem permissão')
-      if (!(motivo ?? '').trim()) throw new Error(`Informe o motivo da ${ativo ? 'ativação' : 'desativação'}.`)
-      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
-        throw new Error('Este evento não está no seu escopo de atendimento.')
+      if (perfil.role !== 'suporte') {
+        // Quem tem vínculo de supervisor com este setor sem ter o papel principal (ex.: operador que também supervisiona).
+        if (!(await meusSetores(perfil)).some(s => s.id === fornecedorId)) throw new Error('Sem permissão')
+      } else {
+        if (!(motivo ?? '').trim()) throw new Error(`Informe o motivo da ${ativo ? 'ativação' : 'desativação'}.`)
+        if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+          throw new Error('Este evento não está no seu escopo de atendimento.')
+        }
       }
     }
   }
@@ -4125,16 +4131,21 @@ async function exigirAcessoAAprovacao(fornecedorId: string, eventoId: string, mo
   if (!perfil) throw new Error('Sem permissão')
 
   if (perfil.role === 'supervisor') {
-    if (perfil.fornecedor_id !== fornecedorId) throw new Error('Sem permissão sobre este fornecedor')
+    // Todos os setores onde ele é supervisor, não só o ativo no momento (supervisor de vários setores era recusado nos outros).
+    if (!(await alcancaSetor(perfil, fornecedorId))) throw new Error('Sem permissão sobre este fornecedor')
   } else {
     const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
     if (!evento) throw new Error('Evento não encontrado')
     const podeSempre = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
     if (!podeSempre) {
-      if (perfil.role !== 'suporte') throw new Error('Sem permissão')
-      if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da decisão.')
-      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
-        throw new Error('Este evento não está no seu escopo de atendimento.')
+      if (perfil.role !== 'suporte') {
+        // Quem tem vínculo de supervisor com este setor sem ter o papel principal (ex.: operador que também supervisiona).
+        if (!(await meusSetores(perfil)).some(s => s.id === fornecedorId)) throw new Error('Sem permissão')
+      } else {
+        if (!(motivo ?? '').trim()) throw new Error('Informe o motivo da decisão.')
+        if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: evento.organizacao_id ?? undefined }))) {
+          throw new Error('Este evento não está no seu escopo de atendimento.')
+        }
       }
     }
   }
@@ -9318,7 +9329,7 @@ export async function registrarPresencaAssistida(
   const evento = comEvento(func.fornecedores)?.eventos
 
   if (perfil.role === 'supervisor') {
-    if (func.fornecedor_id !== perfil.fornecedor_id) return { error: 'Esta pessoa é de outro fornecedor. Você só registra a sua equipe.' }
+    if (!(await alcancaSetor(perfil, func.fornecedor_id as string))) return { error: 'Esta pessoa é de outro fornecedor. Você só registra a sua equipe.' }
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento?.id, organizacaoId: evento?.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }
