@@ -53,5 +53,11 @@ console.log('Gestor de credenciamento em mais de uma organização (08/10/2026)'
   ok(/upgrade-funcoes-varias-organizacoes\.sql/.test(servidor), 'sem a migração, o erro diz o que rodar — e a mensagem não é enviada')
 }
 
+console.log('Seletor: mais de um setor também escolhe (Encarregado e supervisor)')
+{
+  const sel = ler('components/SeletorDeEvento.tsx')
+  ok(/totalSetores > 1/.test(sel) && /contexto\.modo === 'encarregado'/.test(sel), 'com um evento só e vários setores, o seletor do topo continua clicável')
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -391,6 +391,8 @@ html, body { overflow-x: clip; }
 
 
 .way.nao li::before { background: var(--bad-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c0261d' stroke-width='3.2' stroke-linecap='round'%3E%3Cpath d='M7 7l10 10M17 7L7 17'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.flow.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 880px) { .flow.tres { grid-template-columns: minmax(0, 1fr); } }
 .stat4 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .stat4 .card b { font-family: var(--font-display); font-size: 17px; display: block; line-height: 1.1; }
 .stat4 .card small { color: var(--scr-mute); font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; }
@@ -403,6 +405,7 @@ html, body { overflow-x: clip; }
   <ul>
     <li><a href="#acesso">Seu acesso</a></li>
     <li><a href="#voce">O que você vê</a></li>
+    <li><a href="#varios">Mais de um evento</a></li>
     <li><a href="#telas">Telas reais</a></li>
     <li><a href="#duvidas">Dúvidas</a></li>
   </ul>
@@ -520,6 +523,18 @@ html, body { overflow-x: clip; }
   </div>
 </section>
 
+<section class="block" id="varios">
+  <div class="sec-head">
+    <span class="eyebrow">Mais de um evento ou setor</span>
+    <h2>Você escolhe onde olhar</h2>
+  </div>
+  <div class="flow tres">
+    <div class="fstep" style="--i:0"><span class="fn">1</span><b>Escolha o evento</b><span class="t">Aparece a lista dos seus eventos.</span></div>
+    <div class="fstep" style="--i:1"><span class="fn">2</span><b>Escolha o setor</b><span class="t">Só os setores liberados para você.</span></div>
+    <div class="fstep eu" style="--i:2"><span class="fn">3</span><b>Troque quando quiser</b><span class="t">Pelo botão do evento, no topo.</span></div>
+  </div>
+</section>
+
 <section class="block" id="telas">
   <div class="sec-head">
     <span class="eyebrow">Nas telas de verdade</span>
@@ -582,6 +597,7 @@ html, body { overflow-x: clip; }
   <div class="faq">
     <details><summary>Quem cria o meu acesso?</summary><p>O supervisor do seu setor, ou o administrador. Você precisa já estar na equipe.</p></details>
     <details><summary>Esqueci a minha senha.</summary><p>Na entrada, toque em “Esqueci a senha” e digite o CPF. Um link novo chega no seu WhatsApp.</p></details>
+    <details><summary>Tenho mais de um evento ou setor. Como troco?</summary><p>Toque no botão do evento, no topo. Escolha o evento e depois o setor.</p></details>
     <details><summary>Não vejo um setor.</summary><p>Peça ao seu supervisor para incluir você nele.</p></details>
     <details><summary>Posso registrar ponto ou aprovar alguém?</summary><p>Não. Você só consulta. Quem registra e aprova é o supervisor.</p></details>
     <details><summary>Também sou supervisor. Como troco?</summary><p>Toque em “Trocar perfil”, no topo, e escolha a função.</p></details>

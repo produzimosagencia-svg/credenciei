@@ -68,7 +68,9 @@ function Seletor({ contexto }: { contexto: ContextoDeEventos | null }) {
   const atual = contexto.eventos.find(e => e.id === atualId) ?? null
   const setorAtual = contexto.atual.setorId
   const rotulo = atual?.nome ?? 'Escolher evento'
-  const comEscolha = contexto.eventos.length > 1
+  // Escolhe quando há mais de um evento, ou — para quem escolhe até o setor (supervisor e Encarregado) — mais de um setor.
+  const totalSetores = contexto.eventos.reduce((n, e) => n + e.subeventos.reduce((m, sub) => m + sub.setores.length, 0), 0)
+  const comEscolha = contexto.eventos.length > 1 || ((contexto.modo === 'supervisor' || contexto.modo === 'encarregado') && totalSetores > 1)
 
   // Um evento só: só diz onde a pessoa está.
   if (!comEscolha) {
