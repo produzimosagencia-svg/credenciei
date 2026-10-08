@@ -8,7 +8,7 @@
  */
 import { register } from 'node:module'
 
-register('./_acesso-hook.mjs', import.meta.url)
+register('./_hook-ts.mjs', import.meta.url)
 const { tabelas } = await import('./_supabase-falso.mjs')
 const { alcancaSetor } = await import('../lib/autorizacao.ts')
 

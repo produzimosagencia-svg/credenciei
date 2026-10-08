@@ -18,6 +18,8 @@ import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
 import { ListaDePerfis } from '@/components/TrocarPerfil'
 import BadgeAprovacoesPendentes from '@/components/BadgeAprovacoesPendentes'
+import BadgePedidosSetor from '@/components/BadgePedidosSetor'
+import { podeDecidirPedidos } from '@/lib/pedido-setor-regras'
 import { TutorialUsuarioProvider } from '@/components/tutorial/TutorialProvider'
 import { AssistenteIAProvider, useAssistente } from '@/components/ia/AssistenteIA'
 import { BotaoTema } from '@/components/Tema'
@@ -126,6 +128,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
       href: '/admin/aprovacoes', label: 'Aguardando aprovação', icon: ClipboardCheck,
       badge: <BadgeAprovacoesPendentes />,
     })
+  }
+  /*
+   * "Pedidos de setor" — o fornecedor pede o setor pelo link do evento e o pedido cai aqui para o admin/master
+   * aprovar, editar ou negar (pedido do Juan, 08/10/2026). Numerozinho = setores esperando decisão.
+   */
+  if (podeDecidirPedidos(role)) {
+    doEvento.push({ href: '/admin/pedidos-setor', label: 'Pedidos de setor', icon: Building2, badge: <BadgePedidosSetor /> })
   }
   /*
    * "Meu Crachá" — pedido do Juan, 24/09/2026: quem trabalha o evento

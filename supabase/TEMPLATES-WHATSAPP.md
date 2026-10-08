@@ -248,6 +248,32 @@ Exemplos: `Maria Souza` · `Equipe de Apoio` · `Show da Virada 2026` · `31/12/
 
 ---
 
+## 8. `pedido_setor_reprovado`
+
+**Precisa ser cadastrado na Meta antes de o primeiro pedido ser negado** (enquanto o canal for a Cloud API; na
+Evolution o texto já sai pronto). Enviado ao responsável pelo pedido de setor quando o administrador do evento
+nega um ou mais setores — uma mensagem por pedido, listando os setores negados.
+
+**Variáveis**: 1 nome do responsável · 2 setor(es) negado(s) · 3 evento · 4 motivo
+
+```
+Olá, {{1}}! ⚠️
+
+Seu pedido de supervisor do(s) setor(es) {{2}} no evento {{3}} não foi aprovado.
+
+Motivo: {{4}}.
+
+Em caso de dúvida, fale com a organização do evento.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `Maria Souza` · `GOTE - LIMPEZA e BAR NORTE` · `VITAL` · `Quantidade acima do combinado`
+
+Se a Meta ainda não aprovou, a decisão vale do mesmo jeito: o supervisor vê o motivo na página de acompanhamento do pedido.
+
+---
+
 ## Depois de aprovar
 
 1. Configure as variáveis de ambiente na Vercel (e no worker, se estiver usando):

@@ -338,6 +338,22 @@ ${link}
 
 Este endereço é pessoal. Se você não reconhece esta mensagem, ignore.`,
 
+  /**
+   * Pedido de setor NEGADO (formulário público do evento — lib/actions-pedidos-setor.ts). Vai para o
+   * responsável do pedido, com o motivo escrito por quem negou. PRECISA ser cadastrado e aprovado na Meta com
+   * EXATAMENTE este texto e estas 4 variáveis (nome, setor(es), evento, motivo) — ver
+   * supabase/TEMPLATES-WHATSAPP.md. Sem isso a Meta recusa o envio e a mensagem fica como "falhou" na fila; a
+   * decisão não se perde, porque o motivo também aparece na página de acompanhamento do pedido.
+   */
+  pedido_setor_reprovado: ([nome, setores, evento, motivo]) =>
+`Olá, ${nome}! ⚠️
+
+Seu pedido de supervisor do(s) setor(es) ${setores} no evento ${evento} não foi aprovado.
+
+Motivo: ${motivo}.
+
+Em caso de dúvida, fale com a organização do evento.`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 

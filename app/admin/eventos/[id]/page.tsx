@@ -11,6 +11,9 @@ import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao } from '@/lib/
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
+import PedidosSetorCard from './PedidosSetorCard'
+import { pendentesPorEvento } from '@/lib/pedidos-setor-consulta'
+import { podeDecidirPedidos } from '@/lib/pedido-setor-regras'
 import OperadorPortariaCard from './OperadorPortariaCard'
 import PainelConferencias from './PainelConferencias'
 import { CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
@@ -315,6 +318,18 @@ export default async function EventoPage({
   }
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
 
+  /*
+   * Pedido de setor (link público + fila) — só admin e master. Consultas tolerantes: sem a migração
+   * (upgrade-pedidos-de-setor.sql) os números ficam em zero e o cartão ainda mostra o que dá.
+   */
+  const verPedidosDeSetor = podeDecidirPedidos(perfil.role)
+  const [pedidosAguardando, pedidosRecebidos] = verPedidosDeSetor
+    ? await Promise.all([
+        pendentesPorEvento([id]).then(m => m.get(id) ?? 0).catch(() => 0),
+        supabase.from('pedidos_setor').select('id', { count: 'exact', head: true }).eq('evento_id', id).then(r => r.count ?? 0, () => 0),
+      ])
+    : [0, 0]
+
   const subeventos = (subeventosRows ?? []) as { id: string; nome: string }[]
 
   /*
@@ -571,6 +586,16 @@ export default async function EventoPage({
               suspenso={evento.cadastro_suspenso === true}
               podeReabrirIndividual={ehMaster(perfil?.role)}
               setores={(fornecedores ?? []).map(f => ({ id: f.id, nome: f.nome }))}
+            />
+          )}
+          {verPedidosDeSetor && (
+            <PedidosSetorCard
+              eventoId={id}
+              ativo={(evento as { pedido_setor_ativo?: boolean }).pedido_setor_ativo === true}
+              token={(evento as { pedido_setor_token?: string | null }).pedido_setor_token ?? null}
+              prazo={(evento as { pedido_setor_prazo?: string | null }).pedido_setor_prazo ?? null}
+              aguardando={pedidosAguardando}
+              total={pedidosRecebidos}
             />
           )}
           {(podeGerenciarEventos(perfil) || podeGerenciarUsuarios(perfil)) && (

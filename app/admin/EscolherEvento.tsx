@@ -136,7 +136,7 @@ export async function eventosDaOrganizacao(organizacaoId: string | null): Promis
  * menu (Avisos, Relatórios) e por isso não sabem de qual evento se trata.
  */
 export default function EscolherEvento({
-  eventos, href, titulo, descricao, icone, vazio, mostrarOrganizacao,
+  eventos, href, titulo, descricao, icone, vazio, mostrarOrganizacao, contagens,
 }: {
   eventos: EventoEscolhivel[]
   /** Monta o link de cada evento — cada tela usa o seu parâmetro. */
@@ -147,6 +147,8 @@ export default function EscolherEvento({
   vazio: { titulo: string; descricao: string }
   /** Só o master vê de quem é o evento — pro admin é sempre a própria org. */
   mostrarOrganizacao: boolean
+  /** Um número ao lado do evento (ex.: pedidos aguardando). Ausente ou zero = nada aparece. */
+  contagens?: Record<string, number>
 }) {
   return (
     <Secao tom="acento" icone={icone} titulo={titulo} descricao={descricao} corpoClassName={eventos.length ? '' : 'p-4'}>
@@ -201,6 +203,12 @@ export default function EscolherEvento({
                   )}
                 </p>
               </div>
+
+              {!!contagens?.[e.id] && (
+                <span className="shrink-0 min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-xs font-bold tabular-nums flex items-center justify-center">
+                  {contagens[e.id]}
+                </span>
+              )}
 
               <div className="w-7 h-7 rounded-full bg-slate-50 group-hover:bg-brand-100 flex items-center justify-center shrink-0 transition-colors">
                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600" />

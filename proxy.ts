@@ -17,6 +17,8 @@ export async function proxy(request: NextRequest) {
    */
   if (
     pathname.startsWith('/form/') ||
+    // Pedido de setor (link público do evento) e a página onde o fornecedor acompanha a resposta: quem abre não tem conta.
+    pathname.startsWith('/pedido-setor/') ||
     pathname.startsWith('/credential/') ||
     pathname.startsWith('/portaria/') ||
     pathname.startsWith('/supervisor/criar-senha/') ||

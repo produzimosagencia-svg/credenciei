@@ -44,6 +44,12 @@ export const ACAO_LABELS: Record<string, string> = {
   CONCESSAO_ENCARREGADO: 'Encarregado designado',
   REMOCAO_ENCARREGADO: 'Encarregado removido',
   ALTERACAO_FUNCIONALIDADE: 'Funcionalidade alterada',
+  ALTERACAO_LINK_PEDIDO_SETOR: 'Link de pedido de setor alterado',
+  APROVACAO_PEDIDO_SETOR: 'Pedido de setor aprovado',
+  NEGACAO_PEDIDO_SETOR: 'Pedido de setor negado',
+  PEDIDO_AMPLIACAO: 'Pedido de mais colaboradores',
+  APROVACAO_AMPLIACAO: 'Mais colaboradores aprovado',
+  NEGACAO_AMPLIACAO: 'Mais colaboradores negado',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */
