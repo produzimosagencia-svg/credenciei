@@ -27,6 +27,7 @@ export const ACAO_LABELS: Record<string, string> = {
   EXCLUSAO_PONTO: 'Batida apagada',
   RESET_SENHA: 'Redefinição de senha',
   ALTERACAO_SUPERVISOR: 'Alteração de supervisor',
+  ALTERACAO_OPERADOR: 'Alteração de operador de portão',
   ALTERACAO_PERMISSAO: 'Permissão alterada',
   REABERTURA_TURNO: 'Voltou a trabalhar (turno reaberto)',
   ENTRADA_VEICULO_LIBERADA: 'Entrada de veículo liberada',

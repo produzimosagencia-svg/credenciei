@@ -45,6 +45,8 @@ const supabase = createBrowserClient(
 )
 
 import MeusSetores, { type SetorDoSupervisor } from './MeusSetores'
+import SeletorDeEvento from './SeletorDeEvento'
+import type { ContextoDeEventos } from '@/lib/contexto-eventos-tipos'
 
 type NavItem = { href: string; label: string; icon: React.ElementType; badge?: React.ReactNode }
 type Grupo = { titulo?: string; itens: NavItem[] }
@@ -600,7 +602,7 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
  */
 export default function AppShell({
   perfil, fotoOrgUrl = null, orgNome = null, setores = [], setorAtualId = null,
-  temEventoComBiometria = true, temVinculoSupervisor = false, encarregadosHabilitado = false, children,
+  temEventoComBiometria = true, temVinculoSupervisor = false, encarregadosHabilitado = false, contextoEventos = null, children,
 }: {
   perfil: Perfil
   fotoOrgUrl?: string | null
@@ -614,6 +616,8 @@ export default function AppShell({
   temVinculoSupervisor?: boolean
   /** A organização liberou "Criar Encarregado" — mostra o item no menu do supervisor. */
   encarregadosHabilitado?: boolean
+  /** Evento › Subevento › Fornecedor deste acesso — alimenta o seletor de evento do topo (null: papel sem seletor). */
+  contextoEventos?: ContextoDeEventos | null
   children: React.ReactNode
 }) {
   const router = useRouter()
@@ -666,6 +670,8 @@ export default function AppShell({
                 </span>
               </span>
             )}
+            {/* Em qual evento a pessoa está (e troca, quando tem mais de um) — ver SeletorDeEvento. */}
+            <SeletorDeEvento contexto={contextoEventos} />
             {/* Atendimento humano no WhatsApp — pra quem usa o sistema (o master É o suporte, então não vê). */}
             {!ehMaster(perfil.role) && (
               <BotaoSuporteWpp

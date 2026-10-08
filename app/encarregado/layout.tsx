@@ -7,6 +7,8 @@ import BotaoSair from '@/app/gastos/BotaoSair'
 import BotaoTemaTopo from './BotaoTemaTopo'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
 import MenuTrocarPerfil from '@/components/TrocarPerfil'
+import SeletorDeEvento from '@/components/SeletorDeEvento'
+import { contextoDeEventos } from '@/lib/contexto-eventos'
 
 /**
  * Shell próprio do Encarregado — enxuto de propósito, como o do Gastos.
@@ -23,6 +25,7 @@ export default async function EncarregadoLayout({ children }: { children: React.
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!ehEncarregado(perfil.role)) redirect('/admin')
+  const contextoEventos = await contextoDeEventos(perfil)
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -41,6 +44,7 @@ export default async function EncarregadoLayout({ children }: { children: React.
           </Link>
           <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <span className="hidden sm:block text-slate-500 text-xs font-medium truncate max-w-[160px]">{perfil.nome}</span>
+            <SeletorDeEvento contexto={contextoEventos} />
             <BotaoSuporteWpp nome={perfil.nome} funcao="Encarregado" />
             <MenuTrocarPerfil funcoes={(perfil.funcoes ?? []) as { role: string; base?: boolean }[]} ativa={perfil.role as string} />
             <BotaoTemaTopo />

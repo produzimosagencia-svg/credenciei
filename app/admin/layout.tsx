@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getPerfil, meusSetoresDoEventoAtual, meusSetores, comArea, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, podeGerenciarUsuarios, ehMaster } from '@/lib/permissions'
 import AppShell from '@/components/AppShell'
+import { contextoDeEventos } from '@/lib/contexto-eventos'
 import { encarregadosLigadosParaSetor, encarregadosLigadosParaOrganizacao } from '@/lib/encarregado-flag'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -45,6 +46,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           : Promise.resolve(false),
   ])
 
+  // O seletor de evento do topo. Fora do Promise.all acima só porque o supervisor reaproveita os setores de `meusVinculos`.
+  const contextoEventos = await contextoDeEventos(perfil, meusVinculos)
+
   const org = orgResult.data
   const orgNome: string | null = org?.nome ?? null
   let fotoOrgUrl: string | null = null
@@ -65,6 +69,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       temEventoComBiometria={temEventoComBiometria}
       temVinculoSupervisor={meusVinculos.length > 0}
       encarregadosHabilitado={encarregadosLigados}
+      contextoEventos={contextoEventos}
     >
       {children}
     </AppShell>

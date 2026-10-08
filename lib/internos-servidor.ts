@@ -3,6 +3,7 @@ import { supabaseAdmin } from './supabase-server'
 import { adicionarFuncionarioNaPlanilha, registrarPresencaNaPlanilha } from './google-sheets'
 import { formatarBR } from './tz'
 import { normalizarCpf } from './usuario'
+import { ROLE_LABELS } from './permissions'
 import { podeReceberFuncaoExtra, FUNCOES_EXTRAS, MSG_FUNCAO_NAO_COMBINA, type FuncaoExtra } from './funcoes'
 import type { DiaDoEvento, FuncionalidadesOrganizacao } from './actions'
 
@@ -223,4 +224,38 @@ export async function removerFuncaoExtra(perfilId: string, role: FuncaoExtra): P
   if (error && !/perfil_funcoes|does not exist|schema cache/i.test(error.message)) {
     console.error('[funcoes] não consegui tirar a função extra', error.message)
   }
+}
+
+/**
+ * Os operadores de portão (Gestores de credenciamento) de uma organização — quem tem o papel
+ * como BASE e quem o recebeu como função EXTRA (um supervisor ou Encarregado que também opera
+ * o portão e troca de perfil pela foto).
+ *
+ * Sem a segunda metade, "criar operador" para alguém que já tinha outro acesso funcionava, mas
+ * a pessoa nunca aparecia na lista do evento — a tela não atualizava (achado ao vivo, 07/10/2026,
+ * quando o Juan se cadastrou como operador no VITAL). `funcaoExtra` traz o nome da função de
+ * base, e é o que a tela usa pra NÃO oferecer editar/excluir a conta inteira, só tirar a função.
+ */
+export type OperadorDaOrganizacao = {
+  id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean
+  funcaoExtra?: string | null
+}
+export async function operadoresDaOrganizacao(organizacaoId: string): Promise<OperadorDaOrganizacao[]> {
+  const colunas = 'id, nome, email, cpf, telefone, ativo'
+  const [{ data: base }, { data: extras, error: erroExtras }] = await Promise.all([
+    supabaseAdmin.from('perfis').select(colunas).eq('role', 'operador_portao').eq('organizacao_id', organizacaoId),
+    supabaseAdmin.from('perfil_funcoes').select('perfil_id').eq('role', 'operador_portao').eq('organizacao_id', organizacaoId),
+  ])
+  const lista: OperadorDaOrganizacao[] = (base ?? []) as OperadorDaOrganizacao[]
+  const jaTem = new Set(lista.map(o => o.id))
+  // Migração das funções múltiplas pendente (ou erro): fica só com os operadores de base, como antes.
+  const idsExtras = erroExtras ? [] : (extras ?? []).map(e => e.perfil_id as string).filter(id => !jaTem.has(id))
+  if (idsExtras.length) {
+    const { data: pessoas } = await supabaseAdmin.from('perfis').select(`${colunas}, role`).in('id', idsExtras)
+    for (const p of (pessoas ?? []) as (OperadorDaOrganizacao & { role: string })[]) {
+      const { role, ...resto } = p
+      lista.push({ ...resto, funcaoExtra: ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role })
+    }
+  }
+  return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }

@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck, UserPlus, Pencil, X, Trash2, Copy, CheckCheck, Search, ChevronRight, ArrowLeft, KeyRound, ScanFace } from 'lucide-react'
-import { criarOperadorPortaria, editarSupervisor, deletarUsuario, gerarLinkDeAcesso, criarTotem, editarTotem } from '@/lib/actions'
+import { criarOperadorPortaria, editarSupervisor, deletarUsuario, removerFuncaoOperador, gerarLinkDeAcesso, criarTotem, editarTotem } from '@/lib/actions'
 import SeletorLista from '@/components/SeletorLista'
 import { NomeInput, CpfInput, TelefoneInput } from '@/components/inputs'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -11,7 +11,11 @@ import { mensagemAmigavel } from '@/lib/erros'
 import ConfirmModal from '@/components/ConfirmModal'
 import { chaveBusca } from '@/lib/format'
 
-type Operador = { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }
+type Operador = {
+  id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean
+  /** Quem recebeu o papel de operador como função EXTRA: o nome da função de base dele (ex.: "Supervisor"). */
+  funcaoExtra?: string | null
+}
 type FuncionarioDoEvento = { id: string; nome: string; cpf: string; telefone: string }
 
 /** A partir de quantos nomes a lista de escolha ganha busca. */
@@ -50,6 +54,10 @@ export default function OperadorPortariaCard({
 }) {
   const ehBiometriaQr = metodoIdentificacao === 'biometria_qr'
   const [modalAberto, setModalAberto] = useState<'criar' | 'criar-totem' | Operador | null>(null)
+  const [removendoFuncao, setRemovendoFuncao] = useState<Operador | null>(null)
+  const [erroRemocao, setErroRemocao] = useState<string | null>(null)
+  const [removendoPendente, startRemocao] = useTransition()
+  const router = useRouter()
 
   /*
    * Operador é da ORGANIZAÇÃO — a lista cresce a cada evento, não só neste.
@@ -84,7 +92,25 @@ export default function OperadorPortariaCard({
           <p className="text-slate-400 text-xs">Nenhum operador cadastrado nesta organização.</p>
         ) : (
           <div className="-mx-1">
-            {visiveis.map(o => (
+            {visiveis.map(o => o.funcaoExtra ? (
+              /*
+               * Operador por FUNÇÃO EXTRA (também é supervisor, por exemplo): a conta é dele, não
+               * daqui — nada de editar nem excluir a pessoa, só tirar o papel de operador.
+               */
+              <div key={o.id} className="w-full flex items-center gap-1.5 text-sm px-2 py-1.5 rounded-lg text-slate-700">
+                <span className="truncate flex-1">{o.nome}</span>
+                <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold shrink-0">também {o.funcaoExtra}</span>
+                <button
+                  type="button"
+                  onClick={() => setRemovendoFuncao(o)}
+                  className="btn-press w-6 h-6 flex items-center justify-center rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 shrink-0"
+                  title="Tirar a função de operador (o acesso dele continua)"
+                  aria-label={`Tirar a função de operador de ${o.nome}`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
               <button
                 key={o.id}
                 onClick={() => setModalAberto(o)}
@@ -140,6 +166,22 @@ export default function OperadorPortariaCard({
           </button>
         )}
       </div>
+
+      <ConfirmModal
+        open={!!removendoFuncao}
+        onClose={() => { setRemovendoFuncao(null); setErroRemocao(null) }}
+        onConfirm={() => {
+          if (!removendoFuncao) return
+          startRemocao(async () => {
+            const r = await removerFuncaoOperador(removendoFuncao.id)
+            if ('error' in r) { setErroRemocao(r.error); return }
+            setRemovendoFuncao(null)
+            router.refresh()
+          })
+        }}
+        isPending={removendoPendente}
+        mensagem={erroRemocao ?? `Tirar a função de operador de portão de ${removendoFuncao?.nome ?? ''}? O acesso dele como ${removendoFuncao?.funcaoExtra ?? 'a função principal'} continua como está.`}
+      />
 
       {modalAberto === 'criar-totem' && (
         <ModalTotem eventoId={eventoId} onFechar={() => setModalAberto(null)} />

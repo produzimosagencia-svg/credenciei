@@ -1,3 +1,4 @@
+import { operadoresDaOrganizacao } from '@/lib/internos-servidor'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, KeyRound } from 'lucide-react'
@@ -66,9 +67,8 @@ export default async function CriarPorteiroPage({
      * novo a cada vez.
      */
     evento.organizacao_id
-      ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo')
-          .eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id).order('nome')
-      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+      ? operadoresDaOrganizacao(evento.organizacao_id as string).then(data => ({ data }), () => ({ data: [] as never[] }))
+      : Promise.resolve({ data: [] as never[] }),
     // Paginado (e em lotes de setor): a lista de quem pode virar gestor passa de 1.000 num evento grande.
     idsSetores.length
       ? (async () => {
@@ -102,7 +102,7 @@ export default async function CriarPorteiroPage({
 
       <OperadorPortariaCard
         eventoId={eventoParam}
-        operadores={(operadores ?? []) as { id: string; nome: string; email: string; cpf: string | null; telefone: string | null; ativo: boolean }[]}
+        operadores={operadores ?? []}
         funcionariosDoEvento={(funcionarios ?? []) as { id: string; nome: string; cpf: string; telefone: string }[]}
         podeExcluir={podeExcluirOperadorPortao(perfil.role)}
         metodoIdentificacao={metodoIdentificacao}

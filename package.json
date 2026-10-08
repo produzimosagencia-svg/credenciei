@@ -21,7 +21,7 @@
     "seguranca": "node testes/seguranca.mjs",
     "funcoes": "node testes/funcoes.mjs",
     "tema": "node testes/tema.mjs",
-    "testes": "node testes/autorizacao.mjs && node testes/coerencia.mjs && node testes/escala.mjs && node testes/estrutura.mjs && node testes/nomes.mjs && node testes/eventos.mjs && node testes/paginacao.mjs && node testes/supervisor.mjs && node testes/depoimentos.mjs && node testes/encarregado.mjs && node testes/novo-pedido.mjs && node testes/seguranca.mjs && node testes/funcoes.mjs && node testes/tema.mjs && node testes/guia.mjs && node testes/operador.mjs"
+    "testes": "node testes/autorizacao.mjs && node testes/coerencia.mjs && node testes/escala.mjs && node testes/estrutura.mjs && node testes/nomes.mjs && node testes/eventos.mjs && node testes/paginacao.mjs && node testes/supervisor.mjs && node testes/depoimentos.mjs && node testes/encarregado.mjs && node testes/novo-pedido.mjs && node testes/seguranca.mjs && node testes/funcoes.mjs && node testes/tema.mjs && node testes/guia.mjs && node testes/operador.mjs && node testes/seletor.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",

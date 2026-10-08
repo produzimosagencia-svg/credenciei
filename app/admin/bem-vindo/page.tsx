@@ -24,7 +24,7 @@ export const revalidate = 0
  * logo já tem contraste bom tanto no tema claro quanto no escuro, então
  * o mesmo arquivo serve pros dois sem precisar trocar por tema.
  */
-export default async function BemVindoPage() {
+export default async function BemVindoPage({ searchParams }: { searchParams: Promise<{ evento?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!podeAcompanhar(perfil)) redirect('/admin')
@@ -32,7 +32,11 @@ export default async function BemVindoPage() {
   const eventos = await eventosEscaneaveisSemData(perfil)
   const hoje = await eventosAcontecendoHoje(eventos.map(e => e.id))
   // Quem está acontecendo hoje vem primeiro: é nele que o operador provavelmente vai trabalhar.
-  const ordenados = [...eventos].sort((a, b) => Number(hoje.has(b.id)) - Number(hoje.has(a.id)))
+  const ordenadosTodos = [...eventos].sort((a, b) => Number(hoje.has(b.id)) - Number(hoje.has(a.id)))
+  // Vindo do seletor de evento do topo (`?evento=`): mostra só o escolhido, com um caminho de volta à lista.
+  const { evento: eventoParam } = await searchParams
+  const escolhido = eventoParam ? ordenadosTodos.find(e => e.id === eventoParam) : undefined
+  const ordenados = escolhido ? [escolhido] : ordenadosTodos
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
@@ -59,7 +63,7 @@ export default async function BemVindoPage() {
         {ordenados.length > 0 && (
           <div className="mt-5 text-left">
             <p className="text-slate-800 font-semibold text-sm flex items-center gap-1.5">
-              <CalendarDays className="w-4 h-4 text-brand-500" /> Em qual evento você vai trabalhar?
+              <CalendarDays className="w-4 h-4 text-brand-500" /> {escolhido ? 'Evento escolhido' : 'Em qual evento você vai trabalhar?'}
             </p>
             <div className="mt-3 space-y-3">
               {ordenados.map(e => (
@@ -88,6 +92,11 @@ export default async function BemVindoPage() {
                 </div>
               ))}
             </div>
+            {escolhido && ordenadosTodos.length > 1 && (
+              <Link href="/admin/bem-vindo" className="block text-center text-brand-600 text-sm font-semibold hover:underline mt-3">
+                Ver todos os eventos
+              </Link>
+            )}
           </div>
         )}
       </div>

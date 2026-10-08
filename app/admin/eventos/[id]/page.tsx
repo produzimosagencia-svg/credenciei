@@ -7,7 +7,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
+import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao } from '@/lib/internos-servidor'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
 import OperadorPortariaCard from './OperadorPortariaCard'
@@ -209,8 +209,7 @@ export default async function EventoPage({
         .order('id').range(de, ate),
     ).then(data => ({ data }), () => ({ data: null })),
     evento.organizacao_id
-      ? supabase.from('perfis').select('id, nome, email, cpf, telefone, ativo')
-          .eq('role', 'operador_portao').eq('organizacao_id', evento.organizacao_id)
+      ? operadoresDaOrganizacao(evento.organizacao_id as string).then(data => ({ data }), () => ({ data: [] as never[] }))
       : Promise.resolve(vazio),
     fornecedorIds.length
       ? supabase.from('fornecedores').select('id, exige_meio').in('id', fornecedorIds)

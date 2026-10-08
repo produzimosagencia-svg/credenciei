@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
@@ -1237,6 +1237,12 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
        */
       const funcao = await garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)
       if (!funcao.ok) throw new Error(funcao.erro)
+      after(() => registrarAuditoria({
+        perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
+        campoAlterado: `Operador de portão — ${evento.nome}`,
+        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou a função de operador)`,
+        eventoId, organizacaoId: organizacaoId ?? undefined,
+      }))
     } else {
       if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
         throw new Error('Este CPF já está cadastrado em outra organização.')
@@ -2189,6 +2195,35 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   if (alvo.fornecedor_id) {
     const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
     if (fornecedor) revalidatePath(`/admin/eventos/${fornecedor.evento_id}`)
+  }
+}
+
+/**
+ * Tira SÓ a função de operador de portão de quem a recebeu como função extra (um supervisor ou
+ * Encarregado que também opera o portão). A conta, o login e a função de base ficam intactos —
+ * `deletarUsuario` apagaria a pessoa inteira, que é o que NÃO se quer aqui.
+ */
+export async function removerFuncaoOperador(perfilId: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!podeGerenciarUsuarios(perfil)) return { error: 'Sem permissão.' }
+    const { data: funcao } = await supabaseAdmin
+      .from('perfil_funcoes').select('organizacao_id').eq('perfil_id', perfilId).eq('role', 'operador_portao').maybeSingle()
+    if (!funcao) return { error: 'Esta pessoa não tem a função de operador como extra.' }
+    if (!ehMaster(perfil!.role) && funcao.organizacao_id !== perfil!.organizacao_id) return { error: 'Sem permissão sobre este acesso.' }
+    const { data: alvo } = await supabaseAdmin.from('perfis').select('nome').eq('id', perfilId).maybeSingle()
+    await removerFuncaoExtra(perfilId, 'operador_portao')
+    after(() => registrarAuditoria({
+      perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
+      campoAlterado: 'Função de operador de portão',
+      valorNovo: `${alvo?.nome ?? 'Pessoa'} — função de operador retirada (o acesso dela continua)`,
+      organizacaoId: (funcao.organizacao_id as string | null) ?? undefined,
+    }))
+    revalidatePath('/admin/usuarios')
+    revalidatePath('/admin/criar-porteiro')
+    return { ok: true }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
   }
 }
 
