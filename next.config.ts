@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/guia-supervisor': ['./conteudo/guia-supervisor.html'],
     '/guia-operador': ['./conteudo/guia-operador-portao.html'],
+    '/guia-encarregado': ['./conteudo/guia-encarregado.html'],
   },
   experimental: {
     // As fotos de presença são enviadas (comprimidas) via server action
@@ -66,7 +67,7 @@ const nextConfig: NextConfig = {
       {
         // Tudo é DENY (ninguém embute o Credenciei), exceto o guia do supervisor, que a
         // tela "Tutorial supervisor" mostra num iframe do MESMO site (ver o bloco abaixo).
-        source: '/:path((?!guia-(?:supervisor|operador)$).*)',
+        source: '/:path((?!guia-(?:supervisor|operador|encarregado)$).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           ...cabecalhosComuns,
@@ -81,6 +82,13 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/guia-operador',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          ...cabecalhosComuns,
+        ],
+      },
+      {
+        source: '/guia-encarregado',
         headers: [
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           ...cabecalhosComuns,

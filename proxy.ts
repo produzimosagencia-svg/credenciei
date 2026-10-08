@@ -32,6 +32,7 @@ export async function proxy(request: NextRequest) {
     // Guia do supervisor: público de propósito (decisão do Juan, 07/10/2026) — é o link que se manda a quem ainda não tem conta.
     pathname === '/guia-supervisor' ||
     pathname === '/guia-operador' ||
+    pathname === '/guia-encarregado' ||
     pathname === '/login' ||
     // A landing é pública: é a porta de entrada de quem ainda não tem conta.
     pathname === '/' ||

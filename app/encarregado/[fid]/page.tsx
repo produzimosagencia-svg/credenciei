@@ -105,6 +105,10 @@ export default async function EquipeDoEncarregado({ params }: { params: Promise<
               </ul>
             </div>
           </div>
+          {/* O guia animado do Encarregado (página pública do sistema). */}
+          <a href="/guia-encarregado" target="_blank" rel="noopener" className="inline-block text-brand-700 text-xs font-bold hover:underline">
+            Ver o guia do Encarregado →
+          </a>
         </div>
 
         <div data-tutorial="enc-resumo" className="grid grid-cols-2 sm:grid-cols-4 gap-3">
