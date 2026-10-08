@@ -13,7 +13,7 @@ const actions = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf
 const trecho = (inicio, tam = 1400) => { const i = actions.indexOf(inicio); return i < 0 ? '' : actions.slice(i, i + tam) }
 
 console.log('\n\x1b[1m1 · Supervisor e Gestor de credenciamento SE COMBINAM (regra de 07/10/2026) — com troca de perfil\x1b[0m')
-const vincular = trecho('async function vincularSupervisorAoSetor')
+const vincular = trecho('async function vincularSupervisorAoSetor', 2600)
 ok(vincular.includes("garantirFuncaoExtra(perfilId, 'supervisor'") && !vincular.includes('SUPERVISOR_NAO_E_GESTOR'),
   'todo vínculo de supervisor (tela, importação, IA) dá a função de supervisor como EXTRA a quem já tem outra — não recusa mais')
 const operador = trecho('async function criarOperadorPortariaOuLanca', 4000)

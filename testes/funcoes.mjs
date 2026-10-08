@@ -38,6 +38,7 @@ ok(a.includes("garantirFuncaoExtra(perfilId, 'supervisor', orgDoSetor)"), 'virar
 ok(a.includes("garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)"), 'virar Gestor de credenciamento: idem')
 ok(!a.includes('SUPERVISOR_NAO_E_GESTOR'), 'a regra antiga "supervisor não pode ser Gestor" saiu')
 const interno = ler('lib/internos-servidor.ts')
+ok(/alvo\.role !== 'supervisor' && alvo\.role !== 'master'/.test(readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')), 'master vira supervisor de um setor pelo vínculo (sem a função extra, que master não recebe)')
 ok(/export async function garantirFuncaoExtra/.test(interno) && interno.includes('MSG_FUNCAO_NAO_COMBINA'), 'dar a função extra recusa master/suporte/produtor com a frase pronta')
 ok(!/^\s*['"]use server['"]/.test(interno), 'o ajudante que grava a função não é endpoint público')
 

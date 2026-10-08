@@ -709,8 +709,14 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
    * foto do usuário. Só as identidades próprias (master, suporte, produtor) não se
    * misturam. (Antes: "supervisor não pode ser Gestor de credenciamento".)
    */
+  /*
+   * MASTER também supervisiona (08/10/2026, Gabriel Valiati no VITAL): ele já enxerga e faz tudo, então não precisa
+   * — e não pode — ganhar a FUNÇÃO de supervisor (master é identidade própria, não troca de perfil). Recebe só o
+   * vínculo com o setor e o crachá, que é o que faz ele aparecer como supervisor da equipe e entrar com QR.
+   * Antes, o vínculo era recusado com "identidade própria" e o setor ficava sem o supervisor certo.
+   */
   const { data: alvo } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
-  if (alvo && alvo.role !== 'supervisor') {
+  if (alvo && alvo.role !== 'supervisor' && alvo.role !== 'master') {
     const { data: forn } = await supabaseAdmin.from('fornecedores').select('eventos(organizacao_id)').eq('id', fornecedorId).maybeSingle()
     const orgDoSetor = (forn?.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null
     const funcao = await garantirFuncaoExtra(perfilId, 'supervisor', orgDoSetor)
