@@ -220,7 +220,7 @@ const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
 export default function CheckinPresenca({
   token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [], biometriaAutoatendimento = false,
-  metodoAcesso = 'qr',
+  metodoAcesso = 'qr', bloqueadoHoje = false,
 }: {
   token: string
   momentos: MomentoInfo[]
@@ -255,6 +255,12 @@ export default function CheckinPresenca({
    * o QR continua funcionando igual em qualquer método.
    */
   metodoAcesso?: 'qr' | 'biometria' | 'biometria_qr'
+  /**
+   * Hoje NÃO está entre os dias liberados da escala desta pessoa (ou a escala ainda espera o supervisor). Nenhum
+   * botão de registrar aparece — só o aviso. O servidor já recusava; o botão ativo ao lado de "Acesso não autorizado
+   * para hoje" confundia quem estava na frente da tela (VITAL, 08/10/2026).
+   */
+  bloqueadoHoje?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -577,7 +583,7 @@ export default function CheckinPresenca({
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}
-            podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre}
+            podeAutoRegistrar={podeAutoRegistrar} busyLivre={busyLivre} bloqueado={bloqueadoHoje}
             onLivre={m => registrarLivre(m)}
             metodoAcesso={metodoAcesso}
             /*
@@ -606,7 +612,7 @@ export default function CheckinPresenca({
             * não substitui o cartaz/registro livre acima: as duas podem
             * coexistir, a pessoa usa a que estiver disponível pra ela.
             */}
-          {m.momento === 'entrada' && m.status !== 'feito' && biometriaAutoatendimento && !embutido && (
+          {m.momento === 'entrada' && m.status !== 'feito' && biometriaAutoatendimento && !embutido && !bloqueadoHoje && (
             <button
               type="button"
               onClick={() => { setErroRosto(null); setCapturandoRosto(true) }}
@@ -696,8 +702,10 @@ function CartaoFeito({ label, em }: { label: string; em: string }) {
 }
 
 function Cartao({
-  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre, onEscanear, metodoAcesso = 'qr',
+  info, busy, fase, onFoto, podeAutoRegistrar, busyLivre, onLivre, onEscanear, metodoAcesso = 'qr', bloqueado = false,
 }: {
+  /** Dia não liberado na escala: o cartão vira aviso, sem botão. */
+  bloqueado?: boolean
   info: MomentoInfo
   busy: boolean
   fase: 'local' | 'enviando' | null
@@ -733,6 +741,20 @@ function Cartao({
         <div className="min-w-0">
           <p className="text-green-800 font-bold text-sm">{info.label} registrada</p>
           <p className="text-green-600 text-xs">às {horaBR(info.feitoEm)}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (info.status === 'disponivel' && bloqueado) {
+    return (
+      <div className={`${base} bg-slate-50 border-slate-200`}>
+        <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center shrink-0">
+          <Clock className="w-5 h-5 text-slate-500" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-slate-700 font-bold text-sm">{info.label}: indisponível hoje</p>
+          <p className="text-slate-500 text-xs">Hoje não está entre os seus dias liberados. Fale com o seu supervisor.</p>
         </div>
       </div>
     )

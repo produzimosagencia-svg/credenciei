@@ -658,6 +658,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   temCartazNoLocal={!!evento?.token_portaria}
                   biometriaAutoatendimento={biometriaAutoatendimento}
                   metodoAcesso={metodoAcesso}
+                  // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
+                  bloqueadoHoje={!!escala && (escala.pendente || !escala.aprovados.includes(hoje))}
                 />
               </div>
             </div>
