@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
 import { editarEvento, obterConfiguracaoDoMeio } from '@/lib/actions'
-import { diasDoEvento, obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
+import { diasDoEvento, obterFuncionalidadesOrganizacao, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
@@ -80,13 +80,13 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const [dias, configMeio, funcionalidades] = await Promise.all([
-    diasDoEvento(id), obterConfiguracaoDoMeio(id), obterFuncionalidadesOrganizacao(evento.organizacao_id),
+  const [dias, configMeio, funcionalidades, tutorialDoEvento] = await Promise.all([
+    diasDoEvento(id), obterConfiguracaoDoMeio(id), obterFuncionalidadesOrganizacao(evento.organizacao_id), tutorialHabilitadoNoEvento(id),
   ])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
   return (
-    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role) && tutorialDoEvento}>
     <div className="space-y-6">
       <PageHeader
         voltarPara={`/admin/eventos/${id}`}
@@ -106,6 +106,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             <textarea name="descricao" rows={2} defaultValue={evento.descricao ?? ''} className="input resize-none" />
           </Field>
           <LocalNoMapa
+            eventoId={id}
             latitude={(evento as { local_latitude?: number | null }).local_latitude ?? null}
             longitude={(evento as { local_longitude?: number | null }).local_longitude ?? null}
             raio={(evento as { local_raio_m?: number | null }).local_raio_m ?? null}
@@ -141,6 +142,36 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
                   Portões/categorias de acesso diferentes no mesmo evento (ex.: Camarote,
                   Arquibancada, Pista). Ligado, cada fornecedor passa a nascer DENTRO de um
                   subevento, não mais direto no evento.
+                </p>
+              </div>
+            </div>
+          </label>
+
+          {/*
+            * Tutorial guiado ligado/desligado NESTE evento (pedido do Juan, 08/10/2026): equipe grande e já
+            * treinada fica mais rápido sem o balão abrindo sozinho. Nasce ligado — desligar aqui some o balão
+            * automático e o botão "Ver tutorial" nas telas deste evento; não apaga o histórico de quem já viu.
+            */}
+          <label
+            htmlFor="tutorial_habilitado"
+            className="block bg-white rounded-2xl border border-slate-200 p-4 cursor-pointer
+                       hover:border-brand-300 transition-colors"
+          >
+            <input type="hidden" name="tutorial_habilitado_presente" value="1" />
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="tutorial_habilitado"
+                name="tutorial_habilitado"
+                defaultChecked={(evento as { tutorial_habilitado?: boolean }).tutorial_habilitado !== false}
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-slate-800 font-semibold text-sm">Tutorial guiado</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  O balão explicando cada tela, que abre sozinho na primeira visita. Desligue se a equipe deste
+                  evento já conhece o sistema — some o balão e o botão &quot;Ver tutorial&quot; só aqui, nas telas
+                  deste evento.
                 </p>
               </div>
             </div>

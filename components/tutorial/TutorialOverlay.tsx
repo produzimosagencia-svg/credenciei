@@ -223,7 +223,16 @@ export default function TutorialOverlay({
         </div>
 
         <div className="flex items-center justify-between gap-2 pt-1">
-          <button type="button" onClick={onFinalizar} className="text-xs font-medium text-slate-400 hover:text-slate-600 transition-colors">
+          {/*
+            * Verde, em botão de verdade — não mais um link cinza apagado (pedido do Juan, 08/10/2026: "muita
+            * gente se frustrando com isso" — quem fica preso no tutorial não achava a saída). De propósito MAIS
+            * chamativo que "Próximo": sair é a ação que resolve a frustração na hora; avançar pode esperar.
+            */}
+          <button
+            type="button"
+            onClick={onFinalizar}
+            className="btn-press px-3.5 py-2 rounded-xl bg-green-600 text-white text-sm font-bold shadow-sm hover:bg-green-700 transition-colors"
+          >
             Pular tutorial
           </button>
           <div className="flex items-center gap-1.5">

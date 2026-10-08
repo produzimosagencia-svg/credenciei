@@ -19,6 +19,9 @@ type ScanResult = {
   /** Leitura repetida: já estava registrado, nada foi gravado agora. */
   jaRegistrado?: boolean
   qrInvalido?: boolean
+  /** O aparelho de quem leu estava fora do raio do local do evento (Vital, 08/10/2026) — a batida NÃO foi gravada. */
+  foraDoLocal?: boolean
+  distanciaForaDoLocal?: number
   /** Credencial válida, mas de uma área que este portão não está lendo (Vital, 01/10/2026). */
   areaErrada?: boolean
   /** Evento de subeventos: hoje não está entre os dias aprovados na escala da pessoa. */
@@ -138,12 +141,13 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.semResposta) return 'semResposta'
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.foraDoLocal) return 'foraDoLocal'
   if (r.areaErrada) return 'areaErrada'
   if (r.diaNaoAutorizado) return 'diaNaoAutorizado'
   if (r.setorLotado) return 'setorLotado'
@@ -158,6 +162,9 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   jaValidado:  { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
   // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
+  // Vermelho de verdade: a batida NÃO é gravada (pedido do Juan, 08/10/2026 — antes só marcava; testou o
+  // próprio QR fora do estádio e passou direto, sem aviso nenhum).
+  foraDoLocal: { fundo: 'bg-red-700', icone: '📍', titulo: 'FORA DO LOCAL DO EVENTO' },
   areaErrada:  { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   // Vermelho, é recusa de verdade — mas com título próprio: a credencial é
   // válida, o problema é a ESCALA de hoje, e quem resolve é o supervisor.

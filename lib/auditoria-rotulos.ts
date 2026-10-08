@@ -77,6 +77,7 @@ export const ACAO_LABELS: Record<string, string> = {
   CADASTRO_POR_LINK_ALTERADO: 'Cadastro por link aberto/suspenso',
   LINK_DO_SETOR_ALTERADO: 'Link do fornecedor ligado/desligado',
   CONFIGURACAO_MEIO_ALTERADA: 'Batida do meio configurada',
+  LOCAL_DO_EVENTO_ALTERADO: 'Local do evento alterado',
   AVISO_CRIADO: 'Aviso criado',
   AVISO_EDITADO: 'Aviso editado',
   AVISO_SITUACAO: 'Aviso ativado/desativado',

@@ -7,7 +7,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao } from '@/lib/internos-servidor'
+import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
@@ -400,8 +400,10 @@ export default async function EventoPage({
     ? await batidasForaDoLocalHoje(id)
     : []
 
+  const tutorialDoEvento = await tutorialHabilitadoNoEvento(id)
+
   return (
-    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role) && tutorialDoEvento}>
     <div className="space-y-5">
       <AlertaForaDoLocal eventoId={id} batidas={batidasForaDoLocal} />
       {/* Cabeçalho da tela. Encerrar não está aqui: é ação de fim de ciclo,

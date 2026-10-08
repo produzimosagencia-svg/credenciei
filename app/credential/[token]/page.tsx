@@ -6,6 +6,7 @@ import { statusCredenciamentoValido, minutosParaNovoPedido } from '@/lib/credenc
 import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
 import { linkDoSuporte } from '@/lib/whatsapp-suporte'
+import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import CadastrarBiometriaCard from './CadastrarBiometriaCard'
 import ManterAtualizado from '@/components/ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -555,8 +556,10 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
     } catch { /* biometria ainda não migrada */ }
   }
 
+  const tutorialDoEvento = await tutorialHabilitadoNoEvento(evento?.id ?? null)
+
   return (
-    <TutorialProvider tutorial={TUTORIAL} usuarioId={token}>
+    <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>
       {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="funcionario" token={token} />}
       {/* A tela se atualiza sozinha — ninguém aqui vai recarregar a página. */}
       <ManterAtualizado />

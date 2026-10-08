@@ -49,6 +49,9 @@ type ScanResult = {
   jaRegistrado?: boolean
   volta?: boolean
   naoIdentificado?: boolean
+  /** O aparelho de quem leu estava fora do raio do local do evento (Vital, 08/10/2026) — a batida NÃO foi gravada. */
+  foraDoLocal?: boolean
+  distanciaForaDoLocal?: number
   /** Credencial válida, mas de uma área que este portão não está lendo (Vital, 01/10/2026). */
   areaErrada?: boolean
   /** Evento de subeventos: hoje não está entre os dias aprovados na escala da pessoa. */
@@ -107,11 +110,12 @@ const salvarAreasDoEvento = (eventoId: string, ids: string[]) => {
  */
 const REPETIDO_MS = 15_000
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'naoIdentificado' | 'outroEvento'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'naoIdentificado' | 'outroEvento'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.foraDoLocal) return 'foraDoLocal'
   if (r.areaErrada) return 'areaErrada'
   if (r.diaNaoAutorizado) return 'diaNaoAutorizado'
   if (r.setorLotado) return 'setorLotado'
@@ -126,6 +130,7 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   jaValidado: { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
   // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
+  foraDoLocal: { fundo: 'bg-red-700', icone: '📍', titulo: 'FORA DO LOCAL DO EVENTO' },
   areaErrada: { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   diaNaoAutorizado: { fundo: 'bg-red-600', icone: '📅', titulo: 'DIA NÃO AUTORIZADO' },
   setorLotado: { fundo: 'bg-red-600', icone: '⛔', titulo: 'SETOR LOTADO — NÃO LIBERAR' },

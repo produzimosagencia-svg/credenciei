@@ -70,8 +70,31 @@ ok(/ehMaster\(perfil\?\.role\) \|\| perfil\?\.role === 'admin'/.test(pagina) && 
 ok(/<AlertaForaDoLocal/.test(pagina), 'o alerta aparece na tela do evento')
 
 console.log('\nO campo "Local" do evento passa a ser o endereço (preenchido pelo mapa)')
-ok(/name="local" required value={local}/.test(mapa), 'o campo Local vira o endereço, preenchido pelo mapa')
+ok(/name="local" value={local}/.test(mapa), 'o campo Local vira o endereço, preenchido pelo mapa')
 ok(/if \(e && !localTocadoPeloUsuario\) setLocal\(e\)/.test(mapa), 'o endereço achado no mapa preenche o campo, a não ser que o admin já tenha editado à mão')
+
+
+console.log('\nSalvar o local não leva para fora de Editar evento (achado 08/10/2026: o save redirecionava no meio do ajuste do pino)')
+ok(/export async function salvarLocalDoEvento/.test(acoes), 'existe uma ação própria para salvar só o local')
+const salvarLocal = acoes.slice(acoes.indexOf('export async function salvarLocalDoEvento'), acoes.indexOf('export type ConfiguracaoDoMeio'))
+ok(!/redirect\(/.test(salvarLocal), 'essa ação nunca redireciona')
+ok(/onClick={salvarLocal}/.test(mapa) && /startTransition\(async \(\) => \{/.test(mapa) && /router\.refresh\(\)/.test(mapa), 'o botão chama a ação direto e só atualiza os dados (sem navegar)')
+ok(/<button type="button" onClick={salvarLocal}/.test(mapa), 'o botão não é "submit" do form grande da página')
+
+
+console.log('\nFora do local do evento: BLOQUEIA (não é mais só marca) — pedido do Juan, 08/10/2026, depois de testar o próprio QR fora do estádio')
+const autoriza = acoes.slice(acoes.indexOf('async function autorizarPresenca'), acoes.indexOf('\nasync function', acoes.indexOf('async function autorizarPresenca') + 10))
+ok(/foraDoLocal: true,/.test(autoriza) && /success: false,/.test(autoriza.slice(autoriza.indexOf('foraDoLocal: true,') - 200)), 'o scanner recusa (success:false) quando o aparelho do operador está fora do raio')
+ok(autoriza.indexOf('FORA DO LOCAL DO EVENTO') < autoriza.indexOf("if ('reabrir' in decidido)") && autoriza.indexOf('FORA DO LOCAL DO EVENTO') < autoriza.lastIndexOf('if (apenasConferir) {'), 'a recusa acontece ANTES das duas prévias (entrada normal e volta ao trabalho) — o operador nem chega a ver "Confirme para registrar"')
+ok(/if \(!posOperador \|\| foraDoLocal\)/.test(autoriza), 'sem conseguir confirmar a localização, também bloqueia (não dá pra provar que estava no local)')
+ok(/if \(localEvento\) \{/.test(autoriza), 'só bloqueia quando o evento TEM local configurado — sem isso, nada muda')
+const assistidaFull = acoes.slice(acoes.indexOf('export async function registrarPresencaAssistida'), acoes.indexOf('\nexport ', acoes.indexOf('export async function registrarPresencaAssistida') + 10))
+ok(/if \(!posOperador \|\| foraDoLocal\)/.test(assistidaFull), 'o Registro de ponto (assistido) tem a mesma trava')
+ok(assistidaFull.indexOf('FORA DO LOCAL DO EVENTO') < assistidaFull.indexOf('.upload('), 'e confere ANTES de subir a foto (não desperdiça a captura)')
+
+ok(/foraDoLocal: \{ fundo: 'bg-red-700', icone: '📍', titulo: 'FORA DO LOCAL DO EVENTO' \}/.test(ler('app/scan/ScannerView.tsx')), 'o leitor de QR mostra a categoria própria, vermelha de verdade')
+ok(/foraDoLocal: \{ fundo: 'bg-red-700', icone: '📍', titulo: 'FORA DO LOCAL DO EVENTO' \}/.test(ler('app/scan/FaceScannerView.tsx')), 'o leitor de rosto também')
+ok(/resultado === 'fora_do_local'|if \(r\.foraDoLocal\) return 'fora_do_local'/.test(acoes), 'a recusa fica no histórico de leituras com o próprio rótulo')
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

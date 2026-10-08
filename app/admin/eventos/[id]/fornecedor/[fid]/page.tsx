@@ -1,5 +1,6 @@
 import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
+import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import { emLotes } from '@/lib/lotes'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
@@ -362,7 +363,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     : [[], 0]
 
   return (
-    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role) && (await tutorialHabilitadoNoEvento(id))}>
     {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="supervisor" eventoId={id} />}
     <div className="space-y-5">
       <AutoRefresh />

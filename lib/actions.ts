@@ -43,6 +43,7 @@ import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
 import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
+import { podeReceberFuncaoExtra } from './funcoes'
 import { alcancaSetor } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
@@ -67,7 +68,7 @@ import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { guardarNaLixeira } from './lixeira'
-import { avaliarLocal, posicaoValida, type Posicao, type LocalDoEvento } from './geo-local'
+import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -1277,19 +1278,34 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
   if (existente) {
     if (existente.role !== 'operador_portao') {
       /*
-       * Quem já tem OUTRA função (supervisor, Encarregado, administrador…) ganha a de
-       * Gestor de credenciamento como função EXTRA e troca de perfil pela foto do
-       * usuário (regra de 07/10/2026). A conta dele NÃO é tocada — nome, organização,
-       * senha e função de base continuam; só entra a função a mais.
+       * IDENTIDADE PRÓPRIA (master, suporte, produtor) NÃO RECEBE FUNÇÃO EXTRA — mas já pode escanear mesmo assim
+       * (achado ao vivo, 08/10/2026, Gabriel Valiati: master já está em `podeEscanear` direto, então criar o
+       * operador aqui não muda NADA que ele já não tenha — e tentar dar a função travava com "identidade própria").
+       * Mesmo espírito da correção em `vincularSupervisorAoSetor`: pula a função, só avisa.
        */
-      const funcao = await garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)
-      if (!funcao.ok) throw new Error(funcao.erro)
-      after(() => registrarAuditoria({
-        perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
-        campoAlterado: `Operador de portão — ${evento.nome}`,
-        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou a função de operador)`,
-        eventoId, organizacaoId: organizacaoId ?? undefined,
-      }))
+      if (!podeReceberFuncaoExtra(existente.role)) {
+        after(() => registrarAuditoria({
+          perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
+          campoAlterado: `Operador de portão — ${evento.nome}`,
+          valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (identidade própria — já escaneia, sem precisar da função)`,
+          eventoId, organizacaoId: organizacaoId ?? undefined,
+        }))
+      } else {
+        /*
+         * Quem já tem OUTRA função (supervisor, Encarregado, administrador…) ganha a de
+         * Gestor de credenciamento como função EXTRA e troca de perfil pela foto do
+         * usuário (regra de 07/10/2026). A conta dele NÃO é tocada — nome, organização,
+         * senha e função de base continuam; só entra a função a mais.
+         */
+        const funcao = await garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)
+        if (!funcao.ok) throw new Error(funcao.erro)
+        after(() => registrarAuditoria({
+          perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
+          campoAlterado: `Operador de portão — ${evento.nome}`,
+          valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já tinha outro acesso, ganhou a função de operador)`,
+          eventoId, organizacaoId: organizacaoId ?? undefined,
+        }))
+      }
     } else {
       if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
         throw new Error('Este CPF já está cadastrado em outra organização.')
@@ -1299,6 +1315,17 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
         permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
       }).eq('id', existente.id)
       if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
+    }
+
+    /*
+     * Identidade própria (master/suporte/produtor): NÃO manda link de senha nova — a conta dele já tem login e
+     * senha de verdade, e o link criado aqui ("crie sua senha") não faria sentido nenhum pra ele. Ver o comentário
+     * acima, no ramo que pulou a função extra.
+     */
+    if (existente.role !== 'operador_portao' && !podeReceberFuncaoExtra(existente.role)) {
+      revalidatePath('/admin/usuarios')
+      revalidatePath(`/admin/eventos/${eventoId}`)
+      return { ok: true as const, novo: false as const, usuario: cpf, linkSenha: null, identidadePropria: true as const }
     }
 
     const linkSenha = await criarConviteSenhaSupervisor({
@@ -2881,6 +2908,17 @@ export async function editarEvento(id: string, formData: FormData) {
   }
 
   /*
+   * Tutorial guiado por evento (supabase/upgrade-tutorial-por-evento.sql) — nasce ligado; à parte e tolerante,
+   * mesmo cuidado de `tem_subeventos` acima.
+   */
+  if (formData.has('tutorial_habilitado_presente')) {
+    const { error: erroTutorial } = await db.from('eventos')
+      .update({ tutorial_habilitado: formData.get('tutorial_habilitado') === 'on' })
+      .eq('id', id)
+    if (erroTutorial) console.error('[editarEvento] tutorial_habilitado não gravado (migração pendente?)', erroTutorial.message)
+  }
+
+  /*
    * Método de identificação (QR / Biometria) — só o master troca (pedido do
    * Juan, 02/10/2026): admin não deve poder ligar biometria sozinho no
    * próprio evento. Trava aqui também, não só escondendo o campo na tela —
@@ -2890,23 +2928,6 @@ export async function editarEvento(id: string, formData: FormData) {
     await gravarMetodoIdentificacao(id, formData)
   }
 
-  /*
-   * Local do evento no mapa (supabase/upgrade-geolocalizacao-operador.sql) — à parte e tolerante: sem a migração, o
-   * resto da edição salva normalmente. Campos vazios = sem conferência de local.
-   */
-  if (formData.has('local_mapa_presente')) {
-    const num = (v: FormDataEntryValue | null) => {
-      const n = Number(String(v ?? '').trim().replace(',', '.'))
-      return String(v ?? '').trim() !== '' && Number.isFinite(n) ? n : null
-    }
-    const lat = num(formData.get('local_latitude'))
-    const lng = num(formData.get('local_longitude'))
-    const raio = Math.min(20000, Math.max(50, Math.round(num(formData.get('local_raio_m')) ?? 800)))
-    const ponto = lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null
-    const { error: erroLocal } = await db.from('eventos')
-      .update({ local_latitude: ponto?.lat ?? null, local_longitude: ponto?.lng ?? null, local_raio_m: raio }).eq('id', id)
-    if (erroLocal) console.error('[editarEvento] local no mapa não gravado (migração pendente?)', erroLocal.message)
-  }
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
   after(() => sincronizarAgendamentos(id).catch(console.error))
@@ -6768,6 +6789,14 @@ export type ResultadoScan = {
    * fornecedor). O portão NÃO libera — categoria própria na tela.
    */
   setorLotado?: boolean
+  /**
+   * O APARELHO DE QUEM LEU estava fora do raio do local do evento configurado em Editar evento (pedido do Juan,
+   * 08/10/2026: testou o próprio QR fora do estádio e o sistema liberou sem avisar nada — "é pra travar"). O
+   * portão NÃO libera. Só existe quando o evento TEM local configurado; sem ele, nada bloqueia (ver `autorizarPresenca`).
+   */
+  foraDoLocal?: boolean
+  /** A que distância (metros) a leitura foi feita, quando dá para calcular — para a mensagem do operador. */
+  distanciaForaDoLocal?: number
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -6935,6 +6964,7 @@ function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
+  if (r.foraDoLocal) return 'fora_do_local'
   if (r.diaNaoAutorizado) return 'dia_nao_autorizado'
   if (r.setorLotado) return 'setor_lotado'
   return r.qrInvalido ? 'invalido' : 'negado'
@@ -7330,6 +7360,34 @@ async function autorizarPresenca(args: {
     return {
       success: false, diaNaoAutorizado: true, funcionario: funcInfo,
       message: `${escalaHoje.titulo} ${escalaHoje.mensagem}`,
+    }
+  }
+
+  /*
+   * FORA DO LOCAL DO EVENTO: BLOQUEIA (pedido do Juan, 08/10/2026 — antes só marcava para conferência; achado ao
+   * vivo testando o próprio QR fora do estádio, sem nenhum aviso). Só quando o evento TEM local configurado em
+   * Editar evento: sem isso não há contra o que comparar, e nada muda (o comportamento de sempre). Roda ANTES da
+   * prévia, para o operador já ver a recusa ao ler o QR, sem chegar a "Confirme para registrar".
+   *
+   * Vale para QR e rosto (os dois passam por aqui) — não para o registro assistido, que tem a checagem própria
+   * em `registrarPresencaAssistida` (localização obrigatória do operador, mesma regra).
+   */
+  {
+    const posOperador = posicaoValida({ latitude, longitude, precisao })
+    const localEvento = await localDoEvento(eventoId)
+    if (localEvento) {
+      const { distanciaM, foraDoLocal } = avaliarLocal(posOperador, localEvento)
+      if (!posOperador || foraDoLocal) {
+        return {
+          success: false,
+          foraDoLocal: true,
+          distanciaForaDoLocal: distanciaM ?? undefined,
+          funcionario: funcInfo,
+          message: posOperador
+            ? `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`
+            : 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.',
+        }
+      }
     }
   }
 
@@ -9694,6 +9752,27 @@ export async function registrarPresencaAssistida(
   if (!(await eventosAcontecendoHoje([evento.id])).has(evento.id)) {
     return { error: 'Esta pessoa é de um evento que não está acontecendo hoje. No portão só dá pra registrar quem é do evento de hoje.' }
   }
+
+  /*
+   * FORA DO LOCAL DO EVENTO: BLOQUEIA — mesma regra do scanner (`autorizarPresenca`), e pelo mesmo motivo: o
+   * operador aqui já é obrigado a ter a localização ligada (`useLocalizacaoOperador`), então dá pra exigir de
+   * verdade. Antes do upload da foto, pra não gastar a captura numa tentativa que vai ser recusada.
+   */
+  {
+    const posOperador = posicaoValida({ latitude: dados.latitude, longitude: dados.longitude, precisao: dados.precisao })
+    const localEvento = await localDoEvento(evento.id)
+    if (localEvento) {
+      const { distanciaM, foraDoLocal } = avaliarLocal(posOperador, localEvento)
+      if (!posOperador || foraDoLocal) {
+        return {
+          error: posOperador
+            ? `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`
+            : 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.',
+        }
+      }
+    }
+  }
+
   const statusCredAssistida = statusCredenciamentoValido(func.status_credenciamento as string)
   if (statusCredAssistida !== 'aprovado') {
     return { error: statusCredAssistida === 'pendente' ? 'Este credenciamento ainda aguarda aprovação.' : 'Este credenciamento foi negado.' }
@@ -10257,6 +10336,51 @@ export async function trocarTokenDaPortaria(eventoId: string) {
 }
 
 // ─── Configuração do meio (setores × dias) ────────────────────────────────
+
+
+/**
+ * Salva SÓ o local do evento no mapa (endereço, pino e raio) — ação própria, sem redirecionar (pedido do Juan,
+ * 08/10/2026: salvar o endereço jogava para fora da tela de Editar evento, no meio de ajustar o pino). À parte e
+ * tolerante: sem a migração (upgrade-geolocalizacao-operador.sql), devolve o aviso em vez de quebrar.
+ */
+export async function salvarLocalDoEvento(
+  eventoId: string, dados: { local: string; latitude: number | null; longitude: number | null; raioM: number },
+): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    const local = (dados.local ?? '').trim() || null
+    if (!local) return { erro: 'Informe o endereço do local.' }
+
+    const lat = typeof dados.latitude === 'number' && Number.isFinite(dados.latitude) && Math.abs(dados.latitude) <= 90 ? dados.latitude : null
+    const lng = typeof dados.longitude === 'number' && Number.isFinite(dados.longitude) && Math.abs(dados.longitude) <= 180 ? dados.longitude : null
+    const raio = Math.min(20000, Math.max(50, Math.round(Number.isFinite(dados.raioM) ? dados.raioM : 800)))
+
+    const { data: antes } = await supabaseAdmin.from('eventos').select('local, local_latitude, local_longitude, local_raio_m').eq('id', eventoId).maybeSingle()
+
+    const { error } = await supabaseAdmin.from('eventos').update({ local }).eq('id', eventoId)
+    if (error) return { erro: mensagemAmigavel(error) }
+
+    const { error: erroLocal } = await supabaseAdmin.from('eventos')
+      .update({ local_latitude: lat, local_longitude: lng, local_raio_m: raio }).eq('id', eventoId)
+    if (erroLocal) {
+      return { erro: 'O endereço foi salvo, mas o pino/raio no mapa precisa da atualização do banco (upgrade-geolocalizacao-operador.sql).' }
+    }
+
+    const resumo = (l: unknown, la: unknown, lo: unknown, r: unknown) =>
+      curto(`${l ?? '—'}${la != null && lo != null ? ` · ${la}, ${lo} · raio ${r ?? 800}m` : ' · sem pino no mapa'}`)
+    auditar(perfil, 'LOCAL_DO_EVENTO_ALTERADO', {
+      campoAlterado: 'Local do evento', eventoId,
+      valorAnterior: resumo((antes as { local?: string | null } | null)?.local, (antes as { local_latitude?: number | null } | null)?.local_latitude, (antes as { local_longitude?: number | null } | null)?.local_longitude, (antes as { local_raio_m?: number | null } | null)?.local_raio_m),
+      valorNovo: resumo(local, lat, lng, raio),
+    })
+
+    revalidatePath(`/admin/eventos/${eventoId}/editar`)
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
 
 export type ConfiguracaoDoMeio = {
   setores: { id: string; nome: string; exigeMeio: boolean }[]

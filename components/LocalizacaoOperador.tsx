@@ -56,7 +56,15 @@ export function useLocalizacaoOperador() {
   return { estado, atual, bloqueado, tentarDeNovo }
 }
 
-/** Tela que cobre o leitor enquanto a localização do aparelho do operador não está ligada. */
+/*
+ * Tela que cobre o leitor enquanto a localização do aparelho do operador não está ligada.
+ *
+ * "Tentar de novo" (sem recarregar) resolve quando o GPS só estava sem sinal. Mas quando o navegador já NEGOU a
+ * permissão, ele não pergunta de novo sozinho — é preciso permitir a localização nas configurações do site E
+ * recarregar a página (achado ao vivo, 08/10/2026: no Safari do iPhone, o aviso de localização nem chegava a
+ * aparecer até a pessoa atualizar a página depois de mexer na permissão). Por isso o botão aqui RECARREGA a
+ * página de verdade — é o que faz o navegador perguntar de novo.
+ */
 export function BloqueioSemLocalizacao({ estado, onTentar }: { estado: Estado; onTentar: () => void }) {
   return (
     <div className="fixed inset-0 z-[80] bg-slate-900/95 flex items-center justify-center p-6">
@@ -67,10 +75,13 @@ export function BloqueioSemLocalizacao({ estado, onTentar }: { estado: Estado; o
         <p className="text-lg font-bold">Ligue a localização do aparelho</p>
         <p className="text-white/70 text-sm leading-relaxed">
           {estado === 'negada'
-            ? 'O leitor precisa da localização para funcionar. Permita a localização para este site nas configurações do navegador e toque em Tentar de novo.'
-            : 'Não foi possível obter a localização. Ligue o GPS do aparelho e toque em Tentar de novo.'}
+            ? 'O leitor precisa da localização para funcionar. Permita a localização para este site nas configurações do navegador e depois atualize a página — é só atualizar que o aviso de localização aparece de novo.'
+            : 'Não foi possível obter a localização. Ligue o GPS do aparelho e atualize a página.'}
         </p>
-        <button type="button" onClick={onTentar} className="btn btn-primario w-full">Tentar de novo</button>
+        <button type="button" onClick={() => window.location.reload()} className="btn btn-primario w-full">Atualizar a página</button>
+        <button type="button" onClick={onTentar} className="text-white/60 text-xs font-medium hover:text-white transition-colors">
+          Já permiti — tentar sem atualizar
+        </button>
       </div>
     </div>
   )

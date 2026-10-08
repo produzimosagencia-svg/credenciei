@@ -1,8 +1,9 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import 'leaflet/dist/leaflet.css'
-import { Crosshair, MapPin } from 'lucide-react'
-import { obterEnderecoAproximado } from '@/lib/actions'
+import { Crosshair, MapPin, Check } from 'lucide-react'
+import { obterEnderecoAproximado, salvarLocalDoEvento } from '@/lib/actions'
 
 /**
  * O local do evento NUM MAPA DE VERDADE: pino arrastável, círculo do raio e o endereço em cima (pedido do Juan,
@@ -15,8 +16,8 @@ import { obterEnderecoAproximado } from '@/lib/actions'
  * Leaflet puro (sem react-leaflet, que ainda não segue o React 19) — tiles do OpenStreetMap, sem chave de API.
  */
 export default function LocalNoMapa({
-  latitude, longitude, raio, localDefault,
-}: { latitude: number | null; longitude: number | null; raio: number | null; localDefault: string }) {
+  eventoId, latitude, longitude, raio, localDefault,
+}: { eventoId: string; latitude: number | null; longitude: number | null; raio: number | null; localDefault: string }) {
   const [local, setLocal] = useState(localDefault)
   const [localTocadoPeloUsuario, setLocalTocadoPeloUsuario] = useState(false)
   const [lat, setLat] = useState(latitude ?? -20.3157)
@@ -27,6 +28,9 @@ export default function LocalNoMapa({
   const [buscandoEndereco, setBuscandoEndereco] = useState(false)
   const [buscandoGps, setBuscandoGps] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [salvo, setSalvo] = useState(false)
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
   const divRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -112,6 +116,23 @@ export default function LocalNoMapa({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng, temPonto])
 
+  /*
+   * Ação própria, sem passar pelo <form> grande da página (pedido do Juan, 08/10/2026: salvar o endereço estava
+   * levando de volta para a tela do evento, no meio de ajustar o pino). `router.refresh()` atualiza os dados sem
+   * sair de Editar evento.
+   */
+  const salvarLocal = () => {
+    setErro(null)
+    setSalvo(false)
+    if (!local.trim()) { setErro('Informe o endereço do local.'); return }
+    startTransition(async () => {
+      const r = await salvarLocalDoEvento(eventoId, { local, latitude: temPonto ? lat : null, longitude: temPonto ? lng : null, raioM })
+      if ('erro' in r) { setErro(r.erro); return }
+      setSalvo(true)
+      router.refresh()
+    })
+  }
+
   const usarMinhaLocalizacao = () => {
     setErro(null)
     if (!navigator.geolocation) { setErro('Este aparelho não informa a localização.'); return }
@@ -125,16 +146,15 @@ export default function LocalNoMapa({
 
   return (
     <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
-      <input type="hidden" name="local_mapa_presente" value="1" />
-      {temPonto && <input type="hidden" name="local_latitude" value={lat} />}
-      {temPonto && <input type="hidden" name="local_longitude" value={lng} />}
-      <input type="hidden" name="local_raio_m" value={raioM} />
-
+      {/*
+        * `name="local"` continua existindo pro <form> grande (Salvar geral da página) levar o texto atual junto —
+        * mas quem de fato grava o local, o pino e o raio é o botão "Salvar localização" abaixo, que NÃO navega.
+        */}
       <label className="block space-y-1.5">
-        <span className="text-sm font-medium text-slate-700">Local (endereço) *</span>
+        <span className="text-sm font-medium text-slate-700">Local (endereço)</span>
         <input
-          name="local" required value={local}
-          onChange={e => { setLocal(e.target.value); setLocalTocadoPeloUsuario(true) }}
+          name="local" value={local}
+          onChange={e => { setLocal(e.target.value); setLocalTocadoPeloUsuario(true); setSalvo(false) }}
           placeholder="Rua, número, bairro, cidade"
           className="input"
         />
@@ -178,7 +198,7 @@ export default function LocalNoMapa({
           <Crosshair className="w-3.5 h-3.5" /> {buscandoGps ? 'Pegando…' : 'Usar minha localização atual'}
         </button>
         {temPonto && (
-          <button type="button" onClick={() => setTemPonto(false)} className="text-slate-500 text-xs hover:underline">
+          <button type="button" onClick={() => { setTemPonto(false); setSalvo(false) }} className="text-slate-500 text-xs hover:underline">
             Remover local
           </button>
         )}
@@ -186,6 +206,17 @@ export default function LocalNoMapa({
       <p className="text-slate-400 text-2xs">
         Exemplos: um teatro pequeno cabe em 100–200 m; o Sambão e o Kleber Andrade, eventos grandes, passam de 2–5 km.
       </p>
+
+      <div className="flex items-center gap-3 pt-1">
+        <button type="button" onClick={salvarLocal} disabled={isPending} className="btn btn-primario btn-sm">
+          {isPending ? 'Salvando…' : 'Salvar localização'}
+        </button>
+        {salvo && (
+          <span className="flex items-center gap-1 text-green-600 text-xs font-semibold">
+            <Check className="w-3.5 h-3.5" /> Salvo
+          </span>
+        )}
+      </div>
       {erro && <p className="text-red-600 text-xs">{erro}</p>}
     </div>
   )

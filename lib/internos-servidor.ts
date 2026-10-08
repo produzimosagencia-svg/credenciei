@@ -169,6 +169,21 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
  * ("Selecionar a área no leitor"), desligada por padrão: o leitor só lê a câmera
  * e registra quem entra. Tolerante à migração pendente (sem a coluna = desligado).
  */
+/**
+ * O tutorial guiado está ligado NESTE evento? (supabase/upgrade-tutorial-por-evento.sql — nasce ligado).
+ * Tolerante: sem a coluna, ou evento não encontrado, o tutorial continua aparecendo — comportamento de sempre.
+ */
+export async function tutorialHabilitadoNoEvento(eventoId: string | null | undefined): Promise<boolean> {
+  if (!eventoId) return true
+  try {
+    const { data, error } = await supabaseAdmin.from('eventos').select('tutorial_habilitado').eq('id', eventoId).maybeSingle()
+    if (error || !data) return true
+    return (data as { tutorial_habilitado?: boolean }).tutorial_habilitado !== false
+  } catch {
+    return true
+  }
+}
+
 export async function eventosComAreaNoScanner(eventoIds: string[]): Promise<Set<string>> {
   if (!eventoIds.length) return new Set()
   try {

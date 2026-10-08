@@ -2,7 +2,7 @@ import { getPerfil, eventosEscaneaveis, meuSetor, supabaseAdmin } from '@/lib/su
 import { redirect } from 'next/navigation'
 import { podeEscanear, podeGerenciarEventos, podeAcompanhar } from '@/lib/permissions'
 import ScannerRouter from './ScannerRouter'
-import { eventosComAreaNoScanner } from '@/lib/internos-servidor'
+import { eventosComAreaNoScanner, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { QrCode, Users, ClipboardCheck } from 'lucide-react'
 import Link from 'next/link'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -98,8 +98,15 @@ export default async function ScanPage({
     : perfil.role === 'supervisor' ? '/admin/meus-eventos'
     : '/admin'
 
+  /*
+   * O evento é escolhido DEPOIS, dentro do ScannerRouter (cliente) — então, com mais de um evento disponível, não
+   * dá pra saber qual vai ser escolhido aqui no servidor. Com um só, usa o dele; com vários, não desliga (fica
+   * ligado por padrão — é o lado seguro: nenhum evento perde o tutorial sem querer).
+   */
+  const tutorialDoEvento = eventos?.length === 1 ? await tutorialHabilitadoNoEvento(eventos[0].id) : true
+
   return (
-    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
+    <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role) && tutorialDoEvento}>
     <div className="min-h-screen bg-slate-900 flex flex-col">
       {/*
        * Esta tela é SEMPRE escura (fundo fixo, não participa do tema) — mas
