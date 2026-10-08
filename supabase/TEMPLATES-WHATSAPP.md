@@ -274,6 +274,26 @@ Se a Meta ainda não aprovou, a decisão vale do mesmo jeito: o supervisor vê o
 
 ---
 
+## 9. `ampliacao_resposta`
+
+**Precisa ser cadastrado na Meta** (enquanto o canal for a Cloud API). Enviado ao supervisor quando o administrador
+aprova ou nega o pedido dele de MAIS colaboradores — o mesmo modelo serve para os dois resultados, porque a frase da
+resposta vem pronta na variável 4.
+
+**Variáveis**: 1 nome do supervisor · 2 setor · 3 evento · 4 resposta
+
+```
+Olá, {{1}}! Seu pedido de mais colaboradores para o setor {{2}} no evento {{3}} foi respondido: {{4}}.
+
+Os detalhes estão na tela do seu setor no Credenciei.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `João Souza` · `GOTE - LIMPEZA` · `VITAL` · `APROVADO — o setor agora tem 15 colaboradores combinados` (ou `NÃO APROVADO — Fora do orçamento`)
+
+---
+
 ## Depois de aprovar
 
 1. Configure as variáveis de ambiente na Vercel (e no worker, se estiver usando):

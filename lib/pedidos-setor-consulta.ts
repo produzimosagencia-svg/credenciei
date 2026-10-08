@@ -119,14 +119,17 @@ export async function pedidoPublicoPorToken(token: string): Promise<PedidoPublic
   }
 }
 
-/** Quantos setores esperam decisão em cada evento (para a lista de eventos e o card do evento). */
+/** Quantos pedidos esperam decisão em cada evento — setores novos e mais colaboradores (lista de eventos e card do evento). */
 export async function pendentesPorEvento(eventoIds: string[]): Promise<Map<string, number>> {
   const contagem = new Map<string, number>()
   if (!eventoIds.length) return contagem
-  const { data, error } = await supabaseAdmin
-    .from('pedidos_setor_itens').select('evento_id').eq('status', 'pendente').in('evento_id', eventoIds).limit(5000)
-  if (error) return contagem
-  for (const l of data ?? []) contagem.set(l.evento_id as string, (contagem.get(l.evento_id as string) ?? 0) + 1)
+  // Setores novos e pedidos de mais colaboradores — os dois esperam a mesma pessoa.
+  for (const tabela of ['pedidos_setor_itens', 'pedidos_ampliacao']) {
+    const { data, error } = await supabaseAdmin
+      .from(tabela).select('evento_id').eq('status', 'pendente').in('evento_id', eventoIds).limit(5000)
+    if (error) continue
+    for (const l of data ?? []) contagem.set(l.evento_id as string, (contagem.get(l.evento_id as string) ?? 0) + 1)
+  }
   return contagem
 }
 
@@ -154,4 +157,65 @@ export async function contextoDoPedido(eventoId: string): Promise<{
     diasComFase: comDias ? dias : [],
     subeventos: usaSubeventos ? subeventos : [],
   }
+}
+
+// ─── Pedidos de MAIS colaboradores ───────────────────────────────────────────
+
+export type Ampliacao = {
+  id: string
+  fornecedorId: string
+  setorNome: string
+  subeventoNome: string | null
+  solicitante: string
+  quantidadeAtual: number | null
+  cadastrados: number | null
+  quantidadeDesejada: number
+  motivo: string
+  status: StatusDoItem
+  quantidadeAprovada: number | null
+  motivoNegacao: string | null
+  criadoEm: string
+  decididoEm: string | null
+}
+
+type LinhaAmpliacao = {
+  id: string; fornecedor_id: string; solicitante_nome: string; quantidade_atual: number | null; cadastrados: number | null
+  quantidade_desejada: number; motivo: string; status: string; quantidade_aprovada: number | null; motivo_negacao: string | null
+  criado_em: string; decidido_em: string | null
+  fornecedores: { nome: string; subeventos: { nome: string } | null } | null
+}
+
+const SELECT_AMPLIACAO = 'id, fornecedor_id, solicitante_nome, quantidade_atual, cadastrados, quantidade_desejada, motivo, status, quantidade_aprovada, motivo_negacao, criado_em, decidido_em, fornecedores(nome, subeventos(nome))'
+
+const paraAmpliacao = (a: LinhaAmpliacao): Ampliacao => ({
+  id: a.id,
+  fornecedorId: a.fornecedor_id,
+  setorNome: a.fornecedores?.nome ?? '',
+  subeventoNome: a.fornecedores?.subeventos?.nome ?? null,
+  solicitante: a.solicitante_nome,
+  quantidadeAtual: a.quantidade_atual,
+  cadastrados: a.cadastrados,
+  quantidadeDesejada: a.quantidade_desejada,
+  motivo: a.motivo,
+  status: statusDoItemValido(a.status),
+  quantidadeAprovada: a.quantidade_aprovada,
+  motivoNegacao: a.motivo_negacao,
+  criadoEm: a.criado_em,
+  decididoEm: a.decidido_em,
+})
+
+/** Os pedidos de mais colaboradores do evento (fila do admin). `null` = a migração ainda não rodou. */
+export async function ampliacoesDoEvento(eventoId: string): Promise<Ampliacao[] | null> {
+  const { data, error } = await supabaseAdmin
+    .from('pedidos_ampliacao').select(SELECT_AMPLIACAO).eq('evento_id', eventoId).order('criado_em', { ascending: false }).limit(300)
+  if (error) return null
+  return ((data ?? []) as unknown as LinhaAmpliacao[]).map(paraAmpliacao)
+}
+
+/** Os últimos pedidos de UM setor — o que o supervisor vê na tela dele. Erro = lista vazia. */
+export async function ampliacoesDoSetor(fornecedorId: string): Promise<Ampliacao[]> {
+  const { data, error } = await supabaseAdmin
+    .from('pedidos_ampliacao').select(SELECT_AMPLIACAO).eq('fornecedor_id', fornecedorId).order('criado_em', { ascending: false }).limit(5)
+  if (error) return []
+  return ((data ?? []) as unknown as LinhaAmpliacao[]).map(paraAmpliacao)
 }

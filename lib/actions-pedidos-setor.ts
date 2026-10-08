@@ -12,7 +12,8 @@ import { podePassar } from './limite'
 import { contextoDoPedido } from './pedidos-setor-consulta'
 import { criarFornecedor } from './actions'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
-import { chaveDoSetor } from './pedido-setor-regras'
+import { chaveDoSetor, normalizarAmpliacao, lerQuantidadeAprovada, respostaDaAmpliacao, MAX_PESSOAS } from './pedido-setor-regras'
+import { alcancaSetor } from './autorizacao'
 import {
   camposParaCriarFornecedor, descreverDias, motivoNoTexto, normalizarPedidoPublico, normalizarSetor,
   podeDecidirPedidos, setoresNoTexto, situacaoDoLink, type Pessoa, type SetorPedido,
@@ -422,7 +423,7 @@ export async function negarItensDoPedido(
 }
 
 /**
- * Quantos pedidos esperam decisão — o número ao lado do item do menu. Master vê todos os eventos; admin, os da
+ * Quantos pedidos esperam decisão (setores novos + mais colaboradores) — o número ao lado do item do menu. Master vê todos os eventos; admin, os da
  * organização dele; os demais papéis, zero. Nunca lança: o menu aparece em toda tela.
  */
 export async function contarPedidosPendentes(): Promise<number> {
@@ -437,10 +438,174 @@ export async function contarPedidosPendentes(): Promise<number> {
       if (!eventoIds.length) return 0
     }
     let itens = supabaseAdmin.from('pedidos_setor_itens').select('id', { count: 'exact', head: true }).eq('status', 'pendente')
-    if (eventoIds) itens = itens.in('evento_id', eventoIds)
-    const { count } = await itens
-    return count ?? 0
+    let ampliacoes = supabaseAdmin.from('pedidos_ampliacao').select('id', { count: 'exact', head: true }).eq('status', 'pendente')
+    if (eventoIds) {
+      itens = itens.in('evento_id', eventoIds)
+      ampliacoes = ampliacoes.in('evento_id', eventoIds)
+    }
+    const [a, b] = await Promise.all([itens, ampliacoes])
+    return (a.count ?? 0) + (b.count ?? 0)
   } catch {
     return 0
+  }
+}
+
+// ─── Pedido de MAIS colaboradores (do supervisor, para o admin) ─────────────
+
+/**
+ * O supervisor pede mais gente para o setor DELE: quantos tem hoje (o combinado — ou, sem combinado, quantos estão
+ * cadastrados), quantos quer e por quê. Cai na mesma fila dos pedidos de setor, para o admin/master decidir. Um
+ * pedido aberto por setor de cada vez: o segundo, enquanto o primeiro espera, é recusado com a explicação.
+ */
+export async function solicitarMaisColaboradores(
+  fornecedorId: string, quantidadeDesejada: number | string, motivo: string,
+): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil) return { erro: 'Sessão expirada. Entre de novo.' }
+    if (perfil.role !== 'supervisor' || !(await alcancaSetor(perfil, fornecedorId))) {
+      return { erro: 'Só o supervisor deste setor pode pedir mais colaboradores.' }
+    }
+
+    const { data: setor } = await supabaseAdmin
+      .from('fornecedores').select('id, nome, evento_id, quantidade_estimada').eq('id', fornecedorId).maybeSingle()
+    if (!setor) return { erro: 'Setor não encontrado.' }
+
+    const { count: cadastrados } = await supabaseAdmin
+      .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
+      .or('origem.is.null,origem.neq.supervisor')
+    const combinado = (setor.quantidade_estimada as number | null) ?? null
+    const atual = combinado ?? cadastrados ?? 0
+
+    const pedido = normalizarAmpliacao({ atual, desejada: quantidadeDesejada, motivo })
+    if (!pedido.ok) return { erro: pedido.erro }
+
+    const { data: aberto, error: erroAberto } = await supabaseAdmin
+      .from('pedidos_ampliacao').select('id').eq('fornecedor_id', fornecedorId).eq('status', 'pendente').limit(1)
+    if (erroAberto) return { erro: ERRO_BANCO.test(erroAberto.message) ? AJUDA_MIGRACAO : mensagemAmigavel(erroAberto) }
+    if (aberto?.length) return { erro: 'Você já tem um pedido aguardando a decisão do administrador para este setor.' }
+
+    const { error } = await supabaseAdmin.from('pedidos_ampliacao').insert({
+      evento_id: setor.evento_id, fornecedor_id: fornecedorId, solicitante_id: perfil.id, solicitante_nome: perfil.nome,
+      quantidade_atual: combinado, cadastrados: cadastrados ?? 0, quantidade_desejada: pedido.valor.desejada, motivo: pedido.valor.motivo,
+    })
+    if (error) return { erro: ERRO_BANCO.test(error.message) ? AJUDA_MIGRACAO : mensagemAmigavel(error) }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'PEDIDO_AMPLIACAO', campoAlterado: `Mais colaboradores — ${setor.nome}`,
+      valorAnterior: `${atual} colaboradores`, valorNovo: `Pediu ${pedido.valor.desejada}`, motivo: pedido.valor.motivo,
+      eventoId: setor.evento_id as string,
+    }))
+    revalidatePath(`/admin/eventos/${setor.evento_id}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/eventos/${setor.evento_id}/pedidos-setor`)
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+type AmpliacaoCarregada = {
+  id: string; evento_id: string; fornecedor_id: string; solicitante_id: string | null; solicitante_nome: string
+  quantidade_atual: number | null; quantidade_desejada: number; status: string
+  fornecedores: { nome: string } | null
+}
+
+async function carregarAmpliacao(id: string): Promise<AmpliacaoCarregada | null> {
+  const { data } = await supabaseAdmin
+    .from('pedidos_ampliacao')
+    .select('id, evento_id, fornecedor_id, solicitante_id, solicitante_nome, quantidade_atual, quantidade_desejada, status, fornecedores(nome)')
+    .eq('id', id).maybeSingle()
+  return (data as unknown as AmpliacaoCarregada | null) ?? null
+}
+
+/** Avisa o supervisor da decisão (modelo `ampliacao_resposta`). Falhar não desfaz a decisão: ele também a vê na tela. */
+async function avisarSupervisorDaAmpliacao(a: AmpliacaoCarregada, evento: EventoDoPedido, resposta: string): Promise<boolean> {
+  try {
+    if (!a.solicitante_id) return false
+    const { data: sup } = await supabaseAdmin.from('perfis').select('nome, telefone').eq('id', a.solicitante_id).maybeSingle()
+    if (!sup?.telefone) return false
+    const id = await agendarTemplateSupervisor({
+      eventoId: evento.id, telefone: sup.telefone as string, template: 'ampliacao_resposta',
+      // Ordem do texto: {{1}} nome · {{2}} setor · {{3}} evento · {{4}} resposta
+      parametros: [sup.nome as string, a.fornecedores?.nome ?? '', evento.nome, resposta],
+    })
+    if (id) after(() => enviarMensagemAgora(id).catch(e => console.error('[ampliacao] envio imediato falhou', e)))
+    return !!id
+  } catch (e) {
+    console.error('[ampliacao] mensagem não agendou', e)
+    return false
+  }
+}
+
+/**
+ * Aprova o pedido — com o número que o admin decidir (pode ser menos que o pedido). O combinado do setor
+ * (`quantidade_estimada`) passa a ser esse número. Reserva a decisão antes de mexer no setor: dois cliques não
+ * aprovam duas vezes; se o setor não gravar, a decisão volta a pendente.
+ */
+export async function aprovarAmpliacao(id: string, quantidadeAprovada: number | string): Promise<{ ok: true; mensagem: boolean } | { erro: string }> {
+  try {
+    const a = await carregarAmpliacao(id)
+    if (!a) return { erro: 'Pedido não encontrado.' }
+    const g = await decisorDoEvento(a.evento_id)
+    if (!g.ok) return { erro: g.erro }
+    if (a.status !== 'pendente') return { erro: 'Este pedido já foi decidido.' }
+    const aprovada = lerQuantidadeAprovada(quantidadeAprovada)
+    if (!aprovada) return { erro: `Informe quantos colaboradores ficam aprovados (de 1 a ${MAX_PESSOAS}).` }
+
+    const { data: reservado, error } = await supabaseAdmin.from('pedidos_ampliacao')
+      .update({ status: 'aprovado', quantidade_aprovada: aprovada, decidido_por: g.perfil.id, decidido_em: new Date().toISOString() })
+      .eq('id', id).eq('status', 'pendente').select('id')
+    if (error) return { erro: mensagemAmigavel(error) }
+    if (!reservado?.length) return { erro: 'Este pedido acabou de ser decidido por outra pessoa.' }
+
+    const { error: erroSetor } = await supabaseAdmin.from('fornecedores').update({ quantidade_estimada: aprovada }).eq('id', a.fornecedor_id)
+    if (erroSetor) {
+      await supabaseAdmin.from('pedidos_ampliacao').update({ status: 'pendente', quantidade_aprovada: null, decidido_por: null, decidido_em: null }).eq('id', id)
+      return { erro: mensagemAmigavel(erroSetor) }
+    }
+
+    after(() => registrarAuditoria({
+      perfil: g.perfil, acao: 'APROVACAO_AMPLIACAO', campoAlterado: `Mais colaboradores — ${a.fornecedores?.nome ?? ''}`,
+      valorAnterior: `${a.quantidade_atual ?? 'sem número'} combinados (pediu ${a.quantidade_desejada})`, valorNovo: `${aprovada} combinados`,
+      eventoId: a.evento_id, organizacaoId: g.evento.organizacaoId ?? undefined,
+    }))
+    const mensagem = await avisarSupervisorDaAmpliacao(a, g.evento, respostaDaAmpliacao({ aprovado: true, aprovada, desejada: a.quantidade_desejada }))
+    revalidatePath(`/admin/eventos/${a.evento_id}/pedidos-setor`)
+    revalidatePath(`/admin/eventos/${a.evento_id}/fornecedor/${a.fornecedor_id}`)
+    return { ok: true, mensagem }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+/** Nega o pedido, com o motivo. O combinado do setor não muda. */
+export async function negarAmpliacao(id: string, motivo: string): Promise<{ ok: true; mensagem: boolean } | { erro: string }> {
+  try {
+    const razao = motivoNoTexto(String(motivo ?? ''))
+    if (razao.length < 3) return { erro: 'Escreva o motivo.' }
+    if (razao.length > MOTIVO_MAX) return { erro: `O motivo está muito comprido (máximo ${MOTIVO_MAX} caracteres).` }
+    const a = await carregarAmpliacao(id)
+    if (!a) return { erro: 'Pedido não encontrado.' }
+    const g = await decisorDoEvento(a.evento_id)
+    if (!g.ok) return { erro: g.erro }
+    if (a.status !== 'pendente') return { erro: 'Este pedido já foi decidido.' }
+
+    const { data: reservado, error } = await supabaseAdmin.from('pedidos_ampliacao')
+      .update({ status: 'negado', motivo_negacao: razao, decidido_por: g.perfil.id, decidido_em: new Date().toISOString() })
+      .eq('id', id).eq('status', 'pendente').select('id')
+    if (error) return { erro: mensagemAmigavel(error) }
+    if (!reservado?.length) return { erro: 'Este pedido acabou de ser decidido por outra pessoa.' }
+
+    after(() => registrarAuditoria({
+      perfil: g.perfil, acao: 'NEGACAO_AMPLIACAO', campoAlterado: `Mais colaboradores — ${a.fornecedores?.nome ?? ''}`,
+      valorAnterior: `Pediu ${a.quantidade_desejada}`, valorNovo: 'Negado', motivo: razao,
+      eventoId: a.evento_id, organizacaoId: g.evento.organizacaoId ?? undefined,
+    }))
+    const mensagem = await avisarSupervisorDaAmpliacao(a, g.evento, respostaDaAmpliacao({ aprovado: false, motivo: razao }))
+    revalidatePath(`/admin/eventos/${a.evento_id}/pedidos-setor`)
+    revalidatePath(`/admin/eventos/${a.evento_id}/fornecedor/${a.fornecedor_id}`)
+    return { ok: true, mensagem }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
   }
 }

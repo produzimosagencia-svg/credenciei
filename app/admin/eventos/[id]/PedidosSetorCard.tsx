@@ -30,7 +30,7 @@ export default function PedidosSetorCard({
   ativo: boolean
   token: string | null
   prazo: string | null
-  /** Setores esperando decisão. */
+  /** Pedidos esperando decisão (setores novos + mais colaboradores). */
   aguardando: number
   /** Pedidos já recebidos (qualquer estado). */
   total: number
@@ -82,7 +82,8 @@ export default function PedidosSetorCard({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {token && (
+          {/* Aparece também sem o link aberto: pedido de MAIS colaboradores do supervisor chega aqui do mesmo jeito. */}
+          {(token || aguardando > 0) && (
             <Link href={`/admin/eventos/${eventoId}/pedidos-setor`} className="btn btn-secundario">
               Ver pedidos{aguardando > 0 && <span className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums inline-flex items-center justify-center">{aguardando}</span>}
               <ArrowRight className="w-3.5 h-3.5" />

@@ -1,4 +1,6 @@
 import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
+import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
+import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import { emLotes } from '@/lib/lotes'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
@@ -331,6 +333,17 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     }
   }
 
+  // "Solicitar mais colaboradores" — só o supervisor DESTE setor pede (o admin muda o número direto no setor).
+  const supervisorDesteSetor = perfil.role === 'supervisor' && setoresDoSupervisor.some(s => s.id === fid)
+  const [pedidosDeMais, cadastradosNaEquipe] = supervisorDesteSetor
+    ? await Promise.all([
+        ampliacoesDoSetor(fid),
+        // Mesma contagem do servidor: o crachá do próprio supervisor não conta como equipe.
+        supabase.from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fid)
+          .or('origem.is.null,origem.neq.supervisor').then(r => r.count ?? 0, () => 0),
+      ])
+    : [[], 0]
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     {avisos.length > 0 && <AvisoExibicaoModal avisos={avisos} contexto="supervisor" eventoId={id} />}
@@ -416,6 +429,14 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           setorNome={fornecedor.nome as string}
         />
         <ImportarFuncionarios fornecedorId={fid} />
+        {supervisorDesteSetor && (
+          <SolicitarMaisColaboradores
+            fornecedorId={fid}
+            combinado={(fornecedor.quantidade_estimada as number | null) ?? null}
+            cadastrados={cadastradosNaEquipe}
+            pedidos={pedidosDeMais}
+          />
+        )}
         <ExportarEquipe fornecedorId={fid} eventoId={id} dias={diasDoEvento ?? []} />
         {/* Relatório pós-evento (planilha completa, com histórico e métodos
             de registro) — a página já filtra pra só este setor quando quem

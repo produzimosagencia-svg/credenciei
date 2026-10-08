@@ -248,3 +248,44 @@ export const setoresNoTexto = (nomes: string[]) => listarEmTexto(nomes.map(n => 
 export function motivoNoTexto(motivo: string): string {
   return motivo.replace(/\s+/g, ' ').trim().replace(/[.\s]+$/, '')
 }
+
+// ─── Pedido de MAIS colaboradores (do supervisor, para o admin) ─────────────
+
+export const MOTIVO_AMPLIACAO_MIN = 5
+export const MOTIVO_AMPLIACAO_MAX = 300
+
+/**
+ * O pedido do supervisor: quantos colaboradores o setor tem hoje (`atual` = o combinado, ou, sem combinado,
+ * quantos já estão cadastrados), quantos ele quer e por quê. Pedir "mais" tem que ser pedir MAIS — número igual
+ * ou menor que o de hoje é erro de digitação.
+ */
+export function normalizarAmpliacao(
+  entrada: { atual: number | null; desejada: unknown; motivo: unknown },
+): Resultado<{ desejada: number; motivo: string }> {
+  const desejada = lerQuantidade(entrada.desejada)
+  if (desejada === undefined) return falha('A quantidade precisa ser um número inteiro.')
+  if (desejada === null) return falha('Diga quantos colaboradores você precisa no total.')
+  if (entrada.atual != null && desejada <= entrada.atual) {
+    return falha(`Peça um número maior que o de hoje (${entrada.atual}).`)
+  }
+  const motivo = String(entrada.motivo ?? '').replace(/\s+/g, ' ').trim()
+  if (motivo.length < MOTIVO_AMPLIACAO_MIN) return falha('Explique o motivo do pedido.')
+  if (motivo.length > MOTIVO_AMPLIACAO_MAX) return falha(`O motivo está muito comprido (máximo ${MOTIVO_AMPLIACAO_MAX} caracteres).`)
+  return { ok: true, valor: { desejada, motivo } }
+}
+
+/** O número que o admin aprova: inteiro de 1 a MAX_PESSOAS (pode ser diferente do pedido). */
+export function lerQuantidadeAprovada(v: unknown): number | null {
+  const n = lerQuantidade(v)
+  return typeof n === 'number' ? n : null
+}
+
+/** A resposta no texto da mensagem — uma linha só (a Meta recusa parâmetro com quebra de linha). */
+export function respostaDaAmpliacao(r:
+  | { aprovado: true; aprovada: number; desejada: number }
+  | { aprovado: false; motivo: string },
+): string {
+  if (!r.aprovado) return `NÃO APROVADO — ${motivoNoTexto(r.motivo)}`
+  const diferente = r.aprovada !== r.desejada ? ` (você pediu ${r.desejada})` : ''
+  return `APROVADO — o setor agora tem ${r.aprovada} colaboradores combinados${diferente}`
+}

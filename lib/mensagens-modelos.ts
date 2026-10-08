@@ -354,6 +354,17 @@ Motivo: ${motivo}.
 
 Em caso de dúvida, fale com a organização do evento.`,
 
+  /**
+   * Resposta ao pedido de MAIS colaboradores (aprovado ou negado — a frase da resposta já vem pronta em
+   * `respostaDaAmpliacao`, lib/pedido-setor-regras.ts). Vai para o supervisor que pediu. PRECISA ser cadastrado
+   * e aprovado na Meta com EXATAMENTE este texto e estas 4 variáveis (nome, setor, evento, resposta) — ver
+   * supabase/TEMPLATES-WHATSAPP.md. A decisão não depende da mensagem: o supervisor também a vê na tela do setor.
+   */
+  ampliacao_resposta: ([nome, setor, evento, resposta]) =>
+`Olá, ${nome}! Seu pedido de mais colaboradores para o setor ${setor} no evento ${evento} foi respondido: ${resposta}.
+
+Os detalhes estão na tela do seu setor no Credenciei.`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 

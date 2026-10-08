@@ -134,7 +134,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * aprovar, editar ou negar (pedido do Juan, 08/10/2026). Numerozinho = setores esperando decisão.
    */
   if (podeDecidirPedidos(role)) {
-    doEvento.push({ href: '/admin/pedidos-setor', label: 'Pedidos de setor', icon: Building2, badge: <BadgePedidosSetor /> })
+    doEvento.push({ href: '/admin/pedidos-setor', label: 'Pedidos (setor e equipe)', icon: Building2, badge: <BadgePedidosSetor /> })
   }
   /*
    * "Meu Crachá" — pedido do Juan, 24/09/2026: quem trabalha o evento
