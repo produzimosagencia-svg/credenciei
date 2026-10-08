@@ -22,10 +22,21 @@ ok(existsSync(new URL('../conteudo/guia-supervisor.html', import.meta.url)), 'o 
 ok(/pathname === '\/guia-supervisor'/.test(proxy), 'o proxy deixa /guia-supervisor abrir sem login')
 ok(!/getPerfil/.test(rota), 'a rota do guia não exige sessão')
 ok(/'X-Frame-Options': 'SAMEORIGIN'/.test(rota) && /source: '\/guia-supervisor'/.test(config), 'o guia pode ser embutido pelo próprio site')
-ok(/\(\?!guia-supervisor\$\)/.test(config), 'o DENY global exclui o guia (senão o iframe fica em branco)')
+ok(/\(\?!guia-\(\?:supervisor\|operador\)\$\)/.test(config), 'o DENY global exclui o guia (senão o iframe fica em branco)')
 ok(/outputFileTracingIncludes[\s\S]*conteudo\/guia-supervisor\.html/.test(config), 'o arquivo vai junto no deploy da Vercel')
 ok(/href="\/admin\/tutorial-supervisor"[\s\S]{0,700}Tutorial supervisor/.test(shell), 'o menu da foto tem "Tutorial supervisor"')
 ok(/perfil\.role === 'supervisor' &&\s*\(\s*<Link\s+href="\/admin\/tutorial-supervisor"/.test(shell), 'o item aparece só para o supervisor')
+
+console.log('Guia do operador de portão')
+{
+  const rotaOp = ler('app/guia-operador/route.ts')
+  ok(existsSync(new URL('../conteudo/guia-operador-portao.html', import.meta.url)), 'o arquivo do guia do operador existe em conteudo/')
+  ok(/pathname === '\/guia-operador'/.test(proxy), 'o proxy deixa /guia-operador abrir sem login')
+  ok(!/getPerfil/.test(rotaOp) && /guia-operador-portao\.html/.test(rotaOp), 'a rota do guia do operador não exige sessão e lê o arquivo certo')
+  ok(/\(\?!guia-\(\?:supervisor\|operador\)\$\)/.test(config) && /source: '\/guia-operador'/.test(config), 'o DENY global exclui o guia do operador e ele pode ser embutido')
+  ok(/outputFileTracingIncludes[\s\S]*guia-operador-portao\.html/.test(config), 'o arquivo do operador vai junto no deploy')
+  ok(/perfil\.role === 'operador_portao' &&\s*\(\s*<Link\s+href="\/admin\/tutorial-operador"/.test(shell), 'o menu da foto tem "Tutorial operador" só para o operador de portão')
+}
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

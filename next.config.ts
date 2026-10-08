@@ -24,6 +24,7 @@ const nextConfig: NextConfig = {
   // Vercel não sabe que o arquivo faz parte do deploy e ele some do build.
   outputFileTracingIncludes: {
     '/guia-supervisor': ['./conteudo/guia-supervisor.html'],
+    '/guia-operador': ['./conteudo/guia-operador-portao.html'],
   },
   experimental: {
     // As fotos de presença são enviadas (comprimidas) via server action
@@ -65,7 +66,7 @@ const nextConfig: NextConfig = {
       {
         // Tudo é DENY (ninguém embute o Credenciei), exceto o guia do supervisor, que a
         // tela "Tutorial supervisor" mostra num iframe do MESMO site (ver o bloco abaixo).
-        source: '/:path((?!guia-supervisor$).*)',
+        source: '/:path((?!guia-(?:supervisor|operador)$).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           ...cabecalhosComuns,
@@ -73,6 +74,13 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/guia-supervisor',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          ...cabecalhosComuns,
+        ],
+      },
+      {
+        source: '/guia-operador',
         headers: [
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           ...cabecalhosComuns,

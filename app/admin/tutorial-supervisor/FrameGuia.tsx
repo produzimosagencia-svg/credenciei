@@ -7,13 +7,13 @@ import { useTema } from '@/components/Tema'
  * onde a página inteira rolando junto com o guia atrapalharia os passeios).
  * Trocar o tema recarrega o guia — ele é uma página à parte.
  */
-export default function FrameGuia() {
+export default function FrameGuia({ src = '/guia-supervisor', titulo = 'Tutorial do supervisor' }: { src?: string; titulo?: string }) {
   const [tema] = useTema()
   return (
     <iframe
       key={tema}
-      src={`/guia-supervisor?tema=${tema}`}
-      title="Tutorial do supervisor"
+      src={`${src}?tema=${tema}`}
+      title={titulo}
       className="w-full rounded-2xl border border-slate-200 bg-white h-[calc(100dvh-11rem)] min-h-[420px]"
     />
   )

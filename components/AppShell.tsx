@@ -579,6 +579,18 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
               Tutorial supervisor
             </Link>
           )}
+          {/* O guia animado do operador de portão (scanner, Registrar ponto, "não recebi o QR Code"). */}
+          {perfil.role === 'operador_portao' && (
+            <Link
+              href="/admin/tutorial-operador"
+              role="menuitem"
+              onClick={() => setAberto(false)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors border-b border-slate-100"
+            >
+              <BookOpen className="w-4 h-4" />
+              Tutorial operador
+            </Link>
+          )}
           <BotaoTema className="border-b border-slate-100" />
           <button
             role="menuitem"
