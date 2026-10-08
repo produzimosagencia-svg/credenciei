@@ -86,5 +86,13 @@ ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta
   ok(/funcionariosDoEvento=\{candidatosASupervisor \?\? funcionariosDoEvento\}/.test(lista), 'o cartão do setor usa a lista do evento inteiro em "Criar supervisor"')
 }
 
+// ── Mais um setor no MESMO evento não manda outra mensagem (Juan, 07/10/2026) ──
+{
+  const a = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
+  ok(/if \(jaEraDesteEvento\) \{[\s\S]{0,400}avisado: false/.test(a), 'quem já foi avisado neste evento só ganha o setor, sem mensagem')
+  ok(/jaFoiAvisadoNesteEvento\(\[telefone, existente\.telefone/.test(a), 'a checagem considera também o telefone que já está no cadastro')
+  ok(/\.eq\('evento_id', eventoId\)\s*\.eq\('tipo', 'disparo_manual'\)/.test(a), 'o corte é por EVENTO (evento novo continua avisando)')
+}
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

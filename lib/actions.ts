@@ -707,15 +707,25 @@ async function vincularSupervisorAoSetor(perfilId: string, fornecedorId: string)
  * Erro de consulta devolve `false` — ou seja, avisa. Na dúvida, a mensagem a
  * mais incomoda; a de menos deixa alguém sem saber que foi escalado.
  */
-async function jaFoiAvisadoNesteEvento(telefone: string, eventoId: string): Promise<boolean> {
-  const digitos = telefone.replace(/\D/g, '')
-  if (!digitos) return false
+async function jaFoiAvisadoNesteEvento(telefone: string | (string | null | undefined)[], eventoId: string): Promise<boolean> {
+  /*
+   * Aceita mais de um número: o digitado agora e o que já está no cadastro da pessoa. Se o
+   * supervisor foi avisado num número e agora é ligado a outro setor com o telefone escrito
+   * diferente (ou o da lista de funcionários), a checagem só pelo número digitado não o achava
+   * e mandava a mensagem de novo — o aviso repetido que o Juan quer evitar (07/10/2026).
+   */
+  const numeros = [...new Set(
+    (Array.isArray(telefone) ? telefone : [telefone])
+      .map(t => (t ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''))
+      .filter(Boolean),
+  )]
+  if (!numeros.length) return false
   const { data, error } = await supabaseAdmin
     .from('mensagens_agendadas')
     .select('mensagem')
     .eq('evento_id', eventoId)
     .eq('tipo', 'disparo_manual')
-    .in('telefone', [digitos, `55${digitos}`])
+    .in('telefone', numeros.flatMap(n => [n, `55${n}`]))
     .in('status', ['pendente', 'enviado'])
   if (error) return false
   // Qualquer uma das duas conta: supervisor novo recebe só o link de senha,
@@ -844,7 +854,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
    */
   const { data: existente } = await admin
     .from('perfis')
-    .select('id, nome, role, organizacao_id, ativo')
+    .select('id, nome, role, organizacao_id, ativo, telefone')
     .eq('cpf', cpf)
     .maybeSingle()
   if (existente) {
@@ -858,7 +868,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
      * senha, nome) não é tocada — ela entra com o login que já usa.
      */
     if (existente.role !== 'supervisor') {
-      const jaAvisado = await jaFoiAvisadoNesteEvento(telefone, eventoId)
+      const jaAvisado = await jaFoiAvisadoNesteEvento([telefone, existente.telefone as string | null], eventoId)
       await vincularSupervisorAoSetor(existente.id, fornecedorId)
       after(() => registrarAuditoria({
         perfil, acao: 'ALTERACAO_SUPERVISOR',
@@ -914,7 +924,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
 
     // Pela MENSAGEM de fato agendada/enviada, não pelo vínculo — ver o
     // comentário de `jaFoiAvisadoNesteEvento` (caso do Erivelton).
-    const jaEraDesteEvento = await jaFoiAvisadoNesteEvento(telefone, eventoId)
+    const jaEraDesteEvento = await jaFoiAvisadoNesteEvento([telefone, existente.telefone as string | null], eventoId)
 
     await vincularSupervisorAoSetor(existente.id, fornecedorId)
     after(() => registrarAuditoria({
