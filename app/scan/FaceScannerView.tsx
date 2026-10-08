@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { QrCode, Loader2 } from 'lucide-react'
 import { registrarPresencaFacial, registrarPresencaQR, cancelarLeituraQR } from '@/lib/actions'
+import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
 
 /*
@@ -162,6 +163,8 @@ export default function FaceScannerView({
   // o evento muda — ver o comentário completo em `ScannerView.tsx`.
   const [eventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
+  // Localização do aparelho do operador: obrigatória, vai junto em cada leitura (ver components/LocalizacaoOperador).
+  const localizacao = useLocalizacaoOperador()
 
   // "Qual área você vai atuar?" (Vital, 01/10/2026) — ver o comentário
   // completo em `ScannerView.tsx`; mesma chave de aparelho, mesma lógica.
@@ -248,9 +251,13 @@ export default function FaceScannerView({
 
   const chamarServidor = (origem: Origem, m: Modo, apenasConferir: boolean, justificativa?: string): Promise<ScanResult> => {
     const subeventoIds = subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined
+    const local = localizacao.atual()
     return origem.tipo === 'rosto'
-      ? registrarPresencaFacial(eventoId, origem.descritor, m, { apenasConferir, subeventoIds, justificativaAtraso: justificativa }).catch(semRede)
-      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoIds, justificativaAtraso: justificativa }).catch(semRede)
+      ? registrarPresencaFacial(eventoId, origem.descritor, m, {
+          apenasConferir, subeventoIds, justificativaAtraso: justificativa,
+          latitude: local?.latitude, longitude: local?.longitude, precisao: local?.precisao ?? undefined,
+        }).catch(semRede)
+      : registrarPresencaQR(eventoId, origem.texto, m, { apenasConferir, subeventoIds, justificativaAtraso: justificativa, local }).catch(semRede)
   }
 
   /** Resultado final (gravado ou recusado) — fica na tela até "LER O PRÓXIMO". */
@@ -408,6 +415,7 @@ export default function FaceScannerView({
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
+      {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
       <div className="w-full max-w-sm space-y-3">
         {/*
           * Evento — escolhido lá no "Qual evento você vai trabalhar?" do

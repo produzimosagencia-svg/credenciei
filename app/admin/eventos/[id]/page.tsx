@@ -24,6 +24,8 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
+import AlertaForaDoLocal from './AlertaForaDoLocal'
+import { batidasForaDoLocalHoje } from '@/lib/alertas-local'
 
 export const revalidate = 0
 
@@ -393,9 +395,15 @@ export default async function EventoPage({
   const presentesAgora = [...entraram].filter(fid => !sairam.has(fid)).length
   const pct = (v: number) => (totalFuncionarios > 0 ? Math.round((v / totalFuncionarios) * 100) : 0)
 
+  // "Bateu fora do local do evento hoje" — só para quem administra (pedido do Juan, 08/10/2026).
+  const batidasForaDoLocal = (ehMaster(perfil?.role) || perfil?.role === 'admin')
+    ? await batidasForaDoLocalHoje(id)
+    : []
+
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil?.role)}>
     <div className="space-y-5">
+      <AlertaForaDoLocal eventoId={id} batidas={batidasForaDoLocal} />
       {/* Cabeçalho da tela. Encerrar não está aqui: é ação de fim de ciclo,
           não de operação do dia, e continua no menu "..." da lista de eventos.
           No celular ela ficava lado a lado com Escanear QR, que é o que se usa

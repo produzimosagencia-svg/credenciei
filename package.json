@@ -21,7 +21,7 @@
     "seguranca": "node testes/seguranca.mjs",
     "funcoes": "node testes/funcoes.mjs",
     "tema": "node testes/tema.mjs",
-    "testes": "node testes/autorizacao.mjs && node testes/coerencia.mjs && node testes/escala.mjs && node testes/estrutura.mjs && node testes/nomes.mjs && node testes/eventos.mjs && node testes/paginacao.mjs && node testes/supervisor.mjs && node testes/depoimentos.mjs && node testes/encarregado.mjs && node testes/novo-pedido.mjs && node testes/seguranca.mjs && node testes/funcoes.mjs && node testes/tema.mjs && node testes/guia.mjs && node testes/operador.mjs && node testes/seletor.mjs && node testes/equipe.mjs && node testes/relatorio-subevento.mjs && node testes/mover-setor.mjs && node testes/area-scanner.mjs && node testes/acesso-supervisor.mjs && node testes/pedido-setor.mjs && node testes/importacao-cpf.mjs && node testes/exclusao.mjs && node testes/lixeira.mjs && node testes/auditoria-cobertura.mjs && node testes/meio.mjs && node testes/outro-evento.mjs && node testes/credencial-escala.mjs"
+    "testes": "node testes/autorizacao.mjs && node testes/coerencia.mjs && node testes/escala.mjs && node testes/estrutura.mjs && node testes/nomes.mjs && node testes/eventos.mjs && node testes/paginacao.mjs && node testes/supervisor.mjs && node testes/depoimentos.mjs && node testes/encarregado.mjs && node testes/novo-pedido.mjs && node testes/seguranca.mjs && node testes/funcoes.mjs && node testes/tema.mjs && node testes/guia.mjs && node testes/operador.mjs && node testes/seletor.mjs && node testes/equipe.mjs && node testes/relatorio-subevento.mjs && node testes/mover-setor.mjs && node testes/area-scanner.mjs && node testes/acesso-supervisor.mjs && node testes/pedido-setor.mjs && node testes/importacao-cpf.mjs && node testes/exclusao.mjs && node testes/lixeira.mjs && node testes/auditoria-cobertura.mjs && node testes/meio.mjs && node testes/outro-evento.mjs && node testes/credencial-escala.mjs && node testes/geolocalizacao.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",
@@ -38,6 +38,7 @@
     "jspdf": "^4.2.1",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.21.0",
     "next": "16.2.9",
     "qrcode": "^1.5.4",
@@ -49,6 +50,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",

@@ -13,6 +13,7 @@ import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
+import { descreverDistancia } from '@/lib/geo-local'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -28,6 +29,8 @@ export type Presenca = {
   /** Batida regularizada pelo supervisor, não pela própria pessoa. */
   assistido: boolean
   justificativa: string | null
+  /** Só chega para admin/master: o aparelho de quem registrou estava fora do local do evento. */
+  foraDoLocal?: { distanciaM: number | null }
 } | null
 
 export type StatusEtapa = 'feito' | 'aberto' | 'fechado' | 'indefinido'
@@ -697,6 +700,11 @@ function CelulaPresenca({ p, status }: { p: Presenca; status: StatusEtapa }) {
       <div className="flex items-center gap-1.5">
         <span className={`w-2 h-2 rounded-full shrink-0 ${sem.dot}`} title={sem.title} />
         <span className="text-green-600 text-xs font-semibold">{formatarBR(p.feitoEm, 'curto')}</span>
+        {p.foraDoLocal && (
+          <span className="shrink-0 text-red-600 text-2xs font-bold" title={`Registrada fora do local do evento${p.foraDoLocal.distanciaM != null ? ` (${descreverDistancia(p.foraDoLocal.distanciaM)})` : ''}`}>
+            ⚠ fora
+          </span>
+        )}
         {p.assistido && (
           <span
             className="shrink-0 text-amber-500"

@@ -34,7 +34,7 @@ import {
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
 import {
-  diaBRT, janelaDoMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
+  diaBRT, janelaDoMeio, janelaMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
   somarDias, TETO_TURNO_H, horariosEsperados, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf, nomeEmMaiusculo } from './format'
@@ -67,6 +67,7 @@ import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { guardarNaLixeira } from './lixeira'
+import { avaliarLocal, posicaoValida, type Posicao, type LocalDoEvento } from './geo-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -2887,6 +2888,24 @@ export async function editarEvento(id: string, formData: FormData) {
    */
   if (ehMaster(perfil.role)) {
     await gravarMetodoIdentificacao(id, formData)
+  }
+
+  /*
+   * Local do evento no mapa (supabase/upgrade-geolocalizacao-operador.sql) — à parte e tolerante: sem a migração, o
+   * resto da edição salva normalmente. Campos vazios = sem conferência de local.
+   */
+  if (formData.has('local_mapa_presente')) {
+    const num = (v: FormDataEntryValue | null) => {
+      const n = Number(String(v ?? '').trim().replace(',', '.'))
+      return String(v ?? '').trim() !== '' && Number.isFinite(n) ? n : null
+    }
+    const lat = num(formData.get('local_latitude'))
+    const lng = num(formData.get('local_longitude'))
+    const raio = Math.min(20000, Math.max(50, Math.round(num(formData.get('local_raio_m')) ?? 800)))
+    const ponto = lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null
+    const { error: erroLocal } = await db.from('eventos')
+      .update({ local_latitude: ponto?.lat ?? null, local_longitude: ponto?.lng ?? null, local_raio_m: raio }).eq('id', id)
+    if (erroLocal) console.error('[editarEvento] local no mapa não gravado (migração pendente?)', erroLocal.message)
   }
 
   await garantirDiaPrincipal(id, data.data_inicio, data.data_fim)
@@ -6838,6 +6857,32 @@ async function registrarPausa(p: {
   }
 }
 
+// ─── Onde o APARELHO DO OPERADOR estava (supabase/upgrade-geolocalizacao-operador.sql) ─────────────────
+/*
+ * Pedido do Juan (08/10/2026, VITAL): toda leitura do scanner e todo Registro de ponto gravam a localização do
+ * aparelho de quem registrou; fora do raio do local do evento, a batida VALE, mas fica marcada para a conferência
+ * interna (só admin/master veem — o colaborador não sabe que existe). Colunas novas gravadas À PARTE e tolerantes:
+ * sem a migração, a batida grava como sempre.
+ */
+async function localDoEvento(eventoId: string): Promise<LocalDoEvento | null> {
+  try {
+    const { data, error } = await supabaseAdmin.from('eventos').select('local_latitude, local_longitude, local_raio_m').eq('id', eventoId).maybeSingle()
+    if (error || data?.local_latitude == null || data?.local_longitude == null) return null
+    return { latitude: Number(data.local_latitude), longitude: Number(data.local_longitude), raioM: Number(data.local_raio_m ?? 800) }
+  } catch { return null }
+}
+
+/** Marca a batida com precisão, distância e "fora do local". Nunca lança — é rastro, não trava. */
+async function marcarLocalDaBatida(registroId: string | null | undefined, eventoId: string, pos: Posicao | null) {
+  if (!registroId || !pos) return
+  try {
+    const { distanciaM, foraDoLocal } = avaliarLocal(pos, await localDoEvento(eventoId))
+    await supabaseAdmin.from('registros')
+      .update({ precisao_m: pos.precisao ?? null, distancia_m: distanciaM, fora_do_local: foraDoLocal })
+      .eq('id', registroId)
+  } catch (e) { console.error('[geo] batida não marcada (migração pendente?)', e) }
+}
+
 function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
@@ -6850,6 +6895,8 @@ function resultadoDaLeitura(r: ResultadoScan): string {
 async function gravarLeituraQR(dados: {
   eventoId: string; perfilId: string | null; tipo: 'credencial' | 'veiculo'
   qrData: string; resultado: ResultadoScan | null
+  /** Onde o aparelho do operador estava — ver `marcarLocalDaBatida`. */
+  local?: Posicao | null
 }) {
   if (Date.now() - leiturasAusenteDesde < AUSENTE_POR_MS) return
   try {
@@ -6868,7 +6915,7 @@ async function gravarLeituraQR(dados: {
       }
     }
     const r = dados.resultado
-    const { error } = await supabaseAdmin.from('leituras_qr').insert([{
+    const base = {
       evento_id: dados.eventoId || null,
       perfil_id: dados.perfilId,
       funcionario_id: funcionarioId,
@@ -6876,7 +6923,18 @@ async function gravarLeituraQR(dados: {
       sucesso: !!r?.success,
       resultado: r ? resultadoDaLeitura(r) : 'erro',
       mensagem: r?.message ?? 'Erro inesperado ao validar',
+    }
+    const pos = dados.local ?? null
+    const geo = pos && dados.eventoId ? avaliarLocal(pos, await localDoEvento(dados.eventoId)) : { distanciaM: null, foraDoLocal: null }
+    let { error } = await supabaseAdmin.from('leituras_qr').insert([{
+      ...base,
+      latitude: pos?.latitude ?? null, longitude: pos?.longitude ?? null, precisao_m: pos?.precisao ?? null,
+      distancia_m: geo.distanciaM, fora_do_local: geo.foraDoLocal,
     }])
+    // Sem as colunas de localização (migração pendente): grava a leitura como antes.
+    if (error && /latitude|longitude|precisao_m|distancia_m|fora_do_local/.test(error.message)) {
+      ({ error } = await supabaseAdmin.from('leituras_qr').insert([base]))
+    }
     if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
       leiturasAusenteDesde = Date.now()
     } else if (error) {
@@ -6901,13 +6959,18 @@ export async function registrarPresencaQR(
    * o scanner mostra SALVAR / CANCELAR e só então chama de novo sem isto
    * (pedido do Juan, 26/09/2026). A confirmação refaz TODAS as checagens.
    */
-  opcoes?: { apenasConferir?: boolean; subeventoIds?: string[]; justificativaAtraso?: string },
+  opcoes?: {
+    apenasConferir?: boolean; subeventoIds?: string[]; justificativaAtraso?: string
+    /** Localização do aparelho do operador (obrigatória na tela do leitor) — ver `marcarLocalDaBatida`. */
+    local?: { latitude: number; longitude: number; precisao?: number | null } | null
+  },
 ): Promise<ResultadoScan> {
   const escolhido = momentoEscolhido === 'entrada' || momentoEscolhido === 'fim' ? momentoEscolhido : undefined
+  const local = posicaoValida(opcoes?.local)
   const apenasConferir = opcoes?.apenasConferir === true
   let resultado: ResultadoScan
   try {
-    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoIds, opcoes?.justificativaAtraso)
+    resultado = await validarLeituraQR(eventoId, qrData, escolhido, apenasConferir, opcoes?.subeventoIds, opcoes?.justificativaAtraso, local)
   } catch (e) {
     console.error('[registrarPresencaQR]', e)
     resultado = { success: false, message: 'Não foi possível validar agora. Leia o QR de novo.' }
@@ -6918,7 +6981,7 @@ export async function registrarPresencaQR(
     // `getPerfil` é cache() — a validação já buscou, aqui não vai ao banco.
     const perfilId = ((await getPerfil().catch(() => null))?.id as string | undefined) ?? null
     const final = resultado
-    after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'credencial', qrData, resultado: final }))
+    after(() => gravarLeituraQR({ eventoId, perfilId, tipo: 'credencial', qrData, resultado: final, local }))
   }
   return resultado
 }
@@ -6942,6 +7005,8 @@ async function validarLeituraQR(
   subeventoIds?: string[],
   /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
   justificativaAtraso?: string,
+  /** Onde o aparelho do operador estava. */
+  local?: Posicao | null,
 ): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
@@ -7040,6 +7105,7 @@ async function validarLeituraQR(
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
     origem: 'web', subeventoIdsLidos: subeventoIds, justificativaAtraso,
+    latitude: local?.latitude, longitude: local?.longitude, precisao: local?.precisao ?? undefined,
   })
 }
 
@@ -7076,9 +7142,10 @@ async function autorizarPresenca(args: {
   diaTurno: string
   /** Vai para `registros.origem` — o método que identificou a pessoa. */
   origem: 'web' | 'face'
-  /** Só a biometria manda isto (o QR nunca passa) — ver `validarLeituraFacial`. */
+  /** Onde o aparelho de quem leu estava (QR e rosto) — ver `marcarLocalDaBatida`. */
   latitude?: number
   longitude?: number
+  precisao?: number
   /**
    * Para quais áreas/subeventos este portão está configurado (Vital,
    * 01/10/2026 — várias portarias no mesmo evento, cada uma cobrindo uma ou
@@ -7093,7 +7160,7 @@ async function autorizarPresenca(args: {
    */
   justificativaAtraso?: string
 }): Promise<ResultadoScan> {
-  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, subeventoIdsLidos, justificativaAtraso } = args
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, precisao, subeventoIdsLidos, justificativaAtraso } = args
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
@@ -7403,7 +7470,12 @@ async function autorizarPresenca(args: {
   }
 
   const extra: Record<string, unknown> = {
-    ...(perfil.role === 'supervisor' ? { criado_por_perfil_id: perfil.id } : {}),
+    /*
+     * QUEM LEU fica gravado na batida, qualquer que seja o papel (antes, só supervisor). Sem isto, a batida do
+     * scanner do operador não dizia quem leu — e no VITAL (08/10/2026) não dava para separar o que o operador
+     * registrou do que a pessoa bateu sozinha. A marca de "registro assistido" continua vindo de `registro_manual`.
+     */
+    criado_por_perfil_id: perfil.id,
     origem,
     ...(typeof latitude === 'number' && typeof longitude === 'number' ? { latitude, longitude } : {}),
     ...(precisaJustificativaAtraso ? { justificativa: justificativaAtraso!.trim() } : {}),
@@ -7412,8 +7484,12 @@ async function autorizarPresenca(args: {
     const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
     if (justificativa) extra.justificativa = justificativa
   }
-  const { error } = await upsertRegistro(func.id, eventoId, momento, extra, resolucao.dataRef, resolucao.jornadaDiaId)
+  const { data: registroGravado, error } = await upsertRegistro(func.id, eventoId, momento, extra, resolucao.dataRef, resolucao.jornadaDiaId)
   if (error) return { success: false, message: 'Erro ao registrar. Tente de novo.' }
+  {
+    const pos = posicaoValida({ latitude, longitude, precisao })
+    after(() => marcarLocalDaBatida(registroGravado?.id as string | undefined, eventoId, pos))
+  }
 
   /*
    * O lembrete do meio so pode ser agendado AGORA.
@@ -7610,7 +7686,7 @@ export async function cadastrarBiometria(
  */
 export async function registrarPresencaFacial(
   eventoId: string, descritor: number[], escolhido?: 'entrada' | 'fim',
-  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; subeventoIds?: string[]; justificativaAtraso?: string },
+  opcoes?: { apenasConferir?: boolean; latitude?: number; longitude?: number; precisao?: number; subeventoIds?: string[]; justificativaAtraso?: string },
 ): Promise<ResultadoScan> {
   const inicio = Date.now()
   let funcionarioIdParaLog: string | null = null
@@ -7621,7 +7697,7 @@ export async function registrarPresencaFacial(
   try {
     const r = await validarLeituraFacial(
       eventoId, descritor, escolhido, opcoes?.apenasConferir === true,
-      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoIds, opcoes?.justificativaAtraso,
+      opcoes?.latitude, opcoes?.longitude, opcoes?.subeventoIds, opcoes?.justificativaAtraso, opcoes?.precisao,
     )
     resultado = r.resultado
     funcionarioIdParaLog = r.funcionarioId
@@ -7653,6 +7729,7 @@ async function validarLeituraFacial(
   subeventoIds?: string[],
   /** O motivo do atraso, já escrito — ver `autorizarPresenca`. */
   justificativaAtraso?: string,
+  precisao?: number,
 ): Promise<ResultadoValidacaoFacial> {
   const semLog = (resultado: ResultadoScan, logResultado: string, distancia?: number): ResultadoValidacaoFacial =>
     ({ resultado, funcionarioId: null, logResultado, distancia })
@@ -7785,7 +7862,7 @@ async function validarLeituraFacial(
   const resultado = await autorizarPresenca({
     perfil, evento: evento as EventoJanelas & { id: string; organizacao_id: string | null },
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
-    origem: 'face', latitude, longitude, subeventoIdsLidos: subeventoIds, justificativaAtraso,
+    origem: 'face', latitude, longitude, precisao, subeventoIdsLidos: subeventoIds, justificativaAtraso,
   })
   return { resultado, funcionarioId: match.funcionarioId, distancia: match.distancia, logResultado: resultado.success ? 'sucesso' : 'negado' }
 }
@@ -9529,7 +9606,7 @@ const JUSTIFICATIVA_ASSISTIDO =
 export async function registrarPresencaAssistida(
   funcionarioId: string,
   momento: MomentoPresenca,
-  dados: { fotoBase64: string; latitude?: number; longitude?: number; dispositivo?: string },
+  dados: { fotoBase64: string; latitude?: number; longitude?: number; precisao?: number; dispositivo?: string },
   motivo?: string,
 ): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
   const perfil = await getPerfil()
@@ -9583,6 +9660,24 @@ export async function registrarPresencaAssistida(
    * garante que nunca vira uma segunda linha.
    */
   const refAssistido = await diaDeReferencia(evento, func.id, momento)
+
+  /*
+   * O MEIO TAMBÉM PRECISA DAS 4 HORAS DESDE A ENTRADA aqui — achado real (08/10/2026, VITAL): o registro
+   * assistido deixava o operador gravar o meio minutos depois da entrada, porque só o autoatendimento
+   * (`resolverRegistro`/`registrarPresencaFoto`) conferia a janela. Mesma conta de `janelaMeio` — e, diferente do
+   * autoatendimento, mostra o horário exato: quem opera a câmera já está na frente da pessoa, então o horário
+   * ajuda a decidir quando voltar, em vez de abrir brecha para burlar.
+   */
+  if (momento === 'meio') {
+    const entradaDoMeio = await entradaDoTurno(func.id, evento.id, new Date())
+    const janela = entradaDoMeio ? janelaMeio(entradaDoMeio.em) : null
+    if (!janela) {
+      return { error: 'Registre primeiro a entrada. O horário do meio é contado a partir dela.' }
+    }
+    if (Date.now() < new Date(janela.inicio).getTime()) {
+      return { error: `O meio só abre 4 horas depois da entrada — a partir das ${formatarBR(janela.inicio, 'hora')}.` }
+    }
+  }
 
   // Escala por dia (eventos de subeventos): mesma régua do QR. Para liberar um
   // dia fora da escala, o caminho é ajustar a escala — não contornar aqui.
@@ -9642,6 +9737,11 @@ export async function registrarPresencaAssistida(
     ...(temGps ? { latitude: dados.latitude, longitude: dados.longitude } : {}),
   }, refAssistido.dataRef, refAssistido.jornadaDiaId)
   if (error) return { error: mensagemAmigavel(error) }
+  {
+    // Onde o aparelho de quem tirou a foto estava — marcado à parte (ver `marcarLocalDaBatida`).
+    const pos = posicaoValida({ latitude: dados.latitude, longitude: dados.longitude, precisao: dados.precisao })
+    after(() => marcarLocalDaBatida(registro?.id as string | undefined, evento.id, pos))
+  }
 
   after(() => registrarAuditoria({
     perfil, acao: momento === 'entrada' ? 'REGISTRO_ENTRADA_ASSISTIDA' : momento === 'fim' ? 'REGISTRO_SAIDA_ASSISTIDA' : 'CORRECAO_PONTO',
@@ -10125,6 +10225,18 @@ export type ConfiguracaoDoMeio = {
  * novas, e no Supabase pedir uma coluna inexistente derruba a consulta
  * inteira. Ver o comentário no topo de `lib/meio.ts`.
  */
+/**
+ * Endereço legível de um ponto do mapa — usado só em "Local do evento no mapa" (Editar evento), para mostrar
+ * "Rua tal, nº tal..." acima do mapa (pedido do Juan, 08/10/2026). O fetch ao Nominatim precisa de um User-Agent
+ * próprio, que o navegador não deixa o cliente mandar — por isso passa pelo servidor.
+ */
+export async function obterEnderecoAproximado(lat: number, lng: number): Promise<string | null> {
+  const perfil = await getPerfil()
+  if (!perfil || !podeGerenciarEventos(perfil)) return null
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return enderecoAproximado(lat, lng)
+}
+
 export async function obterConfiguracaoDoMeio(eventoId: string): Promise<ConfiguracaoDoMeio> {
   await exigirEventoDaOrg(eventoId)
 

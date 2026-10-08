@@ -95,7 +95,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     buscarTudo((de, ate) =>
       supabase
         .from('registros')
-        .select('funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
+        .select('id, funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
         .eq('evento_id', id)
         .eq('funcionarios.fornecedor_id', fid)
         .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
@@ -215,6 +215,21 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   }
   const diaDe = (funcId: string) => diaPorFunc.get(funcId) ?? hoje
 
+  /*
+   * "Fora do local do evento" — SÓ para admin/master (pedido do Juan, 08/10/2026: a localização é conferência
+   * interna; supervisor e colaborador não veem). Consulta à parte e tolerante: sem a migração
+   * (upgrade-geolocalizacao-operador.sql), simplesmente não aparece.
+   */
+  const foraDoLocal = new Map<string, number | null>()
+  if (ehMaster(perfil.role) || perfil.role === 'admin') {
+    const ids = (registros ?? []).map(r => (r as { id?: string }).id).filter((v): v is string => !!v)
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data, error } = await supabase.from('registros').select('id, fora_do_local, distancia_m').in('id', ids.slice(i, i + 200))
+      if (error) break
+      for (const r of data ?? []) if (r.fora_do_local === true) foraDoLocal.set(r.id as string, (r.distancia_m as number | null) ?? null)
+    }
+  }
+
   // Mapa funcionario → { entrada, meio, fim }
   const presencaPorFunc: Record<string, Record<MomentoTipo, Presenca>> = {}
   for (const r of registros ?? []) {
@@ -230,6 +245,8 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       registradoPor: r.criado_por_perfil_id ? nomePorPerfil[r.criado_por_perfil_id] ?? null : null,
       assistido: r.registro_manual === true,
       justificativa: r.justificativa ?? null,
+      // undefined = não está fora (ou quem olha não pode ver); número/null = fora, a tantos metros.
+      foraDoLocal: foraDoLocal.has((r as { id?: string }).id ?? '') ? { distanciaM: foraDoLocal.get((r as { id?: string }).id ?? '') ?? null } : undefined,
     }
   }
 

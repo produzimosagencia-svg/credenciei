@@ -12,6 +12,7 @@ import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, Cartao, EmptyState } from '@/components/ui/Superficie'
 import CadastroBiometrico from '@/components/CadastroBiometrico'
+import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
 function comprimir(file: File): Promise<string> {
@@ -37,18 +38,6 @@ function comprimir(file: File): Promise<string> {
   })
 }
 
-/** GPS é prova de auditoria, não requisito: se o aparelho negar, o registro segue. */
-function pegarLocalizacao(): Promise<{ latitude: number; longitude: number } | null> {
-  return new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null)
-    navigator.geolocation.getCurrentPosition(
-      pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000 }
-    )
-  })
-}
-
 /**
  * Máscara só quando o que a pessoa digita é número. Aplicar formatCpf sempre
  * destruiria um nome enquanto ele é digitado.
@@ -58,6 +47,11 @@ function mascarar(valor: string): string {
 }
 
 export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eventoId: string; soMeio?: boolean }) {
+  /*
+   * Localização do aparelho de quem tira a foto: OBRIGATÓRIA (pedido do Juan, 08/10/2026) — antes era "se o
+   * aparelho deixar". Vai junto do registro e marca, internamente, se foi feito fora do local do evento.
+   */
+  const localizacao = useLocalizacaoOperador()
   const [termo, setTermo] = useState('')
   const [func, setFunc] = useState<FuncionarioLocalizado | null>(null)
   const [candidatos, setCandidatos] = useState<CandidatoLocalizado[] | null>(null)
@@ -133,11 +127,12 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
     if (!func || !momento || !foto) return
     setErro(null)
     startRegistro(async () => {
-      const gps = await pegarLocalizacao()
+      const gps = localizacao.atual()
       const res = await registrarPresencaAssistida(func.id, momento, {
         fotoBase64: foto,
         latitude: gps?.latitude,
         longitude: gps?.longitude,
+        precisao: gps?.precisao ?? undefined,
         dispositivo: navigator.userAgent,
       })
       if (res.error) return setErro(res.error)
@@ -167,6 +162,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
   return (
     <div className="space-y-4">
+      {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
       {/* Busca por CPF ou nome */}
       <Secao
         tom="acento"

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { registrarPresencaQR, conferirVeiculoPorQR, cancelarLeituraQR } from '@/lib/actions'
+import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import { formatarBR } from '@/lib/tz'
@@ -237,6 +238,8 @@ export default function ScannerView({
   // arquivo já lê/escreve nele; na prática nunca muda durante esta instância.
   const [eventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
+  // Localização do aparelho do operador: obrigatória, vai junto em cada leitura (ver components/LocalizacaoOperador).
+  const localizacao = useLocalizacaoOperador()
 
   /*
    * "Qual área você vai atuar?" (Vital, 01/10/2026) — multi-seleção, salva
@@ -412,6 +415,7 @@ export default function ScannerView({
     const r = await aguardar(
       id, c.codigo, c.modo,
       registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, {
+        local: localizacao.atual(),
         subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
         justificativaAtraso: c.r.precisaJustificativaAtraso ? justificativaAtraso.trim() : undefined,
       }).catch(semRede),
@@ -477,6 +481,7 @@ export default function ScannerView({
       id, codigo, modoDaLeitura,
       registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, {
         apenasConferir: true,
+        local: localizacao.atual(),
         subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
       }).catch(semRede),
     )
@@ -589,6 +594,7 @@ export default function ScannerView({
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
+      {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
       <div className="w-full max-w-sm space-y-3">
         {/*
           * Evento — escolhido lá no "Qual evento você vai trabalhar?" do

@@ -8,6 +8,7 @@ import DiasDeTrabalho from './DiasDeTrabalho'
 import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
+import LocalNoMapa from './LocalNoMapa'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput, NomeMaiusculoInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -104,9 +105,12 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           <Field label="Descrição">
             <textarea name="descricao" rows={2} defaultValue={evento.descricao ?? ''} className="input resize-none" />
           </Field>
-          <Field label="Local" icon={MapPin}>
-            <NomeInput name="local" defaultValue={evento.local ?? ''} className="input" />
-          </Field>
+          <LocalNoMapa
+            latitude={(evento as { local_latitude?: number | null }).local_latitude ?? null}
+            longitude={(evento as { local_longitude?: number | null }).local_longitude ?? null}
+            raio={(evento as { local_raio_m?: number | null }).local_raio_m ?? null}
+            localDefault={evento.local ?? ''}
+          />
 
           {/*
             * "Este evento possui subeventos" (correção 30/09/2026) — sempre
