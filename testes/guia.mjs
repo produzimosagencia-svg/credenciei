@@ -62,5 +62,16 @@ console.log('Guias sempre em modo claro (Juan, 08/10/2026)')
   }
 }
 
+console.log('Vídeo narrado no topo de cada guia (Juan, 08/10/2026)')
+{
+  for (const [f, v] of [['guia-supervisor', 'guia-supervisor'], ['guia-operador-portao', 'guia-operador'], ['guia-encarregado', 'guia-encarregado']]) {
+    const g = ler(`conteudo/${f}.html`)
+    ok(new RegExp(`<video[^>]*src="/videos/guias/${v}\\.mp4"`).test(g), `${f}: o vídeo está no guia`)
+    ok(g.indexOf('class="video-guia"') > 0 && g.indexOf('class="video-guia"') < g.indexOf('<header class="hero">'), `${f}: o vídeo vem antes do resto, logo no topo`)
+    ok(existsSync(new URL(`../public/videos/guias/${v}.mp4`, import.meta.url)), `${f}: o arquivo do vídeo existe em public/videos/guias`)
+  }
+  ok(/pathname\.startsWith\('\/videos\/'\)/.test(proxy), 'a pasta /videos é pública (o guia abre sem login, o vídeo também)')
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -10,6 +10,12 @@ Dentro do sistema: página pública `/guia-<perfil>` e, no menu da foto, o item 
 | Encarregado | `guia-encarregado.html` | `/guia-encarregado` | link "Ver o guia do Encarregado" no painel de consulta |
 | Administrador | a fazer, em capítulos (A montar o evento, B pessoas e acessos, C dia do evento, D comunicação e controle, E biometria e veículos) | | |
 
+## Vídeo narrado
+
+Cada guia tem um vídeo no topo (`public/videos/guias/guia-<perfil>.mp4`), com a voz do sistema lendo o guia e a tela rolando junto.
+Foi gerado com um roteiro por guia (voz `Luciana` do macOS + gravação da própria página + ffmpeg). **Mudou o guia? O vídeo precisa ser refeito**
+(roteiros e scripts em `scripts/guias-video/`). Para trocar pela voz de uma pessoa, é só substituir o .mp4.
+
 ## Regra de ouro: toda mudança no sistema pede conferência nos guias
 
 Mexeu em tela, botão, fluxo ou regra de um perfil? Abra o guia daquele perfil e atualize o texto (e a imagem, se mudou).
