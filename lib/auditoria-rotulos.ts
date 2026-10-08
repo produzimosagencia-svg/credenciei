@@ -116,6 +116,7 @@ export const ACAO_LABELS: Record<string, string> = {
   MONITORAMENTO_ALTERADO: 'Monitoramento de serviço alterado',
   INCIDENTE_MARCADO: 'Incidente marcado',
   RESTAURACAO_FUNCIONARIO: 'Funcionário restaurado da lixeira',
+  RESTAURACAO_PONTO: 'Batida restaurada',
   ALTERACAO_LINK_PEDIDO_SETOR: 'Link de pedido de setor alterado',
   APROVACAO_PEDIDO_SETOR: 'Pedido de setor aprovado',
   NEGACAO_PEDIDO_SETOR: 'Pedido de setor negado',
