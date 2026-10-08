@@ -10098,7 +10098,7 @@ export async function trocarTokenDaPortaria(eventoId: string) {
 
 export type ConfiguracaoDoMeio = {
   setores: { id: string; nome: string; exigeMeio: boolean }[]
-  dias: { data: string; tipo: 'principal' | 'preparacao'; exigeMeio: boolean }[]
+  dias: { data: string; tipo: 'principal' | 'preparacao'; fase: 'montagem' | 'evento' | 'desmontagem'; exigeMeio: boolean }[]
   /** false = a migração `upgrade-meio-por-dia.sql` ainda não rodou. */
   diasDisponiveis: boolean
 }
@@ -10116,8 +10116,8 @@ export async function obterConfiguracaoDoMeio(eventoId: string): Promise<Configu
 
   const [{ data: setoresBase }, { data: diasBase }] = await Promise.all([
     supabaseAdmin.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome'),
-    // Só os dias DO EVENTO: montagem e desmontagem nunca pedem o meio (lib/meio.ts), então nem aparecem para marcar.
-    supabaseAdmin.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).eq('tipo', 'principal').order('data'),
+    // Todos os dias: os do evento vêm ligados por padrão; montagem e desmontagem, desligados (lib/meio.ts).
+    supabaseAdmin.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).order('data'),
   ])
 
   const comMeio = await setoresComMeio((setoresBase ?? []).map(s => s.id as string))
@@ -10128,6 +10128,9 @@ export async function obterConfiguracaoDoMeio(eventoId: string): Promise<Configu
     dias: (diasBase ?? []).map(d => ({
       data: d.data as string,
       tipo: ((d.tipo as string) === 'principal' ? 'principal' : 'preparacao') as 'principal' | 'preparacao',
+      // Antes do primeiro dia do evento é montagem; depois, desmontagem.
+      fase: ((d.tipo as string) === 'principal' ? 'evento'
+        : (d.data as string) < ((diasBase ?? []).find(x => x.tipo === 'principal')?.data as string ?? '9999') ? 'montagem' : 'desmontagem') as 'montagem' | 'evento' | 'desmontagem',
       // Migração pendente ⇒ todos ligados, que é o padrão da coluna.
       exigeMeio: diasDisponiveis ? diasComMeioSet.has(d.data as string) : true,
     })),
@@ -10170,17 +10173,27 @@ export async function salvarConfiguracaoDoMeio(
   )
   if (erroSetor) throw new Error('A configuração por fornecedor precisa da migração supabase/upgrade-meio-por-setor.sql aplicada no banco.')
 
+  /*
+   * Cada tipo de dia tem a SUA chave (lib/meio.ts): dia do evento usa `exige_meio` (nasce ligada); montagem e
+   * desmontagem usam `meio_fora_do_evento` (nasce desligada, liga só quem marcar aqui).
+   */
   const { data: diasDoEvento } = await supabaseAdmin
-    .from('jornada_dias').select('data').eq('evento_id', eventoId)
-  const datasDoEvento = (diasDoEvento ?? []).map(d => d.data as string)
-  const datasLigadas = datasDoEvento.filter(d => diasLigados.includes(d))
-  const datasDesligadas = datasDoEvento.filter(d => !diasLigados.includes(d))
-
-  const erroDia = (
-    (datasLigadas.length ? (await supabaseAdmin.from('jornada_dias').update({ exige_meio: true }).eq('evento_id', eventoId).in('data', datasLigadas)).error : null)
-    ?? (datasDesligadas.length ? (await supabaseAdmin.from('jornada_dias').update({ exige_meio: false }).eq('evento_id', eventoId).in('data', datasDesligadas)).error : null)
-  )
+    .from('jornada_dias').select('data, tipo').eq('evento_id', eventoId)
+  const doEvento = [...new Set((diasDoEvento ?? []).filter(d => d.tipo === 'principal').map(d => d.data as string))]
+  const deMontagem = [...new Set((diasDoEvento ?? []).filter(d => d.tipo !== 'principal').map(d => d.data as string))]
+  const atualizar = async (coluna: 'exige_meio' | 'meio_fora_do_evento', datas: string[]) => {
+    const ligar = datas.filter(d => diasLigados.includes(d))
+    const desligar = datas.filter(d => !diasLigados.includes(d))
+    return (ligar.length ? (await supabaseAdmin.from('jornada_dias').update({ [coluna]: true }).eq('evento_id', eventoId).in('data', ligar)).error : null)
+      ?? (desligar.length ? (await supabaseAdmin.from('jornada_dias').update({ [coluna]: false }).eq('evento_id', eventoId).in('data', desligar)).error : null)
+  }
+  const erroDia = await atualizar('exige_meio', doEvento)
   if (erroDia) throw new Error('A configuração por dia precisa da migração supabase/upgrade-meio-por-dia.sql aplicada no banco.')
+  const erroMontagem = await atualizar('meio_fora_do_evento', deMontagem)
+  if (erroMontagem && deMontagem.some(d => diasLigados.includes(d))) {
+    throw new Error('Para ligar o meio em dia de montagem ou desmontagem, rode supabase/upgrade-meio-montagem.sql no banco.')
+  }
+  const datasLigadas = [...doEvento, ...deMontagem].filter(d => diasLigados.includes(d))
 
   /*
    * O cancelamento do MEIO é SÍNCRONO; o resto continua em background.

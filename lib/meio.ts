@@ -57,32 +57,43 @@ export async function setorExigeMeio(fornecedorId: string | null | undefined): P
 }
 
 /**
- * MONTAGEM E DESMONTAGEM NUNCA PEDEM O MEIO — só o DIA DO EVENTO (`jornada_dias.tipo = 'principal'`). Regra do
- * Juan, repetida em 08/10/2026 (VITAL: montagem de quinta a sexta, evento sábado e domingo). Vale antes da chave do
- * dia: um dia de montagem com `exige_meio` ligado continua sem meio.
+ * MONTAGEM E DESMONTAGEM NÃO PEDEM O MEIO, a não ser que alguém LIGUE naquele dia (regra do Juan, 08/10/2026 —
+ * VITAL: montagem de quinta a sexta, evento sábado e domingo):
+ *   - dia do EVENTO (`tipo = 'principal'`): pede, a não ser que a chave do dia esteja desligada (`exige_meio`);
+ *   - dia de montagem/desmontagem: só pede com `meio_fora_do_evento` ligado (nasce desligado —
+ *     supabase/upgrade-meio-montagem.sql). Sem essa coluna no banco, não pede.
  */
-const ehDiaDoEvento = (tipo: unknown) => tipo === 'principal'
+type LinhaDia = { tipo?: string | null; exige_meio?: boolean | null; meio_fora_do_evento?: boolean | null }
+export const diaPedeMeio = (d: LinhaDia) =>
+  d.tipo === 'principal' ? d.exige_meio !== false : d.meio_fora_do_evento === true
 
-/**
- * Este dia da operação pede o meio? Só se for dia DO EVENTO e a chave do dia estiver ligada.
- *
- * Erro/migração pendente ⇒ SIM. O `true` no fallback não é descuido: é o padrão da coluna. Antes da migração, todo
- * dia pedia o meio — devolver `false` aqui silenciaria o meio do evento inteiro em vez de preservar o
- * comportamento anterior. Data sem linha nenhuma (evento sem dias configurados) também segue o padrão.
- */
-export async function diaExigeMeio(eventoId: string, data: string): Promise<boolean> {
-  const { data: linhas, error } = await supabase
-    .from('jornada_dias').select('tipo, exige_meio')
-    .eq('evento_id', eventoId).eq('data', data).eq('cancelado', false)
-  if (error) return true
-  if (!linhas?.length) return true
-  return linhas.some(d => ehDiaDoEvento(d.tipo) && d.exige_meio !== false)
+/** As linhas de `jornada_dias` com as colunas do meio — tolerante: sem a coluna nova, lê sem ela. */
+async function lerDias(eventoId: string, data?: string): Promise<{ ok: boolean; linhas: (LinhaDia & { data: string })[] }> {
+  const consulta = (colunas: string) => {
+    let q = supabase.from('jornada_dias').select(colunas).eq('evento_id', eventoId).eq('cancelado', false)
+    if (data) q = q.eq('data', data)
+    return q
+  }
+  const comNova = await consulta('data, tipo, exige_meio, meio_fora_do_evento')
+  if (!comNova.error) return { ok: true, linhas: (comNova.data ?? []) as unknown as (LinhaDia & { data: string })[] }
+  const semNova = await consulta('data, tipo, exige_meio')
+  if (!semNova.error) return { ok: true, linhas: (semNova.data ?? []) as unknown as (LinhaDia & { data: string })[] }
+  return { ok: false, linhas: [] }
 }
 
-/** Os dias deste evento que pedem o meio — só dias DO EVENTO, com a chave ligada. Erro ⇒ todos (mesmo motivo acima). */
+/**
+ * Este dia da operação pede o meio? Erro de consulta ⇒ SIM (o padrão da coluna antes desta regra: devolver `false`
+ * silenciaria o meio do evento inteiro). Data sem linha nenhuma (evento sem dias configurados) também segue o padrão.
+ */
+export async function diaExigeMeio(eventoId: string, data: string): Promise<boolean> {
+  const { ok, linhas } = await lerDias(eventoId, data)
+  if (!ok || !linhas.length) return true
+  return linhas.some(diaPedeMeio)
+}
+
+/** Os dias deste evento que pedem o meio. Erro ⇒ conjunto vazio com `ok: false` (quem chama decide). */
 export async function diasComMeio(eventoId: string): Promise<{ ok: boolean; dias: Set<string> }> {
-  const { data, error } = await supabase
-    .from('jornada_dias').select('data, tipo, exige_meio').eq('evento_id', eventoId)
-  if (error) return { ok: false, dias: new Set() }
-  return { ok: true, dias: new Set((data ?? []).filter(d => ehDiaDoEvento(d.tipo) && d.exige_meio !== false).map(d => d.data as string)) }
+  const { ok, linhas } = await lerDias(eventoId)
+  if (!ok) return { ok: false, dias: new Set() }
+  return { ok: true, dias: new Set(linhas.filter(diaPedeMeio).map(d => d.data)) }
 }

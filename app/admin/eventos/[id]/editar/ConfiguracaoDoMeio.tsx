@@ -79,8 +79,8 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
           <p className="text-slate-500 text-2xs mt-1">
             Não tem horário pra configurar — a equipe não entra junta, e um horário fixo cobraria de
             quem acabou de chegar. O que se escolhe aqui é <strong>quais fornecedores</strong> pedem e{' '}
-            <strong>em quais dias</strong>. Montagem e desmontagem nunca pedem o meio — por isso só os dias
-            do evento aparecem aqui.
+            <strong>em quais dias</strong>. Os dias do evento vêm ligados; montagem e desmontagem vêm
+            desligados — ligue um deles só se quiser o meio também nesse dia.
           </p>
         </div>
       </div>
@@ -164,7 +164,7 @@ export default function ConfiguracaoDoMeio({ eventoId, config }: { eventoId: str
                   }`}
                 >
                   <span className="block text-2xs uppercase tracking-wide opacity-70">
-                    {d.tipo === 'principal' ? 'evento' : 'prep.'}
+                    {d.fase === 'evento' ? 'evento' : d.fase === 'montagem' ? 'montagem' : 'desmont.'}
                   </span>
                   <span className="block text-xs font-semibold tabular-nums">{rotuloDia(d.data)}</span>
                   <span className="block h-3">{marcado ? <Check className="w-3 h-3 mx-auto" /> : null}</span>
