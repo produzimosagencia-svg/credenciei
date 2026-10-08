@@ -169,7 +169,7 @@ export default async function AuditoriaPage({
               {linhas.map(l => (
                 <li key={l.id} className="px-4 py-3 hover:bg-slate-50/60 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <Badge tom={TOM_DA_ACAO[l.acao] ?? 'neutro'}>{ACAO_LABELS[l.acao] ?? l.acao}</Badge>
+                    <Badge tom={TOM_DA_ACAO[l.acao] ?? (/_EXCLUID[OA]$|_REVOGADO$/.test(l.acao) ? 'negativo' : 'neutro')}>{ACAO_LABELS[l.acao] ?? l.acao}</Badge>
                     {l.campoAlterado && (
                       <span className="text-slate-700 text-sm font-medium">{l.campoAlterado}</span>
                     )}

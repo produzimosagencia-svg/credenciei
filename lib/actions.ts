@@ -224,6 +224,26 @@ function exigirHorariosCoerentes(dados: Parameters<typeof conferirHorariosDoEven
   if (impossivel.length) throw new Error(impossivel.map(p => p.mensagem).join(' '))
 }
 
+/**
+ * Atalho da auditoria para as ações deste arquivo: grava DEPOIS da resposta (`after`) e nunca derruba a ação.
+ * "Tudo que acontece no sistema, de todas as pessoas, precisa estar na auditoria" (Juan, 08/10/2026) — a régua
+ * é conferida por testes/auditoria-cobertura.mjs: ação nova que grava sem passar por aqui quebra o teste.
+ */
+function auditar(
+  perfil: { id: string | null; nome: string } | null | undefined,
+  acao: string,
+  dados: Omit<Parameters<typeof registrarAuditoria>[0], 'perfil' | 'acao'> = {},
+) {
+  if (!perfil) return
+  after(() => registrarAuditoria({ perfil: { id: perfil.id, nome: perfil.nome }, acao, ...dados }))
+}
+
+/** Texto curto para a auditoria (nada de parágrafo inteiro na linha). */
+const curto = (v: unknown, max = 120) => {
+  const t = String(v ?? '').replace(/\s+/g, ' ').trim()
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
 async function exigirGestorDeEventos() {
   const perfil = await getPerfil()
   if (!perfil || !podeGerenciarEventos(perfil)) throw new Error('Sem permissão')
@@ -539,6 +559,10 @@ export async function criarOrganizacao(formData: FormData) {
     }
   }
 
+  auditar(perfil, 'ORGANIZACAO_CRIADA', {
+    campoAlterado: 'Organização', organizacaoId: org.id,
+    valorNovo: curto(`${orgNome} — administrador ${adminNome} (${email})${criarPrimeiroEvento ? ` · primeiro evento ${eventoNome}` : ''}`),
+  })
   revalidatePath('/admin/organizacoes')
   redirect('/admin/organizacoes')
 }
@@ -547,7 +571,12 @@ export async function toggleAtivoOrganizacao(id: string, ativo: boolean) {
   const perfil = await getPerfil()
   if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
+  const { data: org } = await admin.from('organizacoes').select('nome').eq('id', id).maybeSingle()
   await admin.from('organizacoes').update({ ativo: !ativo }).eq('id', id)
+  auditar(perfil, 'ORGANIZACAO_SITUACAO', {
+    campoAlterado: `Organização ${org?.nome ?? ''}`.trim(), organizacaoId: id,
+    valorAnterior: ativo ? 'Ativa' : 'Suspensa', valorNovo: ativo ? 'Suspensa' : 'Ativa',
+  })
   revalidatePath('/admin/organizacoes')
 }
 
@@ -583,7 +612,13 @@ export async function editarOrganizacao(id: string, formData: FormData) {
     }
   }
 
+  const { data: antes } = await admin.from('organizacoes').select('nome, limite_eventos, valor_cobrado, valor_cobrado_periodo').eq('id', id).maybeSingle()
   await admin.from('organizacoes').update(dados).eq('id', id)
+  auditar(perfil, 'ORGANIZACAO_EDITADA', {
+    campoAlterado: 'Organização', organizacaoId: id,
+    valorAnterior: antes ? curto(`${antes.nome} · limite ${antes.limite_eventos} eventos · R$ ${antes.valor_cobrado ?? '—'} ${antes.valor_cobrado_periodo ?? ''}`) : null,
+    valorNovo: curto(`${dados.nome} · limite ${limite} eventos · R$ ${valorCobrado ?? '—'} ${valorCobradoPeriodo}`),
+  })
   revalidatePath('/admin/organizacoes')
 }
 
@@ -592,11 +627,14 @@ export async function deletarOrganizacao(id: string) {
   if (!podeGerenciarOrganizacoes(perfil)) throw new Error('Sem permissão')
   const admin = getAdminSupabase()
   // remove os logins de auth dos membros antes do cascade das tabelas
+  const { data: org } = await admin.from('organizacoes').select('nome').eq('id', id).maybeSingle()
   const { data: membros } = await admin.from('perfis').select('id').eq('organizacao_id', id)
   for (const m of membros ?? []) {
     try { await admin.auth.admin.deleteUser(m.id) } catch (e) { console.error('Erro ao remover login:', e) }
   }
   await admin.from('organizacoes').delete().eq('id', id) // cascade: perfis + eventos
+  // Sem organizacaoId: a organização acabou de deixar de existir (a linha fica para o master).
+  auditar(perfil, 'ORGANIZACAO_EXCLUIDA', { campoAlterado: 'Organização', valorAnterior: org?.nome ?? id })
   revalidatePath('/admin/organizacoes')
 }
 
@@ -1436,6 +1474,9 @@ async function criarTotemOuLanca(eventoId: string, portaoNome?: string) {
       throw new Error(mensagemAmigavel(erroPerfil))
     }
 
+    auditar(perfil, 'TOTEM_CRIADO', {
+      campoAlterado: 'Totem', valorNovo: curto(`Totem ${proximoNumero} (${usuario})${portaoNome?.trim() ? ` · portão ${portaoNome.trim()}` : ''}`), eventoId,
+    })
     revalidatePath('/admin/usuarios')
     revalidatePath(`/admin/eventos/${eventoId}`)
 
@@ -1481,6 +1522,10 @@ export async function editarTotem(id: string, formData: FormData): Promise<{ err
       if (erroSenha) throw new Error(mensagemAuth(erroSenha.message))
     }
 
+    auditar(perfil, 'TOTEM_EDITADO', {
+      campoAlterado: `Totem ${alvo.email ?? ''}`.trim(), organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+      valorNovo: `${ativo ? 'Ativo' : 'Desativado'}${novaSenha ? ' · senha trocada' : ''}`,
+    })
     revalidatePath('/admin/usuarios')
     return {}
   } catch (e) {
@@ -1592,6 +1637,9 @@ export async function criarSuporte(formData: FormData) {
     console.error('[criarSuporte] falha ao gerar link de senha', erro)
   }
 
+  auditar(perfil, 'SUPORTE_CRIADO', {
+    campoAlterado: 'Acesso de suporte', valorNovo: curto(`${nome} · ${escopos.length} escopo(s)${expiraEmBruto ? ` · expira ${expiraEmBruto}` : ''}${ativo ? '' : ' · inativo'}`),
+  })
   revalidatePath('/admin/suporte')
   return { ok: true as const, linkSenha }
 }
@@ -1702,6 +1750,9 @@ export async function editarSuporte(perfilId: string, formData: FormData) {
 
   await gravarEscopoSuporte(perfilId, escopos)
 
+  auditar(perfil, 'SUPORTE_EDITADO', {
+    campoAlterado: 'Acesso de suporte', valorNovo: curto(`${nome} · ${escopos.length} escopo(s)${expiraEmBruto ? ` · expira ${expiraEmBruto}` : ''} · ${ativo ? 'ativo' : 'inativo'}`),
+  })
   revalidatePath('/admin/suporte')
   return { ok: true as const }
 }
@@ -1973,6 +2024,8 @@ export async function revogarSuporte(perfilId: string) {
     .eq('id', perfilId).eq('role', 'suporte')
   if (error) throw new Error(mensagemAmigavel(error))
 
+  const { data: revogado } = await supabaseAdmin.from('perfis').select('nome').eq('id', perfilId).maybeSingle()
+  auditar(perfil, 'SUPORTE_REVOGADO', { campoAlterado: 'Acesso de suporte', valorAnterior: revogado?.nome ?? perfilId, valorNovo: 'Revogado' })
   revalidatePath('/admin/suporte')
   return { ok: true as const }
 }
@@ -2127,7 +2180,7 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   if (!podeGerenciarUsuarios(perfil)) throw new Error('Sem permissão')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email, role').eq('id', id).single()
+  const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email, role, nome, telefone, ativo, cpf').eq('id', id).single()
   if (!alvo) throw new Error('Supervisor não encontrado')
   if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
     /*
@@ -2181,6 +2234,11 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
       await admin.from('supervisor_setores')
         .upsert({ perfil_id: outroComEsteCpf.id, fornecedor_id: alvo.fornecedor_id }, { onConflict: 'perfil_id,fornecedor_id', ignoreDuplicates: true })
     }
+    auditar(perfil, 'SUPERVISOR_EDITADO', {
+      campoAlterado: 'Supervisor', organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+      valorAnterior: curto(`${alvo.nome} — CPF ${formatCpf(String(alvo.cpf ?? ''))}`),
+      valorNovo: curto(`Setor passou para ${outroComEsteCpf.nome}, que já tinha este CPF (CPF ${formatCpf(cpf)})`),
+    })
     revalidatePath('/admin/usuarios')
     if (alvo.fornecedor_id) {
       const { data: fornecedor } = await admin.from('fornecedores').select('evento_id').eq('id', alvo.fornecedor_id).single()
@@ -2217,6 +2275,19 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   }
 
   await admin.from('perfis').update({ nome, email, telefone, ativo }).eq('id', id)
+
+  // O que mudou, campo a campo — "quem trocou o telefone do supervisor?" é a pergunta que traz alguém aqui.
+  const mudancas = [
+    alvo.nome !== nome ? `nome: ${alvo.nome} → ${nome}` : '',
+    String(alvo.cpf ?? '') !== cpf ? `CPF: ${formatCpf(String(alvo.cpf ?? ''))} → ${formatCpf(cpf)}` : '',
+    String(alvo.telefone ?? '') !== telefone ? `telefone: ${alvo.telefone ?? '—'} → ${telefone || '—'}` : '',
+    (alvo.ativo !== false) !== ativo ? (ativo ? 'reativado' : 'desativado') : '',
+    novaSenha ? 'senha trocada' : '',
+  ].filter(Boolean)
+  auditar(perfil, 'SUPERVISOR_EDITADO', {
+    campoAlterado: `Supervisor ${nome}`, organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+    valorNovo: curto(mudancas.join(' · ') || 'Salvo sem alterações', 300),
+  })
 
   revalidatePath('/admin/usuarios')
   if (alvo.fornecedor_id) {
@@ -2358,7 +2429,7 @@ export async function deletarUsuario(id: string) {
   if (perfil.id === id) throw new Error('Você não pode excluir a si mesmo')
 
   const admin = getAdminSupabase()
-  const { data: alvo } = await admin.from('perfis').select('role, organizacao_id').eq('id', id).single()
+  const { data: alvo } = await admin.from('perfis').select('role, organizacao_id, nome, cpf, email').eq('id', id).single()
   if (!alvo) throw new Error('Este acesso não existe mais.')
 
   /*
@@ -2380,6 +2451,10 @@ export async function deletarUsuario(id: string) {
 
   await admin.auth.admin.deleteUser(id)
   await admin.from('perfis').delete().eq('id', id)
+  auditar(perfil, 'USUARIO_EXCLUIDO', {
+    campoAlterado: `Acesso (${ROLE_LABELS[alvo.role as Role] ?? alvo.role})`, organizacaoId: (alvo.organizacao_id as string | null) ?? undefined,
+    valorAnterior: curto(`${alvo.nome}${alvo.cpf ? ` — CPF ${formatCpf(String(alvo.cpf))}` : ` — ${alvo.email ?? ''}`}`),
+  })
   revalidatePath('/admin/usuarios')
 }
 
@@ -2714,6 +2789,10 @@ export async function criarEvento(formData: FormData) {
   }
 
   after(() => sincronizarAgendamentos(novo.id).catch(console.error))
+  auditar(perfil, 'EVENTO_CRIADO', {
+    campoAlterado: 'Evento', eventoId: novo.id as string, organizacaoId: organizacaoId ?? undefined,
+    valorNovo: curto(`${nome} · ${formatarBR(data.data_inicio, 'completo')} a ${formatarBR(data.data_fim, 'completo')}${data.local ? ` · ${data.local}` : ''}`),
+  })
   redirect(`/admin/eventos/${novo.id}`)
 }
 
@@ -2731,7 +2810,15 @@ export async function editarEvento(id: string, formData: FormData) {
   }
   exigirHorariosCoerentes(data)
 
+  const { data: antesDoEvento } = await db.from('eventos').select('nome, data_inicio, data_fim, local').eq('id', id).maybeSingle()
   await db.from('eventos').update(data).eq('id', id)
+  const resumoEvento = (e: { nome?: unknown; data_inicio?: unknown; data_fim?: unknown; local?: unknown } | null) => e
+    ? curto(`${e.nome} · ${formatarBR(e.data_inicio as string, 'completo')} a ${formatarBR(e.data_fim as string, 'completo')}${e.local ? ` · ${e.local}` : ''}`)
+    : null
+  auditar(perfil, 'EVENTO_EDITADO', {
+    campoAlterado: 'Evento (dados, horários e janelas)', eventoId: id,
+    valorAnterior: resumoEvento(antesDoEvento), valorNovo: resumoEvento(data),
+  })
 
   /*
    * Horário do aviso do dia (WhatsApp) — coluna nova
@@ -2899,6 +2986,7 @@ export async function deletarEvento(id: string) {
   const perfil = await getPerfil()
   if (!podeExcluir(perfil)) throw new Error('Apenas o master pode excluir eventos')
   const db = supabaseAdmin
+  const { data: eventoExcluido } = await db.from('eventos').select('nome, organizacao_id').eq('id', id).maybeSingle()
 
   /*
    * Desvincula os supervisores ANTES de apagar.
@@ -2926,6 +3014,11 @@ export async function deletarEvento(id: string) {
   const { error } = await db.from('eventos').delete().eq('id', id)
   if (error) throw new Error(mensagemAmigavel(error))
 
+  // Sem eventoId: o evento não existe mais (a coluna aponta para eventos e o insert falharia).
+  auditar(perfil, 'EVENTO_EXCLUIDO', {
+    campoAlterado: 'Evento', valorAnterior: eventoExcluido?.nome ?? id,
+    organizacaoId: (eventoExcluido?.organizacao_id as string | null) ?? undefined,
+  })
   revalidatePath('/admin/eventos')
   revalidatePath('/admin')
   redirect('/admin/eventos')
@@ -2975,6 +3068,10 @@ export async function atribuirEventoAOrganizacao(eventoId: string, organizacaoId
   revalidatePath('/admin/eventos')
   revalidatePath(`/admin/eventos/${eventoId}`)
   revalidatePath('/admin')
+  auditar(perfil, 'EVENTO_ORGANIZACAO_ALTERADA', {
+    campoAlterado: `Evento ${evento.nome}`, eventoId, organizacaoId: organizacaoId ?? undefined,
+    valorNovo: `Agora pertence a ${nomeOrg}`,
+  })
   return { ok: true as const, evento: evento.nome, organizacao: nomeOrg, supervisores: idsSetores.length }
 }
 
@@ -3230,6 +3327,10 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
   // Cria a aba na planilha depois da resposta (after: sobrevive ao serverless da Vercel)
   after(() => garantirAbaFornecedorAsync(eventoId, nomeFornecedor))
 
+  auditar(perfilCriador, 'SETOR_CRIADO', {
+    campoAlterado: 'Fornecedor', eventoId,
+    valorNovo: curto(`${nomeFornecedor}${data.quantidade_estimada ? ` · ${data.quantidade_estimada} colaboradores` : ''}${exigeSupervisor ? ` · supervisor ${supNome} (CPF ${formatCpf(supCpf)})` : ''}`),
+  })
   revalidatePath(`/admin/eventos/${eventoId}`)
 }
 
@@ -3243,8 +3344,9 @@ async function garantirAbaFornecedorAsync(eventoId: string, nomeFornecedor: stri
 }
 
 export async function editarFornecedor(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
-  await exigirEventoDaOrg(eventoId)
+  const perfilEditor = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
+  const { data: antesDoSetor } = await db.from('fornecedores').select('nome, valor_combinado, quantidade_estimada').eq('id', id).maybeSingle()
   const { error } = await db.from('fornecedores').update({
     nome: nomeEmMaiusculo(formData.get('nome') as string),
     valor_combinado: parseValor(formData.get('valor_combinado')),
@@ -3286,6 +3388,18 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
    * WhatsApp que se quer cortar.
    */
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+  const resumoSetor = (f: { nome?: unknown; valor_combinado?: unknown; quantidade_estimada?: unknown } | null) => f
+    ? curto(`${f.nome} · ${f.quantidade_estimada ?? 'sem'} colaboradores · R$ ${f.valor_combinado ?? '—'} por pessoa`)
+    : null
+  auditar(perfilEditor, 'SETOR_EDITADO', {
+    campoAlterado: 'Fornecedor', eventoId,
+    valorAnterior: resumoSetor(antesDoSetor),
+    valorNovo: resumoSetor({
+      nome: nomeEmMaiusculo(formData.get('nome') as string),
+      valor_combinado: parseValor(formData.get('valor_combinado')),
+      quantidade_estimada: parseQuantidade(formData.get('quantidade_estimada')),
+    }),
+  })
   revalidatePath(`/admin/eventos/${eventoId}`)
   // Devolvido (não lançado): em produção o Next esconde a mensagem de uma exceção de Server Action.
   return avisoTrava ? { error: avisoTrava } : {}
@@ -3319,7 +3433,13 @@ export async function deletarFornecedor(id: string, eventoId: string): Promise<{
       return { error: 'Este fornecedor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o fornecedor.' }
     }
 
+    const { data: setorExcluido } = await db.from('fornecedores').select('nome').eq('id', id).maybeSingle()
+    const { count: equipeExcluida } = await db.from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', id)
     await db.from('fornecedores').delete().eq('id', id)
+    auditar(perfilExclusao, 'SETOR_EXCLUIDO', {
+      campoAlterado: 'Fornecedor', eventoId,
+      valorAnterior: curto(`${setorExcluido?.nome ?? id} · ${equipeExcluida ?? 0} pessoa(s) na equipe, apagadas junto`),
+    })
     revalidatePath(`/admin/eventos/${eventoId}`)
   } catch (e) {
     return { error: mensagemAmigavel(e) }
@@ -3571,7 +3691,7 @@ export async function exportarFuncionariosDoSetor(
 // ─── Funcionários ────────────────────────────────────────────────────────────
 
 export async function criarFuncionario(fornecedorId: string, eventoId: string, formData: FormData) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const perfilCadastro = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
@@ -3623,6 +3743,10 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
     telefone: (formData.get('telefone') as string) ?? '',
   }).catch(console.error))
 
+  auditar(perfilCadastro, 'CADASTRO_FUNCIONARIO', {
+    campoAlterado: 'Cadastro', eventoId, funcionarioId: novo.id as string,
+    valorNovo: curto(`Cadastrado pelo painel: ${(formData.get('nome') as string).trim()} — CPF ${formatCpf(cpf)}`),
+  })
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
@@ -3712,6 +3836,10 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   revalidatePath(`/admin/pessoas/${cpf}`)
 
   const evento = (setor.eventos as unknown as { nome: string } | null)?.nome ?? 'o evento'
+  auditar(perfil, 'COLABORADOR_ATRIBUIDO', {
+    campoAlterado: 'Pessoa da base', eventoId: setor.evento_id as string, funcionarioId: novo.id as string,
+    valorNovo: curto(`CPF ${formatCpf(cpf)} colocado em ${setor.nome}`),
+  })
   return {
     ok: true as const,
     ativo: novo.ativo !== false,
@@ -3799,11 +3927,16 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
  * supervisor vinculado a este setor especificamente.
  */
 export async function atualizarValorReceber(funcionarioId: string, fornecedorId: string, eventoId: string, valor: number) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   if (!Number.isFinite(valor) || valor < 0) throw new Error('Valor inválido')
   const db = supabaseAdmin
+  const { data: antes } = await db.from('funcionarios').select('valor_receber').eq('id', funcionarioId).maybeSingle()
   const { error } = await db.from('funcionarios').update({ valor_receber: valor }).eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível salvar o valor. Tente de novo.')
+  auditar(perfil, 'VALOR_A_RECEBER_ALTERADO', {
+    campoAlterado: 'Valor a receber', eventoId, funcionarioId,
+    valorAnterior: `R$ ${Number(antes?.valor_receber ?? 0).toFixed(2)}`, valorNovo: `R$ ${valor.toFixed(2)}`,
+  })
 
   // Reflete na planilha depois da resposta (não bloqueia; sobrevive ao serverless)
   after(() => sincronizarValorNaPlanilha(funcionarioId, valor).catch(console.error))
@@ -3986,7 +4119,7 @@ export async function editarDadosDaPessoaNaBase(
 
 /** Marca/desmarca a baixa de pagamento do valor a receber do setor. */
 export async function alternarPagamento(funcionarioId: string, fornecedorId: string, eventoId: string, pago: boolean) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const perfilPagamento = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
 
   // Pagamento só para quem está ativado
@@ -4002,6 +4135,10 @@ export async function alternarPagamento(funcionarioId: string, fornecedorId: str
     pago_em: pago ? new Date().toISOString() : null,
   }).eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível atualizar o pagamento. Tente de novo.')
+  auditar(perfilPagamento, 'PAGAMENTO_ALTERADO', {
+    campoAlterado: 'Pagamento', eventoId, funcionarioId,
+    valorAnterior: pago ? 'Não pago' : 'Pago', valorNovo: pago ? 'Pago' : 'Não pago',
+  })
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
@@ -4952,7 +5089,7 @@ export async function salvarDiasDeTrabalho(eventoId: string, datas: string[]): P
 }
 
 async function salvarDiasDeTrabalhoOuLanca(eventoId: string, datas: string[]) {
-  await exigirEventoDaOrg(eventoId)
+  const perfilDias = await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
     .from('eventos').select('id, data_inicio, data_fim').eq('id', eventoId).single()
@@ -5027,6 +5164,10 @@ async function salvarDiasDeTrabalhoOuLanca(eventoId: string, datas: string[]) {
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   revalidatePath(`/admin/eventos/${eventoId}/editar`)
+  auditar(perfilDias, 'DIAS_DO_EVENTO_ALTERADOS', {
+    campoAlterado: 'Dias de montagem/desmontagem', eventoId,
+    valorNovo: curto(`${escolhidos.length ? listarDias(escolhidos) : 'nenhum dia extra'}${preservados ? ` · ${preservados} dia(s) mantido(s) por já terem batida` : ''}`, 300),
+  })
   // Só os dias de preparação: o dia principal não é escolha do produtor, ele
   // é a data do evento, e contá-lo aqui faria o número divergir da tela.
   return { ok: true as const, dias: escolhidos.length, preservados }
@@ -5066,7 +5207,7 @@ export async function salvarDiasPrincipaisExtras(eventoId: string, dias: DiaPrin
 }
 
 async function salvarDiasPrincipaisExtrasOuLanca(eventoId: string, dias: DiaPrincipalExtra[]) {
-  await exigirEventoDaOrg(eventoId)
+  const perfilDias = await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
     .from('eventos').select('id, data_inicio, data_fim').eq('id', eventoId).single()
@@ -5157,6 +5298,10 @@ async function salvarDiasPrincipaisExtrasOuLanca(eventoId: string, dias: DiaPrin
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
   revalidatePath(`/admin/eventos/${eventoId}`)
   revalidatePath(`/admin/eventos/${eventoId}/editar`)
+  auditar(perfilDias, 'DIAS_DO_EVENTO_ALTERADOS', {
+    campoAlterado: 'Dias principais extras', eventoId,
+    valorNovo: curto(`${linhas.length ? linhas.map(l => `${formatarBR(l.entradaInicio, 'curto')}–${formatarBR(l.saidaFim ?? l.saidaInicio, 'curto')}`).join(', ') : 'nenhum'}${preservados ? ` · ${preservados} mantido(s) por já terem batida` : ''}`, 300),
+  })
   return { ok: true as const, dias: linhas.length, preservados }
 }
 
@@ -6398,12 +6543,15 @@ export async function listarDepoimentos(funcionarioId: string, fornecedorId: str
 }
 
 export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
-  await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const { error } = await supabaseAdmin
     .from('funcionarios')
     .update({ descredenciado_em: null, descredenciado_por: null })
     .eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível recredenciar esta pessoa. Tente de novo.')
+  auditar(perfil, 'RECREDENCIAMENTO', {
+    campoAlterado: 'Situação no evento', eventoId, funcionarioId, valorAnterior: 'Fora da equipe', valorNovo: 'De volta à equipe',
+  })
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
   return { ok: true as const }
 }
@@ -7392,6 +7540,7 @@ export async function consentirBiometria(funcionarioId: string, eventoId: string
     }
     return { error: 'Não foi possível registrar o consentimento. Tente de novo.' }
   }
+  auditar(perfil, 'BIOMETRIA_CONSENTIMENTO', { campoAlterado: 'Biometria', eventoId, funcionarioId, valorNovo: 'Consentimento registrado' })
   return { ok: true }
 }
 
@@ -7443,6 +7592,7 @@ export async function cadastrarBiometria(
     return { error: mensagemAmigavel(error) }
   }
 
+  auditar(perfil, 'BIOMETRIA_CADASTRADA', { campoAlterado: 'Biometria', eventoId, funcionarioId, valorNovo: `Rosto de ${func.nome} cadastrado` })
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${func.fornecedor_id}`)
   return { ok: true }
 }
@@ -9787,7 +9937,7 @@ export async function apagarBatida(
  * uso normal (fecha o credenciamento à noite, reabre no dia seguinte).
  */
 export async function alternarPortaria(eventoId: string, ligar: boolean) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
 
   const { data: evento } = await supabaseAdmin
     .from('eventos').select('token_portaria').eq('id', eventoId).single()
@@ -9800,6 +9950,7 @@ export async function alternarPortaria(eventoId: string, ligar: boolean) {
     .eq('id', eventoId)
 
   if (error) throw new Error('Não foi possível mudar o cadastro da portaria. Tente de novo.')
+  auditar(perfil, 'PORTARIA_ALTERADA', { campoAlterado: 'Cadastro pela portaria (cartaz)', eventoId, valorNovo: ligar ? 'Ligado' : 'Desligado' })
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const, token }
@@ -9817,7 +9968,7 @@ export async function alternarPortaria(eventoId: string, ligar: boolean) {
  * Mesma permissão de ligar a portaria: quem administra o evento.
  */
 export async function alternarCadastroPorLink(eventoId: string, suspender: boolean) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
 
   const { error } = await supabaseAdmin
     .from('eventos')
@@ -9831,6 +9982,7 @@ export async function alternarCadastroPorLink(eventoId: string, suspender: boole
     }
     throw new Error('Não foi possível mudar o cadastro por link. Tente de novo.')
   }
+  auditar(perfil, 'CADASTRO_POR_LINK_ALTERADO', { campoAlterado: 'Cadastro por link (evento inteiro)', eventoId, valorNovo: suspender ? 'Suspenso' : 'Aberto' })
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
@@ -9885,12 +10037,12 @@ export async function criarLinkCadastroIndividual(eventoId: string, fornecedorId
  * (ver `cadastrarFuncionarioPublico`, app/form e app/portaria).
  */
 export async function alternarLinkDoSetor(eventoId: string, fornecedorId: string, ativo: boolean) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
 
   // O setor precisa ser DESTE evento — sem isto, um id de outro cliente
   // colado na chamada mudaria o link dele.
   const { data: setor } = await supabaseAdmin
-    .from('fornecedores').select('id, evento_id').eq('id', fornecedorId).single()
+    .from('fornecedores').select('id, evento_id, nome').eq('id', fornecedorId).single()
   if (!setor || setor.evento_id !== eventoId) throw new Error('Fornecedor não encontrado neste evento.')
 
   const { error } = await supabaseAdmin
@@ -9902,6 +10054,7 @@ export async function alternarLinkDoSetor(eventoId: string, fornecedorId: string
     }
     throw new Error('Não foi possível mudar o link deste fornecedor. Tente de novo.')
   }
+  auditar(perfil, 'LINK_DO_SETOR_ALTERADO', { campoAlterado: `Link de cadastro de ${setor.nome}`, eventoId, valorNovo: ativo ? 'Aberto' : 'Fechado' })
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
@@ -9918,7 +10071,7 @@ export async function alternarLinkDoSetor(eventoId: string, fornecedorId: string
  * token, ele só serve para abrir a página.
  */
 export async function trocarTokenDaPortaria(eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
 
   const { error } = await supabaseAdmin
     .from('eventos')
@@ -9926,6 +10079,7 @@ export async function trocarTokenDaPortaria(eventoId: string) {
     .eq('id', eventoId)
 
   if (error) throw new Error('Não foi possível gerar um novo QR. Tente de novo.')
+  auditar(perfil, 'PORTARIA_TOKEN_TROCADO', { campoAlterado: 'QR da portaria', eventoId, valorAnterior: 'Cartaz antigo (deixa de funcionar)', valorNovo: 'QR novo gerado' })
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
 }
@@ -9989,7 +10143,7 @@ export async function obterConfiguracaoDoMeio(eventoId: string): Promise<Configu
 export async function salvarConfiguracaoDoMeio(
   eventoId: string, setoresLigados: string[], diasLigados: string[],
 ) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
 
   const { data: setoresDoEvento } = await supabaseAdmin
     .from('fornecedores').select('id').eq('evento_id', eventoId)
@@ -10027,6 +10181,10 @@ export async function salvarConfiguracaoDoMeio(
    * cairia no refresh seguinte, e a tela pareceria ter ignorado o clique.
    */
   const canceladas = await cancelarMeioDesligado(eventoId)
+  auditar(perfil, 'CONFIGURACAO_MEIO_ALTERADA', {
+    campoAlterado: 'Batida do meio', eventoId,
+    valorNovo: `${ligados.length} fornecedor(es) e ${datasLigadas.length} dia(s) exigem o meio${canceladas ? ` · ${canceladas} lembrete(s) cancelado(s)` : ''}`,
+  })
 
   after(() => sincronizarAgendamentos(eventoId).catch(console.error))
 
@@ -10133,15 +10291,16 @@ export async function criarAviso(eventoId: string, formData: FormData) {
     if (erroSetores) throw new Error(mensagemAmigavel(erroSetores))
   }
 
+  auditar(perfil, 'AVISO_CRIADO', { campoAlterado: 'Aviso', eventoId, valorNovo: curto(`${dados.titulo} · para ${dados.publico === 'setores' ? `${dados.fornecedorIds.length} fornecedor(es)` : dados.publico === 'pessoa' ? `CPF ${formatCpf(String(dados.cpf_pessoa ?? ''))}` : dados.publico}${dados.ativo ? '' : ' · inativo'}`) })
   revalidatePath(`/admin/eventos/${eventoId}/avisos`)
 }
 
 export async function editarAviso(avisoId: string, eventoId: string, formData: FormData) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
   const dados = dadosAvisoDoForm(formData)
   await exigirDestinatariosDoEvento(eventoId, dados)
 
-  const { data: atual } = await supabaseAdmin.from('avisos').select('id, evento_id').eq('id', avisoId).single()
+  const { data: atual } = await supabaseAdmin.from('avisos').select('id, evento_id, titulo').eq('id', avisoId).single()
   if (!atual || atual.evento_id !== eventoId) throw new Error('Aviso não encontrado neste evento.')
 
   const { error } = await supabaseAdmin.from('avisos').update({
@@ -10166,13 +10325,16 @@ export async function editarAviso(avisoId: string, eventoId: string, formData: F
     if (erroSetores) throw new Error(mensagemAmigavel(erroSetores))
   }
 
+  auditar(perfil, 'AVISO_EDITADO', { campoAlterado: 'Aviso', eventoId, valorAnterior: curto(atual.titulo), valorNovo: curto(`${dados.titulo} · para ${dados.publico === 'setores' ? `${dados.fornecedorIds.length} fornecedor(es)` : dados.publico === 'pessoa' ? `CPF ${formatCpf(String(dados.cpf_pessoa ?? ''))}` : dados.publico}${dados.ativo ? '' : ' · inativo'}`) })
   revalidatePath(`/admin/eventos/${eventoId}/avisos`)
 }
 
 export async function alternarAtivoAviso(avisoId: string, eventoId: string, ativo: boolean) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
+  const { data: aviso } = await supabaseAdmin.from('avisos').select('titulo').eq('id', avisoId).maybeSingle()
   const { error } = await supabaseAdmin.from('avisos').update({ ativo }).eq('id', avisoId).eq('evento_id', eventoId)
   if (error) throw new Error(mensagemAmigavel(error))
+  auditar(perfil, 'AVISO_SITUACAO', { campoAlterado: `Aviso ${curto(aviso?.titulo ?? '')}`, eventoId, valorNovo: ativo ? 'Ativo' : 'Desativado' })
   revalidatePath(`/admin/eventos/${eventoId}/avisos`)
 }
 
@@ -10183,9 +10345,11 @@ export async function alternarAtivoAviso(avisoId: string, eventoId: string, ativ
  * pedido descreve.
  */
 export async function excluirAviso(avisoId: string, eventoId: string) {
-  await exigirEventoDaOrg(eventoId)
+  const perfil = await exigirEventoDaOrg(eventoId)
+  const { data: aviso } = await supabaseAdmin.from('avisos').select('titulo, mensagem').eq('id', avisoId).maybeSingle()
   const { error } = await supabaseAdmin.from('avisos').delete().eq('id', avisoId).eq('evento_id', eventoId)
   if (error) throw new Error(mensagemAmigavel(error))
+  auditar(perfil, 'AVISO_EXCLUIDO', { campoAlterado: 'Aviso', eventoId, valorAnterior: curto(`${aviso?.titulo ?? ''} — ${aviso?.mensagem ?? ''}`) })
   revalidatePath(`/admin/eventos/${eventoId}/avisos`)
 }
 
@@ -10437,13 +10601,14 @@ export async function atualizarFotoVeiculo(veiculoId: string, eventoId: string, 
   if (acesso.error) return { error: acesso.error }
 
   const { data: atual } = await supabaseAdmin
-    .from('veiculos').select('id, foto_path').eq('id', veiculoId).eq('evento_id', eventoId).single()
+    .from('veiculos').select('id, foto_path, placa').eq('id', veiculoId).eq('evento_id', eventoId).single()
   if (!atual) return { error: 'Veículo não encontrado.' }
 
   const remover = formData.get('remover') === '1'
   if (remover) {
     if (atual.foto_path) await supabaseAdmin.storage.from('presencas').remove([atual.foto_path as string])
     await supabaseAdmin.from('veiculos').update({ foto_path: null }).eq('id', veiculoId)
+    auditar(acesso.perfil, 'VEICULO_FOTO_ALTERADA', { campoAlterado: `Veículo ${atual.placa ?? ''}`.trim(), eventoId, valorNovo: 'Foto removida' })
     revalidatePath('/admin/veiculos')
     return { ok: true as const }
   }
@@ -10466,6 +10631,7 @@ export async function atualizarFotoVeiculo(veiculoId: string, eventoId: string, 
 
   const { error } = await supabaseAdmin.from('veiculos').update({ foto_path: path }).eq('id', veiculoId)
   if (error) return { error: mensagemAmigavel(error) }
+  auditar(acesso.perfil, 'VEICULO_FOTO_ALTERADA', { campoAlterado: `Veículo ${atual.placa ?? ''}`.trim(), eventoId, valorNovo: 'Foto nova' })
   revalidatePath('/admin/veiculos')
   return { ok: true as const }
 }
@@ -10628,6 +10794,7 @@ export async function cadastrarVeiculo(eventoId: string, formData: FormData): Pr
 
   const { qrDataUrl } = await montarQrVeiculo(qrToken)
 
+  auditar(perfil, 'VEICULO_CADASTRADO', { campoAlterado: 'Veículo', eventoId, valorNovo: curto(`${campos.placa} · condutor ${campos.condutorNome}`) })
   revalidatePath('/admin/veiculos')
   return { ok: true as const, id: novo.id as string, placa: campos.placa, condutor: campos.condutorNome, qrDataUrl }
 }
@@ -10722,6 +10889,10 @@ export async function cadastrarVeiculoPublico(token: string, formData: FormData)
     eventoId: link.eventoId, veiculoId: novo.id, telefone: campos.condutorTelefone,
   }).catch(console.error))
 
+  // Sem login: quem cadastrou é o próprio condutor, pelo link público.
+  auditar({ id: null, nome: `${campos.condutorNome} (pelo link de veículos)` }, 'VEICULO_CADASTRADO', {
+    campoAlterado: 'Veículo', eventoId: link.eventoId, valorNovo: curto(`${campos.placa} · condutor ${campos.condutorNome}`),
+  })
   return { ok: true as const, qrToken }
 }
 
@@ -10733,9 +10904,14 @@ export async function alterarStatusVeiculo(veiculoId: string, eventoId: string, 
   if (acesso.error) return { error: acesso.error }
 
   const status = statusVeiculoValido(novoStatus)
+  const { data: antesDoVeiculo } = await supabaseAdmin.from('veiculos').select('placa, status').eq('id', veiculoId).maybeSingle()
   const { error } = await supabaseAdmin
     .from('veiculos').update({ status }).eq('id', veiculoId).eq('evento_id', eventoId)
   if (error) return { error: mensagemAmigavel(error) }
+  auditar(acesso.perfil, 'VEICULO_STATUS_ALTERADO', {
+    campoAlterado: `Veículo ${antesDoVeiculo?.placa ?? ''}`.trim(), eventoId,
+    valorAnterior: (antesDoVeiculo?.status as string | null) ?? null, valorNovo: status,
+  })
 
   revalidatePath('/admin/veiculos')
   return { ok: true as const, status }
@@ -10761,6 +10937,10 @@ export async function criarOuRegenerarLinkVeiculo(eventoId: string, tipo: string
         evento_id: eventoId, tipo, token, ativo: true, criado_por_perfil_id: acesso.perfil.id,
       })
   if (error) return { error: mensagemAmigavel(error) }
+  auditar(acesso.perfil, 'VEICULO_LINK_ALTERADO', {
+    campoAlterado: `Link de veículos (${tipo})`, eventoId,
+    valorNovo: !existente ? 'Link criado' : regenerar ? 'Endereço novo (o antigo deixa de funcionar)' : 'Link reaberto',
+  })
 
   revalidatePath('/admin/veiculos')
   return { ok: true as const, token }
@@ -10775,6 +10955,7 @@ export async function alternarLinkVeiculo(eventoId: string, tipo: string, ativo:
   const { error } = await supabaseAdmin
     .from('veiculo_links').update({ ativo }).eq('evento_id', eventoId).eq('tipo', tipo)
   if (error) return { error: mensagemAmigavel(error) }
+  auditar(acesso.perfil, 'VEICULO_LINK_ALTERADO', { campoAlterado: `Link de veículos (${tipo})`, eventoId, valorNovo: ativo ? 'Aberto' : 'Fechado' })
 
   revalidatePath('/admin/veiculos')
   return { ok: true as const }
@@ -10792,8 +10973,12 @@ export async function linksDeVeiculoDoEvento(eventoId: string) {
 export async function excluirVeiculo(veiculoId: string, eventoId: string) {
   const acesso = await exigirAcessoAVeiculos(eventoId)
   if (acesso.error) return { error: acesso.error }
+  const { data: veiculoExcluido } = await supabaseAdmin.from('veiculos').select('placa, condutor_nome').eq('id', veiculoId).maybeSingle()
   const { error } = await supabaseAdmin.from('veiculos').delete().eq('id', veiculoId).eq('evento_id', eventoId)
   if (error) return { error: mensagemAmigavel(error) }
+  auditar(acesso.perfil, 'VEICULO_EXCLUIDO', {
+    campoAlterado: 'Veículo', eventoId, valorAnterior: curto(`${veiculoExcluido?.placa ?? veiculoId}${veiculoExcluido?.condutor_nome ? ` · condutor ${veiculoExcluido.condutor_nome}` : ''}`),
+  })
   revalidatePath('/admin/veiculos')
   return { ok: true as const }
 }
@@ -11180,7 +11365,7 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
   { ok?: false; error: string } | { ok: true; resultados: ResultadoLinhaEstrutura[] }
 > {
   try {
-    await exigirImportadorDeEstrutura(eventoId)
+    const { perfil } = await exigirImportadorDeEstrutura(eventoId)
     if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `Máximo de ${MAX_LINHAS_ESTRUTURA} linhas por importação.` }
     const alvo = new Set(apenas.slice(0, 20))
     const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes)
@@ -11196,6 +11381,14 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
       } catch (e) {
         resultados.push({ linha: l.linha, acao: 'erro', erro: mensagemAmigavel(e) })
       }
+    }
+    // Um resumo por leva (cada fornecedor NOVO já gravou a própria linha SETOR_CRIADO, com o supervisor).
+    if (resultados.length) {
+      const conta = (a: string) => resultados.filter(r => r.acao === a).length
+      auditar(perfil, 'ESTRUTURA_IMPORTADA', {
+        campoAlterado: 'Planilha de estrutura', eventoId,
+        valorNovo: `Linhas ${resultados.map(r => r.linha).join(', ')}: ${conta('criado')} criada(s), ${conta('atualizado')} atualizada(s), ${conta('erro')} com erro`,
+      })
     }
     revalidatePath(`/admin/eventos/${eventoId}`)
     return { ok: true, resultados }
@@ -11288,11 +11481,12 @@ async function gravarLinhaEstrutura(
 
 export async function criarSubevento(eventoId: string, formData: FormData): Promise<{ error?: string }> {
   try {
-    await exigirEventoDaOrg(eventoId)
+    const perfil = await exigirEventoDaOrg(eventoId)
     const nome = nomeEmMaiusculo(formData.get('nome') as string)
     if (!nome) throw new Error('Informe o nome do subevento.')
     const { error } = await supabaseAdmin.from('subeventos').insert([{ evento_id: eventoId, nome }])
     if (error) throw new Error(mensagemAmigavel(error))
+    auditar(perfil, 'SUBEVENTO_CRIADO', { campoAlterado: 'Subevento', eventoId, valorNovo: nome })
     revalidatePath(`/admin/eventos/${eventoId}`)
     return {}
   } catch (e) {
@@ -11302,11 +11496,13 @@ export async function criarSubevento(eventoId: string, formData: FormData): Prom
 
 export async function editarSubevento(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
   try {
-    await exigirEventoDaOrg(eventoId)
+    const perfil = await exigirEventoDaOrg(eventoId)
     const nome = nomeEmMaiusculo(formData.get('nome') as string)
     if (!nome) throw new Error('Informe o nome do subevento.')
+    const { data: subAntes } = await supabaseAdmin.from('subeventos').select('nome').eq('id', id).maybeSingle()
     const { error } = await supabaseAdmin.from('subeventos').update({ nome }).eq('id', id).eq('evento_id', eventoId)
     if (error) throw new Error(mensagemAmigavel(error))
+    auditar(perfil, 'SUBEVENTO_EDITADO', { campoAlterado: 'Subevento', eventoId, valorAnterior: (subAntes?.nome as string | undefined) ?? null, valorNovo: nome })
     revalidatePath(`/admin/eventos/${eventoId}`)
     return {}
   } catch (e) {
@@ -11362,7 +11558,7 @@ export async function mesclarSubeventos(eventoId: string, origemId: string, dest
 
 export async function excluirSubevento(id: string, eventoId: string): Promise<{ error?: string }> {
   try {
-    await exigirEventoDaOrg(eventoId)
+    const perfil = await exigirEventoDaOrg(eventoId)
     /*
      * Quem já está cadastrado neste subevento fica com `subevento_id = null`
      * (ON DELETE SET NULL) — não é excluído junto. Avisa antes de deixar
@@ -11374,8 +11570,10 @@ export async function excluirSubevento(id: string, eventoId: string): Promise<{ 
     if (count) {
       throw new Error(`Este subevento tem ${count} pessoa${count === 1 ? '' : 's'} vinculada${count === 1 ? '' : 's'}. Mova-as para outro subevento antes de excluir.`)
     }
+    const { data: subExcluido } = await supabaseAdmin.from('subeventos').select('nome').eq('id', id).maybeSingle()
     const { error } = await supabaseAdmin.from('subeventos').delete().eq('id', id).eq('evento_id', eventoId)
     if (error) throw new Error(mensagemAmigavel(error))
+    auditar(perfil, 'SUBEVENTO_EXCLUIDO', { campoAlterado: 'Subevento', eventoId, valorAnterior: (subExcluido?.nome as string | undefined) ?? id })
     revalidatePath(`/admin/eventos/${eventoId}`)
     return {}
   } catch (e) {

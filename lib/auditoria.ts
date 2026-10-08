@@ -16,7 +16,8 @@ import { supabaseAdmin } from './supabase-server'
  * usado pra colunas novas em `criarFornecedor`/`editarFornecedor`.
  */
 export async function registrarAuditoria(args: {
-  perfil: { id: string; nome: string }
+  /** Quem fez. `id` nulo = ação sem login (link público: formulário, pedido de setor, veículo) — o nome diz de onde veio. */
+  perfil: { id: string | null; nome: string }
   /** Ver `ACAO_LABELS` em lib/suporte.ts pros rótulos exibidos na tela. */
   acao: string
   campoAlterado?: string
@@ -62,6 +63,14 @@ export async function registrarAuditoria(args: {
   }
 }
 
+/** A organização do evento — sem ela a linha da auditoria só aparece para o master. */
+async function orgDoEvento(eventoId: string | null | undefined, informada?: string | null): Promise<string | null> {
+  if (informada) return informada
+  if (!eventoId) return null
+  const { data } = await supabaseAdmin.from('eventos').select('organizacao_id').eq('id', eventoId).maybeSingle()
+  return (data?.organizacao_id as string | null) ?? null
+}
+
 /** Como a origem do cadastro aparece na auditoria. Chave = `funcionarios.origem`. */
 export const ROTULO_ORIGEM_CADASTRO: Record<string, string> = {
   formulario: 'Cadastro pelo link',
@@ -89,7 +98,7 @@ export async function registrarCadastroFuncionario(args: {
     const { error } = await supabaseAdmin.from('alteracoes_cadastro').insert([{
       usuario_responsavel: `${args.nome} (cadastro próprio)`,
       usuario_responsavel_id: null,
-      organizacao_id: args.organizacaoId ?? null,
+      organizacao_id: await orgDoEvento(args.eventoId, args.organizacaoId),
       evento_id: args.eventoId,
       funcionario_id: args.funcionarioId,
       acao: 'CADASTRO_FUNCIONARIO',
@@ -119,10 +128,11 @@ export async function registrarCadastrosEmLote(args: {
   if (!args.itens.length) return
   try {
     const ip = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+    const organizacaoId = await orgDoEvento(args.eventoId, args.organizacaoId)
     const linhas = args.itens.map(item => ({
       usuario_responsavel: args.usuarioResponsavel.nome,
       usuario_responsavel_id: args.usuarioResponsavel.id,
-      organizacao_id: args.organizacaoId ?? null,
+      organizacao_id: organizacaoId,
       evento_id: args.eventoId,
       funcionario_id: item.funcionarioId,
       acao: 'CADASTRO_FUNCIONARIO',

@@ -2,7 +2,9 @@
 import { readFileSync } from 'fs'
 import path from 'path'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { podeRegistrarGastos } from './permissions'
 import { mensagemAmigavel } from './erros'
 import { diaBRT } from './janelas'
@@ -55,6 +57,22 @@ function parseValor(bruto: FormDataEntryValue | null): number {
   const n = Number(String(bruto ?? '').replace(/\s/g, '').replace('.', '').replace(',', '.'))
   if (!Number.isFinite(n) || n <= 0) throw new Error('Informe um valor válido, maior que zero.')
   return Math.round(n * 100) / 100
+}
+
+/** "Descrição — R$ 1.234,56", curto, para a auditoria. */
+function resumoDoGasto(descricao: string, valor: number): string {
+  const texto = `${descricao} — ${valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+  return texto.length > 120 ? `${texto.slice(0, 119)}…` : texto
+}
+
+/**
+ * Onde a linha da auditoria fica: o evento (a organização vem dele) ou, no Interno — que não tem evento —,
+ * a organização gravada no próprio gasto.
+ */
+function escopoDoGasto(eventoId: string | null, organizacaoId: string | null) {
+  return eventoId && eventoId !== EVENTO_INTERNO
+    ? { eventoId }
+    : { organizacaoId: organizacaoId ?? undefined }
 }
 
 function limpar(v: FormDataEntryValue | null): string | null {
@@ -148,6 +166,11 @@ export async function criarGasto(formData: FormData): Promise<ResultadoGasto> {
       console.error('[gastos] comprovante não subiu', { gastoId: data.id, erro: e instanceof Error ? e.message : e })
     }
 
+    after(() => registrarAuditoria({
+      perfil, acao: 'GASTO_CRIADO', campoAlterado: 'Gasto',
+      valorNovo: resumoDoGasto(campos.descricao, campos.valor),
+      ...escopoDoGasto(interno ? null : eventoId, (perfil.organizacao_id as string | null) ?? null),
+    }))
     atualizarTelas(eventoId)
     return { ok: true, id: data.id as string }
   } catch (e) {
@@ -163,7 +186,7 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
     if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
     const { data: atual } = await supabaseAdmin
-      .from('gastos_evento').select('id, evento_id, comprovante_path').eq('id', id).maybeSingle()
+      .from('gastos_evento').select('id, evento_id, comprovante_path, descricao, valor, organizacao_id').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este gasto não existe mais.' }
     // Interno não tem evento_id — usa o mesmo sentinel pra pasta do
     // comprovante e pra revalidar a tela certa.
@@ -189,6 +212,12 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])
     }
 
+    after(() => registrarAuditoria({
+      perfil, acao: 'GASTO_EDITADO', campoAlterado: 'Gasto',
+      valorAnterior: resumoDoGasto(String(atual.descricao ?? ''), Number(atual.valor ?? 0)),
+      valorNovo: resumoDoGasto(campos.descricao, campos.valor),
+      ...escopoDoGasto(atual.evento_id as string | null, atual.organizacao_id as string | null),
+    }))
     atualizarTelas(eventoId)
     return { ok: true }
   } catch (e) {
@@ -204,7 +233,7 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
     if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
     const { data: atual } = await supabaseAdmin
-      .from('gastos_evento').select('id, evento_id, comprovante_path').eq('id', id).maybeSingle()
+      .from('gastos_evento').select('id, evento_id, comprovante_path, descricao, valor, organizacao_id').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este gasto já não existe.' }
 
     const { error } = await supabaseAdmin.from('gastos_evento').delete().eq('id', id)
@@ -214,6 +243,11 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
       await supabaseAdmin.storage.from('gastos').remove([atual.comprovante_path as string])
     }
 
+    after(() => registrarAuditoria({
+      perfil, acao: 'GASTO_EXCLUIDO', campoAlterado: 'Gasto',
+      valorAnterior: resumoDoGasto(String(atual.descricao ?? ''), Number(atual.valor ?? 0)),
+      ...escopoDoGasto(atual.evento_id as string | null, atual.organizacao_id as string | null),
+    }))
     atualizarTelas((atual.evento_id as string | null) ?? EVENTO_INTERNO)
     return { ok: true }
   } catch (e) {

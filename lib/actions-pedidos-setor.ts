@@ -32,6 +32,9 @@ import {
  * Banco: supabase/upgrade-pedidos-de-setor.sql. Regras: lib/pedido-setor-regras.ts.
  */
 
+/** Texto curto para a auditoria (a linha não é lugar de lista inteira). */
+const cortar = (t: string, max = 120) => (t.length > max ? `${t.slice(0, max - 1)}…` : t)
+
 const AJUDA_MIGRACAO = 'Falta rodar a atualização do banco (upgrade-pedidos-de-setor.sql).'
 const ERRO_BANCO = /pedidos_setor|pedido_setor|does not exist|schema cache/i
 const MOTIVO_MAX = 300
@@ -107,6 +110,12 @@ export async function trocarTokenPedidoSetor(eventoId: string): Promise<{ ok: tr
     const token = randomBytes(16).toString('hex')
     const { error } = await supabaseAdmin.from('eventos').update({ pedido_setor_token: token }).eq('id', eventoId)
     if (error) return { erro: ERRO_BANCO.test(error.message) ? AJUDA_MIGRACAO : mensagemAmigavel(error) }
+    // O token em si não vai para a auditoria: é o segredo do link, e a linha é lida por mais gente.
+    after(() => registrarAuditoria({
+      perfil: g.perfil, acao: 'LINK_PEDIDO_SETOR_TROCADO', campoAlterado: 'Link de pedido de setor',
+      valorAnterior: 'Endereço antigo (deixa de funcionar)', valorNovo: 'Endereço novo gerado',
+      eventoId, organizacaoId: g.evento.organizacaoId ?? undefined,
+    }))
     revalidatePath(`/admin/eventos/${eventoId}`)
     return { ok: true, token }
   } catch (e) {
@@ -183,6 +192,13 @@ export async function enviarPedidoDeSetor(
       return { erro: 'Não foi possível enviar o pedido. Tente de novo.' }
     }
 
+    // Sem login: quem fez é o contato que preencheu o formulário (id nulo). A organização vem do evento.
+    after(() => registrarAuditoria({
+      perfil: { id: null, nome: `${contato.nome} (pelo link de pedido de setor)` },
+      acao: 'PEDIDO_SETOR_ENVIADO', campoAlterado: 'Pedido de setor',
+      valorNovo: cortar(`${setores.length} setor(es): ${setores.map(x => x.nome).join(', ')}`),
+      eventoId,
+    }))
     revalidatePath(`/admin/eventos/${eventoId}`)
     revalidatePath(`/admin/eventos/${eventoId}/pedidos-setor`)
     return { ok: true, token }
@@ -235,6 +251,12 @@ export async function salvarItemDoPedido(itemId: string, dados: DadosDoSetor): P
 
     const { error } = await supabaseAdmin.from('pedidos_setor_itens').update(colunasDoSetor(setor.valor)).eq('id', itemId).eq('status', 'pendente')
     if (error) return { erro: mensagemAmigavel(error) }
+    after(() => registrarAuditoria({
+      perfil: g.perfil, acao: 'PEDIDO_SETOR_EDITADO', campoAlterado: 'Pedido de setor',
+      valorAnterior: cortar(resumoDoSetor({ nome: item.nome, quantidade: item.quantidade, porDia: item.quantidade_por_dia ?? {} })),
+      valorNovo: cortar(resumoDoSetor(setor.valor)),
+      eventoId: item.evento_id, organizacaoId: g.evento.organizacaoId ?? undefined,
+    }))
     revalidatePath(`/admin/eventos/${item.evento_id}/pedidos-setor`)
     return { ok: true }
   } catch (e) {

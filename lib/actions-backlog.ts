@@ -1,6 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { podeGerenciarBacklog } from './permissions'
 import { mensagemAmigavel } from './erros'
 import {
@@ -49,6 +51,27 @@ async function registrar(
     valor_anterior: valorAnterior ?? null, valor_novo: valorNovo ?? null,
   })
   if (error) console.error('[backlog] histórico não gravado', { itemId, acao, erro: error.message })
+}
+
+/**
+ * Além da linha do tempo do item (`registrar`), toda mudança vai para a auditoria geral — pedido do Juan
+ * (08/10/2026): "tudo que acontece no sistema, de todas as pessoas, precisa estar na auditoria". O Backlog é
+ * interno (master), então a linha não tem organização.
+ */
+function auditar(
+  perfil: { id: string; nome: string }, acao: string,
+  valorAnterior?: string | null, valorNovo?: string | null, campoAlterado = 'Item do backlog',
+) {
+  after(() => registrarAuditoria({
+    perfil, acao, campoAlterado,
+    valorAnterior: cortar(valorAnterior), valorNovo: cortar(valorNovo),
+  }))
+}
+
+/** Texto curto para a auditoria. */
+function cortar(t: string | null | undefined, max = 120): string | null {
+  if (!t) return null
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
 function limpar(v: FormDataEntryValue | null): string | null {
@@ -147,6 +170,7 @@ export async function criarItemBacklog(formData: FormData): Promise<Resultado> {
     }
 
     await registrar(data.id as string, 'CRIACAO', perfil.id as string, null, campos.titulo)
+    auditar(perfil, 'BACKLOG_CRIADO', null, `${tipo === 'cliente' ? 'Possível cliente' : 'Tarefa'}: ${campos.titulo}`)
     atualizarTelas()
     return { ok: true, id: data.id as string }
   } catch (e) {
@@ -196,6 +220,7 @@ export async function editarItemBacklog(id: string, formData: FormData): Promise
   if (mudou(antes.titulo, campos.titulo)) {
     await registrar(id, 'EDICAO', autor, antes.titulo, campos.titulo)
   }
+  auditar(perfil, 'BACKLOG_EDITADO', antes.titulo, campos.titulo)
 
   atualizarTelas()
   return { ok: true }
@@ -230,6 +255,8 @@ export async function moverItemBacklog(id: string, status: string): Promise<Resu
   const autor = perfil.id as string
   await registrar(id, 'STATUS', autor, rotuloDoStatus(antes.tipo, antes.status), rotuloDoStatus(antes.tipo, status))
   if (STATUS_GANHOS.has(status)) await registrar(id, 'CONCLUSAO', autor, null, rotuloDoStatus(antes.tipo, status))
+  auditar(perfil, 'BACKLOG_MOVIDO',
+    `${antes.titulo}: ${rotuloDoStatus(antes.tipo, antes.status)}`, `${antes.titulo}: ${rotuloDoStatus(antes.tipo, status)}`)
 
   atualizarTelas()
   return { ok: true }
@@ -248,6 +275,8 @@ export async function comentarNoItem(id: string, texto: string): Promise<Resulta
   // O comentário conta como movimento: sobe o item na lista, que ordena por
   // `atualizado_em` quando não há prioridade nem data desempatando.
   await supabaseAdmin.from('backlog_itens').update({ atualizado_em: new Date().toISOString() }).eq('id', id)
+  const { data: doItem } = await supabaseAdmin.from('backlog_itens').select('titulo').eq('id', id).maybeSingle()
+  auditar(perfil, 'BACKLOG_COMENTARIO', (doItem?.titulo as string | undefined) ?? null, limpo, 'Comentário no backlog')
   atualizarTelas()
   return { ok: true }
 }
@@ -289,6 +318,7 @@ export async function converterEmCliente(id: string, organizacaoId: string): Pro
   if (antes.status !== 'fechado') {
     await registrar(id, 'STATUS', autor, rotuloDoStatus('cliente', antes.status), 'Fechado')
   }
+  auditar(perfil, 'BACKLOG_CONVERTIDO_CLIENTE', antes.titulo, `Cliente: ${org.nome as string}`)
 
   atualizarTelas()
   return { ok: true }
@@ -300,10 +330,14 @@ export async function excluirItemBacklog(id: string): Promise<Resultado> {
   const perfil = await exigirBacklog()
   if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
+  // O título é lido ANTES: depois de apagar não há mais o que mostrar na auditoria.
+  const { data: doItem } = await supabaseAdmin.from('backlog_itens').select('titulo').eq('id', id).maybeSingle()
+
   // O histórico vai junto por `on delete cascade` — é a única exclusão de
   // verdade do módulo, e por isso a tela pede confirmação antes.
   const { error } = await supabaseAdmin.from('backlog_itens').delete().eq('id', id)
   if (error) return { ok: false, erro: mensagemAmigavel(error) }
+  auditar(perfil, 'BACKLOG_EXCLUIDO', (doItem?.titulo as string | undefined) ?? `Item ${id}`, null)
 
   atualizarTelas()
   return { ok: true }
@@ -391,6 +425,9 @@ export async function anexarFotoBacklog(itemId: string, formData: FormData): Pro
     }
 
     await registrar(itemId, 'ANEXO_ADICIONADO', perfil.id, null, arquivo.name)
+    const { data: doItem } = await supabaseAdmin.from('backlog_itens').select('titulo').eq('id', itemId).maybeSingle()
+    auditar(perfil, 'BACKLOG_ANEXO', null,
+      `Anexo incluído em "${(doItem?.titulo as string | undefined) ?? 'item'}": ${arquivo.name}`, 'Anexo do backlog')
     atualizarTelas()
     return { ok: true }
   } catch (e) {
@@ -411,6 +448,9 @@ export async function removerAnexoBacklog(anexoId: string): Promise<Resultado> {
     if (error) throw new Error(error.message)
     await supabaseAdmin.storage.from('backlog').remove([data.path as string])
     await registrar(data.item_id as string, 'ANEXO_REMOVIDO', perfil.id, data.nome as string, null)
+    const { data: doItem } = await supabaseAdmin.from('backlog_itens').select('titulo').eq('id', data.item_id as string).maybeSingle()
+    auditar(perfil, 'BACKLOG_ANEXO',
+      `Anexo de "${(doItem?.titulo as string | undefined) ?? 'item'}": ${data.nome as string}`, 'Removido', 'Anexo do backlog')
     atualizarTelas()
     return { ok: true }
   } catch (e) {

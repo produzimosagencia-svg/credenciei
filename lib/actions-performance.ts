@@ -1,6 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { podeVerPerformance, podeGerenciarPerformance } from './permissions'
 import { mensagemAmigavel } from './erros'
 import { contarAlertasNaoLidos, listarAlertas, type Alerta } from './performance'
@@ -74,11 +76,21 @@ export type ServicoInput = {
   limiarCriticoMs: number
 }
 
+/** "ligado · a cada 60s · timeout 8000ms · atenção 1000ms · crítico 3000ms" — a configuração, curta, para a auditoria. */
+function resumoDoServico(c: ServicoInput): string {
+  return `${c.habilitado ? 'ligado' : 'desligado'} · a cada ${c.intervaloSegundos}s · timeout ${c.timeoutMs}ms`
+    + ` · atenção ${c.limiarAtencaoMs}ms · crítico ${c.limiarCriticoMs}ms`
+}
+
 export async function atualizarServico(servicoId: string, dados: ServicoInput): Promise<Resultado> {
   const perfil = await exigirGerenciar()
   if (!perfil) return { erro: SEM_ACESSO_GERENCIAR }
 
   if (dados.intervaloSegundos < 30) return { erro: 'O intervalo mínimo é 30 segundos.' }
+
+  // Como estava, para a auditoria mostrar o antes → depois.
+  const { data: antes } = await supabaseAdmin.from('perf_services')
+    .select('nome, habilitado, intervalo_segundos, timeout_ms, limiar_atencao_ms, limiar_critico_ms').eq('id', servicoId).maybeSingle()
 
   const { error } = await supabaseAdmin.from('perf_services').update({
     habilitado: dados.habilitado,
@@ -90,6 +102,15 @@ export async function atualizarServico(servicoId: string, dados: ServicoInput): 
   }).eq('id', servicoId)
   if (error) return { erro: mensagemAmigavel(error) }
 
+  const nome = (antes?.nome as string | undefined) ?? 'Serviço'
+  after(() => registrarAuditoria({
+    perfil, acao: 'MONITORAMENTO_ALTERADO', campoAlterado: 'Serviço monitorado',
+    valorAnterior: antes ? `${nome}: ${resumoDoServico({
+      habilitado: antes.habilitado === true, intervaloSegundos: Number(antes.intervalo_segundos), timeoutMs: Number(antes.timeout_ms),
+      limiarAtencaoMs: Number(antes.limiar_atencao_ms), limiarCriticoMs: Number(antes.limiar_critico_ms),
+    })}` : null,
+    valorNovo: `${nome}: ${resumoDoServico(dados)}`,
+  }))
   revalidatePath('/admin/performance')
   revalidatePath('/admin/performance/configuracoes')
   return { ok: true }
@@ -120,6 +141,10 @@ export async function criarServicoPersonalizado(dados: {
     if (/duplicate key|unique/i.test(error.message)) return { erro: `Já existe um serviço com a chave "${chave}".` }
     return { erro: mensagemAmigavel(error) }
   }
+  after(() => registrarAuditoria({
+    perfil, acao: 'MONITORAMENTO_ALTERADO', campoAlterado: 'Serviço monitorado',
+    valorNovo: `Serviço criado: ${dados.nome.trim()} (${chave})`.slice(0, 120),
+  }))
   revalidatePath('/admin/performance/configuracoes')
   return { ok: true }
 }
@@ -127,8 +152,15 @@ export async function criarServicoPersonalizado(dados: {
 export async function excluirServicoPersonalizado(servicoId: string): Promise<Resultado> {
   const perfil = await exigirGerenciar()
   if (!perfil) return { erro: SEM_ACESSO_GERENCIAR }
+  // Nome lido ANTES de apagar: é o que a auditoria mostra depois.
+  const { data: antes } = await supabaseAdmin.from('perf_services').select('nome, chave').eq('id', servicoId).maybeSingle()
   const { error } = await supabaseAdmin.from('perf_services').delete().eq('id', servicoId)
   if (error) return { erro: mensagemAmigavel(error) }
+  after(() => registrarAuditoria({
+    perfil, acao: 'MONITORAMENTO_ALTERADO', campoAlterado: 'Serviço monitorado',
+    valorAnterior: antes ? `${antes.nome as string} (${antes.chave as string})`.slice(0, 120) : `Serviço ${servicoId}`,
+    valorNovo: 'Serviço excluído',
+  }))
   revalidatePath('/admin/performance/configuracoes')
   return { ok: true }
 }
@@ -138,8 +170,15 @@ export async function marcarIncidente(incidenteId: string, status: 'resolvido' |
   if (!perfil) return { erro: SEM_ACESSO_GERENCIAR }
   const patch: Record<string, unknown> = { status }
   if (status === 'resolvido') patch.resolvido_em = new Date().toISOString()
+  const { data: antes } = await supabaseAdmin.from('perf_incidents').select('titulo, status').eq('id', incidenteId).maybeSingle()
   const { error } = await supabaseAdmin.from('perf_incidents').update(patch).eq('id', incidenteId)
   if (error) return { erro: mensagemAmigavel(error) }
+  const titulo = ((antes?.titulo as string | undefined) ?? 'Incidente').slice(0, 100)
+  after(() => registrarAuditoria({
+    perfil, acao: 'INCIDENTE_MARCADO', campoAlterado: 'Incidente',
+    valorAnterior: antes ? `${titulo}: ${antes.status as string}` : null,
+    valorNovo: `${titulo}: ${status}`,
+  }))
   revalidatePath('/admin/performance/incidentes')
   revalidatePath('/admin/performance')
   return { ok: true }

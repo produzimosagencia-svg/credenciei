@@ -1,6 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { podeGerenciarOrcamentos } from './permissions'
 import { mensagemAmigavel } from './erros'
 import { statusValido } from './orcamentos-constantes'
@@ -90,6 +92,13 @@ function validar(dados: OrcamentoInput) {
   }
 }
 
+/** "Nº 12 · Festa X — R$ 1.234,56", curto, para a auditoria. Módulo interno do master: sem organização. */
+function resumoDoOrcamento(o: { numero?: number | null; nomeEvento: string; valorTotal: number }): string {
+  const numero = o.numero != null ? `Nº ${o.numero} · ` : ''
+  const texto = `${numero}${o.nomeEvento} — ${o.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+  return texto.length > 120 ? `${texto.slice(0, 119)}…` : texto
+}
+
 async function gravarItens(orcamentoId: string, itens: { descricao: string; valor: number }[]) {
   if (!itens.length) return
   const { error } = await supabaseAdmin.from('orcamento_itens').insert(
@@ -120,13 +129,17 @@ export async function criarOrcamento(dados: OrcamentoInput): Promise<Resultado> 
       observacoes: campos.observacoes,
       status: campos.status,
       created_by: perfil.id,
-    }).select('id').single()
+    }).select('id, numero').single()
     if (error) {
       console.error('[orcamentos] insert recusado', { erro: error.message, codigo: error.code })
       return { ok: false, erro: mensagemAmigavel(error) }
     }
 
     await gravarItens(data.id as string, campos.itens)
+    after(() => registrarAuditoria({
+      perfil, acao: 'ORCAMENTO_CRIADO', campoAlterado: 'Orçamento',
+      valorNovo: resumoDoOrcamento({ numero: data.numero as number | null, nomeEvento: campos.nomeEvento, valorTotal: campos.valorTotal }),
+    }))
 
     revalidatePath('/admin/orcamentos')
     return { ok: true, id: data.id as string }
@@ -142,7 +155,7 @@ export async function editarOrcamento(id: string, dados: OrcamentoInput): Promis
     const perfil = await exigirOrcamentos()
     if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
-    const { data: atual } = await supabaseAdmin.from('orcamentos').select('id').eq('id', id).maybeSingle()
+    const { data: atual } = await supabaseAdmin.from('orcamentos').select('id, numero, nome_evento, valor_total').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este orçamento não existe mais.' }
 
     const campos = validar(dados)
@@ -171,6 +184,11 @@ export async function editarOrcamento(id: string, dados: OrcamentoInput): Promis
     const { error: erroDelete } = await supabaseAdmin.from('orcamento_itens').delete().eq('orcamento_id', id)
     if (erroDelete) return { ok: false, erro: `Não consegui atualizar os itens: ${erroDelete.message}` }
     await gravarItens(id, campos.itens)
+    after(() => registrarAuditoria({
+      perfil, acao: 'ORCAMENTO_EDITADO', campoAlterado: 'Orçamento',
+      valorAnterior: resumoDoOrcamento({ numero: atual.numero as number | null, nomeEvento: String(atual.nome_evento ?? ''), valorTotal: Number(atual.valor_total ?? 0) }),
+      valorNovo: resumoDoOrcamento({ numero: atual.numero as number | null, nomeEvento: campos.nomeEvento, valorTotal: campos.valorTotal }),
+    }))
 
     revalidatePath('/admin/orcamentos')
     return { ok: true, id }
@@ -186,8 +204,17 @@ export async function excluirOrcamento(id: string): Promise<Resultado> {
     const perfil = await exigirOrcamentos()
     if (!perfil) return { ok: false, erro: SEM_ACESSO }
 
+    // Lido ANTES de apagar: é o que a auditoria mostra depois.
+    const { data: antes } = await supabaseAdmin.from('orcamentos').select('numero, nome_evento, valor_total').eq('id', id).maybeSingle()
+
     const { error } = await supabaseAdmin.from('orcamentos').delete().eq('id', id)
     if (error) return { ok: false, erro: mensagemAmigavel(error) }
+    after(() => registrarAuditoria({
+      perfil, acao: 'ORCAMENTO_EXCLUIDO', campoAlterado: 'Orçamento',
+      valorAnterior: antes
+        ? resumoDoOrcamento({ numero: antes.numero as number | null, nomeEvento: String(antes.nome_evento ?? ''), valorTotal: Number(antes.valor_total ?? 0) })
+        : `Orçamento ${id}`,
+    }))
 
     revalidatePath('/admin/orcamentos')
     return { ok: true }
@@ -222,10 +249,15 @@ export async function duplicarOrcamento(id: string): Promise<Resultado> {
       observacoes: original.observacoes,
       status: 'rascunho',
       created_by: perfil.id,
-    }).select('id').single()
+    }).select('id, numero').single()
     if (error) return { ok: false, erro: mensagemAmigavel(error) }
 
     await gravarItens(data.id as string, original.itens.map(i => ({ descricao: i.descricao, valor: i.valor })))
+    after(() => registrarAuditoria({
+      perfil, acao: 'ORCAMENTO_DUPLICADO', campoAlterado: 'Orçamento',
+      valorAnterior: resumoDoOrcamento({ numero: original.numero, nomeEvento: original.nomeEvento, valorTotal: original.valorTotalCalculado }),
+      valorNovo: resumoDoOrcamento({ numero: data.numero as number | null, nomeEvento: original.nomeEvento, valorTotal: original.valorTotalCalculado }),
+    }))
 
     revalidatePath('/admin/orcamentos')
     return { ok: true, id: data.id as string }

@@ -1,6 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { getPerfil, supabaseAdmin } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { ehMaster } from './permissions'
 import { mensagemAmigavel } from './erros'
 import { CATEGORIAS_CUSTO } from './financeiro'
@@ -66,6 +68,14 @@ async function subirAnexo(
   return { path, nome: arquivo.name }
 }
 
+const reais = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+/** "Descrição (categoria) — R$ 1.234,56", curto, para a auditoria. */
+function resumoDoCusto(descricao: string, categoria: string, valor: number): string {
+  const texto = `${descricao} (${categoria}) — ${reais(valor)}`
+  return texto.length > 120 ? `${texto.slice(0, 119)}…` : texto
+}
+
 function parseValor(bruto: FormDataEntryValue | null): number {
   const n = Number(String(bruto ?? '').replace(',', '.'))
   if (!Number.isFinite(n) || n < 0) throw new Error('Valor inválido.')
@@ -88,7 +98,7 @@ async function salvarFaturamentoInterno(eventoId: string, formData: FormData) {
   const removerNfeAtual = formData.get('remover_nfe') === '1'
 
   const { data: atual } = await supabaseAdmin
-    .from('financeiro_eventos').select('nfe_path').eq('evento_id', eventoId).maybeSingle()
+    .from('financeiro_eventos').select('nfe_path, faturamento').eq('evento_id', eventoId).maybeSingle()
 
   let nfePath = atual?.nfe_path as string | null ?? null
   let nfeNome: string | null = null
@@ -113,6 +123,15 @@ async function salvarFaturamentoInterno(eventoId: string, formData: FormData) {
     atualizado_em: new Date().toISOString(),
   }, { onConflict: 'evento_id' })
   if (error) throw new Error(mensagemAmigavel(error))
+
+  const faturamentoAntes = atual?.faturamento == null ? null : Number(atual.faturamento)
+  const sobreNfe = novaNfe ? ` (NFe nova: ${novaNfe.nome})` : removerNfeAtual && atual?.nfe_path ? ' (NFe removida)' : ''
+  after(() => registrarAuditoria({
+    perfil, acao: 'FATURAMENTO_ALTERADO', campoAlterado: 'Faturamento do evento',
+    valorAnterior: faturamentoAntes == null ? null : reais(faturamentoAntes),
+    valorNovo: `${reais(faturamento)}${sobreNfe}`.slice(0, 120),
+    eventoId,
+  }))
 
   revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
@@ -163,6 +182,12 @@ async function criarCustoInterno(eventoId: string | null, formData: FormData) {
     console.error('[criarCusto] falha ao subir comprovante', { custoId: novo.id, erro: erroAnexo })
   }
 
+  after(() => registrarAuditoria({
+    perfil, acao: 'CUSTO_CRIADO', campoAlterado: eventoId ? 'Custo do evento' : 'Custo interno',
+    valorNovo: resumoDoCusto(descricao, categoria, valor),
+    eventoId: eventoId ?? undefined,
+  }))
+
   if (eventoId) revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
 }
@@ -172,10 +197,10 @@ export async function editarCusto(custoId: string, eventoId: string | null, form
 }
 
 async function editarCustoInterno(custoId: string, eventoId: string | null, formData: FormData) {
-  await exigirMaster()
+  const perfil = await exigirMaster()
 
   const { data: atual } = await supabaseAdmin
-    .from('custos_evento').select('id, evento_id, comprovante_path').eq('id', custoId).single()
+    .from('custos_evento').select('id, evento_id, comprovante_path, descricao, categoria, valor').eq('id', custoId).single()
   if (!atual || atual.evento_id !== eventoId) throw new Error('Custo não encontrado neste evento.')
 
   const descricao = String(formData.get('descricao') ?? '').trim()
@@ -214,6 +239,12 @@ async function editarCustoInterno(custoId: string, eventoId: string | null, form
     await supabaseAdmin.storage.from('financeiro').remove([atual.comprovante_path as string])
   }
 
+  after(() => registrarAuditoria({
+    perfil, acao: 'CUSTO_EDITADO', campoAlterado: eventoId ? 'Custo do evento' : 'Custo interno',
+    valorAnterior: resumoDoCusto(String(atual.descricao ?? ''), String(atual.categoria ?? ''), Number(atual.valor ?? 0)),
+    valorNovo: resumoDoCusto(descricao, categoria, valor),
+    eventoId: eventoId ?? undefined,
+  }))
   if (eventoId) revalidatePath(`/admin/eventos/${eventoId}/financeiro`)
   revalidatePath('/admin/financeiro')
 }
@@ -223,14 +254,20 @@ export async function excluirCusto(custoId: string, eventoId: string | null) {
 }
 
 async function excluirCustoInterno(custoId: string, eventoId: string | null) {
-  await exigirMaster()
+  const perfil = await exigirMaster()
 
+  // Descrição e valor lidos ANTES de apagar: são o que a auditoria mostra depois.
   const { data: atual } = await supabaseAdmin
-    .from('custos_evento').select('id, evento_id, comprovante_path').eq('id', custoId).single()
+    .from('custos_evento').select('id, evento_id, comprovante_path, descricao, categoria, valor').eq('id', custoId).single()
   if (!atual || atual.evento_id !== eventoId) throw new Error('Custo não encontrado neste evento.')
 
   const { error } = await supabaseAdmin.from('custos_evento').delete().eq('id', custoId)
   if (error) throw new Error(mensagemAmigavel(error))
+  after(() => registrarAuditoria({
+    perfil, acao: 'CUSTO_EXCLUIDO', campoAlterado: eventoId ? 'Custo do evento' : 'Custo interno',
+    valorAnterior: resumoDoCusto(String(atual.descricao ?? ''), String(atual.categoria ?? ''), Number(atual.valor ?? 0)),
+    eventoId: eventoId ?? undefined,
+  }))
 
   if (atual.comprovante_path) {
     await supabaseAdmin.storage.from('financeiro').remove([atual.comprovante_path as string])

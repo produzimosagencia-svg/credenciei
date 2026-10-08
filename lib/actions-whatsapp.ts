@@ -1,12 +1,14 @@
 'use server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { randomUUID } from 'node:crypto'
 import { getPerfil, supabaseAdmin, buscarTudo } from './supabase-server'
+import { registrarAuditoria } from './auditoria'
 import { emLotes } from './lotes'
 import { ehMaster } from './permissions'
 import { formatarNumeroWhatsApp, responderConversa, provedor } from './whatsapp'
 import {
-  registrarEnviada, registrarLeituraConversa, FLUXOS, numerosWhatsApp, templatesAprovados,
+  registrarEnviada, registrarLeituraConversa, FLUXOS, fluxosAtivos, numerosWhatsApp, templatesAprovados,
 } from './whatsapp-painel'
 import { podePassar } from './limite'
 
@@ -246,6 +248,13 @@ export async function dispararEmMassa(
     if (error) throw new Error(`Não consegui enfileirar: ${error.message}`)
   }
 
+  const origemTexto = pedido.origem === 'equipe' ? 'equipe do evento' : pedido.origem === 'csv' ? 'planilha' : 'sócios'
+  after(() => registrarAuditoria({
+    perfil, acao: 'WHATSAPP_DISPARO', campoAlterado: 'Disparo em massa',
+    valorNovo: `${linhas.length} destinatário(s) · modelo "${modelo.nome}" · ${origemTexto} · campanha ${campanhaId}`.slice(0, 160),
+    eventoId: pedido.alvo.eventoId,
+  }))
+
   revalidatePath('/admin/whatsapp')
   // O id da campanha sai junto: sem ele não dá pra acompanhar ESTE disparo
   // depois, só o total do dia misturado com os avisos automáticos.
@@ -296,14 +305,26 @@ export async function responderNoChat(telefone: string, texto: string) {
 
 /** Liga/desliga os disparos automáticos. Só o que está ligado é agendado. */
 export async function salvarFluxos(ativos: Record<string, boolean>) {
-  await exigirMaster()
+  const perfil = await exigirMaster()
   const limpo = Object.fromEntries(FLUXOS.map(f => [f.chave, ativos[f.chave] !== false]))
+  // Como estava, para a auditoria dizer QUAL resposta automática foi ligada ou desligada.
+  const antes = await fluxosAtivos()
 
   const { error } = await supabaseAdmin.from('sistema_estado').upsert(
     { chave: 'fluxos', valor: limpo, atualizado_em: new Date().toISOString() },
     { onConflict: 'chave' },
   )
   if (error) throw new Error('Não foi possível salvar. Rode o SQL do painel primeiro.')
+
+  const mudaram = FLUXOS.filter(f => antes[f.chave] !== limpo[f.chave])
+  if (mudaram.length) {
+    const descrever = (estado: Record<string, boolean>) =>
+      mudaram.map(f => `${f.titulo}: ${estado[f.chave] ? 'ligado' : 'desligado'}`).join(' · ').slice(0, 120)
+    after(() => registrarAuditoria({
+      perfil, acao: 'WHATSAPP_FLUXOS_ALTERADOS', campoAlterado: 'Respostas automáticas do WhatsApp',
+      valorAnterior: descrever(antes), valorNovo: descrever(limpo),
+    }))
+  }
 
   revalidatePath('/admin/whatsapp/fluxos')
   return { ok: true as const }
