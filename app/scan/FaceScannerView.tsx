@@ -135,7 +135,9 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   naoIdentificado: { fundo: 'bg-blue-600', icone: '👤', titulo: 'ROSTO AINDA NÃO CADASTRADO' },
   // Âmbar: nem liberado, nem uma recusa por engano — a pessoa é conhecida do
   // sistema, só não pertence a ESTE evento (pedido do Juan, 29/09/2026).
-  outroEvento: { fundo: 'bg-amber-600', icone: '📍', titulo: 'CADASTRADA EM OUTRO EVENTO' },
+  // "Ainda não cadastrada AQUI", não "cadastrada em outro evento": a pessoa pode trabalhar, só falta o cadastro
+  // neste evento (o título antigo fazia a equipe achar que era proibido — VITAL, 08/10/2026).
+  outroEvento: { fundo: 'bg-amber-600', icone: '📍', titulo: 'AINDA NÃO CADASTRADA NESTE EVENTO' },
 }
 
 /** O que originou a leitura em confirmação — pra SALVAR repetir a chamada certa. */

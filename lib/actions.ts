@@ -7742,9 +7742,13 @@ async function validarLeituraFacial(
         }))
         return semLog({
           success: false,
-          message: eventoAlheio
-            ? `Identificamos seu cadastro vinculado ao evento ${eventoAlheio.nome}${eventoAlheio.local ? ` — ${eventoAlheio.local}` : ''}${eventoAlheio.data_inicio ? `, ${formatarBR(eventoAlheio.data_inicio, 'curto')}` : ''}. Isso não autoriza a entrada neste evento — procure o credenciamento.`
-            : 'Identificamos seu cadastro em outro evento. Isso não autoriza a entrada neste evento — procure o credenciamento.',
+          /*
+           * O texto antigo ("isso não autoriza a entrada neste evento") era lido como "esta pessoa NÃO PODE trabalhar
+           * aqui" — e no VITAL (08/10/2026) a equipe desistiu de cadastrar quem tinha trabalhado no Henrique e
+           * Juliano. Não há trava nenhuma: o mesmo CPF pode estar em eventos diferentes. Ela só não se cadastrou
+           * NESTE evento ainda — e é isso que a tela precisa dizer, com o caminho.
+           */
+          message: `Esta pessoa ainda não está cadastrada neste evento${eventoAlheio ? ` (o cadastro encontrado é do evento ${eventoAlheio.nome}, que não vale aqui)` : ''}. Ela PODE trabalhar aqui: faça o cadastro dela pelo link do setor e, depois de aprovado, leia de novo.`,
           cadastradoEmOutroEvento: eventoAlheio
             ? { nome: eventoAlheio.nome, local: eventoAlheio.local, data: eventoAlheio.data_inicio }
             : { nome: 'outro evento', local: null, data: null },
