@@ -178,5 +178,15 @@ ok(/supervisorDesteSetor && \(\s*<SolicitarMaisColaboradores/.test(ler('app/admi
 ok(/<PainelAmpliacoes/.test(ler('app/admin/eventos/[id]/pedidos-setor/page.tsx')), 'os pedidos de mais colaboradores aparecem na fila do admin')
 ok(/pedidos_ampliacao/.test(corpo('contarPedidosPendentes')), 'o número do menu soma os pedidos de mais colaboradores')
 
+ok(/contaExistente\?\.telefone/.test(corpo('aprovarItemDoPedido')) && corpo('aprovarItemDoPedido').indexOf('contaExistente') < corpo('aprovarItemDoPedido').indexOf('criarFornecedor('), 'CPF que já tem conta: a aprovação usa o telefone DA CONTA (o formulário público não troca o WhatsApp de ninguém)')
+
+console.log('\nTelefone digitado com o 55 do país')
+const { formatTelefone } = await import('../lib/format.ts')
+ok(formatTelefone('+55 27 99999-5959') === '(27) 99999-5959', 'com +55 na frente, o 55 sai e o número fica inteiro')
+ok(formatTelefone('5527999995959') === '(27) 99999-5959', 'só dígitos, com 55')
+ok(formatTelefone('27999995959') === '(27) 99999-5959', 'sem 55, como sempre')
+ok(formatTelefone('2733334444') === '(27) 3333-4444', 'fixo de 10 dígitos, como sempre')
+ok(formatTelefone('55279') === '(55) 279', 'enquanto digita (até 11 dígitos) nada é cortado')
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -52,9 +52,17 @@ export function validarCpf(value: string): boolean {
   return true
 }
 
-/** Formata telefone: (00) 00000-0000 ou (00) 0000-0000 */
+/**
+ * Formata telefone: (00) 00000-0000 ou (00) 0000-0000.
+ *
+ * Quem digita com o código do país ("+55 27 99999-5959") passava de 11 dígitos e o corte levava o FINAL do
+ * número: virava "55279999959", um telefone que parece válido e não é de ninguém (aconteceu no pedido de setor,
+ * 08/10/2026, e o número errado foi parar no cadastro do supervisor). Passou de 11 começando com 55: sai o 55.
+ */
 export function formatTelefone(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 11)
+  let d = value.replace(/\D/g, '')
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
+  d = d.slice(0, 11)
   if (d.length <= 10) {
     return d
       .replace(/(\d{2})(\d)/, '($1) $2')

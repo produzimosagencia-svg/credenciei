@@ -5,8 +5,10 @@ import Script from 'next/script'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { enviarPedidoDeSetor } from '@/lib/actions-pedidos-setor'
 import { normalizarPedidoPublico, MAX_SETORES_POR_PEDIDO, type ContextoDoPedido } from '@/lib/pedido-setor-regras'
-import { rotuloDoDia, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
+import type { DiaDaEscala } from '@/lib/escala-regras'
 import { CpfInput, TelefoneInput, NomeInput, NomeMaiusculoInput } from '@/components/inputs'
+import SeletorLista from '@/components/SeletorLista'
+import DiasComQuantidade from '@/components/DiasComQuantidade'
 
 /** Vazio enquanto o captcha não está configurado — o widget nem aparece (mesma tolerância do cadastro da equipe). */
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ''
@@ -17,7 +19,8 @@ type SetorForm = {
   nome: string
   subeventoId: string
   quantidade: string
-  dias: Record<string, { marcado: boolean; qtd: string }>
+  /** Dia marcado → quantidade digitada (um dia está marcado quando tem chave). */
+  dias: Record<string, string>
   outroSupervisor: boolean
   supervisor: Pessoa
 }
@@ -56,13 +59,6 @@ export default function FormularioPedidoSetor({
   const mudar = (chave: number, parte: Partial<SetorForm>) =>
     setSetores(l => l.map(s => (s.chave === chave ? { ...s, ...parte } : s)))
 
-  const alternarDia = (s: SetorForm, dia: string) => {
-    const atual = s.dias[dia]
-    const marcado = !atual?.marcado
-    // Ao marcar, já sugere o total — é o caso mais comum, e a pessoa só ajusta o que for diferente.
-    mudar(s.chave, { dias: { ...s.dias, [dia]: { marcado, qtd: marcado ? (atual?.qtd || s.quantidade) : (atual?.qtd ?? '') } } })
-  }
-
   const montarPedido = () => ({
     contato,
     observacao,
@@ -70,7 +66,7 @@ export default function FormularioPedidoSetor({
       nome: s.nome,
       subeventoId: s.subeventoId,
       quantidade: s.quantidade,
-      porDia: Object.fromEntries(Object.entries(s.dias).filter(([, d]) => d.marcado && d.qtd.trim()).map(([dia, d]) => [dia, d.qtd])),
+      porDia: Object.fromEntries(Object.entries(s.dias).filter(([, q]) => q.trim())),
       supervisor: s.outroSupervisor ? s.supervisor : undefined,
     })),
   })
@@ -118,10 +114,13 @@ export default function FormularioPedidoSetor({
 
           {ctx.subeventoIds && (
             <Campo rotulo="Subevento *">
-              <select required value={s.subeventoId} onChange={e => mudar(s.chave, { subeventoId: e.target.value })} className="input">
-                <option value="">Escolha…</option>
-                {subeventos.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}
-              </select>
+              <SeletorLista
+                valor={s.subeventoId}
+                onChange={v => mudar(s.chave, { subeventoId: v })}
+                placeholder="Escolha o subevento…"
+                titulo="Em qual subevento?"
+                opcoes={subeventos.map(x => ({ valor: x.id, rotulo: x.nome.toLocaleUpperCase('pt-BR') }))}
+              />
             </Campo>
           )}
 
@@ -133,32 +132,13 @@ export default function FormularioPedidoSetor({
           </Campo>
 
           {!!dias.length && (
-            <Campo rotulo="Dias de trabalho *" ajuda="Marque os dias e diga quantas pessoas você precisa em cada um.">
-              <div className="space-y-2">
-                {dias.map(d => {
-                  const r = rotuloDoDia(d.data)
-                  const marcado = s.dias[d.data]?.marcado === true
-                  return (
-                    <div key={d.data} className={`flex items-center gap-3 rounded-xl border px-3 py-2 ${marcado ? 'border-brand-300 bg-brand-50' : 'border-slate-200 bg-white'}`}>
-                      <label className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer">
-                        <input type="checkbox" checked={marcado} onChange={() => alternarDia(s, d.data)} className="w-4 h-4 accent-brand-500 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block text-sm font-semibold text-slate-800 capitalize">{r.semanaCurta} {r.curto}</span>
-                          <span className="block text-2xs text-slate-500">{ROTULO_FASE[d.fase]}</span>
-                        </span>
-                      </label>
-                      {marcado && (
-                        <input
-                          type="number" inputMode="numeric" min={1} step={1} placeholder="Qtd" aria-label={`Pessoas em ${r.curto}`}
-                          className="input w-20 tabular-nums text-center"
-                          value={s.dias[d.data]?.qtd ?? ''}
-                          onChange={e => mudar(s.chave, { dias: { ...s.dias, [d.data]: { marcado: true, qtd: e.target.value } } })}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+            <Campo rotulo="Dias de trabalho *" ajuda="Toque nos dias em que o setor trabalha e diga quantas pessoas precisa em cada um.">
+              <DiasComQuantidade
+                dias={dias}
+                valores={s.dias}
+                sugestao={s.quantidade}
+                onChange={valores => mudar(s.chave, { dias: valores })}
+              />
             </Campo>
           )}
 

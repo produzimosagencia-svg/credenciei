@@ -313,8 +313,20 @@ export async function aprovarItemDoPedido(itemId: string, dados?: DadosDoSetor):
     const desfazer = () => supabaseAdmin.from('pedidos_setor_itens')
       .update({ status: 'pendente', decidido_por: null, decidido_em: null }).eq('id', itemId)
 
+    /*
+     * CPF que JÁ TEM conta: vale o nome e o telefone DA CONTA, não os do formulário público. A criação do setor
+     * atualiza o telefone da conta com o que vier aqui — e o telefone é para onde vai o link de senha. Sem isto,
+     * qualquer pessoa pedia um setor com o CPF de outra e o PRÓPRIO telefone e, aprovado, recebia o acesso dela.
+     * Achado em 08/10/2026, quando um número digitado com o 55 (cortado no fim) foi parar na conta do supervisor.
+     */
+    const { data: contaExistente } = await supabaseAdmin
+      .from('perfis').select('nome, telefone').eq('cpf', setor.valor.supervisor.cpf).maybeSingle()
+    const supervisorFinal = contaExistente?.telefone
+      ? { ...setor.valor.supervisor, nome: (contaExistente.nome as string) || setor.valor.supervisor.nome, telefone: String(contaExistente.telefone) }
+      : setor.valor.supervisor
+
     const formulario = new FormData()
-    for (const [campo, valor] of Object.entries(camposParaCriarFornecedor(setor.valor))) formulario.set(campo, valor)
+    for (const [campo, valor] of Object.entries(camposParaCriarFornecedor({ ...setor.valor, supervisor: supervisorFinal }))) formulario.set(campo, valor)
     const criado = await criarFornecedor(item.evento_id, formulario)
     if (criado.error) {
       await desfazer()

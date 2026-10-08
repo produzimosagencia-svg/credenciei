@@ -6,11 +6,13 @@ import { Check, X, Phone, Save, ExternalLink } from 'lucide-react'
 import { aprovarItemDoPedido, negarItensDoPedido, salvarItemDoPedido, type DadosDoSetor } from '@/lib/actions-pedidos-setor'
 import type { PedidoCompleto, ItemDoPedido } from '@/lib/pedidos-setor-consulta'
 import { descreverDias, statusDoPedido } from '@/lib/pedido-setor-regras'
-import { rotuloDoDia, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
+import type { DiaDaEscala } from '@/lib/escala-regras'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Badge, EmptyState } from '@/components/ui/Superficie'
 import { CpfInput, TelefoneInput, NomeInput, NomeMaiusculoInput } from '@/components/inputs'
+import SeletorLista from '@/components/SeletorLista'
+import DiasComQuantidade from '@/components/DiasComQuantidade'
 
 type Edicao = {
   nome: string
@@ -231,10 +233,13 @@ function ItemEditavel({
         </Campo>
         {subeventos.length > 0 && (
           <Campo rotulo="Subevento">
-            <select value={edicao.subeventoId} onChange={e => onMudar({ subeventoId: e.target.value })} className="input">
-              <option value="">Escolha…</option>
-              {subeventos.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-            </select>
+            <SeletorLista
+              valor={edicao.subeventoId}
+              onChange={v => onMudar({ subeventoId: v })}
+              placeholder="Escolha o subevento…"
+              titulo="Em qual subevento?"
+              opcoes={subeventos.map(x => ({ valor: x.id, rotulo: x.nome.toLocaleUpperCase('pt-BR') }))}
+            />
           </Campo>
         )}
         <Campo rotulo={`Quantidade de colaboradores${mudouQuantidade ? ' (alterada)' : ''}`}>
@@ -243,22 +248,13 @@ function ItemEditavel({
       </div>
 
       {dias.length > 0 && (
-        <Campo rotulo="Pessoas por dia (em branco = não trabalha neste dia)">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {dias.map(d => {
-              const r = rotuloDoDia(d.data)
-              return (
-                <label key={d.data} className="block">
-                  <span className="block text-xs text-slate-500 mb-1 capitalize">{r.semanaCurta} {r.curto} <span className="opacity-60 normal-case">· {ROTULO_FASE[d.fase]}</span></span>
-                  <input
-                    type="number" inputMode="numeric" min={1} placeholder="—" className="input tabular-nums"
-                    value={edicao.dias[d.data] ?? ''}
-                    onChange={e => onMudar({ dias: { ...edicao.dias, [d.data]: e.target.value } })}
-                  />
-                </label>
-              )
-            })}
-          </div>
+        <Campo rotulo="Dias de trabalho e pessoas por dia">
+          <DiasComQuantidade
+            dias={dias}
+            valores={edicao.dias}
+            sugestao={edicao.quantidade}
+            onChange={valores => onMudar({ dias: valores })}
+          />
         </Campo>
       )}
 
