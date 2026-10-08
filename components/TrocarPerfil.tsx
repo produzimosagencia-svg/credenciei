@@ -4,8 +4,10 @@ import { Check, Repeat } from 'lucide-react'
 import { trocarFuncao } from '@/lib/actions-funcoes'
 import { ROLE_LABELS, type Role } from '@/lib/permissions'
 
-type Funcao = { role: string; base?: boolean; chave?: string; organizacaoNome?: string | null }
+type Funcao = { role: string; base?: boolean; chave?: string }
 const chaveDe = (f: Funcao) => f.chave ?? f.role
+/** Uma entrada por papel (a mesma função em duas organizações é UM perfil). */
+export const perfisUnicos = (funcoes: Funcao[]) => funcoes.filter((f, i) => funcoes.findIndex(g => g.role === f.role) === i)
 
 /**
  * Trocar de perfil — pra quem tem mais de uma função (supervisor e Gestor de
@@ -24,11 +26,16 @@ export function ListaDePerfis({ funcoes, ativa, aoEscolher }: {
   const [pendente, iniciar] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
 
-  const escolher = (chave: string) => {
-    if (chave === ativa || pendente) return
+  // Um item por PERFIL: quem é Gestor de credenciamento em duas organizações vê "Operador de portão" uma vez
+  // só e escolhe o EVENTO depois (seletor do topo) — nome de organização não aparece aqui.
+  const perfis = perfisUnicos(funcoes)
+  const roleAtiva = funcoes.find(f => chaveDe(f) === ativa)?.role ?? ativa
+
+  const escolher = (role: string) => {
+    if (role === roleAtiva || pendente) return
     setErro(null)
     iniciar(async () => {
-      const r = await trocarFuncao(chave)
+      const r = await trocarFuncao(role)
       if ('erro' in r) { setErro(r.erro); return }
       aoEscolher?.()
       window.location.assign(r.destino)
@@ -37,18 +44,18 @@ export function ListaDePerfis({ funcoes, ativa, aoEscolher }: {
 
   return (
     <div role="group" aria-label="Trocar de perfil">
-      {funcoes.map(f => {
-        const atual = chaveDe(f) === ativa
+      {perfis.map(f => {
+        const atual = f.role === roleAtiva
         return (
           <button
-            key={chaveDe(f)} type="button" role="menuitemradio" aria-checked={atual} disabled={pendente}
-            onClick={() => escolher(chaveDe(f))}
+            key={f.role} type="button" role="menuitemradio" aria-checked={atual} disabled={pendente}
+            onClick={() => escolher(f.role)}
             className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors disabled:opacity-60 ${
               atual ? 'text-brand-600 font-semibold bg-brand-50' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
             }`}
           >
             {atual ? <Check className="w-4 h-4 shrink-0" /> : <span className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{ROLE_LABELS[f.role as Role] ?? f.role}{f.organizacaoNome ? ` · ${f.organizacaoNome}` : ''}</span>
+            <span className="truncate">{ROLE_LABELS[f.role as Role] ?? f.role}</span>
             {pendente && !atual && <span className="ml-auto text-2xs text-slate-400">…</span>}
           </button>
         )
@@ -72,7 +79,7 @@ export default function MenuTrocarPerfil({ funcoes, ativa }: { funcoes: Funcao[]
     return () => { document.removeEventListener('mousedown', clique); document.removeEventListener('keydown', tecla) }
   }, [aberto])
 
-  if (funcoes.length < 2) return null
+  if (perfisUnicos(funcoes).length < 2) return null
   return (
     <div className="relative shrink-0" ref={caixa}>
       <button

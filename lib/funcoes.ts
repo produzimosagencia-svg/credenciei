@@ -31,8 +31,6 @@ export type FuncaoDoPerfil = {
    * pode ser Gestor em mais de uma organização (supabase/upgrade-funcoes-varias-organizacoes.sql).
    */
   chave: string
-  /** Só no Gestor de credenciamento extra: o nome da organização, pra distinguir na lista. */
-  organizacaoNome?: string | null
 }
 
 /** A chave de uma função (ver `FuncaoDoPerfil.chave`). */

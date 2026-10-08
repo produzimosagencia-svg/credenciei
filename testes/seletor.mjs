@@ -36,7 +36,9 @@ ok(/<SeletorDeEvento contexto=\{contextoEventos\}/.test(shell), 'o topo do paine
 ok(/contextoDeEventos\(perfil, meusVinculos\)/.test(layoutAdmin) && /contextoEventos=\{contextoEventos\}/.test(layoutAdmin), 'o layout do admin calcula e passa o contexto')
 ok(/<SeletorDeEvento contexto=\{contextoEventos\}/.test(layoutEnc), 'o Encarregado também tem o seletor')
 ok(/role === 'encarregado'[\s\S]{0,80}doEncarregado/.test(contexto) && /role === 'supervisor'[\s\S]{0,80}doSupervisor/.test(contexto), 'supervisor e Encarregado montam a árvore pelos vínculos deles')
-ok(/'operador_portao'\]\.includes\(perfil\.role\)/.test(contexto), 'Gestor de credenciamento e administrador usam os eventos da organização')
+ok(/perfil\.role === 'operador_portao'[\s\S]{0,500}daOrganizacao\(orgs, true\)/.test(contexto) && /\['admin', 'gerente', 'cliente'\]\.includes\(perfil\.role\)/.test(contexto), 'Gestor (de todas as organizações dele) e administrador usam os eventos da organização')
+ok(/export async function escolherEventoDoGestor/.test(ler('lib/actions-funcoes.ts')) && /escolherEventoDoGestor\(e\.id\)/.test(ler('components/SeletorDeEvento.tsx')), 'escolher o evento ajusta a organização do Gestor — ele escolhe evento, não organização')
+ok(/perfisUnicos\(funcoes\)/.test(ler('components/TrocarPerfil.tsx')) && !/organizacaoNome/.test(ler('components/TrocarPerfil.tsx')), 'a lista de perfis tem um item por perfil, sem nome de organização')
 ok(/catch \(e\) \{[\s\S]{0,80}return null/.test(contexto), 'uma falha no seletor nunca derruba o painel')
 
 console.log('Gestor de credenciamento em mais de uma organização (08/10/2026)')

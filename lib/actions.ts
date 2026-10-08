@@ -8953,6 +8953,76 @@ export async function localizarFuncionario(
   return fichaDoFuncionario(visiveis[0])
 }
 
+/** Quantas pessoas por página na lista de "Registrar ponto" — pedido do Juan, 08/10/2026. */
+const PESSOAS_POR_PAGINA = 30
+
+export type PessoaDaLista = { id: string; nome: string; cpf: string; cargo: string | null; setorNome: string; ativo: boolean }
+
+/**
+ * A lista das pessoas do evento em "Registrar ponto", em ordem alfabética e paginada.
+ *
+ * Antes a tela só tinha a caixa de busca: quem opera o portão e não lembrava o nome exato via uma tela
+ * vazia. A régua de escopo é a mesma de `localizarFuncionario` — supervisor só da própria equipe, suporte
+ * dentro do escopo, os demais na organização — e a pessoa escolhida abre a ficha pelo caminho de sempre
+ * (`abrirFuncionarioLocalizado`, que confere o escopo de novo). Nunca lança: devolve `{ error }`.
+ */
+export async function listarPessoasDoEvento(
+  eventoId: string,
+  pagina: number,
+): Promise<{ pessoas: PessoaDaLista[]; total: number; pagina: number; paginas: number } | { error: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para ver as pessoas do evento.' }
+    if (!eventoId) return { error: 'Escolha o evento antes.' }
+
+    const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).maybeSingle()
+    if (!evento) return { error: 'Evento não encontrado.' }
+
+    const meusNoEvento = ehMaster(perfil.role) ? [] : (await meusSetores(perfil)).filter(x => x.evento_id === eventoId).map(x => x.id)
+    // `null` = o evento inteiro; uma lista = só esses setores (supervisor, ou quem tem vínculo de supervisor aqui).
+    let soSetores: string[] | null = null
+    if (perfil.role === 'supervisor') {
+      if (!meusNoEvento.length) return { error: 'Você não tem setor neste evento.' }
+      soSetores = meusNoEvento
+    } else if (perfil.role === 'suporte') {
+      if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: (evento.organizacao_id as string | null) ?? undefined }))) {
+        return { error: 'Este evento não está no seu escopo de atendimento.' }
+      }
+    } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+      if (!meusNoEvento.length) return { error: 'Este evento está fora do seu acesso.' }
+      soSetores = meusNoEvento
+    }
+
+    const pg = Math.max(1, Math.floor(Number(pagina) || 1))
+    const de = (pg - 1) * PESSOAS_POR_PAGINA
+    let consulta = supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, cargo, ativo, fornecedores!inner(nome, evento_id)', { count: 'exact' })
+      .eq('fornecedores.evento_id', eventoId)
+    if (soSetores) consulta = consulta.in('fornecedor_id', soSetores)
+    // `id` desempata: nomes iguais não podem trocar de página entre uma consulta e outra.
+    const { data, count, error } = await consulta.order('nome').order('id').range(de, de + PESSOAS_POR_PAGINA - 1)
+    if (error) return { error: 'Não foi possível carregar a lista agora. Tente de novo.' }
+
+    const total = count ?? 0
+    return {
+      pessoas: (data ?? []).map(f => ({
+        id: f.id as string,
+        nome: f.nome as string,
+        cpf: f.cpf as string,
+        cargo: (f.cargo as string | null) ?? null,
+        setorNome: ((f.fornecedores as unknown as { nome?: string } | null)?.nome ?? '—').trim(),
+        ativo: f.ativo !== false,
+      })),
+      total,
+      pagina: pg,
+      paginas: Math.max(1, Math.ceil(total / PESSOAS_POR_PAGINA)),
+    }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
+}
+
 /** Carrega a ficha completa depois que o supervisor escolhe alguém da lista. */
 export async function abrirFuncionarioLocalizado(
   funcionarioId: string

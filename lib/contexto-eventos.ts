@@ -19,15 +19,27 @@ import type { ContextoDeEventos, NoEvento, NoSubevento } from './contexto-evento
  * Nunca lança: o seletor é um conforto, e uma falha aqui não pode derrubar o painel inteiro.
  */
 export async function contextoDeEventos(
-  perfil: { id: string; role: string; organizacao_id?: string | null; fornecedor_id?: string | null },
+  perfil: {
+    id: string; role: string; organizacao_id?: string | null; fornecedor_id?: string | null
+    funcoes?: { role: string; organizacaoId?: string | null }[]
+  },
   /** Os setores do supervisor, se quem chama já os tem (evita repetir a consulta). */
   setoresDoSupervisor?: { id: string; nome: string; evento_id: string }[],
 ): Promise<ContextoDeEventos | null> {
   try {
     if (perfil.role === 'encarregado') return await doEncarregado(perfil.id)
     if (perfil.role === 'supervisor') return await doSupervisor(perfil, setoresDoSupervisor ?? [])
-    if (['admin', 'gerente', 'cliente', 'operador_portao'].includes(perfil.role) && perfil.organizacao_id) {
-      return await daOrganizacao(perfil.organizacao_id, perfil.role === 'operador_portao')
+    if (perfil.role === 'operador_portao') {
+      // Gestor de credenciamento em mais de uma organização: os eventos de TODAS entram na mesma lista —
+      // ele escolhe o evento, não a organização (08/10/2026).
+      const orgs = [...new Set([
+        ...(perfil.funcoes ?? []).filter(f => f.role === 'operador_portao').map(f => f.organizacaoId ?? null),
+        perfil.organizacao_id ?? null,
+      ].filter((o): o is string => !!o))]
+      return orgs.length ? await daOrganizacao(orgs, true) : null
+    }
+    if (['admin', 'gerente', 'cliente'].includes(perfil.role) && perfil.organizacao_id) {
+      return await daOrganizacao([perfil.organizacao_id], false)
     }
     return null
   } catch (e) {
@@ -100,10 +112,10 @@ async function doSupervisor(
   return { modo: 'supervisor', eventos, atual: { eventoId: atual?.evento_id ?? null, setorId: atual?.id ?? null } }
 }
 
-async function daOrganizacao(organizacaoId: string, soEventos: boolean): Promise<ContextoDeEventos | null> {
+async function daOrganizacao(organizacaoIds: string[], soEventos: boolean): Promise<ContextoDeEventos | null> {
   const { data } = await supabaseAdmin
     .from('eventos').select('id, nome, ativo, data_inicio')
-    .eq('organizacao_id', organizacaoId).order('data_inicio', { ascending: false }).limit(200)
+    .in('organizacao_id', organizacaoIds).order('data_inicio', { ascending: false }).limit(200)
   const base = (data ?? []) as { id: string; nome: string; ativo: boolean | null; data_inicio: string | null }[]
   if (!base.length) return null
 

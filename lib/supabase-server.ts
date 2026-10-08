@@ -134,15 +134,6 @@ export const getPerfil = cache(async () => {
       chave: chaveDaFuncao({ role: f.role, base: false, organizacaoId: f.organizacao_id }),
     })),
   ]
-  // O nome da organização só nos Gestores de credenciamento extras — é o que os distingue na lista de perfis.
-  const orgsDosGestores = [...new Set(funcoes.filter(f => !f.base && f.role === 'operador_portao' && f.organizacaoId).map(f => f.organizacaoId as string))]
-  if (orgsDosGestores.length) {
-    try {
-      const { data: orgs } = await admin.from('organizacoes').select('id, nome').in('id', orgsDosGestores)
-      const nomes = new Map((orgs ?? []).map(o => [o.id as string, o.nome as string]))
-      for (const f of funcoes) if (!f.base && f.role === 'operador_portao' && f.organizacaoId) f.organizacaoNome = nomes.get(f.organizacaoId) ?? null
-    } catch { /* o nome é só rótulo */ }
-  }
   data.funcoes = funcoes
   data.funcao_base = data.role
   data.funcao_chave = data.role

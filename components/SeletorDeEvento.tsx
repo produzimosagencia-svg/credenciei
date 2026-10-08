@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDays, Check, ChevronDown, ChevronRight, Search, X, Building2, Layers } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { entrarNoEventoSupervisor } from '@/lib/actions'
+import { escolherEventoDoGestor } from '@/lib/actions-funcoes'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca } from '@/lib/format'
 import type { ContextoDeEventos, NoEvento } from '@/lib/contexto-eventos-tipos'
@@ -104,7 +105,17 @@ function Seletor({ contexto }: { contexto: ContextoDeEventos | null }) {
       setExpandido(x => x === e.id ? null : e.id)
       return
     }
-    irPara(contexto.modo === 'portao' ? `/admin/bem-vindo?evento=${e.id}` : `/admin/eventos/${e.id}`)
+    if (contexto.modo === 'portao') {
+      // O evento pode ser de outra organização em que ele também é Gestor: o servidor ajusta o contexto e a página recarrega inteira.
+      setErro(null)
+      startTransition(async () => {
+        const r = await escolherEventoDoGestor(e.id)
+        if ('erro' in r) { setErro(r.erro); return }
+        window.location.assign(`/admin/bem-vindo?evento=${e.id}`)
+      })
+      return
+    }
+    irPara(`/admin/eventos/${e.id}`)
   }
 
   const comSetores = contexto.modo === 'supervisor' || contexto.modo === 'encarregado'

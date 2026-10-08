@@ -2,11 +2,11 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
-  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace,
+  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
-  localizarFuncionario, abrirFuncionarioLocalizado, registrarPresencaAssistida, metodoIdentificacaoDoEvento,
-  type FuncionarioLocalizado, type CandidatoLocalizado, type MomentoPresenca,
+  localizarFuncionario, abrirFuncionarioLocalizado, listarPessoasDoEvento, registrarPresencaAssistida, metodoIdentificacaoDoEvento,
+  type FuncionarioLocalizado, type CandidatoLocalizado, type MomentoPresenca, type PessoaDaLista,
 } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
@@ -201,16 +201,10 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         </form>
       </Secao>
 
-      {/* Nada buscado ainda: sem isto a tela parece vazia embaixo do cartão de
-          busca, um retângulo branco boiando num fundo cinza enorme. */}
+      {/* Nada buscado ainda: a lista do evento (30 por página, em ordem alfabética) — antes era um retângulo
+          vazio, e quem não lembrava o nome exato não tinha por onde começar (pedido do Juan, 08/10/2026). */}
       {!termo && !candidatos && !func && !erro && (
-        <Cartao padding="nenhum">
-          <EmptyState
-            icone={<UserSearch className="w-8 h-8" />}
-            titulo="Busque para começar"
-            descricao="Digite o CPF ou o nome de quem perdeu o horário. A ficha e a etapa pendente aparecem aqui."
-          />
-        </Cartao>
+        <ListaDoEvento eventoId={eventoId} aoEscolher={escolher} desabilitado={buscando} />
       )}
 
       {/* Nome quase nunca é único: quem escolhe a pessoa certa é o supervisor. */}
@@ -448,6 +442,96 @@ function Dado({ icone: Icone, rotulo, valor }: { icone: React.ElementType; rotul
         <Icone className="w-3 h-3 shrink-0" /> {rotulo}
       </p>
       <p className="text-slate-700 font-medium truncate">{valor}</p>
+    </div>
+  )
+}
+
+/** A lista paginada de quem está no evento — tocar numa pessoa abre a ficha dela, como no resultado da busca. */
+function ListaDoEvento({ eventoId, aoEscolher, desabilitado }: {
+  eventoId: string
+  aoEscolher: (id: string) => void
+  desabilitado: boolean
+}) {
+  const [pagina, setPagina] = useState(1)
+  const [dados, setDados] = useState<{ pessoas: PessoaDaLista[]; total: number; paginas: number } | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [carregando, setCarregando] = useState(true)
+
+  useEffect(() => {
+    let vivo = true
+    // O estado de "carregando" liga no clique que muda a página; aqui só desliga ao chegar a resposta.
+    listarPessoasDoEvento(eventoId, pagina).then(r => {
+      if (!vivo) return
+      if ('error' in r) { setErro(r.error); setDados(null) } else { setErro(null); setDados(r) }
+      setCarregando(false)
+    }).catch(() => { if (vivo) { setErro('Não foi possível carregar a lista agora.'); setCarregando(false) } })
+    return () => { vivo = false }
+  }, [eventoId, pagina])
+
+  const irPara = (p: number) => { setCarregando(true); setPagina(p) }
+
+  if (erro) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+        <p className="text-red-600 text-xs font-medium">{erro}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      <p className="text-slate-500 text-xs font-semibold px-4 py-3 border-b border-slate-100 bg-slate-50">
+        {dados
+          ? `Pessoas do evento — ${dados.total} no total. Toque em quem você está atendendo, ou busque acima.`
+          : 'Carregando as pessoas do evento…'}
+      </p>
+
+      {dados && dados.total === 0 && (
+        <EmptyState icone={<UserSearch className="w-8 h-8" />} titulo="Ninguém credenciado ainda" descricao="Quando houver pessoas neste evento, elas aparecem aqui." />
+      )}
+
+      <div className={`divide-y divide-slate-100 transition-opacity ${carregando ? 'opacity-50' : ''}`}>
+        {(dados?.pessoas ?? []).map(p => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => aoEscolher(p.id)}
+            disabled={desabilitado || carregando}
+            className="btn-press w-full text-left px-4 py-3 hover:bg-slate-50 disabled:opacity-60 flex items-center gap-3"
+          >
+            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+              <User className="w-4 h-4 text-slate-300" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-slate-800 text-sm font-semibold truncate">
+                {p.nome}
+                {!p.ativo && <span className="ml-2 text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold align-middle">Inativo</span>}
+              </p>
+              <p className="text-slate-400 text-2xs tabular-nums">{formatCpf(p.cpf)}{p.cargo ? ` • ${p.cargo}` : ''}</p>
+              <p className="text-slate-400 text-2xs truncate">{p.setorNome}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {dados && dados.paginas > 1 && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-t border-slate-100 bg-slate-50">
+          <button
+            type="button" onClick={() => irPara(pagina - 1)} disabled={pagina <= 1 || carregando}
+            className="btn btn-secundario btn-sm disabled:opacity-40"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Anterior
+          </button>
+          <span className="text-slate-500 text-xs font-semibold tabular-nums">Página {pagina} de {dados.paginas}</span>
+          <button
+            type="button" onClick={() => irPara(pagina + 1)} disabled={pagina >= dados.paginas || carregando}
+            className="btn btn-secundario btn-sm disabled:opacity-40"
+          >
+            Próxima <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

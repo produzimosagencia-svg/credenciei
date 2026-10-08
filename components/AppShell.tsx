@@ -35,7 +35,7 @@ type Perfil = {
   /** Overrides deste acesso (perfis.permissoes_usuario), chaveados por `chave`. */
   permissoes_usuario?: Record<string, boolean> | null
   /** As funções que esta pessoa tem (a de base e as extras) — mais de uma = pode trocar de perfil pela foto. */
-  funcoes?: { role: string; base?: boolean; chave?: string; organizacaoNome?: string | null }[]
+  funcoes?: { role: string; base?: boolean; chave?: string }[]
   /** A chave da função em uso (ver FuncaoDoPerfil.chave) — marca qual está ativa na lista de perfis. */
   funcao_chave?: string
 }
@@ -543,7 +543,7 @@ function MenuUsuario({ perfil, fotoOrgUrl, onLogout }: {
             <span className="indicador-selo selo-neutro">{ROLE_LABELS[perfil.role] ?? perfil.role}</span>
           </div>
           {/* Mais de uma função (supervisor e Gestor de credenciamento, por exemplo): troca o perfil sem sair do sistema. */}
-          {(perfil.funcoes?.length ?? 0) > 1 && (
+          {new Set((perfil.funcoes ?? []).map(f => f.role)).size > 1 && (
             <div className="border-b border-slate-100 py-1">
               <p className="px-3 pt-1.5 pb-1 text-2xs uppercase tracking-wide font-semibold text-slate-400">Trocar de perfil</p>
               <ListaDePerfis funcoes={perfil.funcoes!} ativa={perfil.funcao_chave ?? perfil.role} aoEscolher={() => setAberto(false)} />
