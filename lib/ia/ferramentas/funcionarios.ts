@@ -390,6 +390,11 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           supabaseAdmin.from('funcionarios').select('pago, valor_receber').eq('id', funcionario_id).single(),
         ])
 
+        // Mesma regra da tela (`deletarFuncionario`): quem já bateu ponto não é apagado — só o master apaga.
+        if ((registros ?? 0) > 0 && perfil.role !== 'master') {
+          return `${r.func.nome} já registrou ponto neste evento e não pode ser excluída — isso apagaria as batidas e o QR que ela está usando. Use desativar (ou "Tirar da equipe" na tela do fornecedor), que preserva o histórico.`
+        }
+
         const operacao = `excluir_funcionario:${funcionario_id}`
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(

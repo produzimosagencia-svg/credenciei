@@ -3714,33 +3714,54 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
  * some junto com a pessoa. Sem o nome no registro, sobraria "alguém apagou
  * alguém" — que é o mesmo que não ter auditoria.
  */
-export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string) {
-  const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
-  // Esta checagem é a que vale: esconder o botão não impede a chamada direta.
-  if (!podeExcluirDaEquipe(perfil)) {
-    throw new Error('Você não pode excluir. Use "Tirar da equipe", que preserva o histórico.')
+export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string): Promise<{ error?: string }> {
+  try {
+    const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+    // Esta checagem é a que vale: esconder o botão não impede a chamada direta.
+    if (!podeExcluirDaEquipe(perfil)) {
+      throw new Error('Você não pode excluir. Use "Tirar da equipe", que preserva o histórico.')
+    }
+    const db = supabaseAdmin
+
+    // Lido ANTES: depois do delete não existe mais de onde tirar nome e CPF.
+    const { data: alvo } = await db
+      .from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', id).single()
+    if (!alvo) throw new Error('Esta pessoa já não está mais aqui. Recarregue a página.')
+    // Segunda tranca: o id vem do cliente, e sem isto um id colado apagaria
+    // gente de outro setor com a permissão deste.
+    if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
+
+    /*
+     * QUEM JÁ BATEU PONTO NÃO É APAGADO (só o master apaga). Excluir leva as batidas junto (`on delete
+     * cascade`) e mata o QR que a pessoa tem no celular. Foi o que aconteceu em 08/10/2026 no VITAL: um
+     * supervisor excluiu da equipe alguém que tinha registrado a ENTRADA de manhã — a pessoa continuou
+     * trabalhando, o QR passou a dar inválido e ela sumiu do sistema. Para quem não vai mais trabalhar, "Tirar
+     * da equipe" resolve igual e preserva o histórico. Na dúvida (consulta falhou), não apaga.
+     */
+    if (!ehMaster(perfil.role)) {
+      const { data: batidas, error: erroBatidas } = await db.from('registros').select('id').eq('funcionario_id', id).limit(1)
+      if (erroBatidas) throw new Error('Não foi possível conferir as batidas desta pessoa. Tente de novo.')
+      if (batidas?.length) {
+        throw new Error(`${alvo.nome} já registrou ponto neste evento e não pode ser excluída — isso apagaria as batidas dela e o QR que ela está usando. Use "Tirar da equipe": o QR para de valer e o histórico fica.`)
+      }
+    }
+
+    const { error } = await db.from('funcionarios').delete().eq('id', id)
+    if (error) throw new Error(mensagemAmigavel(error))
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'EXCLUSAO_FUNCIONARIO', eventoId,
+      campoAlterado: 'Funcionário excluído',
+      valorAnterior: `${alvo.nome} — CPF ${formatCpf(alvo.cpf as string)}`,
+      motivo: motivo ?? null,
+    }))
+
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    return {}
+  } catch (e) {
+    // Devolvido, não lançado: em produção o Next esconde a mensagem de uma exceção de Server Action.
+    return { error: mensagemAmigavel(e) }
   }
-  const db = supabaseAdmin
-
-  // Lido ANTES: depois do delete não existe mais de onde tirar nome e CPF.
-  const { data: alvo } = await db
-    .from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', id).single()
-  if (!alvo) throw new Error('Esta pessoa já não está mais aqui. Recarregue a página.')
-  // Segunda tranca: o id vem do cliente, e sem isto um id colado apagaria
-  // gente de outro setor com a permissão deste.
-  if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
-
-  const { error } = await db.from('funcionarios').delete().eq('id', id)
-  if (error) throw new Error(mensagemAmigavel(error))
-
-  after(() => registrarAuditoria({
-    perfil, acao: 'EXCLUSAO_FUNCIONARIO', eventoId,
-    campoAlterado: 'Funcionário excluído',
-    valorAnterior: `${alvo.nome} — CPF ${formatCpf(alvo.cpf as string)}`,
-    motivo: motivo ?? null,
-  }))
-
-  revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
 }
 
 /**

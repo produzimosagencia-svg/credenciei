@@ -218,9 +218,11 @@ export default function FuncionarioTable({
     if (!paraExcluir) return
     const f = paraExcluir
     startTransition(async () => {
-      await deletarFuncionario(f.id, fornecedorId, eventoId)
-      router.refresh()
+      const r = await deletarFuncionario(f.id, fornecedorId, eventoId)
       setParaExcluir(null)
+      // Recusa (ex.: a pessoa já bateu ponto) aparece no aviso do topo da tabela.
+      if (r?.error) { setErroAtivacao(r.error); return }
+      router.refresh()
     })
   }
 
