@@ -731,15 +731,16 @@ export default function FuncionarioDetalheModal({
                     </p>
 
                     {!confirmandoMover ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         {/*
+                          * No celular os campos empilham e o botão ocupa a largura toda: lado a lado cortavam o "Mover" (sem rolagem horizontal).
                           * Evento com SUBEVENTOS (pedido do Juan, 08/10/2026): primeiro o subevento, depois só os
                           * fornecedores DELE. Antes era uma lista única só com o nome — e, com o mesmo fornecedor em
                           * vários subeventos (GOTE - LIMPEZA no Bloco, na Arquibancada…), não dava para saber qual era qual.
                           */}
                         {areasMover.length > 0 && (
                           <SeletorLista
-                            className="text-sm flex-1"
+                            className="text-sm w-full min-w-0 sm:flex-1"
                             valor={areaDestino}
                             onChange={a => { setAreaDestino(a); setDestino('') }}
                             placeholder="Subevento…"
@@ -749,7 +750,7 @@ export default function FuncionarioDetalheModal({
                           />
                         )}
                         <SeletorLista
-                          className="text-sm flex-1"
+                          className="text-sm w-full min-w-0 sm:flex-1"
                           valor={destino}
                           onChange={setDestino}
                           placeholder={areasMover.length > 0 && !areaDestino ? 'Escolha o subevento antes' : 'Fornecedor…'}
@@ -760,7 +761,7 @@ export default function FuncionarioDetalheModal({
                         <button
                           onClick={() => destino && setConfirmandoMover(true)}
                           disabled={!destino}
-                          className="btn btn-secundario shrink-0 disabled:opacity-50"
+                          className="btn btn-secundario w-full sm:w-auto shrink-0 disabled:opacity-50"
                         >
                           <Users className="w-3.5 h-3.5 shrink-0" /> Mover
                         </button>
