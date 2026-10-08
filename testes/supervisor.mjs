@@ -77,5 +77,14 @@ ok((hist.match(/editavel && !somenteMeio/g) ?? []).length === 3, 'histórico tir
 ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta.url), 'utf8').includes('etapasVisiveis')
   && readFileSync(new URL('../app/admin/localizar/LocalizarFuncionario.tsx', import.meta.url), 'utf8').includes('soMeio'), 'as duas telas só oferecem o meio')
 
+// ── Criar supervisor na página do SUBEVENTO: candidatos = evento inteiro (caso Lucy, 07/10/2026) ──
+{
+  const sub = readFileSync(new URL('../app/admin/eventos/[id]/subevento/[sid]/page.tsx', import.meta.url), 'utf8')
+  const lista = readFileSync(new URL('../app/admin/eventos/[id]/ListaDeSetores.tsx', import.meta.url), 'utf8')
+  ok(/candidatosASupervisor\s*=\s*async/.test(sub) && /\.eq\('evento_id', eventoId\)/.test(sub), 'o subevento busca os candidatos a supervisor no EVENTO inteiro')
+  ok(/candidatosASupervisor=\{candidatosRows/.test(sub), 'a página do subevento passa essa lista à ListaDeSetores')
+  ok(/funcionariosDoEvento=\{candidatosASupervisor \?\? funcionariosDoEvento\}/.test(lista), 'o cartão do setor usa a lista do evento inteiro em "Criar supervisor"')
+}
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

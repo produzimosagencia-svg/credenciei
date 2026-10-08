@@ -60,6 +60,7 @@ export default function ListaDeSetores({
   eventoId,
   supervisoresPorFornecedor,
   funcionariosDoEvento,
+  candidatosASupervisor,
   diasDoEvento,
   setoresComMeio,
   setoresComEntradaQualquerHorario,
@@ -78,6 +79,8 @@ export default function ListaDeSetores({
   supervisoresPorFornecedor: Record<string, Supervisor[]>
   /* Todo mundo do EVENTO — o supervisor pode vir de qualquer setor. */
   funcionariosDoEvento: FuncionarioDoSetor[]
+  /** Quem pode ser escolhido em "Criar supervisor" — o evento inteiro; sem isto, usa `funcionariosDoEvento`. */
+  candidatosASupervisor?: FuncionarioDoSetor[]
   diasDoEvento: DiaDoEvento[]
   /** Ids dos setores que pedem o meio — vem de consulta própria, ver page.tsx. */
   setoresComMeio: Set<string>
@@ -308,7 +311,7 @@ export default function ListaDeSetores({
               fornecedor={f}
               eventoId={eventoId}
               supervisores={supervisoresPorFornecedor[f.id] ?? []}
-              funcionariosDoEvento={funcionariosDoEvento}
+              funcionariosDoEvento={candidatosASupervisor ?? funcionariosDoEvento}
               diasDoEvento={diasDoEvento}
               exigeMeio={setoresComMeio.has(f.id)}
               entradaQualquerHorario={!!setoresComEntradaQualquerHorario?.has(f.id)}

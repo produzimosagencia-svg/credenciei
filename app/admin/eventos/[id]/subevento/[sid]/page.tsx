@@ -80,6 +80,34 @@ export default async function SubeventoPage({
     return { ...resposta, data: todos }
   }
 
+  /*
+   * Quem pode ser escolhido em "Criar supervisor": o EVENTO INTEIRO, não só este subevento.
+   *
+   * Quem vira supervisor costuma estar credenciado em OUTRO setor/subevento — foi o caso da Lucy
+   * (07/10/2026): cadastrada na equipe do Gilmar-Segurança da ARQUIBANCADA, ao ser escolhida
+   * como supervisora do Gilmar-Segurança do BLOCO "não foi localizada", porque esta página só
+   * lia as equipes deste subevento. A página do evento já usa a lista inteira, pelo mesmo motivo.
+   */
+  const candidatosASupervisor = async () => {
+    const { data: doEvento } = await supabase.from('fornecedores').select('id').eq('evento_id', eventoId)
+    const ids = (doEvento ?? []).map(f => f.id as string)
+    if (!ids.length) return vazio
+    const consultar = (inicio: number) => supabase.from('funcionarios')
+      .select('id, nome, cpf, telefone, fornecedor_id')
+      .in('fornecedor_id', ids)
+      .order('nome').order('id')
+      .range(inicio, inicio + 999)
+    let resposta = await consultar(0)
+    if (resposta.error || !resposta.data) return resposta
+    const todos = [...resposta.data]
+    while (resposta.data.length === 1000) {
+      resposta = await consultar(todos.length)
+      if (resposta.error || !resposta.data) return resposta
+      todos.push(...resposta.data)
+    }
+    return { ...resposta, data: todos }
+  }
+
   const [
     { data: registrosDoDia },
     { data: setoresComMeioRows },
@@ -87,6 +115,7 @@ export default async function SubeventoPage({
     { data: linkDosSetoresRows },
     { data: funcionariosDoEventoRows },
     { data: supervisoresRows },
+    { data: candidatosRows },
   ] = await Promise.all([
     // Registros DESTE subevento só, no dia escolhido — por isso o join com
     // `funcionarios!inner(fornecedor_id)` em vez do `eq('evento_id', ...)`
@@ -110,6 +139,7 @@ export default async function SubeventoPage({
     fornecedorIds.length
       ? supabase.from('supervisor_setores').select('fornecedor_id, perfis!inner(id, nome, email, cpf, telefone, ativo, role)').in('fornecedor_id', fornecedorIds)
       : Promise.resolve(vazio),
+    candidatosASupervisor(),
   ])
 
   const setoresComMeio = new Set((setoresComMeioRows ?? []).filter(f => f.exige_meio === true).map(f => f.id as string))
@@ -202,6 +232,7 @@ export default async function SubeventoPage({
             eventoId={eventoId}
             supervisoresPorFornecedor={supervisoresPorFornecedor}
             funcionariosDoEvento={funcionariosDoEventoRows ?? []}
+            candidatosASupervisor={candidatosRows ?? []}
             diasDoEvento={diasTrabalho ?? []}
             setoresComMeio={setoresComMeio}
             setoresComEntradaQualquerHorario={setoresComEntradaQualquerHorario}
