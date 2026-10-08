@@ -1,6 +1,6 @@
 # Guias de uso (documentação animada)
 
-Cada guia é um HTML único (animações em CSS, marca do Credenciei, telas reais com os dados pessoais borrados).
+Os guias são SEMPRE em modo claro (mais fácil de ler; não seguem o tema escuro do aparelho). Cada guia é um HTML único (animações em CSS, marca do Credenciei, telas reais com os dados pessoais borrados).
 Dentro do sistema: página pública `/guia-<perfil>` e, no menu da foto, o item "Tutorial <perfil>".
 
 | Guia | Arquivo | Link público | Item no menu da foto |

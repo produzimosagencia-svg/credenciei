@@ -45,22 +45,8 @@
   --font-display: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
   --font-body: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #141211; --surface: #1d1a19; --surface-2: #262220; --ink: #f3f0ee; --muted: #a8a09a;
-    --line: rgba(243, 240, 238, .13); --brand: #ff6a3a; --brand-ink: #ff9a78; --brand-soft: #3a1d12;
-    --ok: #4cc67a; --ok-soft: #12301f; --bad: #ff7a70; --bad-soft: #3a1815; --warn: #f0b04a; --warn-soft: #33250c;
-    --shadow: 0 18px 50px rgba(0, 0, 0, .5); color-scheme: dark;
-    --logo: var(--logo-branco); --grad-texto: linear-gradient(135deg, #ff8a4c, #ff4a0f 55%, #e9c58a);
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #141211; --surface: #1d1a19; --surface-2: #262220; --ink: #f3f0ee; --muted: #a8a09a;
-  --line: rgba(243, 240, 238, .13); --brand: #ff6a3a; --brand-ink: #ff9a78; --brand-soft: #3a1d12;
-  --ok: #4cc67a; --ok-soft: #12301f; --bad: #ff7a70; --bad-soft: #3a1815; --warn: #f0b04a; --warn-soft: #33250c;
-  --shadow: 0 18px 50px rgba(0, 0, 0, .5); color-scheme: dark;
-  --logo: var(--logo-branco); --grad-texto: linear-gradient(135deg, #ff8a4c, #ff4a0f 55%, #e9c58a);
-}
+/* Os guias são sempre em modo claro (pedido do Juan, 08/10/2026): mais fácil de ler. */
+:root { color-scheme: light; }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }

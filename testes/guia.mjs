@@ -54,5 +54,13 @@ console.log('Guia do Encarregado')
   ok(/href="\/guia-encarregado"/.test(ler('app/encarregado/[fid]/page.tsx')), 'o painel de consulta do Encarregado liga ao guia')
 }
 
+console.log('Guias sempre em modo claro (Juan, 08/10/2026)')
+{
+  for (const f of ['guia-supervisor', 'guia-operador-portao', 'guia-encarregado']) {
+    const g = ler(`conteudo/${f}.html`)
+    ok(!/prefers-color-scheme: dark/.test(g) && !/data-theme="dark"/.test(g) && /color-scheme: light/.test(g), `${f}: não troca para o tema escuro do aparelho`)
+  }
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
