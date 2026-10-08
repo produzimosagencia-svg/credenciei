@@ -155,7 +155,9 @@ export default function ImportarFuncionarios({
                 {status.ignorados.map((f, i) => (
                   <li key={`${f.cpf}-${i}`} className="text-amber-800">
                     {f.nome || 'Sem nome na planilha'} — CPF: {formatCpf(f.cpf)}
-                    {f.motivo === 'cota_atingida' ? (
+                    {f.motivo === 'cpf_invalido' ? (
+                      <span className="text-amber-600"> (CPF inválido — confira os números na planilha)</span>
+                    ) : f.motivo === 'cota_atingida' ? (
                       <span className="text-amber-600"> (cota máxima já atingida)</span>
                     ) : f.setor ? (
                       <span className="text-amber-600"> (já está em {f.setor})</span>

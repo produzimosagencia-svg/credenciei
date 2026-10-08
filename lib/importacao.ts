@@ -5,6 +5,7 @@ import { emLotes } from '@/lib/lotes'
 import { ehMaster, type Role } from '@/lib/permissions'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
+import { normalizarCpfPlanilha } from '@/lib/estrutura-regras'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
 import { obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
@@ -30,7 +31,7 @@ export type LinhaIgnorada = {
    * repetido). `'cota_atingida'` só existe com a trava de cota ligada
    * (Vital, 30/09/2026).
    */
-  motivo?: 'duplicado' | 'cota_atingida'
+  motivo?: 'duplicado' | 'cota_atingida' | 'cpf_invalido'
 }
 
 export type ResultadoImportacao =
@@ -108,9 +109,18 @@ export async function importarFuncionarios(
   // (a coluna de setor da planilha não cria setores novos).
   const preparados = linhas.map(f => {
     const valor = parseFloat(String(f.valor ?? '').replace(',', '.'))
+    const cpfDigitado = String(f.cpf ?? '').replace(/\D/g, '')
     return {
       nome: f.nome?.trim(),
-      cpf: String(f.cpf ?? '').replace(/\D/g, ''),
+      /*
+       * O zero da esquerda que o Excel come. Numa célula NUMÉRICA o CPF 057.226.937-40 é guardado como
+       * 5722693740 (10 dígitos) — mesmo quando a tela da planilha mostra o zero, porque o que vale é o
+       * número. Sem devolver o zero, o CPF não passava na validação e a linha sumia da importação (08/10/2026,
+       * Wilian Rufino: disse que foi cadastrado e não existia no sistema). A validação dos dígitos
+       * verificadores continua valendo: um CPF digitado errado de verdade segue recusado.
+       */
+      cpf: normalizarCpfPlanilha(cpfDigitado),
+      cpfDigitado,
       telefone: String(f.telefone ?? '').replace(/\D/g, ''),
       chave_pix: f.chavePix?.trim() || null,
       cargo: f.cargo?.trim() ?? '',
@@ -175,6 +185,12 @@ export async function importarFuncionarios(
     if (existente) ignorados.push({ nome: existente.nome, cpf: f.cpf, setor: existente.setor })
   }
   const duplicados = ignorados.length
+
+  // As linhas de CPF inválido também aparecem na lista — com nome e CPF — para quem importou saber QUEM ficou
+  // de fora. Antes só se contava ("3 linhas com CPF fora do formato") e ninguém descobria quem eram.
+  for (const f of preparados) {
+    if (!validarCpf(f.cpf)) ignorados.push({ nome: f.nome ?? '', cpf: f.cpfDigitado, setor: null, motivo: 'cpf_invalido' })
+  }
 
   const payload = semRepetidos
     .filter(f => !jaCadastrados.has(f.cpf))
