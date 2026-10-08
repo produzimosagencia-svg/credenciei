@@ -38,5 +38,12 @@ console.log('Guia do operador de portão')
   ok(/perfil\.role === 'operador_portao' &&\s*\(\s*<Link\s+href="\/admin\/tutorial-operador"/.test(shell), 'o menu da foto tem "Tutorial operador" só para o operador de portão')
 }
 
+console.log('Guia do supervisor: depoimentos')
+{
+  const g = ler('conteudo/guia-supervisor.html')
+  ok(/id="depoimentos"/.test(g) && /Avalie quem trabalhou com você/.test(g), 'o guia do supervisor tem o capítulo de depoimentos')
+  ok(/Dê de 1 a 5 estrelas/.test(g) && /Escreva um depoimento, se quiser/.test(g), 'o capítulo explica as estrelas e o depoimento opcional')
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

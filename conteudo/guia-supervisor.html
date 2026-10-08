@@ -312,6 +312,7 @@ section.block { padding-block: 56px 8px; scroll-margin-top: 70px; }
     <li><a href="#aprovar">Aprovar</a></li>
     <li><a href="#telas">Telas reais</a></li>
     <li><a href="#evento">No evento</a></li>
+    <li><a href="#depoimentos">Depoimentos</a></li>
     <li><a href="#duvidas">Dúvidas</a></li>
   </ul>
   </div>
@@ -355,7 +356,7 @@ section.block { padding-block: 56px 8px; scroll-margin-top: 70px; }
         <li><button class="step is-active" type="button"><span class="n">1</span><span><b>Chega uma mensagem no WhatsApp</b><small>Quando você é cadastrado como supervisor, o Credenciei manda um link só seu para o seu WhatsApp.</small></span><i class="bar"></i></button></li>
         <li><button class="step" type="button"><span class="n">2</span><span><b>Crie a sua senha</b><small>Abra o link e escolha uma senha. A tela mostra qual é o seu login: o seu CPF.</small></span><i class="bar"></i></button></li>
         <li><button class="step" type="button"><span class="n">3</span><span><b>Entre com CPF e senha</b><small>Esqueceu a senha? Toque em “Esqueci a senha” e um novo link chega no seu WhatsApp.</small></span><i class="bar"></i></button></li>
-        <li><button class="step" type="button"><span class="n">4</span><span><b>Escolha o evento e o setor</b><small>Você cai em Meus eventos. Se supervisiona mais de um evento, escolha ali em qual vai trabalhar agora e volte em Meus eventos para trocar. Dentro do evento, troque de setor em Meus fornecedores.</small></span><i class="bar"></i></button></li>
+        <li><button class="step" type="button"><span class="n">4</span><span><b>Escolha o evento e o setor</b><small>Você cai em Meus eventos. Com mais de um evento, troque pelo botão do evento, no topo. Dentro do evento, troque de setor em Meus fornecedores.</small></span><i class="bar"></i></button></li>
       </ol>
       <div class="ctrl"><button type="button" data-ctl="prev" aria-label="Passo anterior">‹ Anterior</button><button type="button" data-ctl="play">Pausar</button><button type="button" data-ctl="next" aria-label="Próximo passo">Próximo ›</button></div>
     </div>
@@ -718,9 +719,9 @@ section.block { padding-block: 56px 8px; scroll-margin-top: 70px; }
   <div class="compare" style="margin-top:18px">
     <article class="way">
       <div class="ico"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg></div>
-      <h3>Depois do evento: avalie a equipe</h3>
-      <p style="color:var(--muted)">Quando o evento termina, abre o painel Avaliar equipe. Dê de 1 a 5 estrelas para cada pessoa e, se quiser, escreva um depoimento. Isso fica no histórico dela para os próximos eventos.</p>
-      <div class="stars" aria-hidden="true"><svg style="--i:0" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:1" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:2" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:3" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:4" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg></div>
+      <h3>No fim: avalie a equipe</h3>
+      <p style="color:var(--muted)">Estrelas de 1 a 5 para cada pessoa e, se quiser, um depoimento.</p>
+      <div class="best"><a class="go" href="#depoimentos">Ver como fazer →</a></div>
     </article>
     <article class="way">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg></div>
@@ -728,6 +729,51 @@ section.block { padding-block: 56px 8px; scroll-margin-top: 70px; }
       <p style="color:var(--muted)">No topo do sistema há o botão <b style="color:var(--ink)">Suporte</b>, com contorno verde. Ele abre uma conversa no WhatsApp com a nossa equipe, já com o seu nome e o seu setor.</p>
       <div class="best">Conte o que está acontecendo na própria mensagem. Quanto mais detalhe, mais rápido a gente resolve.</div>
     </article>
+  </div>
+</section>
+
+<!-- ================= DEPOIMENTOS ================= -->
+<section class="block" id="depoimentos">
+  <div class="sec-head">
+    <span class="eyebrow">No fim do evento</span>
+    <h2>Avalie quem trabalhou com você</h2>
+    <p>É a sua última tarefa no evento, e fica no histórico de cada pessoa para os próximos.</p>
+  </div>
+  <div class="tour" data-tour>
+    <div class="tour-text">
+      <ol class="steps">
+        <li><button class="step is-active" type="button"><span class="n">1</span><span><b>Abra “Avaliar equipe”</b><small>No painel do seu setor. Aparece quando o evento termina.</small></span><i class="bar"></i></button></li>
+        <li><button class="step" type="button"><span class="n">2</span><span><b>Dê de 1 a 5 estrelas</b><small>Uma nota para cada pessoa. Toque na estrela.</small></span><i class="bar"></i></button></li>
+        <li><button class="step" type="button"><span class="n">3</span><span><b>Escreva um depoimento, se quiser</b><small>É opcional. Escolha Positivo, Observação ou Atenção e explique em poucas palavras.</small></span><i class="bar"></i></button></li>
+      </ol>
+      <div class="ctrl"><button type="button" data-ctl="prev" aria-label="Passo anterior">‹ Anterior</button><button type="button" data-ctl="play">Pausar</button><button type="button" data-ctl="next" aria-label="Próximo passo">Próximo ›</button></div>
+    </div>
+    <div class="stage"><div class="phone"><div class="screen">
+
+      <div class="scene is-active">
+        <div class="card pop"><div class="row"><b>Avaliar equipe</b><span class="pill ok">0/3 avaliados</span></div></div>
+        <div class="card pop" style="--d:.4s"><div class="row"><span>Ana Lima</span><span class="ph-sub">☆ ☆ ☆ ☆ ☆</span></div></div>
+        <div class="card pop" style="--d:.6s"><div class="row"><span>Bruno Costa</span><span class="ph-sub">☆ ☆ ☆ ☆ ☆</span></div></div>
+        <div class="card pop" style="--d:.8s"><div class="row"><span>Carla Dias</span><span class="ph-sub">☆ ☆ ☆ ☆ ☆</span></div></div>
+        <span class="tap" style="left:50%;top:14%;--d:1.6s"></span>
+      </div>
+
+      <div class="scene">
+        <div class="card"><div class="row"><b>Avaliar equipe</b><span class="pill ok">1/3 avaliados</span></div></div>
+        <div class="card"><div class="row"><span>Ana Lima</span><span class="stars" aria-hidden="true"><svg style="--i:0" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:1" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:2" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:3" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg><svg style="--i:4" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3 6.1 20.6l1.3-6.6L2.5 9.4l6.6-.8z"/></svg></span></div></div>
+        <div class="card"><div class="row"><span>Bruno Costa</span><span class="ph-sub">☆ ☆ ☆ ☆ ☆</span></div></div>
+        <div class="card"><div class="row"><span>Carla Dias</span><span class="ph-sub">☆ ☆ ☆ ☆ ☆</span></div></div>
+      </div>
+
+      <div class="scene">
+        <div class="card pop"><b>Ana Lima</b><div class="ph-sub" style="margin-top:3px">Depoimento (opcional)</div></div>
+        <div class="row pop" style="--d:.3s;justify-content:flex-start;gap:6px"><span class="mini-btn hl">Positivo</span><span class="mini-btn">Observação</span><span class="mini-btn">Atenção</span></div>
+        <div class="field pop" style="--d:.6s;min-height:70px"><small>O que você quer registrar?</small><span class="type" style="--d:1s;--n:30;--t:2s">Pontual, ajudou toda a equipe.</span></div>
+        <div class="btn-o pop pulse" style="--d:3.2s;margin-top:auto">Salvar depoimento</div>
+        <span class="tap" style="left:50%;top:88%;--d:4.2s"></span>
+      </div>
+
+    </div></div></div>
   </div>
 </section>
 
