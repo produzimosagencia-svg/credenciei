@@ -409,3 +409,180 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
 
   return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios }
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// RELATÓRIO COMPLETO DO SUBEVENTO
+// ════════════════════════════════════════════════════════════════════════
+//
+// Pedido do Juan (08/10/2026): num subevento (o "Bloco", por exemplo) só dava para
+// puxar o relatório setor por setor. Este é o do subevento INTEIRO: todos os fornecedores,
+// os supervisores, quem já está autorizado e quem ainda está pré-autorizado (aguardando
+// aprovação), os dias de trabalho e os horários das batidas.
+//
+// Diferente dos relatórios de cima — que são feitos de BATIDAS e por isso só listam quem
+// bateu —, este parte da EQUIPE CADASTRADA: tem todo mundo, com a situação de cada um.
+
+/** autorizado = aprovado; pre_autorizado = aguardando aprovação do supervisor. */
+export type SituacaoNoRelatorio = 'autorizado' | 'pre_autorizado' | 'negado' | 'descredenciado'
+
+export type BatidaDoDia = { dia: string; entradaISO: string | null; meioISO: string | null; saidaISO: string | null }
+
+export type PessoaDoSubevento = {
+  id: string
+  nome: string
+  cpf: string
+  telefone: string
+  funcao: string
+  situacao: SituacaoNoRelatorio
+  ativo: boolean
+  /** Os dias que a pessoa pediu no cadastro e os que o supervisor confirmou. */
+  diasSolicitados: string[]
+  diasAprovados: string[]
+  batidas: BatidaDoDia[]
+}
+
+export type SetorDoSubevento = {
+  id: string
+  nome: string
+  previsto: number | null
+  supervisores: { nome: string; telefone: string | null }[]
+  pessoas: PessoaDoSubevento[]
+}
+
+export type DadosRelatorioSubevento = {
+  eventoId: string
+  eventoNome: string
+  organizacaoNome: string | null
+  subeventoNome: string
+  periodo: Periodo
+  setores: SetorDoSubevento[]
+}
+
+/**
+ * Dados do relatório completo de UM subevento. Só para quem gerencia o evento inteiro
+ * (o supervisor tem o relatório do próprio setor) — mesma régua de `obterDadosRelatorioEvento`.
+ */
+export async function obterDadosRelatorioSubevento(
+  eventoId: string, subeventoId: string, periodoPedido?: Periodo,
+): Promise<{ dados: DadosRelatorioSubevento } | { erro: string }> {
+  try {
+    const acesso = await exigirAcessoAoEvento(eventoId)
+    if ('erro' in acesso) return { erro: acesso.erro }
+    if (acesso.setoresPermitidos) return { erro: 'O relatório do subevento é só para quem gerencia o evento inteiro.' }
+
+    const { data: sub } = await supabaseAdmin.from('subeventos').select('id, nome, evento_id').eq('id', subeventoId).maybeSingle()
+    if (!sub || sub.evento_id !== eventoId) return { erro: 'Subevento não encontrado neste evento.' }
+
+    const periodo = await resolverPeriodo(eventoId, periodoPedido)
+
+    const { data: forns } = await supabaseAdmin
+      .from('fornecedores').select('id, nome, quantidade_estimada').eq('subevento_id', subeventoId).order('nome')
+    const fornecedores = (forns ?? []) as { id: string; nome: string; quantidade_estimada: number | null }[]
+    const idsSetores = fornecedores.map(f => f.id)
+
+    // Supervisores por setor.
+    const supervisoresPorSetor = new Map<string, { nome: string; telefone: string | null }[]>()
+    if (idsSetores.length) {
+      const { data: vinculos } = await supabaseAdmin
+        .from('supervisor_setores').select('fornecedor_id, perfis(nome, telefone)').in('fornecedor_id', idsSetores)
+      for (const v of vinculos ?? []) {
+        const p = v.perfis as unknown as { nome?: string; telefone?: string | null } | null
+        if (!p?.nome) continue
+        const lista = supervisoresPorSetor.get(v.fornecedor_id as string) ?? []
+        if (!lista.some(x => x.nome === p.nome)) lista.push({ nome: p.nome, telefone: p.telefone ?? null })
+        supervisoresPorSetor.set(v.fornecedor_id as string, lista)
+      }
+    }
+
+    // A equipe cadastrada (paginada, em lotes de setor).
+    type Func = {
+      id: string; nome: string; cpf: string; telefone: string | null; cargo: string | null; ativo: boolean | null
+      fornecedor_id: string; status_credenciamento: string | null; descredenciado_em: string | null
+    }
+    const equipe: Func[] = []
+    for (const lote of emLotes(idsSetores, 100)) {
+      equipe.push(...await buscarTudo<Func>((de, ate) =>
+        supabaseAdmin.from('funcionarios')
+          .select('id, nome, cpf, telefone, cargo, ativo, fornecedor_id, status_credenciamento, descredenciado_em')
+          .in('fornecedor_id', lote).order('nome').order('id').range(de, ate)))
+    }
+    const idsPessoas = equipe.map(f => f.id)
+
+    // Batidas do período (entrada, meio e saída final), em lotes — o `.in()` vai na URL.
+    const porPessoaDia = new Map<string, Map<string, BatidaDoDia>>()
+    for (const lote of emLotes(idsPessoas)) {
+      const regs = await buscarTudo<RegistroBruto>((de, ate) =>
+        supabaseAdmin.from('registros')
+          .select('funcionario_id, tipo, data_ref, created_at')
+          .in('funcionario_id', lote).in('tipo', ['entrada', 'meio', 'fim'])
+          .gte('data_ref', periodo.de).lte('data_ref', periodo.ate)
+          .order('id').range(de, ate)).catch(() => [] as RegistroBruto[])
+      for (const r of regs) {
+        if (!r.data_ref) continue
+        const dias = porPessoaDia.get(r.funcionario_id) ?? new Map<string, BatidaDoDia>()
+        const b = dias.get(r.data_ref) ?? { dia: r.data_ref, entradaISO: null, meioISO: null, saidaISO: null }
+        if (r.tipo === 'entrada' && !b.entradaISO) b.entradaISO = r.created_at
+        else if (r.tipo === 'meio' && !b.meioISO) b.meioISO = r.created_at
+        else if (r.tipo === 'fim' && !b.saidaISO) b.saidaISO = r.created_at
+        dias.set(r.data_ref, b)
+        porPessoaDia.set(r.funcionario_id, dias)
+      }
+    }
+
+    // Dias de trabalho de cada um (o que pediu e o que o supervisor aprovou). Tolerante: sem a tabela, vem vazio.
+    const diasPorPessoa = new Map<string, { solicitados: string[]; aprovados: string[] }>()
+    for (const lote of emLotes(idsPessoas)) {
+      try {
+        const dias = await buscarTudo<{ funcionario_id: string; data: string; selecionado: boolean; aprovado: boolean }>((de, ate) =>
+          supabaseAdmin.from('funcionario_dias').select('funcionario_id, data, selecionado, aprovado')
+            .in('funcionario_id', lote).order('funcionario_id').order('data').range(de, ate))
+        for (const d of dias) {
+          const acc = diasPorPessoa.get(d.funcionario_id) ?? { solicitados: [], aprovados: [] }
+          if (d.selecionado) acc.solicitados.push(d.data)
+          if (d.aprovado) acc.aprovados.push(d.data)
+          diasPorPessoa.set(d.funcionario_id, acc)
+        }
+      } catch { /* migração dos dias por pessoa pendente */ }
+    }
+
+    const situacaoDe = (f: Func): SituacaoNoRelatorio => {
+      if (f.descredenciado_em) return 'descredenciado'
+      const s = f.status_credenciamento
+      if (s === 'pendente') return 'pre_autorizado'
+      if (s === 'negado') return 'negado'
+      return 'autorizado'
+    }
+
+    const setores: SetorDoSubevento[] = fornecedores.map(forn => ({
+      id: forn.id,
+      nome: forn.nome.trim(),
+      previsto: forn.quantidade_estimada ?? null,
+      supervisores: supervisoresPorSetor.get(forn.id) ?? [],
+      pessoas: equipe.filter(f => f.fornecedor_id === forn.id).map(f => ({
+        id: f.id,
+        nome: f.nome,
+        cpf: f.cpf,
+        telefone: f.telefone ?? '',
+        funcao: f.cargo ?? '',
+        situacao: situacaoDe(f),
+        ativo: f.ativo !== false,
+        diasSolicitados: diasPorPessoa.get(f.id)?.solicitados ?? [],
+        diasAprovados: diasPorPessoa.get(f.id)?.aprovados ?? [],
+        batidas: [...(porPessoaDia.get(f.id)?.values() ?? [])].sort((a, b) => a.dia.localeCompare(b.dia)),
+      })),
+    }))
+
+    return {
+      dados: {
+        eventoId,
+        eventoNome: acesso.evento.nome,
+        organizacaoNome: acesso.evento.organizacoes?.nome ?? null,
+        subeventoNome: sub.nome as string,
+        periodo,
+        setores,
+      },
+    }
+  } catch (e) {
+    return { erro: e instanceof Error ? e.message : 'Não foi possível montar o relatório do subevento.' }
+  }
+}

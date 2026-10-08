@@ -5,6 +5,7 @@ import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExclui
 import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
+import ExportarSubevento from './ExportarSubevento'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import SeletorDeDia from '@/components/SeletorDeDia'
@@ -184,7 +185,11 @@ export default async function SubeventoPage({
         <ChevronLeft className="w-4 h-4" /> {evento.nome}
       </Link>
 
-      <PageHeader titulo={subevento.nome} descricao="Fornecedores escalados neste subevento" />
+      <PageHeader
+        titulo={subevento.nome}
+        descricao="Fornecedores escalados neste subevento"
+        acoes={podeGerenciarEventos(perfil) ? <ExportarSubevento eventoId={eventoId} subeventoId={sid} /> : undefined}
+      />
 
       {diasDaOperacao.length > 1 && (
         <div className="flex items-center gap-2">

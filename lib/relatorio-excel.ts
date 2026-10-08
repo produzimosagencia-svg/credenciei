@@ -21,7 +21,7 @@
  * que ele listou — quem entrou, quem saiu, quando, em qual setor, em qual
  * função, quantos entraram, quantos saíram, qual período. Nada além disso.
  */
-import type { DadosRelatorioEvento, SetorRelatorio, LinhaRelatorio, Periodo } from './relatorios'
+import type { DadosRelatorioEvento, SetorRelatorio, LinhaRelatorio, Periodo, DadosRelatorioSubevento, SetorDoSubevento, PessoaDoSubevento, SituacaoNoRelatorio } from './relatorios'
 import { formatarBR } from './tz'
 import { COR_MARCA, COR_ACENTO, COR_FAIXA_CLARA, COR_TEXTO, BRANCO, BORDA_CELULA, carregarLogoBuffer, adicionarLogoNaAba } from './marca-relatorio'
 
@@ -472,4 +472,236 @@ export async function gerarRelatorioCompleto(dados: DadosRelatorioEvento): Promi
   }
 
   await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, 'Completo'))
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// RELATÓRIO COMPLETO DO SUBEVENTO
+// ════════════════════════════════════════════════════════════════════════
+//
+// Resumo Geral + Faltam aprovar + Equipe + Batidas + Supervisores + uma aba por fornecedor.
+// Parte da EQUIPE CADASTRADA (não das batidas), então mostra quem ainda não foi aprovado.
+
+const ROTULO_SITUACAO: Record<SituacaoNoRelatorio, string> = {
+  autorizado: 'Autorizado',
+  pre_autorizado: 'Pré-autorizado (falta aprovar)',
+  negado: 'Negado',
+  descredenciado: 'Descredenciado',
+}
+
+/** "2026-10-10" → "10/10". */
+const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`
+const listaDeDias = (dias: string[]) => dias.map(diaCurto).join(', ')
+const nomesDosSupervisores = (s: SetorDoSubevento) => s.supervisores.map(x => x.nome).join(', ') || '—'
+const horaDe = (iso: string | null) => (iso ? formatarBR(iso, 'hora') : '')
+
+/** Uma tabela simples: cabeçalho, linhas com borda, filtro e primeira linha congelada. */
+function escreverTabela(
+  ws: import('exceljs').Worksheet, linhaCabecalho: number,
+  colunas: readonly { titulo: string; largura: number; esquerda?: boolean }[],
+  linhas: (string | number | null)[][],
+  vazio: string,
+) {
+  escreverCabecalho(ws, linhaCabecalho, colunas)
+  let linha = linhaCabecalho + 1
+  for (const valores of linhas) {
+    valores.forEach((v, i) => {
+      const cel = ws.getCell(linha, i + 1)
+      cel.value = v
+      cel.border = BORDA_CELULA
+      cel.alignment = { vertical: 'middle', horizontal: colunas[i]?.esquerda ? 'left' : 'center', wrapText: colunas[i]?.esquerda }
+    })
+    linha++
+  }
+  if (!linhas.length) ws.getCell(linha, 1).value = vazio
+  ws.views = [{ state: 'frozen', ySplit: linhaCabecalho }]
+  if (linhas.length) ws.autoFilter = { from: { row: linhaCabecalho, column: 1 }, to: { row: linhaCabecalho + linhas.length, column: colunas.length } }
+}
+
+function cabecalhoDaAba(
+  wb: import('exceljs').Workbook, ws: import('exceljs').Worksheet, logo: ArrayBuffer | null,
+  dados: DadosRelatorioSubevento, titulo: string, nCol: number, extras: [string, string][] = [],
+): number {
+  adicionarLogoNaAba(wb, ws, logo)
+  let linha = 2
+  escreverTitulo(ws, linha++, titulo, nCol)
+  linha++
+  escreverInfo(ws, linha++, 'Evento:', dados.eventoNome, nCol)
+  escreverInfo(ws, linha++, 'Subevento:', dados.subeventoNome, nCol)
+  if (dados.organizacaoNome) escreverInfo(ws, linha++, 'Organização:', dados.organizacaoNome, nCol)
+  escreverInfo(ws, linha++, 'Período das batidas:', textoPeriodo(dados.periodo), nCol)
+  for (const [r, v] of extras) escreverInfo(ws, linha++, r, v, nCol)
+  return linha + 1
+}
+
+const COLUNAS_PESSOA = [
+  { titulo: 'Nome', largura: 30, esquerda: true },
+  { titulo: 'CPF', largura: 16 },
+  { titulo: 'Telefone', largura: 17 },
+  { titulo: 'Função', largura: 22, esquerda: true },
+  { titulo: 'Situação', largura: 28 },
+  { titulo: 'Dias que vai trabalhar', largura: 24, esquerda: true },
+  { titulo: 'Entradas', largura: 10 },
+  { titulo: 'Saídas', largura: 10 },
+] as const
+
+const contarBatidas = (p: PessoaDoSubevento) => ({
+  entradas: p.batidas.filter(b => b.entradaISO).length,
+  saidas: p.batidas.filter(b => b.saidaISO).length,
+})
+const diasDaPessoa = (p: PessoaDoSubevento) => listaDeDias(p.diasAprovados.length ? p.diasAprovados : p.diasSolicitados) || '—'
+
+function linhaDaPessoa(p: PessoaDoSubevento): (string | number)[] {
+  const c = contarBatidas(p)
+  return [p.nome, p.cpf, p.telefone, p.funcao || '—', ROTULO_SITUACAO[p.situacao], diasDaPessoa(p), c.entradas, c.saidas]
+}
+
+/**
+ * Monta a planilha do subevento (sem baixar). Separada de `gerarRelatorioSubevento` para o teste conseguir
+ * montar o arquivo no Node, sem o navegador (o logo vem de fora: no teste, nenhum).
+ */
+export async function montarPlanilhaSubevento(dados: DadosRelatorioSubevento, logo: ArrayBuffer | null): Promise<import('exceljs').Workbook> {
+  const wb = await novaPlanilha()
+  const setores = [...dados.setores].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  const todas = setores.flatMap(s => s.pessoas.map(p => ({ s, p })))
+  const conta = (sit: SituacaoNoRelatorio, lista = todas) => lista.filter(x => x.p.situacao === sit).length
+  const entradas = todas.reduce((n, x) => n + contarBatidas(x.p).entradas, 0)
+  const saidas = todas.reduce((n, x) => n + contarBatidas(x.p).saidas, 0)
+
+  // ── 1) Resumo Geral ────────────────────────────────────────────────────
+  {
+    const colunas = [
+      { titulo: 'Fornecedor', largura: 30, esquerda: true },
+      { titulo: 'Supervisor(es)', largura: 30, esquerda: true },
+      { titulo: 'Previsto', largura: 10 },
+      { titulo: 'Cadastrados', largura: 13 },
+      { titulo: 'Autorizados', largura: 13 },
+      { titulo: 'Pré-autorizados (faltam aprovar)', largura: 20 },
+      { titulo: 'Negados', largura: 10 },
+      { titulo: 'Entradas', largura: 10 },
+      { titulo: 'Saídas', largura: 10 },
+    ] as const
+    const ws = wb.addWorksheet('Resumo Geral')
+    ws.columns = colunas.map(c => ({ width: c.largura }))
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, `RELATÓRIO DO SUBEVENTO — ${dados.subeventoNome.toUpperCase()}`, colunas.length, [
+      ['Fornecedores:', String(setores.length)],
+      ['Pessoas cadastradas:', String(todas.length)],
+      ['Autorizadas:', String(conta('autorizado'))],
+      ['Pré-autorizadas (falta aprovar):', String(conta('pre_autorizado'))],
+      ['Negadas / descredenciadas:', `${conta('negado')} / ${conta('descredenciado')}`],
+      ['Batidas no período:', `${entradas} entradas, ${saidas} saídas`],
+    ])
+    const linhas = setores.map(s => {
+      const c = (sit: SituacaoNoRelatorio) => s.pessoas.filter(p => p.situacao === sit).length
+      return [
+        s.nome, nomesDosSupervisores(s), s.previsto ?? '—', s.pessoas.length, c('autorizado'), c('pre_autorizado'), c('negado') + c('descredenciado'),
+        s.pessoas.reduce((n, p) => n + contarBatidas(p).entradas, 0), s.pessoas.reduce((n, p) => n + contarBatidas(p).saidas, 0),
+      ]
+    })
+    linhas.push(['TOTAL', '', '', todas.length, conta('autorizado'), conta('pre_autorizado'), conta('negado') + conta('descredenciado'), entradas, saidas])
+    escreverTabela(ws, linhaInfo, colunas, linhas, 'Este subevento ainda não tem fornecedores.')
+    // Destaca a linha de total.
+    const linhaTotal = linhaInfo + linhas.length
+    for (let c = 1; c <= colunas.length; c++) { ws.getCell(linhaTotal, c).font = { bold: true }; ws.getCell(linhaTotal, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_FAIXA_CLARA } } }
+  }
+
+  // ── 2) Faltam aprovar ──────────────────────────────────────────────────
+  {
+    const colunas = [
+      { titulo: 'Fornecedor', largura: 28, esquerda: true },
+      { titulo: 'Supervisor(es)', largura: 28, esquerda: true },
+      { titulo: 'Nome', largura: 30, esquerda: true },
+      { titulo: 'CPF', largura: 16 },
+      { titulo: 'Telefone', largura: 17 },
+      { titulo: 'Função', largura: 22, esquerda: true },
+      { titulo: 'Dias que pediu', largura: 24, esquerda: true },
+    ] as const
+    const ws = wb.addWorksheet('Faltam aprovar')
+    ws.columns = colunas.map(c => ({ width: c.largura }))
+    const pendentes = todas.filter(x => x.p.situacao === 'pre_autorizado')
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, 'PRÉ-AUTORIZADOS — QUEM AINDA FALTA SER APROVADO', colunas.length, [['Total aguardando aprovação:', String(pendentes.length)]])
+    escreverTabela(ws, linhaInfo, colunas, pendentes.map(({ s, p }) => [s.nome, nomesDosSupervisores(s), p.nome, p.cpf, p.telefone, p.funcao || '—', listaDeDias(p.diasSolicitados) || '—']),
+      'Ninguém aguardando aprovação neste subevento.')
+  }
+
+  // ── 3) Equipe (todos) ──────────────────────────────────────────────────
+  {
+    const colunas = [{ titulo: 'Fornecedor', largura: 28, esquerda: true }, { titulo: 'Supervisor(es)', largura: 28, esquerda: true }, ...COLUNAS_PESSOA] as const
+    const ws = wb.addWorksheet('Equipe')
+    ws.columns = colunas.map(c => ({ width: c.largura }))
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, 'EQUIPE DO SUBEVENTO — TODOS OS FORNECEDORES', colunas.length, [['Pessoas:', String(todas.length)]])
+    escreverTabela(ws, linhaInfo, colunas, todas.map(({ s, p }) => [s.nome, nomesDosSupervisores(s), ...linhaDaPessoa(p)]), 'Nenhuma pessoa cadastrada.')
+  }
+
+  // ── 4) Batidas ─────────────────────────────────────────────────────────
+  {
+    const colunas = [
+      { titulo: 'Data', largura: 12 },
+      { titulo: 'Fornecedor', largura: 28, esquerda: true },
+      { titulo: 'Nome', largura: 30, esquerda: true },
+      { titulo: 'Função', largura: 22, esquerda: true },
+      { titulo: 'Situação', largura: 28 },
+      { titulo: 'Entrada', largura: 11 },
+      { titulo: 'Meio', largura: 11 },
+      { titulo: 'Saída', largura: 11 },
+    ] as const
+    const ws = wb.addWorksheet('Batidas')
+    ws.columns = colunas.map(c => ({ width: c.largura }))
+    const linhas = todas
+      .flatMap(({ s, p }) => p.batidas.map(b => ({ s, p, b })))
+      .sort((a, b) => a.b.dia.localeCompare(b.b.dia) || a.s.nome.localeCompare(b.s.nome, 'pt-BR') || a.p.nome.localeCompare(b.p.nome, 'pt-BR'))
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, 'HORÁRIOS DAS BATIDAS', colunas.length, [['Batidas listadas:', String(linhas.length)]])
+    escreverTabela(ws, linhaInfo, colunas, linhas.map(({ s, p, b }) => [diaCurto(b.dia), s.nome, p.nome, p.funcao || '—', ROTULO_SITUACAO[p.situacao], horaDe(b.entradaISO), horaDe(b.meioISO), horaDe(b.saidaISO)]),
+      'Nenhuma batida no período.')
+  }
+
+  // ── 5) Supervisores ────────────────────────────────────────────────────
+  {
+    const colunas = [
+      { titulo: 'Supervisor', largura: 30, esquerda: true },
+      { titulo: 'Telefone', largura: 17 },
+      { titulo: 'Fornecedores', largura: 40, esquerda: true },
+      { titulo: 'Pessoas', largura: 10 },
+      { titulo: 'Autorizadas', largura: 13 },
+      { titulo: 'Pré-autorizadas', largura: 16 },
+    ] as const
+    const ws = wb.addWorksheet('Supervisores')
+    ws.columns = colunas.map(c => ({ width: c.largura }))
+    const porSupervisor = new Map<string, { telefone: string | null; setores: SetorDoSubevento[] }>()
+    for (const s of setores) for (const sup of s.supervisores) {
+      const acc = porSupervisor.get(sup.nome) ?? { telefone: sup.telefone, setores: [] }
+      acc.setores.push(s)
+      porSupervisor.set(sup.nome, acc)
+    }
+    const linhas = [...porSupervisor.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([nome, v]) => {
+      const pessoas = v.setores.flatMap(s => s.pessoas)
+      return [nome, v.telefone ?? '', v.setores.map(s => s.nome).join(', '), pessoas.length,
+        pessoas.filter(p => p.situacao === 'autorizado').length, pessoas.filter(p => p.situacao === 'pre_autorizado').length]
+    })
+    const semSupervisor = setores.filter(s => !s.supervisores.length).map(s => s.nome)
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, 'SUPERVISORES DO SUBEVENTO', colunas.length,
+      semSupervisor.length ? [['Fornecedores sem supervisor:', semSupervisor.join(', ')]] : [])
+    escreverTabela(ws, linhaInfo, colunas, linhas, 'Nenhum supervisor ligado aos fornecedores deste subevento.')
+  }
+
+  // ── 6) Uma aba por fornecedor ──────────────────────────────────────────
+  const usados = new Set<string>(['Resumo Geral', 'Faltam aprovar', 'Equipe', 'Batidas', 'Supervisores'])
+  for (const s of setores) {
+    const ws = wb.addWorksheet(nomeDaAba(s.nome, usados))
+    ws.columns = COLUNAS_PESSOA.map(c => ({ width: c.largura }))
+    const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, `FORNECEDOR — ${s.nome.toUpperCase()}`, COLUNAS_PESSOA.length, [
+      ['Supervisor(es):', nomesDosSupervisores(s)],
+      ['Previsto / cadastrados:', `${s.previsto ?? '—'} / ${s.pessoas.length}`],
+      ['Autorizados / pré-autorizados:', `${s.pessoas.filter(p => p.situacao === 'autorizado').length} / ${s.pessoas.filter(p => p.situacao === 'pre_autorizado').length}`],
+    ])
+    escreverTabela(ws, linhaInfo, COLUNAS_PESSOA, s.pessoas.map(linhaDaPessoa), 'Nenhuma pessoa cadastrada neste fornecedor.')
+  }
+
+  return wb
+}
+
+/** Relatório completo de um subevento — baixa direto no navegador. */
+export async function gerarRelatorioSubevento(dados: DadosRelatorioSubevento): Promise<void> {
+  const wb = await montarPlanilhaSubevento(dados, await carregarLogoBuffer())
+  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, `${dados.subeventoNome}_completo`))
 }
