@@ -562,8 +562,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026): só liberado quando o operador
    * apertou "Estou indo embora" E ainda está dentro da janela configurada em Editar evento — fora dela, a
    * credencial continua só mostrando o QR. A biometria autoatendimento (acima) é um recurso diferente e não muda.
+   *
+   * NUNCA no dia principal (correção do Juan, mesmo dia): "dia do evento não funciona a batida sozinha do
+   * funcionário, somente com os operadores e gestores de credenciamento do portão da portaria" — o servidor já
+   * recusa (`registrarPresencaLivre`), isto só evita mostrar um botão que erraria na hora.
    */
-  const podeAutoRegistrar = await autoatendimentoLiberadoAgora(evento?.id ?? null)
+  const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora(evento?.id ?? null)
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>

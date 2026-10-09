@@ -50,6 +50,14 @@ console.log('\n4 · geolocalização obrigatória na janela de autoatendimento')
 confere('recusa sem latitude/longitude quando liberado',
   /if \(autoatendimentoLiberado && \(typeof latitude !== 'number' \|\| typeof longitude !== 'number'\)\) \{\s*return \{ error:/.test(actions), true)
 
+console.log('\n4b · NO DIA PRINCIPAL, autoatendimento nunca funciona — só o operador (correção do Juan, 08/10/2026)')
+confere('a checagem de dia principal não tem mais a exceção "!autoatendimentoLiberado &&" na frente',
+  !/if \(!autoatendimentoLiberado && resolucao\.diaPrincipal/.test(actions), true)
+confere('dia principal bloqueia incondicionalmente (exceto o checkin_autonomo antigo)',
+  /if \(resolucao\.diaPrincipal && evento\.checkin_autonomo !== true\) \{\s*return \{ error: 'No dia do evento/.test(actions), true)
+confere('a credencial some com o botão no dia principal, mesmo com a janela ligada',
+  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+
 console.log('\n5 · auditoria específica do registro feito nessa janela')
 confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",
   /acao: 'REGISTRO_AUTOATENDIMENTO'/.test(actions), true)
@@ -72,8 +80,8 @@ confere('ativar chama o servidor e refaz o status (não assume sucesso sem recon
 
 console.log('\n8 · credencial: a saída deixou de ser bloqueada incondicionalmente na tela')
 confere('podeAutoRegistrar não é mais fixo em false', !credencial.includes('podeAutoRegistrar={false}'), true)
-confere('a tela calcula a partir da janela de autoatendimento',
-  /const podeAutoRegistrar = await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+confere('a tela calcula a partir da janela de autoatendimento (e nunca no dia principal)',
+  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
 confere("CheckinPresenca não trava mais 'fim' separado de podeAutoRegistrar",
   !/info\.momento !== 'fim' && podeAutoRegistrar/.test(checkin), true)
 

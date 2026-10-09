@@ -8414,13 +8414,14 @@ export async function registrarPresencaLivre(
   }
 
   /*
-   * No dia principal, este caminho fora da janela de autoatendimento só existe se o admin ligou
-   * `checkin_autonomo`. Fora dele (montagem/desmontagem), é sempre permitido — não depende de nenhuma
-   * configuração, porque não existe operador de plantão o tempo todo nesses dias. Dentro da janela de
-   * autoatendimento, a liberação já veio do operador apertando "Estou indo embora": não exige também o
-   * `checkin_autonomo`, são recursos independentes.
+   * NO DIA PRINCIPAL, SEMPRE SÓ O OPERADOR — mesmo dentro da janela de autoatendimento (correção do Juan,
+   * 08/10/2026, mesmo dia em que o recurso nasceu: "nos dias do evento isso não pode funcionar... dia do evento
+   * não funciona a batida sozinha do funcionário, somente com os operadores e gestores de credenciamento do
+   * portão da portaria"). O autoatendimento ("Estou indo embora") só tem efeito FORA do dia principal —
+   * montagem/desmontagem, onde não existe operador de plantão o tempo todo. `checkin_autonomo` é a trava antiga,
+   * independente, que ainda pode abrir uma exceção pontual no dia principal se o admin ligar.
    */
-  if (!autoatendimentoLiberado && resolucao.diaPrincipal && evento.checkin_autonomo !== true) {
+  if (resolucao.diaPrincipal && evento.checkin_autonomo !== true) {
     return { error: 'No dia do evento, a entrada e a saída são pelo QR Code no credenciamento.' }
   }
 
