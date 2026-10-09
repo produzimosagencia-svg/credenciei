@@ -49,8 +49,8 @@ import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_M
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
   gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
-  pessoaEhSupervisor,
-  type DetalheCredenciamento,
+  pessoaEhSupervisor, relatorioTravasPorDia,
+  type DetalheCredenciamento, type RelatorioTravas,
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
 import {
@@ -3287,6 +3287,27 @@ export async function carregarTravasDoModal(eventoId: string, fornecedorId?: str
     return { usaEscala: dias.length > 0, dias, travas: Object.fromEntries(travas) }
   } catch {
     return { usaEscala: false, dias: [], travas: {} }
+  }
+}
+
+/**
+ * O relatório de "quem está sem trava, com trava parcial, ou com trava completa" — pedido do Juan, 08/10/2026,
+ * depois de eu levantar isso manualmente num script pra ele: "qual caminho pra eu extrair isso?". Mesma régua de
+ * `carregarTravasDoModal` (admin/master/gerente da organização do evento) — é visão de TODOS os fornecedores,
+ * não cabe pro supervisor ver.
+ */
+export async function obterRelatorioTravas(eventoId: string): Promise<
+  { ok: true; eventoNome: string; relatorio: RelatorioTravas } | { ok?: false; error: string }
+> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    const [{ data: evento }, relatorio] = await Promise.all([
+      supabaseAdmin.from('eventos').select('nome').eq('id', eventoId).maybeSingle(),
+      relatorioTravasPorDia(eventoId),
+    ])
+    return { ok: true, eventoNome: (evento?.nome as string | null) ?? 'Evento', relatorio }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
   }
 }
 

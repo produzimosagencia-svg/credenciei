@@ -1,5 +1,6 @@
 import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { faseDoDia, periodoDoEvento, somarDias } from './janelas'
+import { emLotes } from './lotes'
 import {
   TRAVA_POR_DIA_ATIVA, planejarAprovacao, statusEscalaValido, vereditoDaEscala,
   type DiaDaEscala, type DiaEscolhido, type StatusEscala, type VereditoEscala,
@@ -409,4 +410,112 @@ export async function vagaNoSetorNoDia(
   } catch {
     return { ok: true }
   }
+}
+
+export type LinhaRelatorioTrava = {
+  fornecedorId: string
+  nome: string
+  supervisores: string[]
+  porDia: { data: string; maximo: number | null; aprovados: number }[]
+  /** 'sem_trava' = nenhum dia tem limite; 'completa' = todos os dias têm; 'parcial' = só alguns. */
+  situacao: 'sem_trava' | 'parcial' | 'completa'
+}
+
+export type RelatorioTravas = {
+  dias: DiaDaEscala[]
+  linhas: LinhaRelatorioTrava[]
+}
+
+/**
+ * Quais fornecedores do evento têm (ou não) a trava por dia configurada, e quantos já estão aprovados em cada
+ * dia — a pergunta do Juan, 08/10/2026: "um relatório com todos os setores que não estão com trava de
+ * funcionários por dia". Agrupa em três situações pra a tela filtrar (sem_trava/parcial/completa).
+ *
+ * Em lotes (`emLotes`) em toda consulta por lista de ids: um evento grande passa de 1000 UUIDs na URL.
+ */
+export async function relatorioTravasPorDia(eventoId: string): Promise<RelatorioTravas> {
+  const dias = await diasDaEscalaDoEvento(eventoId)
+  const diasDatas = dias.map(d => d.data)
+
+  const { data: fornecedoresRaw } = await supabaseAdmin
+    .from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome')
+  const fornecedores = fornecedoresRaw ?? []
+  const fornecedorIds = fornecedores.map(f => f.id as string)
+  if (!fornecedorIds.length) return { dias, linhas: [] }
+
+  const travas: { fornecedor_id: string; data: string; maximo: number }[] = []
+  for (const lote of emLotes(fornecedorIds, 150)) {
+    const { data } = await supabaseAdmin.from('fornecedor_cotas_dia').select('fornecedor_id, data, maximo').in('fornecedor_id', lote)
+    travas.push(...(data ?? []) as typeof travas)
+  }
+  const travaPorChave = new Map(travas.map(t => [`${t.fornecedor_id}|${t.data}`, t.maximo]))
+
+  // Supervisores de cada fornecedor — principal (perfis.fornecedor_id) + extras (supervisor_setores).
+  const supervisoresPrincipais: { id: string; nome: string; fornecedor_id: string }[] = []
+  for (const lote of emLotes(fornecedorIds, 150)) {
+    const { data } = await supabaseAdmin.from('perfis').select('id, nome, fornecedor_id').eq('role', 'supervisor').in('fornecedor_id', lote)
+    supervisoresPrincipais.push(...(data ?? []) as typeof supervisoresPrincipais)
+  }
+  const supervisorSetores: { fornecedor_id: string; perfil_id: string }[] = []
+  for (const lote of emLotes(fornecedorIds, 150)) {
+    const { data } = await supabaseAdmin.from('supervisor_setores').select('fornecedor_id, perfil_id').in('fornecedor_id', lote)
+    supervisorSetores.push(...(data ?? []) as typeof supervisorSetores)
+  }
+  const idsExtras = [...new Set(supervisorSetores.map(s => s.perfil_id))]
+  const nomesExtras: { id: string; nome: string }[] = []
+  for (const lote of emLotes(idsExtras, 150)) {
+    const { data } = await supabaseAdmin.from('perfis').select('id, nome').in('id', lote)
+    nomesExtras.push(...(data ?? []) as typeof nomesExtras)
+  }
+  const nomeDoSupervisor = new Map(nomesExtras.map(s => [s.id, s.nome]))
+  for (const s of supervisoresPrincipais) nomeDoSupervisor.set(s.id, s.nome)
+  const supervisoresPorFornecedor = new Map<string, Set<string>>()
+  const adicionarSupervisor = (fornecedorId: string, perfilId: string) => {
+    const set = supervisoresPorFornecedor.get(fornecedorId) ?? new Set<string>()
+    set.add(perfilId)
+    supervisoresPorFornecedor.set(fornecedorId, set)
+  }
+  for (const s of supervisoresPrincipais) adicionarSupervisor(s.fornecedor_id, s.id)
+  for (const row of supervisorSetores) adicionarSupervisor(row.fornecedor_id, row.perfil_id)
+
+  // Ocupação (aprovados) por fornecedor+dia — mesma régua de `diasLotados` (modo 'aprovado'), para todos de uma vez.
+  const funcionarios: { id: string; fornecedor_id: string; status_credenciamento: string | null }[] = []
+  for (const lote of emLotes(fornecedorIds, 150)) {
+    const { data } = await supabaseAdmin.from('funcionarios').select('id, fornecedor_id, status_credenciamento').in('fornecedor_id', lote)
+    funcionarios.push(...(data ?? []) as typeof funcionarios)
+  }
+  const funcMap = new Map(funcionarios.map(f => [f.id, f]))
+  const funcIds = funcionarios.map(f => f.id)
+
+  const diasAprovados: { funcionario_id: string; data: string; aprovado: boolean }[] = []
+  for (const lote of emLotes(funcIds, 150)) {
+    const { data } = await supabaseAdmin.from('funcionario_dias').select('funcionario_id, data, aprovado').in('funcionario_id', lote).in('data', diasDatas)
+    diasAprovados.push(...(data ?? []) as typeof diasAprovados)
+  }
+  const ocupacao = new Map<string, number>()
+  for (const d of diasAprovados) {
+    if (!d.aprovado) continue
+    const f = funcMap.get(d.funcionario_id)
+    if (!f || f.status_credenciamento === 'negado') continue
+    const chave = `${f.fornecedor_id}|${d.data}`
+    ocupacao.set(chave, (ocupacao.get(chave) ?? 0) + 1)
+  }
+
+  const linhas: LinhaRelatorioTrava[] = fornecedores.map(f => {
+    const fornecedorId = f.id as string
+    const porDia = diasDatas.map(data => ({
+      data,
+      maximo: travaPorChave.get(`${fornecedorId}|${data}`) ?? null,
+      aprovados: ocupacao.get(`${fornecedorId}|${data}`) ?? 0,
+    }))
+    const comTrava = porDia.filter(d => d.maximo != null).length
+    const situacao: LinhaRelatorioTrava['situacao'] =
+      comTrava === 0 ? 'sem_trava' : comTrava === porDia.length ? 'completa' : 'parcial'
+    const sups = [...(supervisoresPorFornecedor.get(fornecedorId) ?? [])]
+      .map(id => nomeDoSupervisor.get(id)).filter((n): n is string => !!n)
+    return { fornecedorId, nome: f.nome as string, supervisores: [...new Set(sups)], porDia, situacao }
+  })
+  linhas.sort((a, b) => a.nome.localeCompare(b.nome))
+
+  return { dias, linhas }
 }

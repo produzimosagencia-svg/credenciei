@@ -6,7 +6,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, Wallet, KanbanSquare, ChevronRight, Mic,
+  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight, Mic,
   FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw,
 } from 'lucide-react'
 import {
@@ -219,6 +219,14 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   }
   if (podeGerenciarEventos(perfil) || role === 'supervisor' || temVinculoSupervisor) {
     administrativo.push({ href: '/admin/relatorios', label: 'Relatórios', icon: FileSpreadsheet })
+  }
+  /*
+   * "Limite de pessoas por dia" — pedido do Juan, 08/10/2026 (depois de eu levantar isso manualmente num
+   * script): "qual caminho pra eu extrair isso?". Só quem gerencia eventos — é visão de TODOS os fornecedores,
+   * diferente de Relatórios acima (que o supervisor também usa, mas só pro próprio setor).
+   */
+  if (podeGerenciarEventos(perfil)) {
+    administrativo.push({ href: '/admin/travas', label: 'Limite por dia', icon: ShieldAlert })
   }
   /*
    * Biometria não é dividida por setor (é config do evento inteiro), por
