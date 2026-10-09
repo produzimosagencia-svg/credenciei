@@ -60,6 +60,52 @@ function statusEtapa(presenca: Presenca, inicio: string | null, fim: string | nu
   return 'aberto'
 }
 
+/**
+ * Os supervisores DESTE setor que têm o crachá em OUTRO setor do evento — pedido do Juan, 09/10/2026: "o nome do
+ * supervisor precisa aparecer na lista de todas as equipes que ele participa".
+ *
+ * O cadastro é um por CPF por evento, então quem supervisiona vários setores tem a ficha (QR, batidas, pagamento)
+ * em UM só deles. Nos outros, ele entra na lista como linha de referência — nome, CPF, telefone e onde está o
+ * crachá —, sem virar uma segunda ficha. Mesmo critério de "supervisor do setor" do card do evento
+ * (`supervisor_setores`, com o setor ativo do perfil como rede de segurança).
+ */
+async function supervisoresComCrachaEmOutroSetor(fid: string, eventoId: string, cpfsDaEquipe: Set<string>) {
+  type P = { id: string; nome: string; cpf: string | null; telefone: string | null }
+  const pessoas = new Map<string, P>()
+  const [vinculos, ativos] = await Promise.all([
+    supabase.from('supervisor_setores').select('perfis(id, nome, cpf, telefone)').eq('fornecedor_id', fid)
+      .then(r => r.data ?? [], () => []),
+    supabase.from('perfis').select('id, nome, cpf, telefone').eq('role', 'supervisor').eq('fornecedor_id', fid)
+      .then(r => r.data ?? [], () => []),
+  ])
+  for (const v of vinculos) {
+    const p = (v as unknown as { perfis: P | null }).perfis
+    if (p) pessoas.set(p.id, p)
+  }
+  for (const p of ativos as P[]) pessoas.set(p.id, p)
+
+  const limpo = (c: string | null) => (c ?? '').replace(/\D/g, '')
+  const deFora = [...pessoas.values()].filter(p => !cpfsDaEquipe.has(limpo(p.cpf)))
+  if (!deFora.length) return []
+
+  // Onde está o crachá de cada um neste evento (pode não ter nenhum).
+  const cpfs = deFora.map(p => limpo(p.cpf)).filter(c => c.length === 11)
+  const { data: fichas } = cpfs.length
+    ? await supabase.from('funcionarios').select('cpf, fornecedor_id, fornecedores!inner(nome, evento_id)')
+      .in('cpf', cpfs).eq('fornecedores.evento_id', eventoId)
+    : { data: [] }
+  const crachaPorCpf = new Map((fichas ?? []).map(f => [f.cpf as string, {
+    id: f.fornecedor_id as string, nome: (f.fornecedores as unknown as { nome: string }).nome,
+  }]))
+
+  return deFora
+    .map(p => ({
+      perfilId: p.id, nome: p.nome, cpf: limpo(p.cpf), telefone: (p.telefone ?? '').replace(/\D/g, ''),
+      setorDoCracha: crachaPorCpf.get(limpo(p.cpf)) ?? null,
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+
 export default async function FornecedorPage({ params }: { params: Promise<{ id: string; fid: string }> }) {
   const { id, fid } = await params
 
@@ -152,6 +198,16 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   } else if (!veTodosEventos(perfil) && organizacaoDoEvento !== perfil.organizacao_id) {
     notFound()
   }
+
+  const supervisoresDeFora = (await supervisoresComCrachaEmOutroSetor(
+    fid, id, new Set((funcionarios ?? []).map(f => ((f.cpf as string | null) ?? '').replace(/\D/g, ''))),
+  )).map(s => ({
+    ...s,
+    // O link pro setor do crachá só pra quem consegue abrir aquele setor (o supervisor, só os dele).
+    linkDoCracha: s.setorDoCracha && (perfil.role !== 'supervisor' || setoresDoSupervisor.some(x => x.id === s.setorDoCracha!.id))
+      ? `/admin/eventos/${id}/fornecedor/${s.setorDoCracha.id}`
+      : null,
+  }))
 
   // Nomes dos supervisores que fizeram os registros de QR (entrada/saída)
   const perfilIds = [...new Set((registros ?? []).map(r => r.criado_por_perfil_id).filter((v): v is string => !!v))]
@@ -506,6 +562,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       <div data-tutorial="setor-tabela">
         <FuncionarioTable
           funcionarios={funcionariosEnriquecidos}
+          supervisoresDeFora={supervisoresDeFora}
           fornecedorId={fid}
           eventoId={id}
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}

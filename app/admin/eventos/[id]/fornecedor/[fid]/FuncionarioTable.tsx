@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Search, SlidersHorizontal, Trash2, X,
   Camera, MapPin, Minus, User, UserCheck, UserX, UserMinus, ClipboardCheck,
@@ -18,6 +19,28 @@ import { descreverDistancia } from '@/lib/geo-local'
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const PAGE_SIZE = 25
+
+/**
+ * Supervisor DESTE setor com o crachá em outra equipe do evento (o cadastro é um por CPF por evento). Entra na
+ * lista como referência, sem ações: a ficha dele — QR, batidas, pagamento — é a do setor do crachá. Pedido do
+ * Juan, 09/10/2026. Montado em page.tsx (`supervisoresComCrachaEmOutroSetor`).
+ */
+export type SupervisorDeFora = {
+  perfilId: string
+  nome: string
+  cpf: string
+  telefone: string
+  setorDoCracha: { id: string; nome: string } | null
+  /** Só quando quem vê consegue abrir aquele setor. */
+  linkDoCracha: string | null
+}
+
+function OndeEstaOCracha({ s }: { s: SupervisorDeFora }) {
+  if (!s.setorDoCracha) return <>sem crachá neste evento</>
+  return s.linkDoCracha
+    ? <>crachá na equipe <Link href={s.linkDoCracha} className="text-brand-600 hover:underline">{s.setorDoCracha.nome}</Link></>
+    : <>crachá na equipe {s.setorDoCracha.nome}</>
+}
 
 export type Presenca = {
   feitoEm: string
@@ -76,6 +99,7 @@ const OPCOES_STATUS: { value: StatusEtapa | 'todos'; label: string }[] = [
 
 export default function FuncionarioTable({
   funcionarios,
+  supervisoresDeFora = [],
   fornecedorId,
   eventoId,
   eventoNome,
@@ -91,6 +115,8 @@ export default function FuncionarioTable({
   usaBiometria = false,
 }: {
   funcionarios: Funcionario[]
+  /** Supervisores deste setor com o crachá em outra equipe — aparecem no topo da lista, só como referência. */
+  supervisoresDeFora?: SupervisorDeFora[]
   fornecedorId: string
   eventoId: string
   /** Só para o cabeçalho do modal do funcionário — não muda nenhuma consulta. */
@@ -163,6 +189,15 @@ export default function FuncionarioTable({
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  // Os supervisores de outra equipe: no topo da primeira página, e somem quando um filtro de presença está ligado
+  // (as batidas deles são do setor do crachá, não daqui). A busca por nome/CPF acha eles também.
+  const supervisoresVisiveis = useMemo(() => {
+    if (currentPage !== 1 || filtroRapido !== 'todos' || filtrosAvancadosAtivos > 0) return []
+    const t = chaveBusca(search)
+    return supervisoresDeFora.filter(sp => t === '' || chaveBusca(sp.nome).includes(t) || sp.cpf.includes(search) || 'supervisor'.includes(t))
+  }, [supervisoresDeFora, currentPage, filtroRapido, filtrosAvancadosAtivos, search])
+  const telefoneBR = (t: string) => t.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
 
   const updateSearch = (value: string) => { setSearch(value); setPage(1) }
 
@@ -318,7 +353,7 @@ export default function FuncionarioTable({
         <p className="text-slate-400 text-xs sm:hidden">{filtered.length} de {funcionarios.length}</p>
       </div>
 
-      {!filtered.length ? (
+      {!filtered.length && !supervisoresVisiveis.length ? (
         <p className="text-center py-12 text-slate-400 text-sm">
           {search || filtroRapido !== 'todos' ? 'Nenhum resultado para o filtro' : 'Nenhum funcionário cadastrado ainda'}
         </p>
@@ -327,6 +362,18 @@ export default function FuncionarioTable({
           {/* Celular: cartão por pessoa. A tabela tem 8 colunas — arrastar de
               lado pra ler é pior do que ler um cartão de cima pra baixo. */}
           <div className="md:hidden divide-y divide-slate-100">
+            {supervisoresVisiveis.map(sp => (
+              <div key={`sup-${sp.perfilId}`} className="p-4 space-y-1.5 linha-supervisor">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Avatar url={null} nome={sp.nome} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{sp.nome}</p>
+                    <p className="text-slate-400 text-xs">Supervisor • <OndeEstaOCracha s={sp} /></p>
+                  </div>
+                </div>
+                {sp.telefone && <p className="text-xs text-slate-400 tabular-nums">{telefoneBR(sp.telefone)}</p>}
+              </div>
+            ))}
             {paginated.map(f => (
               <div key={f.id} className={`p-4 space-y-2.5 ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -471,6 +518,28 @@ export default function FuncionarioTable({
                 </tr>
               </thead>
               <tbody>
+                {supervisoresVisiveis.map(sp => (
+                  <tr key={`sup-${sp.perfilId}`} className="border-b border-slate-100 linha-supervisor">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5 max-w-[15rem]">
+                        <Avatar url={null} nome={sp.nome} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate text-slate-800">{sp.nome}</p>
+                          <p className="text-slate-400 text-xs truncate">Supervisor</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 text-sm font-mono tabular-nums whitespace-nowrap">
+                      {sp.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 text-sm tabular-nums whitespace-nowrap">
+                      {sp.telefone ? telefoneBR(sp.telefone) : '—'}
+                    </td>
+                    <td colSpan={usaBiometria ? 7 : 6} className="px-4 py-3 text-xs text-slate-400">
+                      Supervisiona esta equipe — <OndeEstaOCracha s={sp} />{sp.setorDoCracha ? ' (QR, batidas e pagamento ficam lá)' : ''}.
+                    </td>
+                  </tr>
+                ))}
                 {paginated.map(f => (
                 <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : 'hover:bg-slate-50'}`}>
                   <td className="px-4 py-3">
