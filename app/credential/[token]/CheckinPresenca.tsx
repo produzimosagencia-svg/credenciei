@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, LogIn, Copy, CheckCheck, ScanLine, ScanFace, RotateCw } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, LogIn, Copy, CheckCheck, ScanLine, ScanFace, RotateCw, X } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { registrarPresencaFoto, registrarPresencaLivre, registrarPresencaFacialLivre } from '@/lib/actions'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
@@ -229,6 +229,60 @@ const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
  */
 const ESPERA_SAIDA_MS = 5 * 60 * 1000
 
+/**
+ * Por que a batida foi recusada — num aviso em tela cheia, com X (pedido do Juan, 08/10/2026: "não ficou claro a
+ * mensagem, quero que abra um modal de aviso bem claro com um X falando o porquê"). O título vem do motivo; o
+ * texto do servidor fica embaixo, com a orientação do que fazer.
+ */
+function AvisoRecusa({ mensagem, semPermissao, onFechar }: { mensagem: string; semPermissao: boolean; onFechar: () => void }) {
+  const motivo = /fora do local/i.test(mensagem) ? 'fora'
+    : /localiza|GPS/i.test(mensagem) ? 'localizacao'
+      : /saída só pode ser registrada|libera em/i.test(mensagem) ? 'espera'
+        : 'outro'
+  const titulo = {
+    fora: 'Você está fora do local do evento',
+    localizacao: 'Precisamos da sua localização',
+    espera: 'Aguarde para registrar a saída',
+    outro: 'Não foi possível registrar',
+  }[motivo]
+  const orientacao = {
+    fora: 'A entrada e a saída só podem ser registradas dentro do local do evento. Vá até o evento e toque no botão de novo.',
+    localizacao: 'Ligue a localização (GPS) do celular e permita a localização para este site. Depois, toque no botão de novo.',
+    espera: 'Para evitar registro sem querer, a saída só libera 5 minutos depois da entrada.',
+    outro: 'Tente de novo em instantes. Se continuar, procure um responsável do evento.',
+  }[motivo]
+  const Icone = motivo === 'espera' ? Clock : MapPin
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-5" role="alertdialog" aria-modal="true" aria-labelledby="aviso-recusa-titulo">
+      <div className="absolute inset-0 bg-black/70" onClick={onFechar} />
+      <div className="relative w-full max-w-sm rounded-3xl bg-white p-6 pt-8 text-center shadow-2xl">
+        <button
+          type="button" onClick={onFechar} aria-label="Fechar"
+          className="absolute right-3 top-3 w-10 h-10 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100"
+        >
+          <X className="w-6 h-6" />
+        </button>
+        <div className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${motivo === 'espera' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
+          <Icone className="w-8 h-8" />
+        </div>
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-red-600">{motivo === 'espera' ? 'Ainda não' : 'Batida não registrada'}</p>
+        <h2 id="aviso-recusa-titulo" className="mt-1 text-xl font-extrabold text-slate-900 leading-tight">{titulo}</h2>
+        <p className="mt-3 text-sm text-slate-700 leading-relaxed">{mensagem}</p>
+        <p className="mt-2 text-sm text-slate-500 leading-relaxed">{orientacao}</p>
+        <div className="mt-5 space-y-2">
+          {semPermissao && (
+            <button type="button" onClick={() => window.location.reload()} className="btn btn-secundario w-full justify-center">
+              <RotateCw className="w-4 h-4" /> Atualizar a página
+            </button>
+          )}
+          <button type="button" onClick={onFechar} className="btn btn-primario w-full justify-center">Entendi</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function BotaoRegistroAutomatico({ token, proximo, entradaEm = null }: {
   token: string; proximo: 'entrada' | 'fim' | null
   /** Hora da entrada do turno — a saída só libera 5 min depois (trava contra toque duplo; o servidor confere). */
@@ -322,14 +376,10 @@ export function BotaoRegistroAutomatico({ token, proximo, entradaEm = null }: {
         </span>
       </button>
       {erro && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
-          <p className="flex items-start gap-1.5"><MapPin className="w-4 h-4 shrink-0 mt-0.5" /> {erro}</p>
-          {semPermissao && (
-            <button type="button" onClick={() => window.location.reload()} className="btn btn-secundario btn-sm">
-              <RotateCw className="w-3.5 h-3.5" /> Atualizar a página
-            </button>
-          )}
-        </div>
+        <AvisoRecusa
+          mensagem={erro} semPermissao={semPermissao}
+          onFechar={() => { setErro(null); setSemPermissao(false) }}
+        />
       )}
       <p className="text-center text-slate-500 text-xs">
         A portaria está fechada agora — por isso o QR Code foi trocado por este botão.

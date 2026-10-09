@@ -120,6 +120,9 @@ confere('no botão único, o cartão do MEIO continua (mesma regra: só se o set
   && /\.filter\(\(\{ momento \}\) => momento !== 'meio' \|\| exigeMeio \|\| feitoMap\.meio\)/.test(credencial), true)
 confere('entrada pelo próprio celular também agenda o lembrete do meio',
   /if \(momento === 'entrada' && func\.telefone\) \{\s*after\(\(\) =>\s*agendarMeioAposEntrada/.test(actions), true)
+confere('recusa aparece num aviso em modal, com X e o motivo (fora do local / localização / espera)',
+  /function AvisoRecusa/.test(checkin) && checkin.includes('aria-label="Fechar"') && checkin.includes("'Você está fora do local do evento'")
+  && checkin.includes('<AvisoRecusa'), true)
 confere('o botão exige localização antes de enviar', /if \(!posicao\) \{[\s\S]{0,300}?return/.test(checkin), true)
 
 console.log('\n10 · batida pelo celular fora do raio do evento é recusada (e a tentativa fica registrada)')
