@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, ShieldAlert, ShieldHalf, ShieldCheck, FileSpreadsheet, Save, Check, AlertCircle, Copy } from 'lucide-react'
+import { Search, ShieldAlert, ShieldHalf, ShieldCheck, FileSpreadsheet, Save, Check, AlertCircle, Copy, Pencil } from 'lucide-react'
 import { Secao, Cartao, Badge, EmptyState } from '@/components/ui/Superficie'
 import type { RelatorioTravas, LinhaRelatorioTrava } from '@/lib/escala'
 import type { FaseDoDia } from '@/lib/janelas'
@@ -88,7 +88,7 @@ function LinhaTrava({ eventoId, linha, faseDe }: { eventoId: string; linha: Linh
             return (
               <label
                 key={d.data}
-                className={`w-[68px] rounded-lg border px-1.5 py-1 text-center ${
+                className={`w-[72px] rounded-lg border px-1.5 py-1 text-center cursor-text ${
                   estado === 'livre' ? 'border-amber-200 bg-amber-50'
                     : estado === 'abaixo' ? 'border-red-200 bg-red-50'
                       : 'border-slate-200 bg-white'
@@ -103,7 +103,11 @@ function LinhaTrava({ eventoId, linha, faseDe }: { eventoId: string; linha: Linh
                   onChange={e => alterar(d.data, e.target.value)}
                   placeholder="livre"
                   aria-label={`Limite em ${rotuloDia(d.data)}`}
-                  className="w-full bg-transparent text-center text-sm font-semibold tabular-nums text-slate-800 placeholder:text-amber-600 placeholder:font-medium focus:outline-none"
+                  className={`mt-0.5 w-full h-7 rounded-md border bg-white text-center text-sm font-semibold tabular-nums text-slate-800 cursor-text
+                    placeholder:text-amber-600 placeholder:font-medium hover:border-brand-400
+                    focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 ${
+                      estado === 'abaixo' ? 'border-red-300' : estado === 'livre' ? 'border-amber-300' : 'border-slate-300'
+                    }`}
                 />
                 <span className="block text-2xs text-slate-400 tabular-nums">{d.aprovados} aprov.</span>
               </label>
@@ -222,6 +226,12 @@ export default function RelatorioTravasView({ eventoId, relatorio, eventoNome }:
       </div>
 
       {erroPlanilha && <p className="text-erro-600 text-xs">{erroPlanilha}</p>}
+
+      <p className="flex items-center gap-1.5 text-slate-600 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2">
+        <Pencil className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+        Clique na caixa de cada dia e digite o limite de pessoas. Deixe vazio para &quot;livre&quot;. Depois clique em
+        <strong className="font-semibold">Salvar</strong> no setor.
+      </p>
 
       {GRUPOS.map(g => {
         const linhas = porSituacao.get(g.situacao) ?? []
