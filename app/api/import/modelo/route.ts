@@ -4,17 +4,16 @@ import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { podeGerenciarEventos, veTodosEventos } from '@/lib/permissions'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
 import { rotuloDoDia, ROTULO_FASE } from '@/lib/escala-regras'
-import { diaBRT } from '@/lib/janelas'
 
 /**
  * O MODELO da planilha de equipe, gerado na hora PARA ESTE SETOR (pedido do Juan, 09/10/2026: "precisa ter um
  * padrão de acordo com o modelo do evento, das perguntas que tem no formulário que o funcionário preenche").
  *
- * As colunas são as perguntas do formulário público, na mesma ordem: CPF, Nome completo, Telefone, Cidade onde
- * mora e Chave PIX — e, em evento com escala por dia, UMA COLUNA POR DIA de trabalho (de hoje em diante, como no
- * formulário), pra marcar com X. Os nomes batem com o que `lerPlanilhaDeEquipe` (lib/planilha.ts) reconhece.
- * Substitui o arquivo fixo public/modelo-importacao.xlsx, que tinha Cargo e Valor (o formulário não pergunta) e
- * não tinha os dias.
+ * Colunas (Juan, 09/10/2026, 2ª volta: "CPF, telefone, cargo, cidade, chave Pix e os dias trabalhados... 10 dias no
+ * evento, 10 colunas, a data de cada coluna e um X ou um sim"): Nome, CPF, Telefone, Cargo, Cidade, Chave PIX e, em
+ * evento com escala por dia, UMA COLUNA POR DIA DO EVENTO (todos, com a data no cabeçalho). X ou SIM = trabalha
+ * naquele dia; vazio = não trabalha; tudo marcado = todos os dias. Os nomes batem com o que `lerPlanilhaDeEquipe`
+ * (lib/planilha.ts) reconhece. O arquivo fixo public/modelo-importacao.xlsx virou a versão genérica deste.
  */
 export async function GET(request: NextRequest) {
   const perfil = await getPerfil()
@@ -37,16 +36,16 @@ export async function GET(request: NextRequest) {
   const eventoId = setor.evento_id as string
   const usaEscala = await eventoUsaEscalaPorDia(eventoId)
   const todosOsDias = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
-  const hoje = diaBRT()
-  const dias = todosOsDias.some(d => d.data >= hoje) ? todosOsDias.filter(d => d.data >= hoje) : todosOsDias
+  // TODOS os dias do evento (Juan: "10 dias no evento, então vai ser 10 colunas").
+  const dias = todosOsDias
   const colunasDeDia = dias.map(d => {
     const r = rotuloDoDia(d.data)
     return `${r.curto} ${r.semanaCurta} · ${ROTULO_FASE[d.fase]}`
   })
 
-  const cabecalho = ['CPF', 'Nome completo', 'Telefone', 'Cidade onde mora', 'Chave PIX', ...colunasDeDia]
+  const cabecalho = ['Nome', 'CPF', 'Telefone', 'Cargo', 'Cidade', 'Chave PIX', ...colunasDeDia]
   const equipe = XLSX.utils.aoa_to_sheet([cabecalho])
-  equipe['!cols'] = cabecalho.map((c, i) => ({ wch: i < 5 ? [16, 34, 18, 22, 26][i] : Math.max(14, c.length + 2) }))
+  equipe['!cols'] = cabecalho.map((c, i) => ({ wch: i < 6 ? [34, 16, 18, 20, 20, 26][i] : Math.max(16, c.length + 2) }))
 
   const instrucoes = [
     ['Como preencher'],
@@ -54,16 +53,20 @@ export async function GET(request: NextRequest) {
     [`Evento: ${evento?.nome ?? ''}`],
     [`Fornecedor: ${setor.nome}`],
     [''],
-    ['Uma pessoa por linha, na aba "Equipe". As colunas são as mesmas perguntas do formulário de cadastro.'],
-    ['CPF, Nome completo, Telefone e Cidade onde mora: obrigatórios. Chave PIX: opcional.'],
-    ['Telefone com DDD (é por ele que a credencial chega no WhatsApp).'],
+    ['Uma pessoa por linha, na aba "Equipe".'],
+    ['Nome, CPF, Telefone (com DDD — é por ele que a credencial chega no WhatsApp) e Cidade: obrigatórios. Cargo e Chave PIX: opcionais.'],
     ...(colunasDeDia.length
       ? [
-          ['Dias de trabalho: marque X na coluna de cada dia em que a pessoa vai trabalhar (pelo menos um).'],
+          [''],
+          ['DIAS DE TRABALHO — uma coluna para cada dia do evento:'],
+          ['   X ou SIM na coluna do dia = a pessoa trabalha nesse dia.'],
+          ['   Vazio = não trabalha nesse dia.'],
+          ['   Todas as colunas marcadas = trabalha todos os dias.'],
           ['Quem ficar sem nenhum dia marcado não é importado. Os dias marcados entram já aprovados, respeitando o limite de pessoas por dia do setor.'],
         ]
       : []),
-    ['Não mude o nome das colunas.'],
+    [''],
+    ['Não mude o nome das colunas e não deixe linha de exemplo: toda linha com nome é cadastrada.'],
   ]
   const comoPreencher = XLSX.utils.aoa_to_sheet(instrucoes)
   comoPreencher['!cols'] = [{ wch: 110 }]
