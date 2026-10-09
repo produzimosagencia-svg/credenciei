@@ -654,7 +654,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               {faltaBiometria && <CadastrarBiometriaCard token={token} />}
 
               {modoBotaoUnico ? (
-                <BotaoRegistroAutomatico token={token} proximo={proximoRegistro} />
+                <BotaoRegistroAutomatico token={token} proximo={proximoRegistro} entradaEm={entradaAtualEm ?? momentos.find(m => m.momento === 'entrada')?.feitoEm ?? null} />
               ) : (
                 <QrProtegido
                   dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}

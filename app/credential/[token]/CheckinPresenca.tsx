@@ -227,11 +227,33 @@ const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
  * A localização é obrigatória: o servidor recusa sem ela e fora do raio do evento. Aqui esperamos mais que no
  * resto da tela (até 20 s) — sem posição não adianta enviar.
  */
-export function BotaoRegistroAutomatico({ token, proximo }: { token: string; proximo: 'entrada' | 'fim' | null }) {
+const ESPERA_SAIDA_MS = 5 * 60 * 1000
+
+export function BotaoRegistroAutomatico({ token, proximo, entradaEm = null }: {
+  token: string; proximo: 'entrada' | 'fim' | null
+  /** Hora da entrada do turno — a saída só libera 5 min depois (trava contra toque duplo; o servidor confere). */
+  entradaEm?: string | null
+}) {
   const router = useRouter()
   const [enviando, setEnviando] = useState<'local' | 'enviando' | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [semPermissao, setSemPermissao] = useState(false)
+  // Relógio da trava de 5 minutos: só anda enquanto a saída ainda está travada.
+  const liberaEm = proximo === 'fim' && entradaEm ? new Date(entradaEm).getTime() + ESPERA_SAIDA_MS : 0
+  const [agora, setAgora] = useState(() => Date.now())
+  useEffect(() => {
+    if (!liberaEm || Date.now() >= liberaEm) return
+    const id = setInterval(() => {
+      const t = Date.now()
+      setAgora(t)
+      if (t >= liberaEm) clearInterval(id)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [liberaEm])
+  const faltaMs = liberaEm ? Math.max(0, liberaEm - agora) : 0
+  const travado = faltaMs > 0
+  const segundosFaltando = Math.ceil(faltaMs / 1000)
+  const contagem = `${Math.floor(segundosFaltando / 60)}:${String(segundosFaltando % 60).padStart(2, '0')}`
 
   if (!proximo) {
     return (
@@ -247,7 +269,7 @@ export function BotaoRegistroAutomatico({ token, proximo }: { token: string; pro
 
   const ehEntrada = proximo === 'entrada'
   const registrar = async () => {
-    if (enviando) return
+    if (enviando || travado) return
     setErro(null)
     setSemPermissao(false)
     if (!navigator.geolocation) { setErro('Este celular não informa a localização. Procure um responsável do evento.'); return }
@@ -278,9 +300,9 @@ export function BotaoRegistroAutomatico({ token, proximo }: { token: string; pro
       <button
         type="button"
         onClick={registrar}
-        disabled={!!enviando}
+        disabled={!!enviando || travado}
         className={`w-full rounded-3xl p-6 text-white text-center shadow-lg transition-transform active:scale-[0.98] disabled:opacity-80 ${
-          ehEntrada ? 'bg-green-600 shadow-green-600/30' : 'bg-brand-500 shadow-brand-500/30'
+          travado ? 'bg-slate-400 shadow-none' : ehEntrada ? 'bg-green-600 shadow-green-600/30' : 'bg-brand-500 shadow-brand-500/30'
         }`}
       >
         <span className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center mx-auto">
@@ -294,7 +316,9 @@ export function BotaoRegistroAutomatico({ token, proximo }: { token: string; pro
               : ehEntrada ? 'REGISTRAR ENTRADA' : 'REGISTRAR SAÍDA'}
         </span>
         <span className="block text-sm text-white/90 mt-1">
-          {enviando ? 'Não feche a tela.' : 'Toque aqui. Você precisa estar no local do evento, com a localização ligada.'}
+          {enviando ? 'Não feche a tela.'
+            : travado ? `Sua entrada acabou de ser registrada. A saída libera em ${contagem}.`
+              : 'Toque aqui. Você precisa estar no local do evento, com a localização ligada.'}
         </span>
       </button>
       {erro && (

@@ -8451,6 +8451,9 @@ export async function registrarPresencaFoto(
  * jeito que já era. Esconder o botão na tela não seria suficiente — é esta
  * checagem, no servidor, que vale.
  */
+/** Entre a entrada e a saída pelo botão do celular — ver a trava dentro de `registrarPresencaLivre`. */
+const INTERVALO_MINIMO_SAIDA_MS = 5 * 60 * 1000
+
 export async function registrarPresencaLivre(
   token: string,
   momento: 'entrada' | 'fim',
@@ -8555,6 +8558,23 @@ export async function registrarPresencaLivre(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
   if (!resolucao.ok) return { error: resolucao.erro }
+  /*
+   * TRAVA DE 5 MINUTOS entre a entrada e a saída (pedido do Juan, 08/10/2026): no botão único da credencial, um
+   * toque duplo sem querer registraria a entrada e, em seguida, a saída. A saída só vale 5 minutos depois da
+   * entrada do turno. A tela mostra a contagem; esta checagem é a que vale.
+   */
+  if (momento === 'fim') {
+    const { data: ultimaEntrada } = await supabaseAdmin.from('registros').select('created_at')
+      .eq('funcionario_id', func.id).eq('evento_id', eventoId).eq('tipo', 'entrada').eq('data_ref', resolucao.dataRef)
+      .order('created_at', { ascending: false }).limit(1)
+    const entradaEm = ultimaEntrada?.[0]?.created_at as string | undefined
+    if (entradaEm) {
+      const liberaEm = new Date(new Date(entradaEm).getTime() + INTERVALO_MINIMO_SAIDA_MS)
+      if (Date.now() < liberaEm.getTime()) {
+        return { error: `Você registrou a entrada às ${formatarBR(entradaEm, 'hora')}. A saída só pode ser registrada a partir das ${formatarBR(liberaEm.toISOString(), 'hora')} — 5 minutos depois, para evitar registro sem querer.` }
+      }
+    }
+  }
   // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
   const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }

@@ -109,10 +109,17 @@ confere("CheckinPresenca não trava mais 'fim' separado de podeAutoRegistrar",
   !/info\.momento !== 'fim' && podeAutoRegistrar/.test(checkin), true)
 
 console.log('\n9 · botão único no lugar do QR quando o autoatendimento está liberado (pedido do Juan, 08/10/2026)')
-confere('a credencial troca o QR pelo BotaoRegistroAutomatico', /modoBotaoUnico \? \(\s*<BotaoRegistroAutomatico token=\{token\} proximo=\{proximoRegistro\} \/>/.test(credencial), true)
+confere('a credencial troca o QR pelo BotaoRegistroAutomatico', /modoBotaoUnico \? \(\s*<BotaoRegistroAutomatico token=\{token\} proximo=\{proximoRegistro\} entradaEm=/.test(credencial), true)
+confere('trava de 5 minutos entre entrada e saída no servidor', actions.includes('const INTERVALO_MINIMO_SAIDA_MS = 5 * 60 * 1000') && /Date\.now\(\) < liberaEm\.getTime\(\)/.test(actions), true)
+confere('o botão de saída fica travado com contagem regressiva', /disabled=\{!!enviando \|\| travado\}/.test(checkin) && checkin.includes('A saída libera em'), true)
 confere('o sistema decide sozinho: entrada sem saída → saída; senão entrada',
   credencial.includes("const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null"), true)
 confere('os cartões de entrada/saída ainda não feitos somem (um caminho só na tela)', credencial.includes('ocultarEntradaSaida={modoBotaoUnico}'), true)
+confere('no botão único, o cartão do MEIO continua (mesma regra: só se o setor e o dia pedem o meio)',
+  checkin.includes("momentos.filter(m => !ocultarEntradaSaida || m.momento === 'meio' || m.status === 'feito')")
+  && /\.filter\(\(\{ momento \}\) => momento !== 'meio' \|\| exigeMeio \|\| feitoMap\.meio\)/.test(credencial), true)
+confere('entrada pelo próprio celular também agenda o lembrete do meio',
+  /if \(momento === 'entrada' && func\.telefone\) \{\s*after\(\(\) =>\s*agendarMeioAposEntrada/.test(actions), true)
 confere('o botão exige localização antes de enviar', /if \(!posicao\) \{[\s\S]{0,300}?return/.test(checkin), true)
 
 console.log('\n10 · batida pelo celular fora do raio do evento é recusada (e a tentativa fica registrada)')
