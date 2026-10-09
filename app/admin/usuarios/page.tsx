@@ -1,7 +1,8 @@
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X, UserCog } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X, UserCog, ShieldCheck, UserPlus } from 'lucide-react'
+import { encarregadosLigadosParaOrganizacao } from '@/lib/encarregado-flag'
 import { podeGerenciarUsuarios, ehMaster, podeExcluir, podeExcluirOperadorPortao, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -69,6 +70,10 @@ export default async function UsuariosPage({
   searchParams: Promise<{ page?: string; q?: string; aba?: string }>
 }) {
   const perfil = await getPerfil()
+  // Mesma régua do menu (app/admin/layout.tsx): master sempre; admin só se a organização ligou Encarregados.
+  const encarregadosLigados = ehMaster(perfil?.role)
+    ? true
+    : await encarregadosLigadosParaOrganizacao((perfil?.organizacao_id as string | null) ?? null)
   if (!podeGerenciarUsuarios(perfil)) redirect('/admin')
 
   const { page: pageParam, q, aba: abaParam } = await searchParams
@@ -168,6 +173,18 @@ export default async function UsuariosPage({
           acoes={
             <>
               <TutorialButton />
+              {/* Gestor de credenciamento e Encarregados moram aqui agora, não no menu (pedido do Juan, 09/10/2026). */}
+              <Link href="/admin/criar-porteiro" className="btn btn-secundario">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Gestor de credenciamento</span>
+                <span className="sm:hidden">Gestor</span>
+              </Link>
+              {encarregadosLigados && (
+                <Link href="/admin/encarregados" className="btn btn-secundario">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Encarregados</span>
+                </Link>
+              )}
               {/* Suporte de Sistema mora aqui agora, não no menu (pedido do Juan, 09/10/2026). Só o master cria. */}
               {ehMaster(perfil?.role) && (
                 <Link href="/admin/suporte" className="btn btn-secundario">

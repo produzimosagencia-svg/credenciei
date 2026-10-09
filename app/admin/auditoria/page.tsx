@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ClipboardList, ArrowRight, User, MapPin, Clock } from 'lucide-react'
+import { ClipboardList, ArrowRight, User, MapPin, Clock, RotateCcw } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
 import { podeGerenciarUsuarios, ehMaster, ROLE_LABELS, type Role } from '@/lib/permissions'
 import { obterAuditoria, opcoesDaAuditoria } from '@/lib/actions'
@@ -115,6 +115,12 @@ export default async function AuditoriaPage({
       <PageHeader
         titulo="Auditoria"
         descricao={perfil.role === 'suporte' ? 'As alterações que você fez' : 'Correção de cadastro, mudança de fornecedor, ativação, ponto e senha'}
+        // A lixeira de funcionários mora aqui agora, não no menu (pedido do Juan, 09/10/2026). Só o master restaura.
+        acoes={ehMaster(perfil.role) ? (
+          <Link href="/admin/excluidos" className="btn btn-secundario">
+            <RotateCcw className="w-3.5 h-3.5 shrink-0" /> Excluídos (restaurar)
+          </Link>
+        ) : undefined}
       />
 
       {/* Links, e não botões: o período fica na URL, então dá pra voltar,

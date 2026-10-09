@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   Wallet, TrendingUp, TrendingDown, Receipt, PieChart, MessageCircle, Users,
-  CalendarDays, Ticket, Percent, LineChart, Building2, FileText,
+  CalendarDays, Ticket, Percent, LineChart, Building2, FileText, Mic,
 } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ehMaster } from '@/lib/permissions'
@@ -107,6 +107,10 @@ export default async function FinanceiroPage({
             {/* Orçamentos mora aqui agora, não no menu (pedido do Juan, 09/10/2026). */}
             <Link href="/admin/orcamentos" className="btn btn-secundario">
               <FileText className="w-3.5 h-3.5 shrink-0" /> Orçamentos
+            </Link>
+            {/* Gastos também mora aqui agora (09/10/2026). */}
+            <Link href="/gastos" className="btn btn-secundario">
+              <Mic className="w-3.5 h-3.5 shrink-0" /> Gastos
             </Link>
             <LancarNfeModal eventos={eventosFiltro.map(e => ({ id: e.id, nome: e.nome }))} />
           </>

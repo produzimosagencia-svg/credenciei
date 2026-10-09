@@ -6,13 +6,13 @@ import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
-  ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw, MapPin,
+  ClipboardPen, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
   podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
-  podeVerPerformance, podeRegistrarGastos, type Role,
+  podeVerPerformance, type Role,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
@@ -160,18 +160,8 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   if (role === 'supervisor' && encarregadosHabilitado) {
     doEvento.push({ href: '/admin/encarregados', label: 'Criar Encarregado', icon: UserPlus })
   }
-  // Administrador e master também designam e dão nova senha ao Encarregado (de qualquer setor da organização).
-  if (podeGerenciarUsuarios(perfil) && encarregadosHabilitado) {
-    doEvento.push({ href: '/admin/encarregados', label: 'Encarregados', icon: UserPlus })
-  }
-  /*
-   * "Criar porteiro" é o acesso que o sistema chama de operador de portão —
-   * o nome do menu usa a palavra de quem contrata, e a tela explica o que o
-   * papel faz e o que NÃO faz. Mesma régua da action `criarOperadorPortaria`.
-   */
-  if (podeGerenciarUsuarios(perfil)) {
-    doEvento.push({ href: '/admin/criar-porteiro', label: 'Gestor de credenciamento', icon: ShieldCheck })
-  }
+  // Administrador e master chegam em Encarregados por Acessos (botão no topo) — saiu do menu em 09/10/2026.
+  // Gestor de credenciamento (operador de portão) também mora em Acessos agora (botão no topo) — 09/10/2026.
   /*
    * Veículos: master, admin e suporte — não é `podeGerenciarEventos`, que
    * inclui gerente e cliente. Autorizar um veículo é dizer quem entra
@@ -264,18 +254,8 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   if (podeGerenciarUsuarios(perfil) || role === 'suporte') {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
   }
-  // Lixeira de funcionários: só o master restaura quem foi excluído (lib/lixeira.ts).
-  if (ehMaster(role)) {
-    administrativo.push({ href: '/admin/excluidos', label: 'Excluídos (restaurar)', icon: RotateCcw })
-  }
-  /*
-   * Gastos virou produto à parte, do papel `produtor` (que nem usa o AppShell).
-   * `podeRegistrarGastos` hoje = produtor OU master — então aqui, no menu do
-   * admin, o item só aparece pro MASTER, que entra só pra dar suporte.
-   */
-  if (podeRegistrarGastos(perfil)) {
-    administrativo.push({ href: '/gastos', label: 'Gastos', icon: Mic })
-  }
+  // Excluídos (restaurar): botão dentro de Auditoria, só para o master — saiu do menu em 09/10/2026.
+  // Gastos (produto do papel `produtor`; o master entra só pra dar suporte): botão dentro de Financeiro — saiu do menu em 09/10/2026.
   if (administrativo.length) grupos.push({ titulo: 'Administrativo', itens: administrativo })
 
   // ─── Operacional ────────────────────────────────────────────────────────

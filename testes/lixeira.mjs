@@ -39,7 +39,8 @@ ok(/valor_anterior\.ilike\.\$\{valor\},valor_novo\.ilike\.\$\{valor\}/.test(obte
 ok(/formatCpf\(digitosNome\)/.test(obter) && /`"%\$\{alvo/.test(obter), 'CPF digitado com 11 dígitos é procurado formatado, entre aspas (tem ponto)')
 ok(/organizacaoId = \(ev\?\.organizacao_id/.test(ler('lib/auditoria.ts')), 'a auditoria grava a organização do evento quando ela não vem')
 ok(/Restaurar esta pessoa/.test(ler('app/admin/auditoria/page.tsx')), 'a linha de exclusão tem o atalho para restaurar (master)')
-ok(/\/admin\/excluidos/.test(ler('components/AppShell.tsx')), 'menu "Excluídos" para o master')
+ok(/href="\/admin\/excluidos"/.test(ler('app/admin/auditoria/page.tsx')) && /ehMaster\(perfil\.role\) \? \(/.test(ler('app/admin/auditoria/page.tsx')),
+  '"Excluídos (restaurar)" é um botão em Auditoria, só para o master — saiu do menu em 09/10/2026')
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
