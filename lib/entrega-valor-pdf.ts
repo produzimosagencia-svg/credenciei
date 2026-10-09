@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import path from 'path'
 import type { DadosEntregaValor } from './entrega-valor'
 import { formatarBR } from './tz'
+import { linkRastreado } from './links-rastreados'
 
 /**
  * O PDF de "entrega de valor" — vai para o cliente entender o que o Credenciei entregou no evento dele (pedido do
@@ -47,7 +48,13 @@ export async function montarPdfEntregaValor(d: DadosEntregaValor): Promise<Uint8
   const rodape = () => {
     fonte('normal', 8)
     cor(CINZA)
-    doc.text(`Gerado em ${formatarBR(new Date().toISOString(), 'completo')} (horário de Brasília)  ·  credenciei.com.br`, W / 2, H - 22, { align: 'center' })
+    const linha = `Gerado em ${formatarBR(new Date().toISOString(), 'completo')} (horário de Brasília)  ·  credenciei.com.br`
+    doc.text(linha, W / 2, H - 22, { align: 'center' })
+    // "credenciei.com.br" clicável — passa pelo /ir, que conta o clique (lib/links-rastreados.ts).
+    const larguraSite = doc.getTextWidth('credenciei.com.br')
+    doc.link(W / 2 + doc.getTextWidth(linha) / 2 - larguraSite, H - 30, larguraSite, 11, {
+      url: linkRastreado('site', 'pdf', { evento: d.eventoId }, process.env.NEXT_PUBLIC_SITE_URL || 'https://credenciei.com.br'),
+    })
   }
   const garantir = (altura: number) => {
     if (y + altura <= H - 50) return

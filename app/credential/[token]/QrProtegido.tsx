@@ -27,7 +27,7 @@ import IconeInstagram from '@/components/ui/IconeInstagram'
  */
 
 export default function QrProtegido(
-  { dataUrl, dia, faseLabel, metodoAcesso = 'qr', linkSuporte = null }: {
+  { dataUrl, dia, faseLabel, metodoAcesso = 'qr', linkSuporte = null, linkInstagram = 'https://www.instagram.com/credenciei' }: {
     dataUrl: string
     dia: string
     faseLabel: string
@@ -38,6 +38,8 @@ export default function QrProtegido(
     metodoAcesso?: 'qr' | 'biometria' | 'biometria_qr'
     /** Conversa com o suporte humano no WhatsApp (já com a mensagem escrita); sem ele o botão não aparece. */
     linkSuporte?: string | null
+    /** O Instagram passando pelo /ir, que conta o clique e de quem foi (lib/links-rastreados.ts). */
+    linkInstagram?: string
   }
 ) {
   const [oculto, setOculto] = useState(false)
@@ -137,7 +139,7 @@ export default function QrProtegido(
           cobrir parte da imagem arrisca a câmera do portão não ler o código. */}
       <div className="mt-3 flex items-center justify-between gap-3">
         <a
-          href="https://www.instagram.com/credenciei"
+          href={linkInstagram}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-brand-600 text-xs font-semibold"

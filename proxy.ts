@@ -68,7 +68,10 @@ export async function proxy(request: NextRequest) {
     // está no link da bio do Instagram e em toda divulgação. Quem clica não
     // tem conta. Se esta linha sair, o link da bio cai no login e o comercial
     // para de receber conversa sem ninguém entender por quê.
-    pathname === '/wa'
+    pathname === '/wa' ||
+    // `/ir` é o atalho rastreável pro Instagram e pro site (lib/links-rastreados.ts) — sai da credencial e do
+    // formulário, de quem não tem login. Sem esta linha o clique no Instagram cairia no login.
+    pathname === '/ir'
   ) {
     return NextResponse.next({ request })
   }

@@ -13,6 +13,7 @@ import FaceCapture from '@/components/FaceCapture'
 import SeletorDiasEscala, { LegendaFases } from '@/components/SeletorDiasEscala'
 import { listarDias, type DiaDaEscala } from '@/lib/escala-regras'
 import IconeInstagram from '@/components/ui/IconeInstagram'
+import { linkRastreado } from '@/lib/links-rastreados'
 
 /**
  * Onde o app fica nas lojas.
@@ -726,15 +727,27 @@ export default function FormularioFuncionario({
         {loading ? 'Enviando...' : 'Enviar e gerar minha presença →'}
       </button>
 
-      <a
-        href="https://www.instagram.com/credenciei"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center justify-center gap-1.5 text-slate-400 text-xs font-medium hover:text-brand-600 transition-colors"
-      >
-        <IconeInstagram size={14} />
-        Siga a gente no Instagram
-      </a>
+      {/* Instagram e site passam pelo /ir, que conta o clique e de qual setor veio (pedido do Juan, 09/10/2026). */}
+      <div className="flex items-center justify-center gap-3 text-slate-400 text-xs font-medium">
+        <a
+          href={linkRastreado('instagram', 'formulario', { setor: fornecedorId })}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 hover:text-brand-600 transition-colors"
+        >
+          <IconeInstagram size={14} />
+          Siga a gente no Instagram
+        </a>
+        <span aria-hidden>·</span>
+        <a
+          href={linkRastreado('site', 'formulario', { setor: fornecedorId })}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-brand-600 transition-colors"
+        >
+          credenciei.com.br
+        </a>
+      </div>
     </form>
   )
 }

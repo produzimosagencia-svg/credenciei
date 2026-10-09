@@ -9,6 +9,7 @@ import { relatorioForaDoLocal } from './alertas-local'
  * barrou. Tudo contado do banco, nada estimado: se um número não existe, ele sai zero, nunca inventado.
  */
 export type DadosEntregaValor = {
+  eventoId: string
   eventoNome: string
   organizacaoNome: string | null
   periodo: { de: string; ate: string } | null
@@ -107,6 +108,7 @@ export async function dadosEntregaValor(eventoId: string): Promise<DadosEntregaV
 
   const ativos = funcs.filter(f => !f.descredenciado_em)
   return {
+    eventoId,
     eventoNome: evento.nome as string,
     organizacaoNome: (evento.organizacoes as unknown as { nome?: string } | null)?.nome ?? null,
     periodo: datas.length ? { de: datas[0], ate: datas[datas.length - 1] } : null,

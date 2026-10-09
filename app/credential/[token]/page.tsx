@@ -25,6 +25,7 @@ import DiasLiberados from './DiasLiberados'
 import { avisosPendentesFuncionario } from '@/lib/avisos'
 import { setorExigeMeio, diaExigeMeio } from '@/lib/meio'
 import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
+import { linkRastreado } from '@/lib/links-rastreados'
 
 export const revalidate = 0
 
@@ -664,6 +665,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}
                   // Só pra quem já foi aprovado (quem não foi nem chega aqui: sai antes, na tela de pendente/negado).
                   linkSuporte={statusCred === 'aprovado' ? linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome }) : null}
+                  linkInstagram={linkRastreado('instagram', 'credencial', { pessoa: funcionario.id })}
                 />
               )}
 
@@ -703,6 +705,14 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
             <p className="text-center text-slate-500 text-xs">
               Salve esta página nos favoritos — você vai usá-la durante todo o evento
             </p>
+            {/* O site passa pelo /ir, que conta o clique e de quem foi (pedido do Juan, 09/10/2026). */}
+            <a
+              href={linkRastreado('site', 'credencial', { pessoa: funcionario.id })}
+              target="_blank" rel="noopener noreferrer"
+              className="text-slate-400 hover:text-brand-600 text-xs font-medium transition-colors"
+            >
+              credenciei.com.br
+            </a>
           </div>
         </div>
       </div>

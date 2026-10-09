@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
-import { KanbanSquare, Database } from 'lucide-react'
+import Link from 'next/link'
+import { KanbanSquare, Database, MousePointerClick } from 'lucide-react'
 import { getPerfil } from '@/lib/supabase-server'
-import { podeGerenciarBacklog } from '@/lib/permissions'
+import { podeGerenciarBacklog, ehMaster } from '@/lib/permissions'
 import {
   listarBacklog, opcoesDoBacklog, agendaDoBacklog, resumoBacklog, cobrancas, hojeBRT,
   type FiltroBacklog,
@@ -114,9 +115,17 @@ export default async function BacklogPage({
       <PageHeader
         titulo="Backlog Operacional"
         descricao="Possíveis clientes, negociações e tarefas internas — o que precisa de atenção"
-        acoes={<span className="hidden sm:flex items-center gap-1.5 text-slate-400 text-xs">
-          <KanbanSquare className="w-3.5 h-3.5" /> {itens.length} {itens.length === 1 ? 'item' : 'itens'}
-        </span>}
+        acoes={<div className="flex items-center gap-3">
+          <span className="hidden sm:flex items-center gap-1.5 text-slate-400 text-xs">
+            <KanbanSquare className="w-3.5 h-3.5" /> {itens.length} {itens.length === 1 ? 'item' : 'itens'}
+          </span>
+          {/* Cliques no Instagram, no site e no WhatsApp comercial — só master (mostra quem clicou). */}
+          {ehMaster(perfil.role) && (
+            <Link href="/admin/cliques" className="btn btn-secundario btn-sm">
+              <MousePointerClick className="w-3.5 h-3.5" /> Cliques
+            </Link>
+          )}
+        </div>}
       />
 
       <BacklogTela

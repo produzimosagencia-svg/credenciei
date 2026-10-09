@@ -10,6 +10,7 @@ import AnimatedScanLoader from '@/components/ui/animated-scan-loader'
 import IconeInstagram from '@/components/ui/IconeInstagram'
 import VideoApp from './_landing/VideoApp'
 import TemaLanding from './_landing/TemaLanding'
+import { linkRastreado } from '@/lib/links-rastreados'
 
 /*
  * Landing pública — a raiz do site. O painel continua em /admin; quem já
@@ -93,7 +94,7 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
           </div>
           <div className={s.navAcoes}>
             <a
-              href="https://www.instagram.com/credenciei"
+              href={linkRastreado('instagram', 'landing')}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Credenciei no Instagram"
