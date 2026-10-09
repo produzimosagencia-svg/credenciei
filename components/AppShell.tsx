@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight, Mic,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw, MapPin,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -227,6 +227,8 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (podeGerenciarEventos(perfil)) {
     administrativo.push({ href: '/admin/travas', label: 'Limite por dia', icon: ShieldAlert })
+    // Quem bateu (ou tentou) fora do raio do local do evento — pedido do Juan, 08/10/2026.
+    administrativo.push({ href: '/admin/fora-do-local', label: 'Fora do local', icon: MapPin })
   }
   /*
    * Biometria não é dividida por setor (é config do evento inteiro), por

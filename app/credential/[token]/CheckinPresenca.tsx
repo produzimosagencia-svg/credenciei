@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, Copy, CheckCheck, ScanLine, ScanFace } from 'lucide-react'
+import { Camera, Check, Clock, Lock, MapPin, QrCode, LogOut, LogIn, Copy, CheckCheck, ScanLine, ScanFace, RotateCw } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { registrarPresencaFoto, registrarPresencaLivre, registrarPresencaFacialLivre } from '@/lib/actions'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
@@ -218,9 +218,105 @@ function limparPendente(token: string) {
  */
 const ehDuplicata = (msg?: string) => /já registrou/i.test(msg ?? '')
 
+/**
+ * O BOTÃO ÚNICO — no lugar do QR, quando o autoatendimento está liberado para esta pessoa (pedido do Juan,
+ * 08/10/2026): "a gente tá lidando com pessoas que têm um conhecimento muito baixo de tecnologia". A orientação
+ * que receberam foi "o QR é pra mostrar na entrada"; sem ninguém na portaria, elas precisam de UM botão, e o
+ * sistema decide sozinho se é entrada ou saída (`proximo`, calculado no servidor: tem entrada sem saída → saída).
+ *
+ * A localização é obrigatória: o servidor recusa sem ela e fora do raio do evento. Aqui esperamos mais que no
+ * resto da tela (até 20 s) — sem posição não adianta enviar.
+ */
+export function BotaoRegistroAutomatico({ token, proximo }: { token: string; proximo: 'entrada' | 'fim' | null }) {
+  const router = useRouter()
+  const [enviando, setEnviando] = useState<'local' | 'enviando' | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const [semPermissao, setSemPermissao] = useState(false)
+
+  if (!proximo) {
+    return (
+      <div className="rounded-3xl border-2 border-green-300 bg-green-50 p-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-green-500 flex items-center justify-center mx-auto">
+          <CheckCheck className="w-7 h-7 text-white" />
+        </div>
+        <p className="text-green-800 font-bold text-lg mt-3">Entrada e saída de hoje registradas</p>
+        <p className="text-green-700 text-sm mt-1">Não precisa fazer mais nada.</p>
+      </div>
+    )
+  }
+
+  const ehEntrada = proximo === 'entrada'
+  const registrar = async () => {
+    if (enviando) return
+    setErro(null)
+    setSemPermissao(false)
+    if (!navigator.geolocation) { setErro('Este celular não informa a localização. Procure um responsável do evento.'); return }
+    setEnviando('local')
+    try {
+      const local = iniciarLocalizacao()
+      const posicao = local.agora() ?? await Promise.race([local.pronta, aposMs(20_000)])
+      if (!posicao) {
+        setSemPermissao(local.negada())
+        setErro(local.negada()
+          ? 'A localização está bloqueada para este site. Permita a localização e toque no botão de novo.'
+          : 'Não conseguimos pegar sua localização. Ligue o GPS do celular e tente de novo.')
+        return
+      }
+      setEnviando('enviando')
+      const r = await registrarPresencaLivre(token, proximo, posicao.lat, posicao.lng)
+      if (r.ok || ehDuplicata(r.error)) router.refresh()
+      else setErro(r.error ?? 'Não foi possível registrar. Tente de novo.')
+    } catch {
+      setErro('Não foi possível registrar agora. Verifique a internet e tente de novo.')
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3" data-tutorial="cred-botao-registro">
+      <button
+        type="button"
+        onClick={registrar}
+        disabled={!!enviando}
+        className={`w-full rounded-3xl p-6 text-white text-center shadow-lg transition-transform active:scale-[0.98] disabled:opacity-80 ${
+          ehEntrada ? 'bg-green-600 shadow-green-600/30' : 'bg-brand-500 shadow-brand-500/30'
+        }`}
+      >
+        <span className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center mx-auto">
+          {enviando
+            ? <LogoLoading tamanho="sm" />
+            : ehEntrada ? <LogIn className="w-8 h-8" /> : <LogOut className="w-8 h-8" />}
+        </span>
+        <span className="block text-2xl font-extrabold tracking-wide mt-3">
+          {enviando === 'local' ? 'Pegando sua localização…'
+            : enviando === 'enviando' ? 'Registrando…'
+              : ehEntrada ? 'REGISTRAR ENTRADA' : 'REGISTRAR SAÍDA'}
+        </span>
+        <span className="block text-sm text-white/90 mt-1">
+          {enviando ? 'Não feche a tela.' : 'Toque aqui. Você precisa estar no local do evento, com a localização ligada.'}
+        </span>
+      </button>
+      {erro && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
+          <p className="flex items-start gap-1.5"><MapPin className="w-4 h-4 shrink-0 mt-0.5" /> {erro}</p>
+          {semPermissao && (
+            <button type="button" onClick={() => window.location.reload()} className="btn btn-secundario btn-sm">
+              <RotateCw className="w-3.5 h-3.5" /> Atualizar a página
+            </button>
+          )}
+        </div>
+      )}
+      <p className="text-center text-slate-500 text-xs">
+        A portaria está fechada agora — por isso o QR Code foi trocado por este botão.
+      </p>
+    </div>
+  )
+}
+
 export default function CheckinPresenca({
   token, momentos, podeAutoRegistrar, temCartazNoLocal = false, turnosAnteriores = [], biometriaAutoatendimento = false,
-  metodoAcesso = 'qr', bloqueadoHoje = false,
+  metodoAcesso = 'qr', bloqueadoHoje = false, ocultarEntradaSaida = false,
 }: {
   token: string
   momentos: MomentoInfo[]
@@ -261,6 +357,11 @@ export default function CheckinPresenca({
    * para hoje" confundia quem estava na frente da tela (VITAL, 08/10/2026).
    */
   bloqueadoHoje?: boolean
+  /**
+   * O botão único de entrada/saída (`BotaoRegistroAutomatico`) está no lugar do QR: os cartões de entrada e saída
+   * ainda NÃO feitos somem daqui, pra não ter dois caminhos na mesma tela. Os já feitos continuam (é o histórico).
+   */
+  ocultarEntradaSaida?: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -580,7 +681,7 @@ export default function CheckinPresenca({
         </div>
       ))}
 
-      {momentos.map(m => (
+      {momentos.filter(m => !ocultarEntradaSaida || m.momento === 'meio' || m.status === 'feito').map(m => (
         <div key={m.momento} data-tutorial={`cred-etapa-${m.momento}`} className="space-y-2">
           <Cartao
             info={m} busy={busy} fase={fase} onFoto={abrirCamera}

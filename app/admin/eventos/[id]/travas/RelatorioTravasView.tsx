@@ -19,20 +19,66 @@ const GRUPOS: { situacao: LinhaRelatorioTrava['situacao']; titulo: string; icone
 const NOME_FASE: Record<FaseDoDia, string> = { montagem: 'montagem', evento: 'evento', desmontagem: 'desmont.' }
 
 /**
- * Um setor, editável: cada dia vira um campo (vazio = livre, sem trava) — pedido do Juan, 08/10/2026: "seria bom a
- * gente editar os dias por aqui também, ser meio que um painel". Salva só este setor (`salvarTravasDoSetor`).
- *
- * Baixar o limite para menos do que já está aprovado é permitido (a decisão é de quem opera), mas avisa antes de
- * salvar: com a trava ligada, quem chegar depois que o dia encher é barrado na portaria.
+ * Um setor: os limites de cada dia em leitura, e "Editar limites" abre o modal (pedido do Juan, 08/10/2026:
+ * "prefiro que abra um modal, algo mais natural" — os campos soltos na linha não pareciam editáveis).
  */
 function LinhaTrava({ eventoId, linha, faseDe }: { eventoId: string; linha: LinhaRelatorioTrava; faseDe: Map<string, FaseDoDia> }) {
+  const [aberto, setAberto] = useState(false)
+  const [salvo, setSalvo] = useState(false)
+  return (
+    <Cartao padding="sm">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-slate-800 font-semibold text-sm truncate">{linha.nome}</p>
+          <p className="text-slate-400 text-xs mt-0.5">
+            {linha.supervisores.length ? linha.supervisores.join(', ') : 'sem supervisor cadastrado'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+          {linha.porDia.map(d => (
+            <span
+              key={d.data}
+              className={`rounded-lg px-2 py-1 text-2xs font-medium tabular-nums ${
+                d.maximo == null ? 'bg-amber-50 text-amber-700'
+                  : d.aprovados > d.maximo ? 'bg-red-50 text-red-700'
+                    : 'bg-slate-50 text-slate-600'
+              }`}
+            >
+              {rotuloDia(d.data)}: {d.maximo == null ? 'livre' : `${d.aprovados}/${d.maximo}`}
+            </span>
+          ))}
+          {salvo && <span className="flex items-center gap-1 text-green-700 text-2xs font-semibold"><Check className="w-3 h-3" /> Salvo</span>}
+          <button type="button" onClick={() => { setSalvo(false); setAberto(true) }} className="btn btn-primario btn-sm ml-1">
+            <Pencil className="w-3 h-3 shrink-0" /> Editar limites
+          </button>
+        </div>
+      </div>
+      {aberto && (
+        <ModalTravas
+          eventoId={eventoId} linha={linha} faseDe={faseDe}
+          onFechar={() => setAberto(false)}
+          onSalvo={() => { setAberto(false); setSalvo(true) }}
+        />
+      )}
+    </Cartao>
+  )
+}
+
+/**
+ * O modal de edição: um campo por dia (vazio = livre), atalho para repetir o mesmo número em todos os dias, e aviso
+ * quando o limite fica abaixo de quem já está aprovado — permitido (a decisão é de quem opera), mas com a trava
+ * ligada, quem chegar depois que o dia encher é barrado na portaria. Salva só este setor (`salvarTravasDoSetor`).
+ */
+function ModalTravas({ eventoId, linha, faseDe, onFechar, onSalvo }: {
+  eventoId: string; linha: LinhaRelatorioTrava; faseDe: Map<string, FaseDoDia>; onFechar: () => void; onSalvo: () => void
+}) {
   const inicial = useMemo(
     () => Object.fromEntries(linha.porDia.map(d => [d.data, d.maximo == null ? '' : String(d.maximo)])),
     [linha.porDia],
   )
   const [valores, setValores] = useState<Record<string, string>>(inicial)
+  const [todos, setTodos] = useState('')
   const [erro, setErro] = useState<string | null>(null)
-  const [salvo, setSalvo] = useState(false)
   const [pendente, startTransition] = useTransition()
   const router = useRouter()
 
@@ -41,20 +87,6 @@ function LinhaTrava({ eventoId, linha, faseDe }: { eventoId: string; linha: Linh
     const v = (valores[d.data] ?? '').trim()
     return v !== '' && Number(v) < d.aprovados
   })
-
-  const alterar = (dia: string, v: string) => {
-    setSalvo(false)
-    setErro(null)
-    setValores(a => ({ ...a, [dia]: v.replace(/\D/g, '') }))
-  }
-
-  // Atalho: o primeiro número preenchido vale pra todos os dias do setor (o caso comum — mesmo limite todo dia).
-  const primeiro = linha.porDia.map(d => (valores[d.data] ?? '').trim()).find(v => v !== '')
-  const repetirEmTodos = () => {
-    if (!primeiro) return
-    setSalvo(false)
-    setValores(Object.fromEntries(linha.porDia.map(d => [d.data, primeiro])))
-  }
 
   const salvar = () => {
     setErro(null)
@@ -67,92 +99,87 @@ function LinhaTrava({ eventoId, linha, faseDe }: { eventoId: string; linha: Linh
     startTransition(async () => {
       const r = await salvarTravasDoSetor(eventoId, linha.fornecedorId, porDia)
       if (!r.ok) { setErro(r.erro); return }
-      setSalvo(true)
+      onSalvo()
       router.refresh()
     })
   }
 
   return (
-    <Cartao padding="sm">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-slate-800 font-semibold text-sm truncate">{linha.nome}</p>
-          <p className="text-slate-400 text-xs mt-0.5">
-            {linha.supervisores.length ? linha.supervisores.join(', ') : 'sem supervisor cadastrado'}
-          </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !pendente && onFechar()}>
+      <div className="overlay-fade-in absolute inset-0 bg-black/45" />
+      <div
+        className="modal-pop-in relative bg-white rounded-3xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={`Limite por dia — ${linha.nome}`}
+      >
+        <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+          <p className="text-slate-800 font-bold text-base">{linha.nome}</p>
+          <p className="text-slate-500 text-xs mt-0.5">Limite de pessoas em cada dia. Deixe vazio para &quot;livre&quot; (sem limite).</p>
         </div>
-        <div className="flex flex-wrap gap-1.5 lg:justify-end">
-          {linha.porDia.map(d => {
-            const v = (valores[d.data] ?? '').trim()
-            const estado = v === '' ? 'livre' : Number(v) < d.aprovados ? 'abaixo' : 'ok'
-            return (
-              <label
-                key={d.data}
-                className={`w-[72px] rounded-lg border px-1.5 py-1 text-center cursor-text ${
-                  estado === 'livre' ? 'border-amber-200 bg-amber-50'
-                    : estado === 'abaixo' ? 'border-red-200 bg-red-50'
-                      : 'border-slate-200 bg-white'
-                }`}
-              >
-                <span className="block text-2xs text-slate-500 leading-tight">
-                  {rotuloDia(d.data)} <span className="opacity-70">{NOME_FASE[faseDe.get(d.data) ?? 'evento']}</span>
-                </span>
-                <input
-                  inputMode="numeric"
-                  value={valores[d.data] ?? ''}
-                  onChange={e => alterar(d.data, e.target.value)}
-                  placeholder="livre"
-                  aria-label={`Limite em ${rotuloDia(d.data)}`}
-                  className={`mt-0.5 w-full h-7 rounded-md border bg-white text-center text-sm font-semibold tabular-nums text-slate-800 cursor-text
-                    placeholder:text-amber-600 placeholder:font-medium hover:border-brand-400
-                    focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 ${
-                      estado === 'abaixo' ? 'border-red-300' : estado === 'livre' ? 'border-amber-300' : 'border-slate-300'
-                    }`}
-                />
-                <span className="block text-2xs text-slate-400 tabular-nums">{d.aprovados} aprov.</span>
-              </label>
-            )
-          })}
-        </div>
-      </div>
 
-      {(mudou || salvo || erro || abaixo.length > 0) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2 lg:justify-end">
+        <div className="px-5 py-4 space-y-4">
+          <div className="flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <label className="flex-1 min-w-0">
+              <span className="block text-xs font-medium text-slate-600 mb-1">Mesmo limite em todos os dias</span>
+              <input
+                inputMode="numeric" value={todos} onChange={e => setTodos(e.target.value.replace(/\D/g, ''))}
+                placeholder="Ex.: 10" className="input text-sm w-full"
+              />
+            </label>
+            <button
+              type="button" disabled={!todos}
+              onClick={() => setValores(Object.fromEntries(linha.porDia.map(d => [d.data, todos])))}
+              className="btn btn-secundario"
+            >
+              <Copy className="w-3.5 h-3.5 shrink-0" /> Aplicar
+            </button>
+          </div>
+
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl">
+            {linha.porDia.map(d => {
+              const v = (valores[d.data] ?? '').trim()
+              const estado = v === '' ? 'livre' : Number(v) < d.aprovados ? 'abaixo' : 'ok'
+              return (
+                <label key={d.data} className="flex items-center gap-3 px-3 py-2.5 cursor-text">
+                  <span className="w-24 shrink-0">
+                    <span className="block text-sm font-semibold text-slate-800 tabular-nums">{rotuloDia(d.data)}</span>
+                    <span className="block text-2xs text-slate-400">{NOME_FASE[faseDe.get(d.data) ?? 'evento']}</span>
+                  </span>
+                  <input
+                    inputMode="numeric" value={valores[d.data] ?? ''}
+                    onChange={e => setValores(a => ({ ...a, [d.data]: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="livre" aria-label={`Limite em ${rotuloDia(d.data)}`}
+                    className={`input text-sm w-24 text-center tabular-nums placeholder:text-amber-600 ${
+                      estado === 'abaixo' ? 'border-red-300' : estado === 'livre' ? 'border-amber-300' : ''
+                    }`}
+                  />
+                  <span className={`text-xs tabular-nums ${estado === 'abaixo' ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
+                    {d.aprovados} aprovado(s)
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+
           {abaixo.length > 0 && (
-            <p className="flex items-center gap-1 text-red-600 text-2xs mr-auto lg:mr-0">
-              <AlertCircle className="w-3 h-3 shrink-0" />
+            <p className="flex items-start gap-1.5 text-red-600 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
               Abaixo dos aprovados em {abaixo.map(d => rotuloDia(d.data)).join(', ')} — quem chegar depois que o dia encher é barrado na portaria.
             </p>
           )}
-          {erro && <p className="text-erro-600 text-2xs">{erro}</p>}
-          {salvo && !mudou && (
-            <span className="flex items-center gap-1 text-green-700 text-2xs font-semibold"><Check className="w-3 h-3" /> Salvo</span>
-          )}
-          {mudou && (
-            <>
-              {primeiro && (
-                <button type="button" onClick={repetirEmTodos} className="btn btn-secundario btn-sm">
-                  <Copy className="w-3 h-3 shrink-0" /> Repetir {primeiro} em todos
-                </button>
-              )}
-              <button type="button" onClick={() => { setValores(inicial); setErro(null) }} className="btn btn-secundario btn-sm" disabled={pendente}>
-                Desfazer
-              </button>
-              <button type="button" onClick={salvar} className="btn btn-primario btn-sm" disabled={pendente}>
-                <Save className="w-3 h-3 shrink-0" /> {pendente ? 'Salvando…' : 'Salvar'}
-              </button>
-            </>
-          )}
+          {erro && <p className="flex items-start gap-1.5 text-erro-600 text-xs"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}</p>}
         </div>
-      )}
-      {!mudou && !salvo && primeiro && linha.porDia.some(d => (valores[d.data] ?? '').trim() === '') && (
-        <div className="mt-2 flex lg:justify-end">
-          <button type="button" onClick={repetirEmTodos} className="text-brand-600 text-2xs font-semibold hover:underline">
-            Repetir {primeiro} em todos os dias
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4 bg-slate-50">
+          <button type="button" onClick={onFechar} disabled={pendente} className="text-sm font-medium text-slate-500 hover:text-slate-700 px-4 py-2">
+            Cancelar
+          </button>
+          <button type="button" onClick={salvar} disabled={pendente || !mudou} className="btn btn-primario">
+            <Save className="w-3.5 h-3.5 shrink-0" /> {pendente ? 'Salvando…' : 'Salvar'}
           </button>
         </div>
-      )}
-    </Cartao>
+      </div>
+    </div>
   )
 }
 
@@ -229,8 +256,7 @@ export default function RelatorioTravasView({ eventoId, relatorio, eventoNome }:
 
       <p className="flex items-center gap-1.5 text-slate-600 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2">
         <Pencil className="w-3.5 h-3.5 text-brand-500 shrink-0" />
-        Clique na caixa de cada dia e digite o limite de pessoas. Deixe vazio para &quot;livre&quot;. Depois clique em
-        <strong className="font-semibold">Salvar</strong> no setor.
+        Para mudar o limite de um setor, clique em <strong className="font-semibold">Editar limites</strong> no setor.
       </p>
 
       {GRUPOS.map(g => {

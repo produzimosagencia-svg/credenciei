@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { QrCode, Clock, Ban, XCircle, ScanFace } from 'lucide-react'
 import QRCode from 'qrcode'
 import { statusCredenciamentoValido, minutosParaNovoPedido } from '@/lib/credenciamento-constantes'
-import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
+import CheckinPresenca, { BotaoRegistroAutomatico, type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
 import { linkDoSuporte } from '@/lib/whatsapp-suporte'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
@@ -568,6 +568,16 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * recusa (`registrarPresencaLivre`), isto só evita mostrar um botão que erraria na hora.
    */
   const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora(evento?.id ?? null, dataRef)
+  // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
+  const bloqueadoHoje = !!escala && (escala.pendente || !escala.aprovados.includes(hoje))
+  /*
+   * BOTÃO ÚNICO no lugar do QR (pedido do Juan, 08/10/2026): com o autoatendimento liberado, a pessoa vê só um
+   * botão — o sistema decide se é entrada ou saída. Tem entrada sem saída → saída; senão → entrada.
+   */
+  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoHoje
+  const entradaFeita = momentos.some(m => m.momento === 'entrada' && m.status === 'feito')
+  const saidaFeita = momentos.some(m => m.momento === 'fim' && m.status === 'feito')
+  const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>
@@ -643,11 +653,15 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
 
               {faltaBiometria && <CadastrarBiometriaCard token={token} />}
 
-              <QrProtegido
-                dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}
-                // Só pra quem já foi aprovado (quem não foi nem chega aqui: sai antes, na tela de pendente/negado).
-                linkSuporte={statusCred === 'aprovado' ? linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome }) : null}
-              />
+              {modoBotaoUnico ? (
+                <BotaoRegistroAutomatico token={token} proximo={proximoRegistro} />
+              ) : (
+                <QrProtegido
+                  dataUrl={qrDataUrl} dia={hoje} faseLabel={NOME_DA_FASE[faseHoje]} metodoAcesso={metodoAcesso}
+                  // Só pra quem já foi aprovado (quem não foi nem chega aqui: sai antes, na tela de pendente/negado).
+                  linkSuporte={statusCred === 'aprovado' ? linkDoSuporte({ nome: funcionario.nome, evento: evento?.nome, setor: fornecedor?.nome }) : null}
+                />
+              )}
 
               {escala && (
                 <DiasLiberados pendente={escala.pendente} aprovados={escala.aprovados} diasDoEvento={escala.diasDoEvento} hoje={hoje} />
@@ -668,13 +682,13 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                     : momentos}
                   turnosAnteriores={turnosAnteriores}
                   // Entrada e saída só pelo operador de portão (08/10/2026) — exceto na janela de autoatendimento.
-                  podeAutoRegistrar={podeAutoRegistrar}
+                  podeAutoRegistrar={podeAutoRegistrar && !modoBotaoUnico}
+                  ocultarEntradaSaida={modoBotaoUnico}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
                   biometriaAutoatendimento={false}
                   metodoAcesso={metodoAcesso}
-                  // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
-                  bloqueadoHoje={!!escala && (escala.pendente || !escala.aprovados.includes(hoje))}
+                  bloqueadoHoje={bloqueadoHoje}
                 />
               </div>
             </div>

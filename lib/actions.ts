@@ -74,6 +74,7 @@ import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela,
   diasAutoatendimentoDoEvento, diaPermiteAutoatendimento,
 } from './autoatendimento'
+import { relatorioForaDoLocal, type RelatorioForaDoLocal } from './alertas-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -3352,6 +3353,22 @@ export async function salvarTravasDoSetor(
     return { ok: true }
   } catch (e) {
     return { ok: false, erro: mensagemAmigavel(e) }
+  }
+}
+
+/** Relatório "Batidas fora do local" — ver `relatorioForaDoLocal` (lib/alertas-local.ts). Só quem gerencia o evento. */
+export async function obterRelatorioForaDoLocal(eventoId: string): Promise<
+  { ok: true; eventoNome: string; relatorio: RelatorioForaDoLocal } | { ok?: false; error: string }
+> {
+  try {
+    await exigirEventoDaOrg(eventoId)
+    const [{ data: evento }, relatorio] = await Promise.all([
+      supabaseAdmin.from('eventos').select('nome').eq('id', eventoId).maybeSingle(),
+      relatorioForaDoLocal(eventoId),
+    ])
+    return { ok: true, eventoNome: (evento?.nome as string | null) ?? 'Evento', relatorio }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
   }
 }
 
@@ -8452,6 +8469,35 @@ export async function registrarPresencaLivre(
   if (autoatendimentoLiberado && (typeof latitude !== 'number' || typeof longitude !== 'number')) {
     return { error: 'Ative a localização do aparelho para registrar fora do horário da portaria.' }
   }
+  /*
+   * E DENTRO DO RAIO do local do evento (Editar evento → mapa) — mesma régua do scanner do operador
+   * (`autorizarPresenca`): fora do raio, a batida não é registrada. Sem isto, a localização era obrigatória mas
+   * qualquer lugar servia, até de casa. A tentativa recusada fica em `leituras_qr` (resultado 'fora_do_local',
+   * sem operador) e aparece no relatório "Batidas fora do local".
+   */
+  const posicaoPropria = autoatendimentoLiberado ? posicaoValida({ latitude, longitude, precisao: null }) : null
+  if (autoatendimentoLiberado) {
+    const localEvento = await localDoEvento(eventoId)
+    if (localEvento) {
+      const { distanciaM, foraDoLocal } = avaliarLocal(posicaoPropria, localEvento)
+      if (!posicaoPropria || foraDoLocal) {
+        after(async () => {
+          const { error } = await supabaseAdmin.from('leituras_qr').insert([{
+            evento_id: eventoId, perfil_id: null, funcionario_id: func.id, tipo: 'credencial', sucesso: false,
+            resultado: 'fora_do_local',
+            mensagem: `Autoatendimento pelo celular (${momento === 'entrada' ? 'entrada' : 'saída'}) recusado: fora do local do evento`,
+            latitude, longitude, precisao_m: null, distancia_m: distanciaM, fora_do_local: true,
+          }])
+          if (error) console.error('[autoatendimento] tentativa fora do local não gravada', error.message)
+        })
+        return {
+          error: distanciaM != null
+            ? `Você está fora do local do evento (${descreverDistancia(distanciaM)}). A batida não foi registrada — aproxime-se do local e tente de novo.`
+            : 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.',
+        }
+      }
+    }
+  }
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
   if (!resolucao.ok) return { error: resolucao.erro }
@@ -8520,6 +8566,7 @@ export async function registrarPresencaLivre(
    * Fica marcado na auditoria, separado da batida comum (pedido do Juan: "isso precisa estar na auditoria") —
    * só quando saiu pela janela de autoatendimento, não a cada entrada/saída normal pela credencial.
    */
+  if (autoatendimentoLiberado && registro) after(() => marcarLocalDaBatida(registro.id as string, eventoId, posicaoPropria))
   if (autoatendimentoLiberado && registro) {
     after(() => registrarAuditoria({
       perfil: { id: null, nome: func.nome as string ?? 'Autoatendimento' },

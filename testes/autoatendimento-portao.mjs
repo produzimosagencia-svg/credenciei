@@ -108,5 +108,18 @@ confere('a tela calcula a partir da janela de autoatendimento (e nunca no dia pr
 confere("CheckinPresenca não trava mais 'fim' separado de podeAutoRegistrar",
   !/info\.momento !== 'fim' && podeAutoRegistrar/.test(checkin), true)
 
+console.log('\n9 · botão único no lugar do QR quando o autoatendimento está liberado (pedido do Juan, 08/10/2026)')
+confere('a credencial troca o QR pelo BotaoRegistroAutomatico', /modoBotaoUnico \? \(\s*<BotaoRegistroAutomatico token=\{token\} proximo=\{proximoRegistro\} \/>/.test(credencial), true)
+confere('o sistema decide sozinho: entrada sem saída → saída; senão entrada',
+  credencial.includes("const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null"), true)
+confere('os cartões de entrada/saída ainda não feitos somem (um caminho só na tela)', credencial.includes('ocultarEntradaSaida={modoBotaoUnico}'), true)
+confere('o botão exige localização antes de enviar', /if \(!posicao\) \{[\s\S]{0,300}?return/.test(checkin), true)
+
+console.log('\n10 · batida pelo celular fora do raio do evento é recusada (e a tentativa fica registrada)')
+confere('compara com o local do evento (avaliarLocal)', /const \{ distanciaM, foraDoLocal \} = avaliarLocal\(posicaoPropria, localEvento\)/.test(actions), true)
+confere("tentativa recusada vai para leituras_qr com resultado 'fora_do_local'",
+  /resultado: 'fora_do_local',\s*mensagem: `Autoatendimento pelo celular/.test(actions), true)
+confere('batida aceita também é marcada com a distância', actions.includes('after(() => marcarLocalDaBatida(registro.id as string, eventoId, posicaoPropria))'), true)
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

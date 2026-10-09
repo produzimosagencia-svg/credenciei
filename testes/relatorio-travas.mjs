@@ -36,7 +36,7 @@ ok(view.includes("l.nome.toLowerCase().includes(termo)"), 'busca filtra por nome
 ok(view.includes('l.supervisores.some(s => s.toLowerCase().includes(termo))'), 'busca filtra por supervisor também')
 ok(/situacao: 'sem_trava'/.test(view) && /situacao: 'parcial'/.test(view) && /situacao: 'completa'/.test(view),
   'os três grupos estão na tela')
-ok(/Number\(v\) < d\.aprovados \? 'abaixo'/.test(view) && view.includes("'border-red-200 bg-red-50'"), 'estourado (limite abaixo dos aprovados) fica destacado em vermelho')
+ok(/d\.aprovados > d\.maximo \? 'bg-red-50 text-red-700'/.test(view), 'estourado (mais aprovados que o limite) fica destacado em vermelho')
 
 console.log('\n4 · caminho pelo menu, igual Relatórios (escolhe o evento, depois mostra)')
 ok(shell.includes("administrativo.push({ href: '/admin/travas', label: 'Limite por dia', icon: ShieldAlert })"),
@@ -61,6 +61,8 @@ ok(/auditar\(perfil, 'TRAVA_POR_DIA_ALTERADA'/.test(actions) && /TRAVA_POR_DIA_A
   'grava na auditoria (antes → depois), com rótulo')
 ok(view.includes('salvarTravasDoSetor(eventoId, linha.fornecedorId, porDia)'), 'a tela chama o salvar por setor')
 ok(view.includes('placeholder="livre"'), 'campo vazio = livre (sem trava)')
+ok(view.includes('function ModalTravas') && view.includes('Editar limites'), 'edição num modal ("Editar limites"), não em campos soltos na linha')
+ok(view.includes('Mesmo limite em todos os dias'), 'atalho do mesmo limite em todos os dias')
 ok(view.includes('Abaixo dos aprovados'), 'avisa quando o limite fica abaixo de quem já está aprovado')
 
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
