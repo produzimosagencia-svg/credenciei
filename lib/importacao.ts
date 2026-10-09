@@ -9,6 +9,8 @@ import { normalizarCpfPlanilha } from '@/lib/estrutura-regras'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
 import { obterFuncionalidadesDoEvento, travasDeCadastroDoEvento } from '@/lib/internos-servidor'
+import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, vagasAprovadasPorDia, gravarEscalaAprovada } from '@/lib/escala'
+import { listarDias } from '@/lib/escala-regras'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
@@ -31,7 +33,9 @@ export type LinhaIgnorada = {
    * repetido). `'cota_atingida'` só existe com a trava de cota ligada
    * (Vital, 30/09/2026).
    */
-  motivo?: 'duplicado' | 'cota_atingida' | 'cpf_invalido'
+  motivo?: 'duplicado' | 'cota_atingida' | 'cpf_invalido' | 'sem_dias' | 'dia_lotado'
+  /** Pra `dia_lotado`: quais dias já estão cheios ("10/10 e 11/10"). */
+  detalhe?: string
 }
 
 export type ResultadoImportacao =
@@ -138,6 +142,7 @@ export async function importarFuncionarios(
       cidade: f.cidade?.trim() || null,
       valor_receber: Number.isFinite(valor) && valor > 0 ? valor : 0,
       fornecedor_id: fornecedorId,
+      diasBrutos: Array.isArray(f.dias) ? f.dias.map(String) : [],
     }
   }).filter(f => f.nome && f.cpf)
 
@@ -247,6 +252,37 @@ export async function importarFuncionarios(
     }
   }
 
+  /*
+   * DIAS DE TRABALHO — a mesma pergunta obrigatória do formulário (Juan, 09/10/2026). Antes a planilha não tinha
+   * os dias: quem entrava por ela num evento com escala ficava aprovado SEM dia nenhum, e "sem escala" vale todo
+   * dia no portão (e escapa do limite por dia). Agora: linha sem dia não entra; os dias marcados entram APROVADOS
+   * (quem importa é o supervisor/admin), descontando uma a uma as vagas de cada dia com trava.
+   */
+  const usaEscala = await eventoUsaEscalaPorDia(eventoId)
+  const diasPorCpf = new Map<string, string[]>()
+  if (usaEscala) {
+    const diasDoEvento = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+    const porDdmm = new Map(diasDoEvento.map(d => [`${d.slice(8, 10)}/${d.slice(5, 7)}`, d]))
+    const vagas = await vagasAprovadasPorDia(fornecedorId)
+    finalPayload = finalPayload.filter(f => {
+      const dias = f.diasBrutos.includes('todos')
+        ? [...diasDoEvento]
+        : [...new Set(f.diasBrutos.map(b => porDdmm.get(b)).filter((d): d is string => !!d))].sort()
+      if (!dias.length) {
+        ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'sem_dias' })
+        return false
+      }
+      const cheios = dias.filter(d => vagas.has(d) && (vagas.get(d) ?? 0) <= 0)
+      if (cheios.length) {
+        ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'dia_lotado', detalhe: listarDias(cheios) })
+        return false
+      }
+      for (const d of dias) if (vagas.has(d)) vagas.set(d, (vagas.get(d) ?? 0) - 1)
+      diasPorCpf.set(f.cpf, dias)
+      return true
+    })
+  }
+
   if (finalPayload.length === 0) {
     return {
       ok: false, status: 400,
@@ -298,6 +334,23 @@ export async function importarFuncionarios(
 
   if (error) {
     return { ok: false, status: 500, error: mensagemAmigavel(error) }
+  }
+
+  // Os dias, ANTES de responder (os lembretes logo abaixo dependem deles). Se um não gravar, a pessoa fica em
+  // "aguardando aprovação": sem dia gravado o QR valeria todo dia, o oposto do que a escala quer.
+  if (usaEscala && inseridos?.length) {
+    for (const lote of emLotes(inseridos, 10)) {
+      await Promise.all(lote.map(async ins => {
+        const dias = diasPorCpf.get(ins.cpf as string)
+        const g = dias?.length
+          ? await gravarEscalaAprovada({ funcionarioId: ins.id as string, eventoId, aprovados: dias, perfilId: perfil.id })
+          : { ok: false as const, erro: 'sem dias' }
+        if (!g.ok) {
+          console.error('[importacao] dias não gravados — fica aguardando aprovação', ins.id, g.erro)
+          await supabaseAdmin.from('funcionarios').update({ status_credenciamento: 'pendente' }).eq('id', ins.id as string)
+        }
+      }))
+    }
   }
 
   if (funcionalidades.subeventosHabilitado && inseridos?.length) {

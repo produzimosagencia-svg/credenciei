@@ -68,6 +68,9 @@ export default function ImportarFuncionarios({
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  // O modelo é gerado na hora para ESTE setor: as perguntas do formulário e, com escala, os dias do evento (09/10/2026).
+  const urlDoModelo = `/api/import/modelo?fornecedor=${encodeURIComponent(fornecedorId)}`
+
   const entrada = <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} />
 
   return (
@@ -89,11 +92,11 @@ export default function ImportarFuncionarios({
               </span>
             </span>
           </button>
-          <a href="/modelo-importacao.xlsx" download="modelo-importacao.xlsx" className="linha-acao">
+          <a href={urlDoModelo} download className="linha-acao">
             <Download className="w-4 h-4 shrink-0 text-brand-500" />
             <span className="min-w-0">
               <span className="block text-sm font-medium text-slate-800">Baixar modelo</span>
-              <span className="block text-slate-400 text-xs">A planilha em branco, com as colunas certas</span>
+              <span className="block text-slate-400 text-xs">As perguntas do formulário e os dias deste evento</span>
             </span>
           </a>
           {entrada}
@@ -112,8 +115,8 @@ export default function ImportarFuncionarios({
             {loading ? 'Importando...' : 'Importar planilha'}
           </button>
           <a
-            href="/modelo-importacao.xlsx"
-            download="modelo-importacao.xlsx"
+            href={urlDoModelo}
+            download
             className="btn btn-secundario btn-sm"
           >
             <Download className="w-3.5 h-3.5 shrink-0" />
@@ -159,6 +162,10 @@ export default function ImportarFuncionarios({
                       <span className="text-amber-600"> (CPF inválido — confira os números na planilha)</span>
                     ) : f.motivo === 'cota_atingida' ? (
                       <span className="text-amber-600"> (cota máxima já atingida)</span>
+                    ) : f.motivo === 'sem_dias' ? (
+                      <span className="text-amber-600"> (nenhum dia de trabalho marcado — marque X nos dias)</span>
+                    ) : f.motivo === 'dia_lotado' ? (
+                      <span className="text-amber-600"> ({f.detalhe ?? 'um dos dias'} já no limite de pessoas do setor)</span>
                     ) : f.setor ? (
                       <span className="text-amber-600"> (já está em {f.setor})</span>
                     ) : (

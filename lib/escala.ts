@@ -356,6 +356,33 @@ export async function diasLotados(
 }
 
 /**
+ * Quantas vagas APROVADAS ainda sobram em cada dia que tem trava, neste setor — pra importação por planilha
+ * (09/10/2026), que aprova muita gente de uma vez e precisa descontar uma a uma. Dia sem trava não aparece (livre).
+ * Trava desligada ou consulta falha: mapa vazio (mesma régua de `diasLotados`: na dúvida não trava).
+ */
+export async function vagasAprovadasPorDia(fornecedorId: string): Promise<Map<string, number>> {
+  if (!TRAVA_POR_DIA_ATIVA) return new Map()
+  const travas = await travasDoFornecedor(fornecedorId)
+  if (!travas.size) return new Map()
+  try {
+    const linhas = await buscarTudo((de, ate) => supabaseAdmin
+      .from('funcionario_dias')
+      .select('data, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento)')
+      .eq('funcionarios.fornecedor_id', fornecedorId).eq('aprovado', true)
+      .in('data', [...travas.keys()])
+      .order('id').range(de, ate))
+    const ocupacao = new Map<string, number>()
+    for (const l of linhas) {
+      const f = l.funcionarios as unknown as { status_credenciamento: string | null } | null
+      if (!f || f.status_credenciamento === 'negado') continue
+      ocupacao.set(l.data as string, (ocupacao.get(l.data as string) ?? 0) + 1)
+    }
+    return new Map([...travas].map(([dia, max]) => [dia, Math.max(0, max - (ocupacao.get(dia) ?? 0))]))
+  } catch {
+    return new Map()
+  }
+}
+/**
  * Grava a trava por dia de um fornecedor a partir do que o formulário trouxe:
  * dia com número = trava; dia em branco = sem trava (apaga a que existia).
  * Dia que não veio no formulário não é tocado. Falha de banco (migração

@@ -19,13 +19,49 @@ export type LinhaPlanilha = {
   cargo: string
   cidade: string
   valor: string
+  /**
+   * Os dias de trabalho marcados na linha, como "DD/MM" (ou "todos") — o servidor casa com os dias do evento
+   * (`importarFuncionarios`). Vem das colunas de dia do modelo ("10/10 sáb · Evento", marcada com X) ou de uma
+   * coluna única "Dias de trabalho" ("10/10, 11/10"). Pedido do Juan, 09/10/2026: o modelo segue o formulário.
+   */
+  dias?: string[]
+}
+
+/** Célula de dia "marcada": qualquer coisa que não seja vazio ou um "não". */
+function marcada(v: unknown): boolean {
+  const t = String(v ?? '').trim().toLowerCase()
+  return !!t && !['nao', 'não', 'n', '0', '-', 'false'].includes(t)
+}
+
+/** "10/10" de um cabeçalho ou de um texto — dia e mês com dois dígitos. */
+function ddmm(d: string, m: string): string {
+  return `${d.padStart(2, '0')}/${m.padStart(2, '0')}`
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function diasMarcadosNaLinha(linha: Record<string, any>): string[] {
+  const dias = new Set<string>()
+  for (const [chave, valor] of Object.entries(linha)) {
+    const cab = chave.trim()
+    const doCabecalho = /^(\d{1,2})\/(\d{1,2})(?!\d)/.exec(cab)
+    if (doCabecalho) {
+      if (marcada(valor)) dias.add(ddmm(doCabecalho[1], doCabecalho[2]))
+      continue
+    }
+    if (/^dias( de trabalho)?$/i.test(cab.replace(/\s+/g, ' '))) {
+      const texto = String(valor ?? '').toLowerCase()
+      if (/\btodos\b/.test(texto)) dias.add('todos')
+      for (const m of texto.matchAll(/(\d{1,2})\/(\d{1,2})/g)) dias.add(ddmm(m[1], m[2]))
+    }
+  }
+  return [...dias]
 }
 
 /**
  * Nomes de coluna aceitos, em ordem de preferência. Fonte única: a tela do
  * evento e o chat da IA leem a mesma planilha do mesmo jeito.
  */
-const COLUNAS: Record<keyof LinhaPlanilha, string[]> = {
+const COLUNAS: Record<Exclude<keyof LinhaPlanilha, 'dias'>, string[]> = {
   nome: ['nome', 'name', 'nome completo'],
   cpf: ['cpf'],
   telefone: ['telefone', 'phone', 'celular', 'tel'],
@@ -68,6 +104,7 @@ export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[
       cargo: valorDaColuna(linha, COLUNAS.cargo),
       cidade: valorDaColuna(linha, COLUNAS.cidade),
       valor: valorDaColuna(linha, COLUNAS.valor),
+      dias: diasMarcadosNaLinha(linha),
     }))
     .filter(l => l.nome)
 }
