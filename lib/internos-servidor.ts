@@ -242,6 +242,50 @@ export async function subeventosComCadastroSuspenso(ids: (string | null | undefi
 }
 
 /**
+ * As três travas de cadastro de um evento, de uma vez (Juan, 09/10/2026: "esse botão deve travar o cadastro de
+ * funcionários e de setores por meio do link ou planilha"): o evento inteiro (`eventos.cadastro_suspenso`), os
+ * subgrupos travados (`subeventos.cadastro_suspenso`) e os fornecedores com o link desligado
+ * (`fornecedores.link_ativo`). Tolerante: coluna faltando conta como aberto.
+ */
+export type TravasDeCadastro = { evento: boolean; subgrupos: Set<string>; fornecedores: Set<string> }
+export async function travasDeCadastroDoEvento(eventoId: string): Promise<TravasDeCadastro> {
+  const [ev, subs, forns] = await Promise.all([
+    supabaseAdmin.from('eventos').select('cadastro_suspenso').eq('id', eventoId).maybeSingle().then(r => r, () => ({ data: null })),
+    supabaseAdmin.from('subeventos').select('id, cadastro_suspenso').eq('evento_id', eventoId).then(r => r, () => ({ data: null })),
+    supabaseAdmin.from('fornecedores').select('id, link_ativo').eq('evento_id', eventoId).then(r => r, () => ({ data: null })),
+  ])
+  return {
+    evento: (ev.data as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso === true,
+    subgrupos: new Set(((subs.data ?? []) as { id: string; cadastro_suspenso?: boolean }[]).filter(x => x.cadastro_suspenso === true).map(x => x.id)),
+    fornecedores: new Set(((forns.data ?? []) as { id: string; link_ativo?: boolean }[]).filter(x => x.link_ativo === false).map(x => x.id)),
+  }
+}
+
+/**
+ * O cadastro (de pessoa ou de setor) está TRAVADO neste ponto? Devolve a frase pronta, ou `null` se está aberto.
+ * Regra do Juan (09/10/2026): "quando eu apertar o botão de desligar cadastro, ninguém tem como se cadastrar mais,
+ * só quando for habilitado pelo botão" — vale pro link, pra planilha, pro cadastro manual e pra IA.
+ *
+ * `fornecedorId` sem `subeventoId`: o subgrupo é o do fornecedor. Setor NOVO: passe só o `subeventoId` de destino.
+ */
+export async function motivoCadastroTravado(
+  eventoId: string, alvo: { fornecedorId?: string | null; subeventoId?: string | null; oQue?: 'pessoas' | 'setores' } = {},
+): Promise<string | null> {
+  const travas = await travasDeCadastroDoEvento(eventoId)
+  let subeventoId = alvo.subeventoId ?? null
+  if (alvo.fornecedorId && alvo.subeventoId === undefined) {
+    const { data } = await supabaseAdmin.from('fornecedores').select('subevento_id').eq('id', alvo.fornecedorId).maybeSingle()
+    subeventoId = (data as { subevento_id?: string | null } | null)?.subevento_id ?? null
+  }
+  const oQue = alvo.oQue === 'setores' ? 'novos setores' : 'novas pessoas'
+  const onde = travas.evento ? 'deste evento'
+    : subeventoId && travas.subgrupos.has(subeventoId) ? 'deste subgrupo'
+      : alvo.fornecedorId && travas.fornecedores.has(alvo.fornecedorId) ? 'deste fornecedor'
+        : null
+  return onde ? `O cadastro de ${oQue} ${onde} está travado. Para cadastrar, destrave no painel "Cadastro de pessoas e setores" do subgrupo.` : null
+}
+
+/**
  * Esta pessoa JÁ RECEBEU (ou tem na fila) uma destas mensagens neste evento? É o "link vai uma vez só"
  * (Juan, 09/10/2026): supervisor ou Encarregado em mais de um setor do mesmo evento, ou que trocou de
  * função e voltou, não recebe o mesmo link de novo.

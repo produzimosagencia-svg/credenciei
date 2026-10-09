@@ -73,12 +73,12 @@ export default function CadastroPorLinkCard({
         </span>
         <div className="min-w-0">
           <p className="text-slate-800 text-sm font-extrabold">
-            Cadastro por link {suspenso ? 'suspenso' : 'aberto'}
+            Cadastro {suspenso ? 'travado' : 'aberto'}
           </p>
           <p className="text-slate-500 text-xs mt-0.5">
             {suspenso
-              ? 'Os links dos fornecedores e o cartaz da portaria estão recusando cadastro novo. Quem já está na equipe continua normal.'
-              : 'Os links dos fornecedores e o cartaz da portaria aceitam cadastro. Suspenda quando a lista fechar — os links continuam os mesmos.'}
+              ? 'Ninguém novo entra no evento: nem pelo link, nem pela planilha, nem pelo sistema (pessoas e setores). Quem já está na equipe continua normal.'
+              : 'Pessoas e setores podem ser cadastrados. Trave quando a lista fechar — os links continuam os mesmos.'}
           </p>
           {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
         </div>

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
+import { motivoCadastroTravado } from '@/lib/internos-servidor'
 import { formatCpf, validarCpf } from '@/lib/format'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { importarFuncionarios } from '@/lib/importacao'
@@ -75,6 +76,9 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
 
         const digitos = String(cpf).replace(/\D/g, '')
         if (!validarCpf(digitos)) return 'CPF inválido — confira os 11 dígitos com o usuário.'
+        // Cadastro travado (evento, subgrupo ou fornecedor): a IA também não cadastra — ver `motivoCadastroTravado`.
+        const travado = await motivoCadastroTravado(r.setor.evento_id, { fornecedorId: String(fornecedor_id) })
+        if (travado) return travado
 
         const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id)
         if (outroSetor) {

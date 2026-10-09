@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso, travasDeCadastroDoEvento, motivoCadastroTravado } from './internos-servidor'
 import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
 import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
@@ -884,6 +884,18 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
   const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
   if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
   const email = cpfParaEmail(cpf)
+
+  /*
+   * Trava de cadastro (09/10/2026): supervisor que ainda NÃO está no evento seria uma pessoa nova entrando no setor
+   * (ganha crachá) — com o cadastro travado, não entra. Quem já está no evento (a Função da ficha da equipe, por
+   * exemplo) passa: não é cadastro novo.
+   */
+  const { data: fichaNoEvento } = await supabaseAdmin
+    .from('funcionarios').select('id, fornecedores!inner(evento_id)').eq('cpf', cpf).eq('fornecedores.evento_id', eventoId).limit(1)
+  if (!fichaNoEvento?.length) {
+    const travado = await motivoCadastroTravado(eventoId, { fornecedorId })
+    if (travado) throw new Error(travado)
+  }
 
   const admin = getAdminSupabase()
 
@@ -3611,6 +3623,9 @@ async function criarFornecedorOuLanca(eventoId: string, formData: FormData): Pro
       throw new Error('Informe o WhatsApp do supervisor — é por ele que o acesso chega.')
     }
   }
+  // Trava de cadastro (09/10/2026): evento ou subgrupo de destino travado → nenhum setor novo, nem pela tela.
+  const travado = await motivoCadastroTravado(eventoId, { subeventoId: ((formData.get('subevento_id') as string) || '').trim() || null, oQue: 'setores' })
+  if (travado) throw new Error(travado)
   const data = {
     evento_id: eventoId,
     nome: nomeFornecedor,
@@ -4039,6 +4054,8 @@ export async function exportarFuncionariosDoSetor(
 export async function criarFuncionario(fornecedorId: string, eventoId: string, formData: FormData) {
   const perfilCadastro = await exigirAcessoFuncionarios(fornecedorId, eventoId)
   const db = supabaseAdmin
+  const travado = await motivoCadastroTravado(eventoId, { fornecedorId })
+  if (travado) throw new Error(travado)
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
   if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os 11 dígitos.')
@@ -4134,6 +4151,8 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   const pessoa = base?.[0]
   if (!pessoa) throw new Error('Esta pessoa não está na base do Credenciei')
   if (!setor) throw new Error('Fornecedor não encontrado')
+  const travado = await motivoCadastroTravado(setor.evento_id as string, { fornecedorId })
+  if (travado) throw new Error(travado)
 
   // Mesma trava do formulário público e da importação: um CPF por evento.
   const { data: jaNoEvento } = await db
@@ -12346,7 +12365,7 @@ export async function previaImportacaoEstrutura(eventoId: string, linhas: LinhaE
     const { evento } = await exigirImportadorDeEstrutura(eventoId)
     if (!linhas.length) return { error: 'A planilha não tem nenhuma linha.' }
     if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `A planilha tem ${linhas.length} linhas — o máximo por importação é ${MAX_LINHAS_ESTRUTURA}.` }
-    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes)
+    const plano = await aplicarTravasNaEstrutura(eventoId, planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes))
     return { ok: true, plano, eventoNome: evento.nome }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
@@ -12370,7 +12389,7 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
     const { perfil } = await exigirImportadorDeEstrutura(eventoId)
     if (linhas.length > MAX_LINHAS_ESTRUTURA) return { error: `Máximo de ${MAX_LINHAS_ESTRUTURA} linhas por importação.` }
     const alvo = new Set(apenas.slice(0, 20))
-    const plano = planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes)
+    const plano = await aplicarTravasNaEstrutura(eventoId, planejarEstrutura(linhas, await contextoDaEstrutura(eventoId, linhas), decisoes))
 
     const resultados: ResultadoLinhaEstrutura[] = []
     for (const l of plano.linhas.filter(x => alvo.has(x.linha))) {
@@ -12396,6 +12415,43 @@ export async function importarEstruturaLote(eventoId: string, linhas: LinhaEstru
     return { ok: true, resultados }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * As travas de cadastro valem para a planilha de estrutura também (Juan, 09/10/2026: "travar o cadastro de
+ * funcionários e de setores por meio do link ou planilha"). Evento travado → nenhuma linha entra; subgrupo
+ * travado → as linhas dele não entram (nem setor novo, nem supervisor novo); fornecedor com o link desligado →
+ * a linha que mexeria nele não entra. Vira erro na PRÉVIA, linha por linha, e é refeito na gravação.
+ */
+async function aplicarTravasNaEstrutura(eventoId: string, plano: PlanoEstrutura): Promise<PlanoEstrutura> {
+  const travas = await travasDeCadastroDoEvento(eventoId)
+  if (!travas.evento && !travas.subgrupos.size && !travas.fornecedores.size) return plano
+  const { data: desligados } = travas.fornecedores.size
+    ? await supabaseAdmin.from('fornecedores').select('id, nome, subevento_id').in('id', [...travas.fornecedores])
+    : { data: [] as { id: string; nome: string; subevento_id: string | null }[] }
+
+  const linhas = plano.linhas.map(l => {
+    if (l.acao === 'erro') return l
+    const motivo = travas.evento
+      ? 'O cadastro deste evento está travado.'
+      : l.subeventoId && travas.subgrupos.has(l.subeventoId)
+        ? `O subgrupo ${l.subgrupoUsado} está com o cadastro travado.`
+        : l.acao === 'atualizar' && (desligados ?? []).some(f => f.subevento_id === l.subeventoId && mesmoNome(f.nome as string, l.fornecedor))
+          ? `O fornecedor ${l.fornecedor} está com o link desligado (cadastro travado).`
+          : null
+    return motivo ? { ...l, acao: 'erro' as const, erros: [...l.erros, motivo] } : l
+  })
+  const validas = linhas.filter(l => l.acao !== 'erro')
+  return {
+    ...plano,
+    linhas,
+    contagens: {
+      ...plano.contagens,
+      fornecedoresCriar: validas.filter(l => l.acao === 'criar').length,
+      fornecedoresAtualizar: validas.filter(l => l.acao === 'atualizar').length,
+      linhasComErro: linhas.length - validas.length,
+    },
   }
 }
 

@@ -151,7 +151,7 @@ export default function SubeventosCard({
 
                 {travados.includes(s.id) && (
                   <p className="flex items-center gap-1.5 mt-2.5 text-amber-400 text-xs font-semibold">
-                    <Lock className="w-3.5 h-3.5 shrink-0" /> Cadastro de novas pessoas travado
+                    <Lock className="w-3.5 h-3.5 shrink-0" /> Cadastro travado
                   </p>
                 )}
 

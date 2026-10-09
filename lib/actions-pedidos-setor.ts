@@ -11,6 +11,7 @@ import { mensagemAmigavel } from './erros'
 import { verificarTurnstile } from './turnstile'
 import { podePassar } from './limite'
 import { contextoDoPedido } from './pedidos-setor-consulta'
+import { travasDeCadastroDoEvento } from './internos-servidor'
 import { criarFornecedor } from './actions'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
 import { chaveDoSetor, normalizarAmpliacao, lerQuantidadeAprovada, respostaDaAmpliacao, MAX_PESSOAS } from './pedido-setor-regras'
@@ -161,6 +162,13 @@ export async function enviarPedidoDeSetor(
     const pedido = normalizarPedidoPublico(dados, (await contextoDoPedido(eventoId)).ctx)
     if (!pedido.ok) return { erro: pedido.erro }
     const { contato, observacao, setores } = pedido.valor
+
+    // Trava de cadastro (09/10/2026): evento travado, ou setor pedido num subgrupo travado, não entra.
+    const travas = await travasDeCadastroDoEvento(eventoId)
+    if (travas.evento) return { erro: 'Os pedidos de setor deste evento estão fechados.' }
+    if (setores.some(x => x.subeventoId && travas.subgrupos.has(x.subeventoId))) {
+      return { erro: 'Um dos subeventos escolhidos não está recebendo novos setores. Recarregue a página e escolha outro.' }
+    }
 
     // Reenvio em seguida (duplo clique, rede lenta): se o conteúdo é IDÊNTICO ao pedido que acabou de entrar,
     // devolve esse mesmo pedido. Pedido diferente do mesmo supervisor, mesmo logo depois, é outro pedido.

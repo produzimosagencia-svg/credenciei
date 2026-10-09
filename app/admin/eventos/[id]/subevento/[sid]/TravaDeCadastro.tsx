@@ -5,7 +5,7 @@ import { Lock, LockOpen, AlertTriangle } from 'lucide-react'
 import { alternarCadastroDoSubevento, alternarCadastroPorLink } from '@/lib/actions'
 
 /**
- * As travas de cadastro de novas pessoas, dentro do subgrupo (pedido do Juan, 09/10/2026): este subgrupo inteiro
+ * As travas de cadastro (pessoas e setores, por link, planilha, sistema e IA), dentro do subgrupo (pedido do Juan, 09/10/2026): este subgrupo inteiro
  * ou o evento inteiro, ligadas e desligadas a qualquer hora. A de um fornecedor só é o "Desligar link" do card
  * dele, logo abaixo. Qualquer trava fechada basta pra recusar; quem já está na equipe não é afetado.
  */
@@ -23,8 +23,8 @@ export default function TravaDeCadastro({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
       <div className="px-4 pt-3 pb-2">
-        <p className="text-slate-800 text-sm font-extrabold">Cadastro de novas pessoas</p>
-        <p className="text-slate-500 text-xs mt-0.5">Travado, o link de cadastro recusa gente nova. Quem já está na equipe continua normal.</p>
+        <p className="text-slate-800 text-sm font-extrabold">Cadastro de pessoas e setores</p>
+        <p className="text-slate-500 text-xs mt-0.5">Travado, ninguém novo entra: nem pelo link, nem pela planilha, nem pelo sistema. Quem já está na equipe continua normal.</p>
       </div>
       <Linha
         titulo={`Subgrupo ${subgrupoNome}`}
@@ -34,12 +34,12 @@ export default function TravaDeCadastro({
       />
       <Linha
         titulo="Evento inteiro"
-        detalhe="Todos os subgrupos e o cartaz da portaria."
+        detalhe="Todos os subgrupos, o cartaz da portaria e o link de pedido de setor."
         travado={eventoTravado}
         alternar={() => alternarCadastroPorLink(eventoId, !eventoTravado)}
       />
       <p className="px-4 py-2.5 text-slate-500 text-xs">
-        Um fornecedor só: botão <strong className="text-slate-700">Desligar link</strong> no card dele, abaixo.
+        Um fornecedor só: botão <strong className="text-slate-700">Desligar link</strong> no card dele, abaixo (trava as pessoas dele).
         {fornecedoresTravados > 0 && <> {fornecedoresTravados} de {totalFornecedores} já estão com o link desligado.</>}
       </p>
     </div>

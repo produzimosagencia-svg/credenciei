@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
+import { motivoCadastroTravado } from '@/lib/internos-servidor'
 import { garantirAbaFornecedor } from '@/lib/google-sheets'
 import { nomeEmMaiusculo } from '@/lib/format'
 import { registrarAuditoriaIA } from '../auditoria'
@@ -50,6 +51,9 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
         if (barrado) return barrado
         const erro = await exigirEvento(perfil, evento_id)
         if (erro) return erro
+        // Cadastro travado no evento (09/10/2026): a IA também não cria setor — ver `motivoCadastroTravado`.
+        const travado = await motivoCadastroTravado(String(evento_id), { oQue: 'setores' })
+        if (travado) return travado
 
         const { data: novo, error } = await supabaseAdmin.from('fornecedores').insert([{
           evento_id,

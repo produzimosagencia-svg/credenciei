@@ -8,7 +8,7 @@ import { validarCpf } from '@/lib/format'
 import { normalizarCpfPlanilha } from '@/lib/estrutura-regras'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
-import { obterFuncionalidadesOrganizacao } from '@/lib/internos-servidor'
+import { obterFuncionalidadesOrganizacao, travasDeCadastroDoEvento } from '@/lib/internos-servidor'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
@@ -80,6 +80,17 @@ export async function importarFuncionarios(
    * tiver rodado ainda.
    */
   const subeventoIdDoFornecedor = (fornecedor as { subevento_id?: string | null }).subevento_id ?? null
+
+  /*
+   * As travas de cadastro valem para a PLANILHA também, não só para o link (Juan, 09/10/2026): evento inteiro,
+   * subgrupo do fornecedor ou o próprio fornecedor com o link desligado — qualquer uma recusa a importação.
+   */
+  const travas = await travasDeCadastroDoEvento(eventoId)
+  if (travas.evento || (subeventoIdDoFornecedor && travas.subgrupos.has(subeventoIdDoFornecedor)) || travas.fornecedores.has(fornecedorId)) {
+    const onde = travas.evento ? 'deste evento' : subeventoIdDoFornecedor && travas.subgrupos.has(subeventoIdDoFornecedor) ? 'deste subgrupo' : 'deste fornecedor'
+    return { ok: false, status: 423, error: `O cadastro de novas pessoas ${onde} está travado. Para importar, destrave no painel "Cadastro de pessoas e setores" do subgrupo.` }
+  }
+
   const funcionalidades = await obterFuncionalidadesOrganizacao(evento?.organizacao_id ?? null)
 
   /*

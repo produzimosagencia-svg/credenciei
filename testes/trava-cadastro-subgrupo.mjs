@@ -46,5 +46,20 @@ ok(/alternarCadastroDoSubevento\(eventoId, subeventoId, !subgrupoTravado\)/.test
   'trava o subgrupo e o evento inteiro, nos dois sentidos')
 ok(/travados\.includes\(s\.id\)/.test(ler('app/admin/eventos/[id]/SubeventosCard.tsx')), 'selo "travado" no card do subgrupo, na tela do evento')
 
+console.log('\n5 · "ninguém se cadastra": planilha, sistema, IA e pedido de setor também')
+ok(/export async function motivoCadastroTravado/.test(internos), 'conferência única (evento, subgrupo, fornecedor)')
+ok(/travasDeCadastroDoEvento\(eventoId\)[\s\S]{0,900}status: 423/.test(ler('lib/importacao.ts')), 'planilha de funcionários recusa')
+ok(/aplicarTravasNaEstrutura\(eventoId, planejarEstrutura/.test(actions) && (actions.match(/aplicarTravasNaEstrutura\(eventoId, planejarEstrutura/g) ?? []).length === 2,
+  'planilha de estrutura: a prévia e a gravação marcam as linhas travadas')
+const criarForn = actions.slice(actions.indexOf('async function criarFornecedorOuLanca('))
+ok(/motivoCadastroTravado\(eventoId, \{ subeventoId: [^}]*oQue: 'setores' \}\)/.test(criarForn.slice(0, 3000)), 'novo fornecedor pela tela (e aprovação de pedido) recusa')
+const criarSup = actions.slice(actions.indexOf('async function criarSupervisorOuLanca('))
+ok(/if \(!fichaNoEvento\?\.length\) \{\s*const travado = await motivoCadastroTravado/.test(criarSup.slice(0, 4000)), 'supervisor novo no evento recusa; quem já está no evento passa')
+const atribuir = actions.slice(actions.indexOf('export async function atribuirColaboradorAoEvento('))
+ok(/motivoCadastroTravado\(setor\.evento_id as string, \{ fornecedorId \}\)/.test(atribuir.slice(0, 2000)), 'atribuir da base recusa')
+ok(/motivoCadastroTravado/.test(ler('lib/ia/ferramentas/setores.ts')) && /motivoCadastroTravado/.test(ler('lib/ia/ferramentas/funcionarios.ts')), 'IA não cria setor nem pessoa')
+ok(/cadastroTravado = travas\.evento/.test(ler('app/pedido-setor/[token]/page.tsx')) && /travas\.subgrupos\.has\(x\.subeventoId\)/.test(ler('lib/actions-pedidos-setor.ts')),
+  'link de pedido de setor: fecha com o evento travado e esconde/recusa subgrupo travado')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -6,6 +6,7 @@ import { situacaoDoLink } from '@/lib/pedido-setor-regras'
 import { contextoDoPedido } from '@/lib/pedidos-setor-consulta'
 import { formatarBR } from '@/lib/tz'
 import FormularioPedidoSetor from './FormularioPedidoSetor'
+import { travasDeCadastroDoEvento } from '@/lib/internos-servidor'
 
 export const revalidate = 0
 
@@ -25,13 +26,20 @@ export default async function PedidoSetorPage({ params }: { params: Promise<{ to
   if (error || !evento) notFound()
 
   const situacao = situacaoDoLink({ ativo: evento.pedido_setor_ativo === true, prazo: evento.pedido_setor_prazo as string | null })
-  const { ctx, diasComFase, subeventos } = await contextoDoPedido(evento.id as string)
+  const { ctx, diasComFase, subeventos: todosSubeventos } = await contextoDoPedido(evento.id as string)
+  /*
+   * Trava de cadastro (09/10/2026): evento travado fecha o pedido; subgrupo travado some da lista de escolha. Se
+   * TODOS os subgrupos estão travados, não há onde pedir — fecha também.
+   */
+  const travas = await travasDeCadastroDoEvento(evento.id as string)
+  const subeventos = todosSubeventos.filter(s => !travas.subgrupos.has(s.id))
+  const cadastroTravado = travas.evento || (todosSubeventos.length > 0 && subeventos.length === 0)
   const hoje = diaBRT()
   const diasUi = diasComFase.filter(d => d.data >= hoje)
   // Evento com vários dias, mas todos já passaram: não há o que pedir.
   const periodoEncerrado = diasComFase.length > 0 && diasUi.length === 0
 
-  if (!situacao.aberto || periodoEncerrado) {
+  if (!situacao.aberto || periodoEncerrado || cadastroTravado) {
     const prazo = !situacao.aberto && situacao.motivo === 'prazo'
     return (
       <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
