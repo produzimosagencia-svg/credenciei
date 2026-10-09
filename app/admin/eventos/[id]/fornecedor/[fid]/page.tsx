@@ -90,13 +90,23 @@ async function supervisoresComCrachaEmOutroSetor(fid: string, eventoId: string, 
 
   // Onde está o crachá de cada um neste evento (pode não ter nenhum).
   const cpfs = deFora.map(p => limpo(p.cpf)).filter(c => c.length === 11)
-  const { data: fichas } = cpfs.length
-    ? await supabase.from('funcionarios').select('cpf, fornecedor_id, fornecedores!inner(nome, evento_id)')
-      .in('cpf', cpfs).eq('fornecedores.evento_id', eventoId)
-    : { data: [] }
-  const crachaPorCpf = new Map((fichas ?? []).map(f => [f.cpf as string, {
-    id: f.fornecedor_id as string, nome: (f.fornecedores as unknown as { nome: string }).nome,
-  }]))
+  /*
+   * Com o subevento junto: o mesmo fornecedor costuma ter um setor por subevento, com o MESMO nome (a Lucy cobre
+   * "GILMAR - SEGURANÇA" na Arquibancada e no Bloco) — sem ele, "crachá na equipe X" não diz qual. Tolerante:
+   * sem a coluna de subevento, cai pra consulta só com o nome.
+   */
+  const buscar = (campos: string) => supabase.from('funcionarios').select(`cpf, fornecedor_id, fornecedores!inner(${campos})`)
+    .in('cpf', cpfs).eq('fornecedores.evento_id', eventoId)
+  let fichas: { cpf: string; fornecedor_id: string; fornecedores: unknown }[] = []
+  if (cpfs.length) {
+    const comArea = await buscar('nome, evento_id, subeventos(nome)')
+    fichas = ((comArea.error ? (await buscar('nome, evento_id')).data : comArea.data) ?? []) as unknown as typeof fichas
+  }
+  const crachaPorCpf = new Map(fichas.map(f => {
+    const setor = f.fornecedores as { nome: string; subeventos?: { nome?: string } | null }
+    const area = setor.subeventos?.nome
+    return [f.cpf, { id: f.fornecedor_id, nome: area ? `${setor.nome} (${area})` : setor.nome }]
+  }))
 
   return deFora
     .map(p => ({
