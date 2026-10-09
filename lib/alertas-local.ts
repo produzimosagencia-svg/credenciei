@@ -56,6 +56,7 @@ export type LinhaForaDoLocal = {
   /** 'registrada' = a batida valeu e está no ponto; 'recusada' = a tentativa foi barrada por estar fora do raio. */
   situacao: 'registrada' | 'recusada'
   funcionarioNome: string
+  setorId: string | null
   setorNome: string | null
   tipo: 'entrada' | 'meio' | 'fim' | null
   quando: string
@@ -72,9 +73,11 @@ export type RelatorioForaDoLocal = {
   localConfigurado: boolean
   raioM: number | null
   linhas: LinhaForaDoLocal[]
+  /** Os setores que esta pessoa pode ver no relatório (o filtro da tela) — todos do evento, ou só os do supervisor. */
+  setores: { id: string; nome: string }[]
 }
 
-type Fn = { nome?: string; fornecedores?: { nome?: string } | null } | null
+type Fn = { nome?: string; fornecedor_id?: string | null; fornecedores?: { nome?: string } | null } | null
 
 /**
  * "Quem bateu fora do limite da área precisa ter um relatório" (Juan, 08/10/2026). Junta:
@@ -85,7 +88,11 @@ type Fn = { nome?: string; fornecedores?: { nome?: string } | null } | null
  *     operador e do autoatendimento pelo celular.
  * Usa o local/raio ATUAL do evento (Editar evento → mapa).
  */
-export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioForaDoLocal> {
+export async function relatorioForaDoLocal(
+  eventoId: string,
+  /** Só estes setores (o supervisor vê só os dele). `null` = o evento inteiro (admin/master). */
+  setoresPermitidos: { id: string; nome: string }[] | null = null,
+): Promise<RelatorioForaDoLocal> {
   const { data: ev } = await supabaseAdmin.from('eventos').select('local_latitude, local_longitude, local_raio_m').eq('id', eventoId).maybeSingle()
   const local: LocalDoEvento | null = ev?.local_latitude != null && ev?.local_longitude != null
     ? { latitude: Number(ev.local_latitude), longitude: Number(ev.local_longitude), raioM: Number(ev.local_raio_m ?? 800) }
@@ -93,7 +100,7 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
 
   const registros = await buscarTudo<Record<string, unknown>>((de, ate) => supabaseAdmin
     .from('registros')
-    .select('id, tipo, created_at, latitude, longitude, precisao_m, distancia_m, fora_do_local, endereco_aproximado, criado_por_perfil_id, funcionarios!inner(nome, fornecedores(nome))')
+    .select('id, tipo, created_at, latitude, longitude, precisao_m, distancia_m, fora_do_local, endereco_aproximado, criado_por_perfil_id, funcionarios!inner(nome, fornecedor_id, fornecedores(nome))')
     .eq('evento_id', eventoId)
     .or('fora_do_local.eq.true,latitude.not.is.null')
     .order('created_at', { ascending: false })
@@ -125,6 +132,7 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
       id: `r:${r.id as string}`,
       situacao: 'registrada',
       funcionarioNome: f?.nome ?? '—',
+      setorId: f?.fornecedor_id ?? null,
       setorNome: f?.fornecedores?.nome ?? null,
       tipo: (ROTULO_TIPO[r.tipo as string] ? r.tipo : null) as LinhaForaDoLocal['tipo'],
       quando: r.created_at as string,
@@ -142,6 +150,7 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
       id: `l:${l.id as string}`,
       situacao: 'recusada',
       funcionarioNome: f?.nome ?? '—',
+      setorId: f?.fornecedor_id ?? null,
       setorNome: f?.fornecedores?.nome ?? null,
       tipo: /\(saída\)/.test(mensagem) ? 'fim' : /\(entrada\)/.test(mensagem) ? 'entrada' : /\(meio\)/.test(mensagem) ? 'meio' : null,
       quando: l.created_at as string,
@@ -153,10 +162,20 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
     })
   }
   linhas.sort((a, b) => b.quando.localeCompare(a.quando))
-  return { localConfigurado: !!local, raioM: local?.raioM ?? null, linhas }
+
+  // Recorte por setor: o supervisor só recebe as linhas dos setores dele (o filtro é no servidor, não na tela).
+  let setores = setoresPermitidos
+  if (!setores) {
+    const { data } = await supabaseAdmin.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome')
+    setores = (data ?? []).map(f => ({ id: f.id as string, nome: f.nome as string }))
+  }
+  const visiveis = setoresPermitidos
+    ? linhas.filter(l => l.setorId && setoresPermitidos.some(st => st.id === l.setorId))
+    : linhas
+  return { localConfigurado: !!local, raioM: local?.raioM ?? null, linhas: visiveis, setores }
 }
 
-const COLUNAS_TENTATIVA = 'id, created_at, latitude, longitude, distancia_m, perfil_id, mensagem, funcionario_id, funcionarios(nome, fornecedores(nome))'
+const COLUNAS_TENTATIVA = 'id, created_at, latitude, longitude, distancia_m, perfil_id, mensagem, funcionario_id, funcionarios(nome, fornecedor_id, fornecedores(nome))'
 
 /**
  * As tentativas recusadas por estar fora do raio (`leituras_qr`, resultado 'fora_do_local'). Tolerante: sem a

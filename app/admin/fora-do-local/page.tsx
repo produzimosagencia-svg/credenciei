@@ -1,20 +1,23 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { MapPin, CalendarDays } from 'lucide-react'
-import { getPerfil } from '@/lib/supabase-server'
+import { getPerfil, meusSetores } from '@/lib/supabase-server'
 import { podeGerenciarEventos, veTodosEventos } from '@/lib/permissions'
 import { obterRelatorioForaDoLocal } from '@/lib/actions'
 import { PageHeader } from '@/components/ui/Superficie'
-import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
+import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import RelatorioForaDoLocalView from '../eventos/[id]/fora-do-local/RelatorioForaDoLocalView'
 
 export const revalidate = 0
 
-/** Batidas fora do local, pelo menu — escolhe o evento primeiro (mesmo padrão de `/admin/travas`). Só gestor de eventos. */
+/** Batidas fora do local, pelo menu — escolhe o evento primeiro (mesmo padrão de `/admin/travas`). Gestor vê o evento todo; supervisor, só os setores dele. */
 export default async function ForaDoLocalPorMenuPage({ searchParams }: { searchParams: Promise<{ evento?: string }> }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
-  if (!podeGerenciarEventos(perfil)) redirect('/admin')
+  // Admin/master: o evento inteiro. Supervisor (ou quem tem vínculo de supervisor): só os setores dele.
+  const gestor = podeGerenciarEventos(perfil)
+  const meusVinculos = gestor ? [] : await meusSetores(perfil)
+  if (!gestor && !meusVinculos.length) redirect('/admin')
 
   const { evento: eventoParam } = await searchParams
   if (eventoParam) {
@@ -27,12 +30,12 @@ export default async function ForaDoLocalPorMenuPage({ searchParams }: { searchP
           descricao={`${r.eventoNome} — quem bateu (ou tentou bater) fora do raio do local do evento`}
           acoes={<Link href="/admin/fora-do-local" className="btn btn-secundario"><CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento</Link>}
         />
-        <RelatorioForaDoLocalView relatorio={r.relatorio} eventoNome={r.eventoNome} />
+        <RelatorioForaDoLocalView relatorio={r.relatorio} eventoNome={r.eventoNome} eventoInteiro={r.eventoInteiro} />
       </div>
     )
   }
 
-  const eventos = await eventosQuePossoAbrir()
+  const eventos = gestor ? await eventosQuePossoAbrir() : await eventosDosMeusSetores(meusVinculos)
   return (
     <div className="space-y-5">
       <PageHeader titulo="Batidas fora do local" descricao="Escolha o evento" />

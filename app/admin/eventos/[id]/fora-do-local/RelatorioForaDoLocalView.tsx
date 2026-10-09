@@ -13,7 +13,7 @@ const distancia = (m: number | null) =>
 const linkMapa = (l: LinhaForaDoLocal) =>
   l.latitude != null && l.longitude != null ? `https://www.google.com/maps?q=${l.latitude},${l.longitude}` : null
 
-async function baixarPlanilha(linhas: LinhaForaDoLocal[], eventoNome: string, raioM: number | null) {
+async function baixarPlanilha(linhas: LinhaForaDoLocal[], eventoNome: string, raioM: number | null, recorte: string) {
   const ExcelJS = await import('exceljs')
   const { COR_MARCA, COR_ACENTO, COR_FAIXA_CLARA, COR_TEXTO, BRANCO, BORDA_CELULA, carregarLogoBuffer, adicionarLogoNaAba } = await import('@/lib/marca-relatorio')
   const wb = new ExcelJS.Workbook()
@@ -27,7 +27,7 @@ async function baixarPlanilha(linhas: LinhaForaDoLocal[], eventoNome: string, ra
   adicionarLogoNaAba(wb, ws, await carregarLogoBuffer())
   ws.mergeCells(2, 1, 2, colunas.length)
   const t = ws.getCell(2, 1)
-  t.value = `BATIDAS FORA DO LOCAL — ${eventoNome.toUpperCase()}`
+  t.value = `BATIDAS FORA DO LOCAL — ${eventoNome.toUpperCase()} — ${recorte.toUpperCase()}`
   t.font = { bold: true, size: 14, color: { argb: BRANCO } }
   t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_MARCA } }
   ws.getRow(2).height = 26
@@ -66,7 +66,7 @@ async function baixarPlanilha(linhas: LinhaForaDoLocal[], eventoNome: string, ra
   const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `fora-do-local-${eventoNome.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase()}.xlsx`
+  a.download = `fora-do-local-${`${eventoNome}-${recorte}`.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase()}.xlsx`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -77,17 +77,31 @@ async function baixarPlanilha(linhas: LinhaForaDoLocal[], eventoNome: string, ra
  * "Quem bateu fora do limite da área precisa ter um relatório" (Juan, 08/10/2026). Os dados vêm prontos de
  * `obterRelatorioForaDoLocal`; aqui só filtra, desenha e baixa a planilha.
  */
-export default function RelatorioForaDoLocalView({ relatorio, eventoNome }: { relatorio: RelatorioForaDoLocal; eventoNome: string }) {
+export default function RelatorioForaDoLocalView({ relatorio, eventoNome, eventoInteiro }: {
+  relatorio: RelatorioForaDoLocal; eventoNome: string
+  /** Admin/master: o evento inteiro. Supervisor: só os setores dele (o servidor já mandou só esses). */
+  eventoInteiro: boolean
+}) {
   const [busca, setBusca] = useState('')
+  const [setor, setSetor] = useState<string>(() => (!eventoInteiro && relatorio.setores.length === 1 ? relatorio.setores[0].id : ''))
   const [baixando, setBaixando] = useState(false)
+
+  // O recorte (evento inteiro, todos os setores do supervisor, ou um setor) vale pra tela E pra planilha.
+  const doRecorte = useMemo(
+    () => (setor ? relatorio.linhas.filter(l => l.setorId === setor) : relatorio.linhas),
+    [relatorio.linhas, setor],
+  )
+  const nomeRecorte = setor
+    ? (relatorio.setores.find(st => st.id === setor)?.nome ?? 'setor')
+    : eventoInteiro ? 'todo o evento' : 'meus setores'
 
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLowerCase()
-    if (!termo) return relatorio.linhas
-    return relatorio.linhas.filter(l =>
+    if (!termo) return doRecorte
+    return doRecorte.filter(l =>
       l.funcionarioNome.toLowerCase().includes(termo) || (l.setorNome ?? '').toLowerCase().includes(termo)
       || l.quemRegistrou.toLowerCase().includes(termo))
-  }, [relatorio.linhas, busca])
+  }, [doRecorte, busca])
 
   if (!relatorio.localConfigurado) {
     return (
@@ -132,18 +146,29 @@ export default function RelatorioForaDoLocalView({ relatorio, eventoNome }: { re
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+      <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge tom="negativo">{relatorio.linhas.filter(l => l.situacao === 'registrada').length} registrada(s) fora</Badge>
-          <Badge tom="atencao">{relatorio.linhas.filter(l => l.situacao === 'recusada').length} tentativa(s) recusada(s)</Badge>
+          <Badge tom="negativo">{doRecorte.filter(l => l.situacao === 'registrada').length} registrada(s) fora</Badge>
+          <Badge tom="atencao">{doRecorte.filter(l => l.situacao === 'recusada').length} tentativa(s) recusada(s)</Badge>
           <span className="text-slate-400 text-xs">raio do local: {relatorio.raioM} m</span>
         </div>
+        {/* Evento inteiro ou um setor — o supervisor só tem os setores dele na lista. */}
+        {(eventoInteiro || relatorio.setores.length > 1) && (
+          <select
+            value={setor} onChange={e => setSetor(e.target.value)}
+            aria-label="Recorte do relatório"
+            className="input text-sm lg:ml-auto lg:max-w-xs w-full"
+          >
+            <option value="">{eventoInteiro ? 'Todo o evento' : 'Todos os meus setores'}</option>
+            {relatorio.setores.map(st => <option key={st.id} value={st.id}>{st.nome}</option>)}
+          </select>
+        )}
         <button
-          type="button" disabled={baixando || !relatorio.linhas.length}
-          onClick={async () => { setBaixando(true); try { await baixarPlanilha(filtradas, eventoNome, relatorio.raioM) } finally { setBaixando(false) } }}
-          className="btn btn-secundario sm:ml-auto shrink-0"
+          type="button" disabled={baixando || !filtradas.length}
+          onClick={async () => { setBaixando(true); try { await baixarPlanilha(filtradas, eventoNome, relatorio.raioM, nomeRecorte) } finally { setBaixando(false) } }}
+          className={`btn btn-secundario shrink-0 ${eventoInteiro || relatorio.setores.length > 1 ? '' : 'lg:ml-auto'}`}
         >
-          <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> {baixando ? 'Gerando…' : 'Baixar planilha'}
+          <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> {baixando ? 'Gerando…' : `Baixar planilha (${nomeRecorte})`}
         </button>
         <div className="relative sm:max-w-xs w-full">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -151,8 +176,8 @@ export default function RelatorioForaDoLocalView({ relatorio, eventoNome }: { re
         </div>
       </div>
 
-      {!relatorio.linhas.length ? (
-        <EmptyState icone={<ShieldAlert className="w-7 h-7" />} titulo="Nenhuma batida fora do local" descricao="Todas as batidas com localização estão dentro do raio do evento." />
+      {!doRecorte.length ? (
+        <EmptyState icone={<ShieldAlert className="w-7 h-7" />} titulo="Nenhuma batida fora do local" descricao={`Nada fora do raio do evento em ${nomeRecorte}.`} />
       ) : (
         <>
           {registradas.length > 0 && (

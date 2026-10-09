@@ -227,7 +227,12 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (podeGerenciarEventos(perfil)) {
     administrativo.push({ href: '/admin/travas', label: 'Limite por dia', icon: ShieldAlert })
-    // Quem bateu (ou tentou) fora do raio do local do evento — pedido do Juan, 08/10/2026.
+  }
+  /*
+   * "Fora do local" — quem bateu (ou tentou bater) fora do raio do local do evento. Admin/master veem o evento
+   * todo; o supervisor (pedido do Juan, 08/10/2026) vê só os setores dele — a régua está em `obterRelatorioForaDoLocal`.
+   */
+  if (podeGerenciarEventos(perfil) || role === 'supervisor' || temVinculoSupervisor) {
     administrativo.push({ href: '/admin/fora-do-local', label: 'Fora do local', icon: MapPin })
   }
   /*

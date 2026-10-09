@@ -3358,15 +3358,29 @@ export async function salvarTravasDoSetor(
 
 /** Relatório "Batidas fora do local" — ver `relatorioForaDoLocal` (lib/alertas-local.ts). Só quem gerencia o evento. */
 export async function obterRelatorioForaDoLocal(eventoId: string): Promise<
-  { ok: true; eventoNome: string; relatorio: RelatorioForaDoLocal } | { ok?: false; error: string }
+  { ok: true; eventoNome: string; relatorio: RelatorioForaDoLocal; eventoInteiro: boolean } | { ok?: false; error: string }
 > {
   try {
-    await exigirEventoDaOrg(eventoId)
+    /*
+     * Quem gerencia o evento (admin/master) vê o evento inteiro. O supervisor vê só os setores DELE neste evento
+     * (pedido do Juan, 08/10/2026: "precisa aparecer esse fora do local para o supervisor daquela pessoa também…
+     * o supervisor só vai conseguir puxar do setor dele").
+     */
+    const perfil = await getPerfil()
+    if (!perfil) return { error: 'Sem permissão' }
+    let setoresPermitidos: { id: string; nome: string }[] | null = null
+    if (podeGerenciarEventos(perfil)) {
+      await exigirEventoDaOrg(eventoId)
+    } else {
+      const meus = (await meusSetores(perfil)).filter(st => st.evento_id === eventoId)
+      if (!meus.length) return { error: 'Sem permissão sobre este evento' }
+      setoresPermitidos = meus.map(st => ({ id: st.id, nome: st.nome }))
+    }
     const [{ data: evento }, relatorio] = await Promise.all([
       supabaseAdmin.from('eventos').select('nome').eq('id', eventoId).maybeSingle(),
-      relatorioForaDoLocal(eventoId),
+      relatorioForaDoLocal(eventoId, setoresPermitidos),
     ])
-    return { ok: true, eventoNome: (evento?.nome as string | null) ?? 'Evento', relatorio }
+    return { ok: true, eventoNome: (evento?.nome as string | null) ?? 'Evento', relatorio, eventoInteiro: !setoresPermitidos }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }
@@ -9479,8 +9493,9 @@ export async function obterHistoricoDoFuncionario(
   }
   const h = await historicoDoFuncionario(funcionarioId)
   if (!h) return { error: 'Funcionário não encontrado.' }
-  // Tentativas recusadas por estar fora do local, com endereço — só para quem gerencia eventos (admin/master).
-  if (perfil && podeGerenciarEventos(perfil)) h.tentativasForaDoLocal = await tentativasForaDoLocalDe(funcionarioId)
+  // Tentativas recusadas por estar fora do local, com endereço — admin/master e o supervisor da pessoa
+  // (`podeVerHistoricoDe` acima já garante que só chega aqui quem pode ver esta pessoa).
+  h.tentativasForaDoLocal = await tentativasForaDoLocalDe(funcionarioId)
   return { historico: h }
 }
 
