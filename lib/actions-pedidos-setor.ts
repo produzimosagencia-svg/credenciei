@@ -1,4 +1,5 @@
 'use server'
+import { inputParaISO } from './tz'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { headers } from 'next/headers'
@@ -76,7 +77,8 @@ export async function alternarLinkPedidoSetor(
 
     let prazoIso: string | null = null
     if (prazo) {
-      const d = new Date(prazo)
+      // O campo da tela manda "AAAA-MM-DDTHH:MM" sem fuso: é horário de Brasília (o servidor roda em UTC).
+      const d = new Date(inputParaISO(prazo) ?? '')
       if (Number.isNaN(d.getTime())) return { erro: 'O prazo informado não é uma data válida.' }
       prazoIso = d.toISOString()
     }

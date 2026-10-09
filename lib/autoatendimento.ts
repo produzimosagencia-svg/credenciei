@@ -2,7 +2,7 @@
 // lib/supabase-server.ts. As regras puras moram em lib/autoatendimento-regras.ts (sem import de banco, testável
 // sozinhas); aqui só a leitura, tolerante à migração pendente.
 import { createClient } from '@supabase/supabase-js'
-import { liberadoAgora, type ConfigAutoatendimento } from './autoatendimento-regras'
+import { janelaLiberada, type ConfigAutoatendimento } from './autoatendimento-regras'
 
 export * from './autoatendimento-regras'
 
@@ -89,13 +89,13 @@ export async function diaPermiteAutoatendimento(eventoId: string, dia: string): 
 }
 
 /**
- * Atalho: está liberado AGORA neste evento, NESTE dia? (`diaRef` é o dia do TURNO — `diaDoTurno`/`resolucao.dataRef`
- * de quem chama, não o dia do calendário: o turno cruza a meia-noite.) Combina `obterAutoatendimento` +
- * `liberadoAgora` (horário) + `diaPermiteAutoatendimento` (este dia foi marcado).
+ * Atalho: está liberado AGORA neste evento? Horário de Brasília dentro da janela, ativação do operador valendo
+ * para ESTA janela, e o dia em que a janela COMEÇOU marcado em "Em quais dias" — numa janela das 18:00 às 00:25,
+ * às 00:10 o dia que conta é o de ontem (é a noite de ontem). Ver lib/autoatendimento-regras.ts.
  */
-export async function autoatendimentoLiberadoAgora(eventoId: string | null | undefined, diaRef: string): Promise<boolean> {
+export async function autoatendimentoLiberadoAgora(eventoId: string | null | undefined): Promise<boolean> {
   if (!eventoId) return false
-  const cfg = await obterAutoatendimento(eventoId)
-  if (!liberadoAgora(cfg)) return false
-  return diaPermiteAutoatendimento(eventoId, diaRef)
+  const janela = janelaLiberada(await obterAutoatendimento(eventoId))
+  if (!janela) return false
+  return diaPermiteAutoatendimento(eventoId, janela.diaInicio)
 }

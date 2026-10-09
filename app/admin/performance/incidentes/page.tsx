@@ -54,8 +54,8 @@ export default async function IncidentesPage({ searchParams }: { searchParams: P
                 <div className="min-w-0">
                   <p className="text-slate-800 font-medium text-sm">{inc.titulo}</p>
                   <p className="text-slate-400 text-xs mt-0.5">
-                    {nomeDoServico(inc.serviceId)} · {new Date(inc.iniciadoEm).toLocaleString('pt-BR')}
-                    {inc.resolvidoEm && ` — resolvido ${new Date(inc.resolvidoEm).toLocaleString('pt-BR')}`}
+                    {nomeDoServico(inc.serviceId)} · {new Date(inc.iniciadoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                    {inc.resolvidoEm && ` — resolvido ${new Date(inc.resolvidoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`}
                     {' · '}{inc.falhasConsecutivas} falhas
                   </p>
                   {inc.causa && <p className="text-slate-500 text-xs mt-1">{inc.causa}</p>}

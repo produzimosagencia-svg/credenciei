@@ -72,7 +72,7 @@ export default function SinoAlertas() {
                   <div key={a.id} className={`px-4 py-3 ${a.lidoEm ? 'opacity-60' : ''}`}>
                     <p className="text-slate-800 text-sm font-medium">{a.titulo}</p>
                     <p className="text-slate-500 text-xs mt-0.5">{a.mensagem}</p>
-                    <p className="text-slate-300 text-2xs mt-1">{new Date(a.criadoEm).toLocaleString('pt-BR')}</p>
+                    <p className="text-slate-300 text-2xs mt-1">{new Date(a.criadoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                   </div>
                 ))}
               </div>

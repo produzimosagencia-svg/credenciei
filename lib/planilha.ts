@@ -224,7 +224,7 @@ export async function exportarPlanilhaDeEquipe(
     'Chave PIX': f.chave_pix || '',
     'Valor a receber': f.valor_receber ?? '',
     Pago: f.pago ? 'Sim' : 'Não',
-    'Data do pagamento': f.pago_em ? new Date(f.pago_em).toLocaleDateString('pt-BR') : '',
+    'Data do pagamento': f.pago_em ? new Date(f.pago_em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '',
     Ativo: f.ativo ? 'Sim' : 'Não',
     // Data do credenciamento: é por ela que se separa quem entrou na lista
     // original de quem entrou depois, na véspera ou no portão.

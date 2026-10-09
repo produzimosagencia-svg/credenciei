@@ -116,7 +116,7 @@ export default async function PerformancePage() {
                 <div className="min-w-0">
                   <p className="text-slate-800 font-medium text-sm">{inc.titulo}</p>
                   <p className="text-slate-400 text-xs mt-0.5">
-                    Desde {new Date(inc.iniciadoEm).toLocaleString('pt-BR')} · {inc.falhasConsecutivas} falhas
+                    Desde {new Date(inc.iniciadoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} · {inc.falhasConsecutivas} falhas
                   </p>
                 </div>
                 <Badge tom="negativo">{ROTULO_NIVEL[inc.nivel as 'warning' | 'critical'] ?? inc.nivel}</Badge>
@@ -156,7 +156,7 @@ export default async function PerformancePage() {
               <div key={a.id} className="p-4">
                 <p className="text-slate-800 text-sm font-medium">{a.titulo}</p>
                 <p className="text-slate-500 text-xs mt-0.5">{a.mensagem}</p>
-                <p className="text-slate-300 text-2xs mt-1">{new Date(a.criadoEm).toLocaleString('pt-BR')}</p>
+                <p className="text-slate-300 text-2xs mt-1">{new Date(a.criadoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
               </div>
             ))}
           </div>

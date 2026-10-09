@@ -1,18 +1,16 @@
 'use client'
 import { useState, useTransition } from 'react'
+import { isoParaInput } from '@/lib/tz'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Building2, Copy, Check, RefreshCw, ArrowRight } from 'lucide-react'
 import { alternarLinkPedidoSetor, trocarTokenPedidoSetor } from '@/lib/actions-pedidos-setor'
 import { copiarTexto } from '@/lib/navegador'
 
-/** ISO → "AAAA-MM-DDTHH:MM" no horário do navegador, que é o que o campo de data e hora entende. */
+/** ISO → "AAAA-MM-DDTHH:MM" no horário de Brasília (não no do aparelho), que é o que o campo de data e hora entende. */
 function paraCampo(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  if (!iso || Number.isNaN(new Date(iso).getTime())) return ''
+  return isoParaInput(iso)
 }
 
 /**

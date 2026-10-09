@@ -27,7 +27,7 @@ export default async function ServicoDetalhePage({ params }: { params: Promise<{
   ])
 
   const dadosGrafico = [...checks].reverse().map(c => ({
-    hora: new Date(c.checado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    hora: new Date(c.checado_em).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }),
     latenciaMs: c.latencia_ms,
   }))
 
@@ -74,8 +74,8 @@ export default async function ServicoDetalhePage({ params }: { params: Promise<{
                 <div className="min-w-0">
                   <p className="text-slate-800 text-sm font-medium">{inc.titulo}</p>
                   <p className="text-slate-400 text-xs mt-0.5">
-                    {new Date(inc.iniciadoEm).toLocaleString('pt-BR')}
-                    {inc.resolvidoEm ? ` — resolvido ${new Date(inc.resolvidoEm).toLocaleString('pt-BR')}` : ' — em aberto'}
+                    {new Date(inc.iniciadoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                    {inc.resolvidoEm ? ` — resolvido ${new Date(inc.resolvidoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ' — em aberto'}
                   </p>
                 </div>
                 <Badge tom={inc.status === 'ativo' ? 'negativo' : inc.status === 'resolvido' ? 'positivo' : 'neutro'}>

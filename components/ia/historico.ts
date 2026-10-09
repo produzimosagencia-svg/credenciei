@@ -104,5 +104,5 @@ export function quandoRelativo(ts: number): string {
   const d = Math.floor(h / 24)
   if (d === 1) return 'ontem'
   if (d < 7) return `há ${d} dias`
-  return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  return new Date(ts).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' })
 }

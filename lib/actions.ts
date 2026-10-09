@@ -72,7 +72,7 @@ import { guardarNaLixeira } from './lixeira'
 import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
 import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela,
-  diasAutoatendimentoDoEvento, diaPermiteAutoatendimento,
+  diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao,
 } from './autoatendimento'
 import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
@@ -8516,10 +8516,10 @@ export async function registrarPresencaLivre(
    * A ÚNICA exceção é esta janela: o operador apertou "Estou indo embora" (`ativarAutoatendimentoPortao`) e ainda
    * está dentro do horário configurado em Editar evento — pensada pra quando a equipe do credenciamento já foi
    * embora e ainda sobra gente dentro do evento sem jeito de bater a saída. Fora da janela, continua tudo como
-   * era: só o operador. E só nos dias marcados (`diaPermiteAutoatendimento`) — `diaDoTurno` é o dia do TURNO,
-   * não o do calendário, porque a janela cruza a meia-noite.
+   * era: só o operador. E só nos dias marcados — o dia em que a janela COMEÇOU, porque ela pode cruzar a
+   * meia-noite (ver lib/autoatendimento-regras.ts).
    */
-  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId, await diaDoTurno(eventoId))
+  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId)
   if (!autoatendimentoLiberado) {
     if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
       return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
@@ -10679,7 +10679,7 @@ export async function statusAutoatendimentoPortao(eventoId: string): Promise<Sta
   if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { habilitado: false, liberadoAgora: false, janelaTexto: null, ativadoPorNome: null }
   }
-  const [cfg, dia] = await Promise.all([obterAutoatendimento(eventoId), diaDoTurno(eventoId)])
+  const cfg = await obterAutoatendimento(eventoId)
   let ativadoPorNome: string | null = null
   if (cfg.ativadoPor) {
     const { data } = await supabaseAdmin.from('perfis').select('nome').eq('id', cfg.ativadoPor).maybeSingle()
@@ -10687,7 +10687,7 @@ export async function statusAutoatendimentoPortao(eventoId: string): Promise<Sta
   }
   return {
     habilitado: cfg.habilitado,
-    liberadoAgora: await autoatendimentoLiberadoAgora(eventoId, dia),
+    liberadoAgora: await autoatendimentoLiberadoAgora(eventoId),
     janelaTexto: descreverJanela(cfg),
     ativadoPorNome,
   }
@@ -10705,9 +10705,10 @@ export async function ativarAutoatendimentoPortao(eventoId: string): Promise<{ o
   const cfg = await obterAutoatendimento(eventoId)
   if (!cfg.habilitado) return { erro: 'Este evento não tem essa função ligada. Ligue em Editar evento.' }
 
-  const dia = await diaDoTurno(eventoId)
+  // O dia da janela em andamento (às 00:10 de uma janela 18:00–00:25, é o de ontem), ou o de hoje se ela ainda vai começar.
+  const dia = diaDaAtivacao(cfg)
   if (!(await diaPermiteAutoatendimento(eventoId, dia))) {
-    return { erro: 'Hoje não está marcado para autoatendimento. Marque este dia em Editar evento → Autoatendimento.' }
+    return { erro: `O dia ${dia.slice(8, 10)}/${dia.slice(5, 7)} não está marcado para autoatendimento. Marque em Editar evento → Autoatendimento.` }
   }
 
   const { error } = await supabaseAdmin
@@ -10718,7 +10719,7 @@ export async function ativarAutoatendimentoPortao(eventoId: string): Promise<{ o
 
   auditar(perfil, 'AUTOATENDIMENTO_ATIVADO', {
     eventoId, campoAlterado: 'Autoatendimento fora do horário da portaria',
-    valorNovo: curto(`Ativado às ${new Date().toLocaleTimeString('pt-BR')}, vale até ${descreverJanela(cfg) ?? cfg.fim ?? '—'}`),
+    valorNovo: curto(`Ativado às ${formatarBR(new Date().toISOString(), 'hora')}, janela ${descreverJanela(cfg) ?? cfg.fim ?? '—'}`),
   })
   revalidatePath('/scan')
   return { ok: true }
@@ -10737,7 +10738,7 @@ export async function desativarAutoatendimentoPortao(eventoId: string): Promise<
 
   auditar(perfil, 'AUTOATENDIMENTO_DESATIVADO', {
     eventoId, campoAlterado: 'Autoatendimento fora do horário da portaria',
-    valorNovo: curto(`Desativado às ${new Date().toLocaleTimeString('pt-BR')}`),
+    valorNovo: curto(`Desativado às ${formatarBR(new Date().toISOString(), 'hora')}`),
   })
   revalidatePath('/scan')
   return { ok: true }

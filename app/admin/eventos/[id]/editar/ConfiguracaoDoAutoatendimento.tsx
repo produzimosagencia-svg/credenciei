@@ -5,6 +5,7 @@ import { Smartphone, Check, AlertCircle, Save } from 'lucide-react'
 import { salvarConfiguracaoDoAutoatendimento, type ConfiguracaoDoAutoatendimento as Config } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 import DateTimePicker from '@/components/DateTimePicker'
+import { cruzaMeiaNoite } from '@/lib/autoatendimento-regras'
 
 /**
  * Autoatendimento fora do horário da portaria — liga/desliga, horário e EM QUAIS DIAS.
@@ -56,7 +57,7 @@ export default function ConfiguracaoDoAutoatendimento({ eventoId, config }: { ev
             ? 'Autoatendimento desligado neste evento.'
             : dias.size === 0
               ? 'Ligado, mas sem nenhum dia marcado — o botão não aparece pro operador em dia nenhum ainda.'
-              : `Ligado, ${inicio}–${fim}, em ${dias.size} dia(s).`,
+              : `Ligado, das ${inicio} às ${fim}${cruzaMeiaNoite(inicio, fim) ? ' do dia seguinte' : ''}, em ${dias.size} dia(s).`,
         )
         router.refresh()
       } catch (e: unknown) {
@@ -96,6 +97,13 @@ export default function ConfiguracaoDoAutoatendimento({ eventoId, config }: { ev
           <span className="text-xs font-medium text-slate-600 shrink-0">Fim</span>
           <DateTimePicker modo="hora" value={fim} onChange={v => { setFeito(null); setFim(v) }} className="w-28" />
         </label>
+        {inicio && fim && (
+          <p className="text-xs text-slate-500 w-full sm:w-auto">
+            {cruzaMeiaNoite(inicio, fim)
+              ? <>Das <strong>{inicio}</strong> de cada dia marcado até as <strong>{fim} do dia seguinte</strong> (horário de Brasília).</>
+              : <>Das <strong>{inicio}</strong> às <strong>{fim}</strong> de cada dia marcado (horário de Brasília).</>}
+          </p>
+        )}
       </div>
 
       <div className="ml-7 bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
