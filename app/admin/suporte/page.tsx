@@ -53,6 +53,8 @@ export default async function SuportePage() {
       <PageHeader
         titulo="Suporte de Sistema"
         descricao="Acesso de apoio contratado pro dia do evento — corrige a operação, nunca administra"
+        // Chega-se aqui por Acessos (botão "Suporte de sistema") — o item saiu do menu em 09/10/2026.
+        voltarPara="/admin/usuarios"
         acoes={<SuporteModal mode="criar" organizacoes={organizacoesParaEscopo} eventos={eventosParaEscopo} />}
       />
 

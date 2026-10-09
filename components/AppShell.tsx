@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
-  Activity, ClipboardCheck, MessageCircle, Megaphone, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
+  Activity, ClipboardCheck, MessageCircle, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ShieldCheck, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight, Mic,
   FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, RotateCcw, MapPin,
 } from 'lucide-react'
@@ -67,6 +67,9 @@ type Grupo = { titulo?: string; itens: NavItem[] }
  * — editar, pendências, relatórios, escanear — vive aqui agora, e cada tela
  * pergunta o evento quando precisa. Um caminho só por função, em vez de dois.
  */
+/** Performance (menu + sino de alertas) desligado por enquanto — pedido do Juan, 09/10/2026. `true` religa os dois. */
+const MOSTRAR_PERFORMANCE = false
+
 function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSupervisor: boolean, encarregadosHabilitado: boolean): Grupo[] {
   const role = perfil.role
   const grupos: Grupo[] = []
@@ -188,9 +191,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
 
   // ─── Administrativo ─────────────────────────────────────────────────────
   const administrativo: NavItem[] = []
-  if (podeGerenciarEventos(perfil)) {
-    administrativo.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
-  }
+  /*
+   * Avisos — fora do menu por enquanto (pedido do Juan, 09/10/2026: limpar o que não se usa agora). A tela
+   * continua existindo em /admin/avisos; para voltar, é só religar a linha abaixo (e importar `Megaphone`).
+   */
+  // if (podeGerenciarEventos(perfil)) {
+  //   administrativo.push({ href: '/admin/avisos', label: 'Avisos', icon: Megaphone })
+  // }
   /*
    * Lançamento manual mora aqui, e não ao lado do Registro de ponto, embora
    * os dois gravem uma batida: o Registro de ponto é operação de portaria
@@ -284,10 +291,19 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   if (podeGerenciarBacklog(perfil)) {
     operacional.push({ href: '/admin/backlog', label: 'Backlog', icon: KanbanSquare })
   }
-  if (podeGerenciarOrcamentos(perfil)) {
+  /*
+   * Orçamentos mora dentro de Financeiro (botão no topo da tela) — pedido do Juan, 09/10/2026, para o menu não
+   * ficar poluído. Só fica no menu para quem ganhou a capacidade sem ser master (Financeiro é só do master, e sem
+   * isto essa pessoa perderia o caminho).
+   */
+  if (podeGerenciarOrcamentos(perfil) && !ehMaster(role)) {
     operacional.push({ href: '/admin/orcamentos', label: 'Orçamentos', icon: FileText })
   }
-  if (podeVerPerformance(perfil)) {
+  /*
+   * Performance — fora do menu por enquanto (pedido do Juan, 09/10/2026). A tela continua em /admin/performance;
+   * o sino de alertas do topo some junto (ver `MOSTRAR_PERFORMANCE`).
+   */
+  if (MOSTRAR_PERFORMANCE && podeVerPerformance(perfil)) {
     operacional.push({ href: '/admin/performance', label: 'Performance', icon: Gauge })
   }
   if (ehMaster(role)) {
@@ -296,12 +312,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
         { href: '/admin/organizacoes', label: 'Organizações', icon: Building2 },
         // A conta do negócio — só o master. Ver o cabeçalho de /admin/financeiro.
         { href: '/admin/financeiro', label: 'Financeiro', icon: Wallet },
-        /*
-         * Só master cria/edita: o escopo do suporte atravessa organizações
-         * ("Cliente A e Cliente B"), é a plataforma que contrata, não um
-         * admin de cliente específico. Ver lib/actions.ts (`criarSuporte`).
-         */
-        { href: '/admin/suporte', label: 'Suporte de Sistema', icon: UserCog },
+        // Suporte de Sistema saiu do menu: agora é um botão dentro de Acessos (pedido do Juan, 09/10/2026).
         /*
          * Era duas entradas — "Base de funcionários" e "Encontre colaborador"
          * — para a mesma consulta com um filtro a menos. Agora é uma tela só,
@@ -721,7 +732,7 @@ export default function AppShell({
                 setor={setores.find(s => s.id === setorAtualId)?.nome ?? null}
               />
             )}
-            {podeVerPerformance(perfil) && <SinoAlertas />}
+            {MOSTRAR_PERFORMANCE && podeVerPerformance(perfil) && <SinoAlertas />}
             <MenuUsuario perfil={perfil} fotoOrgUrl={fotoOrgUrl} onLogout={handleLogout} />
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { getPerfil, supabaseAdmin } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Users, CalendarDays, Search, Mail, Building2, X, UserCog } from 'lucide-react'
 import { podeGerenciarUsuarios, ehMaster, podeExcluir, podeExcluirOperadorPortao, ROLE_LABELS, type Role } from '@/lib/permissions'
 import UsuarioActions from './UsuarioActions'
 import { exibirIdentificador } from '@/lib/usuario'
@@ -168,6 +168,14 @@ export default async function UsuariosPage({
           acoes={
             <>
               <TutorialButton />
+              {/* Suporte de Sistema mora aqui agora, não no menu (pedido do Juan, 09/10/2026). Só o master cria. */}
+              {ehMaster(perfil?.role) && (
+                <Link href="/admin/suporte" className="btn btn-secundario">
+                  <UserCog className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Suporte de sistema</span>
+                  <span className="sm:hidden">Suporte</span>
+                </Link>
+              )}
               <Link href="/admin/usuarios/novo" data-tutorial="usr-novo" className="btn btn-primario">
                 <Plus className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Novo usuário</span>

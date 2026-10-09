@@ -31,6 +31,8 @@ export default async function OrcamentosPage() {
       <PageHeader
         titulo="Orçamentos"
         descricao="Crie, gerencie e gere orçamentos profissionais para seus clientes diretamente pelo Credenciei."
+        // Chega-se aqui por Financeiro (botão "Orçamentos") — o item saiu do menu em 09/10/2026.
+        voltarPara="/admin/financeiro"
         acoes={<Link href="/admin/orcamentos/novo" className="btn btn-primario"><Plus className="w-4 h-4" /> Novo orçamento</Link>}
       />
       <TabelaOrcamentos orcamentos={orcamentos} />
