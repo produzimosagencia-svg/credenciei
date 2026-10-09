@@ -358,9 +358,16 @@ export async function garantirFuncaoExtra(
   perfilId: string, role: FuncaoExtra, organizacaoId: string | null,
 ): Promise<{ ok: true; jaTinha: boolean } | { ok: false; erro: string }> {
   if (!FUNCOES_EXTRAS.includes(role)) return { ok: false, erro: 'Função inválida.' }
-  const { data: perfil } = await supabaseAdmin.from('perfis').select('role').eq('id', perfilId).maybeSingle()
+  const { data: perfil } = await supabaseAdmin.from('perfis').select('role, organizacao_id').eq('id', perfilId).maybeSingle()
   if (!perfil) return { ok: false, erro: 'Acesso não encontrado.' }
-  if (perfil.role === role) return { ok: true, jaTinha: true }
+  /*
+   * Gestor de credenciamento é POR ORGANIZAÇÃO também quando ele é a função de BASE (Juan, 09/10/2026: "as pessoas
+   * podem sim trabalhar em mais de um evento, de organizações diferentes"): operador de base da Navista que vira
+   * operador da Homologação ganha a segunda como função EXTRA, e troca pela foto. Antes: "já tinha", e nada gravava.
+   */
+  const mesmaFuncaoDeBase = perfil.role === role
+    && (role !== 'operador_portao' || ((perfil.organizacao_id as string | null) ?? null) === organizacaoId)
+  if (mesmaFuncaoDeBase) return { ok: true, jaTinha: true }
   if (!podeReceberFuncaoExtra(perfil.role as string)) return { ok: false, erro: MSG_FUNCAO_NAO_COMBINA }
 
   /*

@@ -1316,10 +1316,22 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
           eventoId, organizacaoId: organizacaoId ?? undefined,
         }))
       }
+    } else if (existente.organizacao_id && existente.organizacao_id !== organizacaoId) {
+      /*
+       * JÁ É OPERADOR, MAS DE OUTRA ORGANIZAÇÃO (Juan, 09/10/2026 — Livia, VITAL): a mesma pessoa trabalha em eventos
+       * de organizações diferentes. Antes recusava ("Este CPF já está cadastrado em outra organização") — e, pro
+       * master, MOVIA a conta de organização, tirando a pessoa da primeira. Agora a conta não é tocada: ela ganha o
+       * operador desta organização como função extra e troca de uma pra outra pela foto do usuário.
+       */
+      const funcao = await garantirFuncaoExtra(existente.id, 'operador_portao', organizacaoId)
+      if (!funcao.ok) throw new Error(funcao.erro)
+      after(() => registrarAuditoria({
+        perfil: perfil!, acao: 'ALTERACAO_OPERADOR',
+        campoAlterado: `Operador de portão — ${evento.nome}`,
+        valorNovo: `${existente.nome} — CPF ${formatCpf(cpf)} (já era operador de outra organização, ganhou esta também)`,
+        eventoId, organizacaoId: organizacaoId ?? undefined,
+      }))
     } else {
-      if (!ehMaster(perfil!.role) && existente.organizacao_id !== organizacaoId) {
-        throw new Error('Este CPF já está cadastrado em outra organização.')
-      }
       const { error: erroAtualizacao } = await admin.from('perfis').update({
         nome, telefone, ativo, organizacao_id: organizacaoId,
         permissoes_usuario: permissoesUsuarioDoForm(formData, 'operador_portao'),
