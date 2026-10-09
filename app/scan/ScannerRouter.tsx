@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import ScannerView from './ScannerView'
 import FaceScannerView from './FaceScannerView'
+import AutoatendimentoBotao from '@/components/AutoatendimentoBotao'
 
 type Evento = { id: string; nome: string }
 type Modo = 'qr' | 'rosto'
@@ -155,6 +156,7 @@ export default function ScannerRouter({
   if (modo === 'rosto') {
     return (
       <div className="flex-1 flex flex-col">
+        {!!eventoAtivo && <AutoatendimentoBotao eventoId={eventoAtivo} />}
         {chaveDeModoMaster}
         <FaceScannerView
           key={eventoAtivo}
@@ -171,6 +173,7 @@ export default function ScannerRouter({
 
   return (
     <div className="flex-1 flex flex-col">
+      {!!eventoAtivo && <AutoatendimentoBotao eventoId={eventoAtivo} />}
       {chaveDeModoMaster}
       <ScannerView
         key={eventoAtivo}

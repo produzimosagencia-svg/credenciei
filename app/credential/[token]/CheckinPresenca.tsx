@@ -320,12 +320,13 @@ export default function CheckinPresenca({
   }
 
   /**
-   * Entrada e saída sem operador — fora do dia principal.
+   * Entrada e saída sem operador — fora do dia principal, ou dentro dele na janela de autoatendimento
+   * (`podeAutoRegistrar` já reflete os dois casos, calculado no servidor).
    *
    * Sem selfie de propósito: é o toque que precisa ser rápido, e câmera é
    * exatamente o passo que trava em navegador embutido quebrado (o mesmo
-   * problema já corrigido no meio). A localização não trava o registro —
-   * falhando, some do resultado, mas a batida sai igual.
+   * problema já corrigido no meio). Aqui a localização NÃO trava — na janela de autoatendimento, quem trava é o
+   * próprio servidor (`registrarPresencaLivre`), que recusa sem latitude/longitude.
    */
   const registrarLivre = async (momento: 'entrada' | 'fim', tokenDoLocal?: string) => {
     if (busyLivre) return
@@ -722,14 +723,11 @@ function Cartao({
   const base = 'rounded-2xl border p-4 flex items-center gap-3'
   const ehFoto = info.momento === 'meio'
   /*
-   * Saída livre desligada — decisão do Juan, não bug: "ainda não tá
-   * desenvolvido totalmente isso, não tá mapeado, não tá estudado como a
-   * gente pode fazer na prática". A saída volta a exigir sempre o QR
-   * mostrado no credenciamento, igual sempre foi. Mesma trava do lado do
-   * servidor em `registrarPresencaLivre` — aqui é só a tela não oferecer o
-   * que o servidor recusaria de qualquer forma.
+   * `podeAutoRegistrar` agora também cobre a saída (autoatendimento fora do horário da portaria, 08/10/2026):
+   * quando o operador apertou "Estou indo embora" e ainda está na janela, `registrarPresencaLivre` aceita os dois
+   * momentos — a tela só reflete o que o servidor já decide.
    */
-  const ehLivre = !ehFoto && info.momento !== 'fim' && podeAutoRegistrar
+  const ehLivre = !ehFoto && podeAutoRegistrar
   const registrandoEsta = busyLivre === info.momento
 
   if (info.status === 'feito') {

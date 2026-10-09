@@ -69,6 +69,7 @@ import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { guardarNaLixeira } from './lixeira'
 import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
+import { obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela } from './autoatendimento'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -2916,6 +2917,24 @@ export async function editarEvento(id: string, formData: FormData) {
       .update({ tutorial_habilitado: formData.get('tutorial_habilitado') === 'on' })
       .eq('id', id)
     if (erroTutorial) console.error('[editarEvento] tutorial_habilitado não gravado (migração pendente?)', erroTutorial.message)
+  }
+
+  /*
+   * Autoatendimento fora do horário da portaria (supabase/upgrade-autoatendimento-portao.sql) — à parte e
+   * tolerante, mesmo cuidado de `tutorial_habilitado` acima. Horário vazio = recusa só esse campo (não derruba o
+   * resto do evento); sem `autoatendimento_presente`, a seção nem apareceu na tela (organização sem o recurso).
+   */
+  if (formData.has('autoatendimento_presente')) {
+    const habilitado = formData.get('autoatendimento_habilitado') === 'on'
+    const inicio = ((formData.get('autoatendimento_inicio') as string) || '').trim() || null
+    const fim = ((formData.get('autoatendimento_fim') as string) || '').trim() || null
+    if (habilitado && (!inicio || !fim)) {
+      throw new Error('Para ligar o autoatendimento, informe o horário de início e de fim.')
+    }
+    const { error: erroAuto } = await db.from('eventos')
+      .update({ autoatendimento_habilitado: habilitado, autoatendimento_inicio: inicio, autoatendimento_fim: fim })
+      .eq('id', id)
+    if (erroAuto) console.error('[editarEvento] autoatendimento não gravado (migração pendente?)', erroAuto.message)
   }
 
   /*
@@ -8320,34 +8339,6 @@ export async function registrarPresencaLivre(
   tokenDoLocal?: string
 ): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
   if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
-  /*
-   * ENTRADA E SAÍDA SÓ PELO OPERADOR DE PORTÃO (decisão do Juan, 08/10/2026, VITAL): a pessoa registrava a própria
-   * entrada pelo botão da credencial, sem ninguém conferir. Agora quem registra é o operador — no scanner ou de
-   * forma manual pelo perfil dele. A credencial só mostra o QR.
-   */
-  if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
-    return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
-  }
-  /*
-   * SAÍDA livre desligada — decisão do Juan, não limitação técnica.
-   *
-   * O auto-atendimento de entrada e saída (cartaz da portaria ou botão livre)
-   * foi construído e chegou a funcionar, mas a saída específica ainda não
-   * está madura pra operação real: "não tá mapeado, não tá estudado como a
-   * gente pode fazer na prática" — o risco é alguém sair sem ninguém
-   * confirmar de verdade que foi ela. Por ora a saída volta a exigir sempre
-   * o QR mostrado no credenciamento (Fluxo 1), igual sempre foi.
-   *
-   * A trava fica aqui, não só escondendo o botão em CheckinPresenca.tsx: uma
-   * recusa só na tela não impede quem chama esta action direto.
-   *
-   * Reversível: tirar este bloco (e o `info.momento !== 'fim'` equivalente em
-   * CheckinPresenca.tsx) religa exatamente o que já existia, sem reescrever
-   * nada — o resto da função continua intacto.
-   */
-  if (momento === 'fim') {
-    return { error: 'A saída ainda precisa ser feita mostrando o QR Code no credenciamento.' }
-  }
 
   // Mesmo teto da foto do meio: ação pública, protegida só pelo token.
   if (!await podePassar(`livre:${token}`, 20, 10 * 60 * 1000)) {
@@ -8356,7 +8347,7 @@ export async function registrarPresencaLivre(
 
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
-    .select(`id, telefone, ativo, status_credenciamento, fornecedor_id, origem, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
+    .select(`id, nome, telefone, ativo, status_credenciamento, fornecedor_id, origem, fornecedores(evento_id, eventos(id, token_portaria, ${JANELA_SELECT}))`)
     .eq('qr_token', token)
     .single()
   if (!func) return { error: 'Credencial não encontrada' }
@@ -8370,6 +8361,34 @@ export async function registrarPresencaLivre(
   const eventoId = fornecedor?.evento_id
   if (!evento || !eventoId) return { error: 'Evento não encontrado' }
 
+  /*
+   * ENTRADA E SAÍDA SÓ PELO OPERADOR DE PORTÃO, EXCETO na janela de autoatendimento (decisão do Juan, 08/10/2026,
+   * VITAL, retomada e ampliada em 08/10/2026 com o recurso "Autoatendimento fora do horário da portaria"): a
+   * pessoa registrava a própria entrada/saída pelo botão da credencial, sem ninguém conferir. Hoje quem registra
+   * é o operador — no scanner ou de forma manual pelo perfil dele. A credencial só mostra o QR.
+   *
+   * A ÚNICA exceção é esta janela: o operador apertou "Estou indo embora" (`ativarAutoatendimentoPortao`) e ainda
+   * está dentro do horário configurado em Editar evento — pensada pra quando a equipe do credenciamento já foi
+   * embora e ainda sobra gente dentro do evento sem jeito de bater a saída. Fora da janela, continua tudo como
+   * era: só o operador.
+   */
+  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId)
+  if (!autoatendimentoLiberado) {
+    if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
+      return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
+    }
+    if (momento === 'fim') {
+      return { error: 'A saída ainda precisa ser feita mostrando o QR Code no credenciamento.' }
+    }
+  }
+  /*
+   * Geolocalização OBRIGATÓRIA neste modo (pedido do Juan: "todos os registros precisam ser feitos com
+   * geolocalização") — sem operador olhando, o GPS é a única prova de que a pessoa está de fato no evento.
+   */
+  if (autoatendimentoLiberado && (typeof latitude !== 'number' || typeof longitude !== 'number')) {
+    return { error: 'Ative a localização do aparelho para registrar fora do horário da portaria.' }
+  }
+
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
   if (!resolucao.ok) return { error: resolucao.erro }
   // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
@@ -8382,12 +8401,13 @@ export async function registrarPresencaLivre(
   }
 
   /*
-   * No dia principal, este caminho só existe se o admin ligou. Fora dele
-   * (montagem/desmontagem), é sempre permitido — não depende de nenhuma
-   * configuração, porque não existe operador de plantão o tempo todo nesses
-   * dias.
+   * No dia principal, este caminho fora da janela de autoatendimento só existe se o admin ligou
+   * `checkin_autonomo`. Fora dele (montagem/desmontagem), é sempre permitido — não depende de nenhuma
+   * configuração, porque não existe operador de plantão o tempo todo nesses dias. Dentro da janela de
+   * autoatendimento, a liberação já veio do operador apertando "Estou indo embora": não exige também o
+   * `checkin_autonomo`, são recursos independentes.
    */
-  if (resolucao.diaPrincipal && evento.checkin_autonomo !== true) {
+  if (!autoatendimentoLiberado && resolucao.diaPrincipal && evento.checkin_autonomo !== true) {
     return { error: 'No dia do evento, a entrada e a saída são pelo QR Code no credenciamento.' }
   }
 
@@ -8419,14 +8439,7 @@ export async function registrarPresencaLivre(
    */
   const observacoes: string[] = []
   if (tokenDoLocal) observacoes.push('Registrado escaneando o QR do local.')
-  /*
-   * Inalcançável ENQUANTO a saída livre estiver desligada (ver o retorno
-   * antecipado no topo da função) — `momento` só chega aqui como 'entrada'.
-   * Mantido de propósito, não apagado: é o que volta a valer sozinho no dia
-   * em que aquele bloqueio for removido. O `as string` só evita o TypeScript
-   * reclamar de uma comparação que, por enquanto, nunca é verdadeira.
-   */
-  if ((momento as string) === 'fim') {
+  if (momento === 'fim') {
     const semMeio = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
     if (semMeio) observacoes.push(semMeio)
   }
@@ -8437,6 +8450,20 @@ export async function registrarPresencaLivre(
 
   if (latitude != null && longitude != null) {
     after(() => sincronizarEndereco(registro.id, latitude, longitude).catch(console.error))
+  }
+  /*
+   * Fica marcado na auditoria, separado da batida comum (pedido do Juan: "isso precisa estar na auditoria") —
+   * só quando saiu pela janela de autoatendimento, não a cada entrada/saída normal pela credencial.
+   */
+  if (autoatendimentoLiberado && registro) {
+    after(() => registrarAuditoria({
+      perfil: { id: null, nome: func.nome as string ?? 'Autoatendimento' },
+      acao: 'REGISTRO_AUTOATENDIMENTO',
+      campoAlterado: momento === 'entrada' ? 'Entrada (autoatendimento)' : 'Saída (autoatendimento)',
+      valorNovo: curto(`${momento === 'entrada' ? 'Entrada' : 'Saída'} fora do horário da portaria, com geolocalização`),
+      funcionarioId: func.id,
+      eventoId,
+    }))
   }
 
   // Mesmo agendamento que o scanner do portão dispara na entrada — sem isso,
@@ -10413,6 +10440,83 @@ export async function obterEnderecoAproximado(lat: number, lng: number): Promise
   if (!perfil || !podeGerenciarEventos(perfil)) return null
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
   return enderecoAproximado(lat, lng)
+}
+
+export type StatusAutoatendimento = {
+  /** O evento TEM a função (ligada em Editar evento) — independente de estar ativa agora. */
+  habilitado: boolean
+  /** Dentro da janela e com alguém tendo apertado "Estou indo embora" — é isto que libera o autoatendimento. */
+  liberadoAgora: boolean
+  janelaTexto: string | null
+  ativadoPorNome: string | null
+}
+
+/**
+ * O que a tela de scanner consulta (e repete, enquanto o botão fica visível) pra saber se mostra "Estou indo
+ * embora" ou "Cheguei", e se o autoatendimento está valendo agora.
+ */
+export async function statusAutoatendimentoPortao(eventoId: string): Promise<StatusAutoatendimento> {
+  const perfil = await getPerfil()
+  if (!(await podeEscanearEvento(perfil, eventoId))) {
+    return { habilitado: false, liberadoAgora: false, janelaTexto: null, ativadoPorNome: null }
+  }
+  const cfg = await obterAutoatendimento(eventoId)
+  let ativadoPorNome: string | null = null
+  if (cfg.ativadoPor) {
+    const { data } = await supabaseAdmin.from('perfis').select('nome').eq('id', cfg.ativadoPor).maybeSingle()
+    ativadoPorNome = (data?.nome as string | null) ?? null
+  }
+  return {
+    habilitado: cfg.habilitado,
+    liberadoAgora: await autoatendimentoLiberadoAgora(eventoId),
+    janelaTexto: descreverJanela(cfg),
+    ativadoPorNome,
+  }
+}
+
+/**
+ * "Estou indo embora" — o operador aperta e, dali até o horário de fim configurado em Editar evento, o
+ * colaborador passa a poder bater a própria entrada/saída pelo celular (lib/actions.ts, ver
+ * `registrarPresencaLivre`). Não é o operador quem escolhe o horário: só ativa dentro da janela já parametrizada.
+ */
+export async function ativarAutoatendimentoPortao(eventoId: string): Promise<{ ok: true } | { erro: string }> {
+  const perfil = await getPerfil()
+  if (!(await podeEscanearEvento(perfil, eventoId))) return { erro: 'Sem permissão sobre este evento' }
+
+  const cfg = await obterAutoatendimento(eventoId)
+  if (!cfg.habilitado) return { erro: 'Este evento não tem essa função ligada. Ligue em Editar evento.' }
+
+  const { error } = await supabaseAdmin
+    .from('eventos')
+    .update({ autoatendimento_ativado_em: new Date().toISOString(), autoatendimento_ativado_por: perfil!.id })
+    .eq('id', eventoId)
+  if (error) return { erro: 'Não foi possível ativar (migração upgrade-autoatendimento-portao.sql pendente?).' }
+
+  auditar(perfil, 'AUTOATENDIMENTO_ATIVADO', {
+    eventoId, campoAlterado: 'Autoatendimento fora do horário da portaria',
+    valorNovo: curto(`Ativado às ${new Date().toLocaleTimeString('pt-BR')}, vale até ${descreverJanela(cfg) ?? cfg.fim ?? '—'}`),
+  })
+  revalidatePath('/scan')
+  return { ok: true }
+}
+
+/** "Cheguei" — desliga o autoatendimento na hora, mesmo antes do horário de fim. Volta a exigir o operador. */
+export async function desativarAutoatendimentoPortao(eventoId: string): Promise<{ ok: true } | { erro: string }> {
+  const perfil = await getPerfil()
+  if (!(await podeEscanearEvento(perfil, eventoId))) return { erro: 'Sem permissão sobre este evento' }
+
+  const { error } = await supabaseAdmin
+    .from('eventos')
+    .update({ autoatendimento_ativado_em: null, autoatendimento_ativado_por: null })
+    .eq('id', eventoId)
+  if (error) return { erro: 'Não foi possível desativar (migração upgrade-autoatendimento-portao.sql pendente?).' }
+
+  auditar(perfil, 'AUTOATENDIMENTO_DESATIVADO', {
+    eventoId, campoAlterado: 'Autoatendimento fora do horário da portaria',
+    valorNovo: curto(`Desativado às ${new Date().toLocaleTimeString('pt-BR')}`),
+  })
+  revalidatePath('/scan')
+  return { ok: true }
 }
 
 export async function obterConfiguracaoDoMeio(eventoId: string): Promise<ConfiguracaoDoMeio> {

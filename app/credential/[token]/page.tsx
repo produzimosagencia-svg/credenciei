@@ -7,6 +7,7 @@ import CheckinPresenca, { type MomentoInfo } from './CheckinPresenca'
 import QrProtegido from './QrProtegido'
 import { linkDoSuporte } from '@/lib/whatsapp-suporte'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
+import { autoatendimentoLiberadoAgora } from '@/lib/autoatendimento'
 import CadastrarBiometriaCard from './CadastrarBiometriaCard'
 import ManterAtualizado from '@/components/ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -557,6 +558,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   }
 
   const tutorialDoEvento = await tutorialHabilitadoNoEvento(evento?.id ?? null)
+  /*
+   * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026): só liberado quando o operador
+   * apertou "Estou indo embora" E ainda está dentro da janela configurada em Editar evento — fora dela, a
+   * credencial continua só mostrando o QR. A biometria autoatendimento (acima) é um recurso diferente e não muda.
+   */
+  const podeAutoRegistrar = await autoatendimentoLiberadoAgora(evento?.id ?? null)
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>
@@ -656,8 +663,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                     ? momentos.map(m => (m.momento === 'entrada' && m.status === 'feito' ? { ...m, feitoEm: entradaAtualEm } : m))
                     : momentos}
                   turnosAnteriores={turnosAnteriores}
-                  // Entrada e saída só pelo operador de portão (08/10/2026): a credencial não oferece mais o botão.
-                  podeAutoRegistrar={false}
+                  // Entrada e saída só pelo operador de portão (08/10/2026) — exceto na janela de autoatendimento.
+                  podeAutoRegistrar={podeAutoRegistrar}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
                   temCartazNoLocal={!!evento?.token_portaria}
                   biometriaAutoatendimento={false}

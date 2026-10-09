@@ -124,6 +124,9 @@ export const ACAO_LABELS: Record<string, string> = {
   PEDIDO_AMPLIACAO: 'Pedido de mais colaboradores',
   APROVACAO_AMPLIACAO: 'Mais colaboradores aprovado',
   NEGACAO_AMPLIACAO: 'Mais colaboradores negado',
+  AUTOATENDIMENTO_ATIVADO: 'Autoatendimento ativado (operador foi embora)',
+  AUTOATENDIMENTO_DESATIVADO: 'Autoatendimento desativado (operador chegou)',
+  REGISTRO_AUTOATENDIMENTO: 'Ponto batido pelo colaborador (fora do horário da portaria)',
 }
 
 /** Motivos padrão pra alteração sensível — a UI oferece estes + "Outro" com texto livre. */

@@ -178,6 +178,55 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
           </label>
 
           {/*
+            * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026): fora da janela abaixo, a
+            * entrada e a saída continuam só pelo operador — isto existe para quando a equipe de credenciamento já
+            * foi embora e ainda sobra gente dentro do evento sem jeito de bater a saída. Nasce DESLIGADO; e mesmo
+            * ligado aqui, só vale depois que o operador apertar "Estou indo embora" na tela de scanner — ligar aqui
+            * é só permitir que o evento TENHA a função, não ativar na hora.
+            */}
+          <div
+            className="bg-white rounded-2xl border border-slate-200 p-4"
+            data-tutorial="edt-autoatendimento"
+          >
+            <input type="hidden" name="autoatendimento_presente" value="1" />
+            <label htmlFor="autoatendimento_habilitado" className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                id="autoatendimento_habilitado"
+                name="autoatendimento_habilitado"
+                defaultChecked={(evento as { autoatendimento_habilitado?: boolean }).autoatendimento_habilitado === true}
+                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-slate-800 font-semibold text-sm">Autoatendimento fora do horário da portaria</p>
+                <p className="text-slate-600 text-xs mt-1">
+                  Permite que o operador de portão libere, ao ir embora, o colaborador bater a própria entrada/saída
+                  pelo celular (com geolocalização obrigatória) até o horário de fim abaixo — depois disso volta
+                  automaticamente a exigir o operador.
+                </p>
+              </div>
+            </label>
+            <div className="flex flex-wrap items-center gap-3 mt-3 ml-7">
+              <label className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600">Início</span>
+                <input
+                  type="time" name="autoatendimento_inicio"
+                  defaultValue={((evento as { autoatendimento_inicio?: string | null }).autoatendimento_inicio ?? '').slice(0, 5)}
+                  className="input w-28"
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600">Fim</span>
+                <input
+                  type="time" name="autoatendimento_fim"
+                  defaultValue={((evento as { autoatendimento_fim?: string | null }).autoatendimento_fim ?? '').slice(0, 5)}
+                  className="input w-28"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/*
             * Aviso de uniforme/identificação (Vital, 30/09/2026) — texto FIXO,
             * diferente do sistema de `avisos` (que é pontual e some quando
             * visto). Regra de uniforme precisa aparecer toda vez que a pessoa

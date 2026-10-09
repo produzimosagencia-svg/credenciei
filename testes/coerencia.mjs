@@ -92,11 +92,13 @@ grupo('7 · Montagem tem entrada e saída livres')
 confere('o servidor libera', /if \(dia\.tipo !== 'principal'\) return \{ ok: true \}/.test(C.janelas), true)
 confere('nada é cobrado sem horário esperado', /esperado\.entrada && prazoEntradaReal && !desligado\(fluxos, 'reforco'\)/.test(C.mensagens), true)
 
-grupo('8 · Entrada e saída só pelo operador de portão (Juan, 08/10/2026) — a credencial não registra sozinha')
-confere('a tela não oferece o botão de registrar entrada/saída',
-  /podeAutoRegistrar=\{false\}/.test(C.credencial), true)
-confere('e o servidor recusa o registro pela credencial',
+grupo('8 · Entrada e saída só pelo operador de portão, exceto na janela de autoatendimento (Juan, 08/10/2026)')
+confere('a credencial calcula podeAutoRegistrar pela janela de autoatendimento, não mais fixo em false',
+  /const podeAutoRegistrar = await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(C.credencial), true)
+confere('e o servidor recusa o registro pela credencial fora da janela',
   /if \(ENTRADA_E_SAIDA_SO_PELO_OPERADOR\) \{/.test(C.actions ?? ''), true)
+confere('e dentro da janela exige geolocalização mesmo assim',
+  /autoatendimentoLiberado && \(typeof latitude !== 'number' \|\| typeof longitude !== 'number'\)/.test(C.actions), true)
 confere('e o servidor recusa mesmo chamado direto, sem a coluna ligada',
   /resolucao\.diaPrincipal && evento\.checkin_autonomo !== true/.test(C.actions), true)
 
