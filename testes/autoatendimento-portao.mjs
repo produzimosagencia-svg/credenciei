@@ -43,7 +43,7 @@ confere("os dois códigos têm rótulo em auditoria-rotulos.ts",
 
 console.log('\n3 · registrarPresencaLivre: bloqueado por padrão, liberado só na janela E no dia certo')
 confere('consulta autoatendimentoLiberadoAgora(eventoId, diaDoTurno) antes de decidir',
-  /const autoatendimentoLiberado = await autoatendimentoLiberadoAgora\(eventoId\)/.test(actions), true)
+  /const diaAutoatendimento = await diaDoAutoatendimentoLiberado\(eventoId\)\s*const autoatendimentoLiberado = diaAutoatendimento !== null/.test(actions), true)
 confere('fora da janela, continua recusando (ENTRADA_E_SAIDA_SO_PELO_OPERADOR)',
   /if \(!autoatendimentoLiberado\) \{\s*if \(ENTRADA_E_SAIDA_SO_PELO_OPERADOR\) \{/.test(actions), true)
 confere('dentro da janela, a saída (momento === "fim") deixa de ser recusada incondicionalmente',
@@ -59,7 +59,13 @@ confere('a checagem de dia principal não tem mais a exceção "!autoatendimento
 confere('dia principal bloqueia incondicionalmente (exceto o checkin_autonomo antigo)',
   /if \(resolucao\.diaPrincipal && evento\.checkin_autonomo !== true\) \{\s*return \{ error: 'No dia do evento/.test(actions), true)
 confere('a credencial some com o botão no dia principal, mesmo com a janela ligada',
-  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+  /const podeAutoRegistrar = diaAutoatendimento !== null/.test(credencial) && /diaDoAutoatendimentoLiberado\(evento\?\.id \?\? null\)/.test(credencial), true)
+
+confere('madrugada conta como a noite em que a janela começou: a batida usa o dia da janela (Juan, 09/10/2026)',
+  /diaAutoatendimento \? \{ diaTurno: diaAutoatendimento \} : undefined/.test(actions), true)
+confere('janela que COMEÇA no dia principal nunca libera (diaPermiteAutoatendimento no dia de início)',
+  /return \(await diaPermiteAutoatendimento\(eventoId, janela\.diaInicio\)\) \? janela\.diaInicio : null/.test(autoatendimentoLib), true)
+confere('a credencial confere a escala no dia da janela, não no do calendário', credencial.includes('escala.aprovados.includes(diaAutoatendimento)'), true)
 
 console.log('\n5 · auditoria específica do registro feito nessa janela')
 confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",
@@ -104,7 +110,7 @@ confere('ativar chama o servidor e refaz o status (não assume sucesso sem recon
 console.log('\n8 · credencial: a saída deixou de ser bloqueada incondicionalmente na tela')
 confere('podeAutoRegistrar não é mais fixo em false', !credencial.includes('podeAutoRegistrar={false}'), true)
 confere('a tela calcula a partir da janela de autoatendimento (e nunca no dia principal)',
-  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+  /const podeAutoRegistrar = diaAutoatendimento !== null/.test(credencial) && /diaDoAutoatendimentoLiberado\(evento\?\.id \?\? null\)/.test(credencial), true)
 confere("CheckinPresenca não trava mais 'fim' separado de podeAutoRegistrar",
   !/info\.momento !== 'fim' && podeAutoRegistrar/.test(checkin), true)
 

@@ -94,7 +94,7 @@ confere('nada é cobrado sem horário esperado', /esperado\.entrada && prazoEntr
 
 grupo('8 · Entrada e saída só pelo operador de portão, exceto na janela de autoatendimento (Juan, 08/10/2026)')
 confere('a credencial calcula podeAutoRegistrar pela janela de autoatendimento, não mais fixo em false',
-  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(C.credencial), true)
+  /const podeAutoRegistrar = diaAutoatendimento !== null/.test(C.credencial), true)
 confere('e o servidor recusa o registro pela credencial fora da janela',
   /if \(ENTRADA_E_SAIDA_SO_PELO_OPERADOR\) \{/.test(C.actions ?? ''), true)
 confere('e dentro da janela exige geolocalização mesmo assim',

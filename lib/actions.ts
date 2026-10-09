@@ -71,7 +71,7 @@ import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { guardarNaLixeira } from './lixeira'
 import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
 import {
-  obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela,
+  obterAutoatendimento, autoatendimentoLiberadoAgora, diaDoAutoatendimentoLiberado, descreverJanela,
   diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao,
 } from './autoatendimento'
 import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
@@ -8519,7 +8519,8 @@ export async function registrarPresencaLivre(
    * era: só o operador. E só nos dias marcados — o dia em que a janela COMEÇOU, porque ela pode cruzar a
    * meia-noite (ver lib/autoatendimento-regras.ts).
    */
-  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId)
+  const diaAutoatendimento = await diaDoAutoatendimentoLiberado(eventoId)
+  const autoatendimentoLiberado = diaAutoatendimento !== null
   if (!autoatendimentoLiberado) {
     if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
       return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
@@ -8570,7 +8571,15 @@ export async function registrarPresencaLivre(
     }
   }
 
-  const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, momento)
+  /*
+   * Na janela de autoatendimento, o dia da batida é o dia em que a JANELA COMEÇOU (às 03:00 de uma janela das
+   * 18:00 às 09:00, é a noite de ontem) — e não o do calendário, que já pode ser o dia principal seguinte. A saída
+   * de quem tem entrada em aberto continua fechando o dia da própria entrada (`resolverRegistro`).
+   */
+  const resolucao = await resolverRegistro(
+    { ...evento, id: eventoId }, func.id, momento, undefined,
+    diaAutoatendimento ? { diaTurno: diaAutoatendimento } : undefined,
+  )
   if (!resolucao.ok) return { error: resolucao.erro }
   /*
    * TRAVA DE 5 MINUTOS entre a entrada e a saída (pedido do Juan, 08/10/2026): no botão único da credencial, um

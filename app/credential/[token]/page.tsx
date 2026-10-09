@@ -7,7 +7,7 @@ import CheckinPresenca, { BotaoRegistroAutomatico, type MomentoInfo } from './Ch
 import QrProtegido from './QrProtegido'
 import { linkDoSuporte } from '@/lib/whatsapp-suporte'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
-import { autoatendimentoLiberadoAgora } from '@/lib/autoatendimento'
+import { diaDoAutoatendimentoLiberado } from '@/lib/autoatendimento'
 import CadastrarBiometriaCard from './CadastrarBiometriaCard'
 import ManterAtualizado from '@/components/ManterAtualizado'
 import TutorialProvider from '@/components/tutorial/TutorialProvider'
@@ -563,18 +563,22 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * apertou "Estou indo embora" E ainda está dentro da janela configurada em Editar evento — fora dela, a
    * credencial continua só mostrando o QR. A biometria autoatendimento (acima) é um recurso diferente e não muda.
    *
-   * NUNCA no dia principal (correção do Juan, mesmo dia): "dia do evento não funciona a batida sozinha do
-   * funcionário, somente com os operadores e gestores de credenciamento do portão da portaria" — o servidor já
-   * recusa (`registrarPresencaLivre`), isto só evita mostrar um botão que erraria na hora.
+   * NUNCA numa janela que COMEÇA no dia principal (correção do Juan: "dia do evento não funciona a batida sozinha
+   * do funcionário") — `autoatendimentoLiberadoAgora` já confere. A madrugada de uma janela que começou na véspera
+   * (não principal) conta como a noite da véspera até o horário de fim (Juan, 09/10/2026: "é pra parar às 9h").
    */
-  const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora(evento?.id ?? null)
+  // O dia da janela liberada (às 03:00 de uma janela 18:00–09:00, é a véspera) — ou null fora dela.
+  const diaAutoatendimento = await diaDoAutoatendimentoLiberado(evento?.id ?? null)
+  const podeAutoRegistrar = diaAutoatendimento !== null
   // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
   const bloqueadoHoje = !!escala && (escala.pendente || !escala.aprovados.includes(hoje))
   /*
    * BOTÃO ÚNICO no lugar do QR (pedido do Juan, 08/10/2026): com o autoatendimento liberado, a pessoa vê só um
    * botão — o sistema decide se é entrada ou saída. Tem entrada sem saída → saída; senão → entrada.
    */
-  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoHoje
+  // A escala é conferida no dia da JANELA (o mesmo que o servidor usa na batida), não no do calendário.
+  const bloqueadoNoAutoatendimento = !!escala && !!diaAutoatendimento && (escala.pendente || !escala.aprovados.includes(diaAutoatendimento))
+  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoNoAutoatendimento
   const entradaFeita = momentos.some(m => m.momento === 'entrada' && m.status === 'feito')
   const saidaFeita = momentos.some(m => m.momento === 'fim' && m.status === 'feito')
   const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null

@@ -89,13 +89,20 @@ export async function diaPermiteAutoatendimento(eventoId: string, dia: string): 
 }
 
 /**
- * Atalho: está liberado AGORA neste evento? Horário de Brasília dentro da janela, ativação do operador valendo
- * para ESTA janela, e o dia em que a janela COMEÇOU marcado em "Em quais dias" — numa janela das 18:00 às 00:25,
- * às 00:10 o dia que conta é o de ontem (é a noite de ontem). Ver lib/autoatendimento-regras.ts.
+ * O DIA da janela de autoatendimento liberada agora neste evento, ou `null` se não está liberado. Horário de
+ * Brasília dentro da janela, ativação do operador valendo para ESTA janela, e o dia em que a janela COMEÇOU marcado
+ * em "Em quais dias" (e não sendo dia principal). Numa janela das 18:00 às 09:00, às 03:00 o dia é o de ontem — é
+ * a noite de ontem até a regra parar, às 09:00 (pedido do Juan, 09/10/2026). Quem registra usa este dia como o
+ * dia da batida, não o do calendário.
  */
-export async function autoatendimentoLiberadoAgora(eventoId: string | null | undefined): Promise<boolean> {
-  if (!eventoId) return false
+export async function diaDoAutoatendimentoLiberado(eventoId: string | null | undefined): Promise<string | null> {
+  if (!eventoId) return null
   const janela = janelaLiberada(await obterAutoatendimento(eventoId))
-  if (!janela) return false
-  return diaPermiteAutoatendimento(eventoId, janela.diaInicio)
+  if (!janela) return null
+  return (await diaPermiteAutoatendimento(eventoId, janela.diaInicio)) ? janela.diaInicio : null
+}
+
+/** Atalho: está liberado AGORA neste evento? — ver `diaDoAutoatendimentoLiberado`. */
+export async function autoatendimentoLiberadoAgora(eventoId: string | null | undefined): Promise<boolean> {
+  return (await diaDoAutoatendimentoLiberado(eventoId)) !== null
 }
