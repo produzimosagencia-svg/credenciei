@@ -60,7 +60,7 @@ export default function AutoatendimentoBotao({ eventoId, tema = 'escuro' }: { ev
         <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${claro ? 'border-amber-200 bg-amber-50' : 'border-amber-400/40 bg-amber-400/10'}`}>
           <p className={`text-xs leading-snug ${claro ? 'text-amber-800' : 'text-amber-200'}`}>
             <b>Autoatendimento ativo</b> — colaboradores podem bater o próprio ponto pelo celular
-            {status.janelaTexto ? ` até ${status.janelaTexto}` : ''}.
+            {status.janelaTexto ? ` (das ${status.janelaTexto})` : ''}.
             {status.ativadoPorNome ? ` Ativado por ${status.ativadoPorNome}.` : ''}
           </p>
           <button
