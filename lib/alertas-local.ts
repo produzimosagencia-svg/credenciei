@@ -99,13 +99,7 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
     .order('created_at', { ascending: false })
     .range(de, ate)).catch(() => [] as Record<string, unknown>[])
 
-  const leituras = await buscarTudo<Record<string, unknown>>((de, ate) => supabaseAdmin
-    .from('leituras_qr')
-    .select('id, created_at, latitude, longitude, distancia_m, perfil_id, mensagem, funcionarios(nome, fornecedores(nome))')
-    .eq('evento_id', eventoId)
-    .eq('resultado', 'fora_do_local')
-    .order('created_at', { ascending: false })
-    .range(de, ate)).catch(() => [] as Record<string, unknown>[])
+  const leituras = await lerTentativas('evento_id', eventoId)
 
   const perfilIds = [...new Set([
     ...registros.map(r => r.criado_por_perfil_id as string | null),
@@ -149,15 +143,71 @@ export async function relatorioForaDoLocal(eventoId: string): Promise<RelatorioF
       situacao: 'recusada',
       funcionarioNome: f?.nome ?? '—',
       setorNome: f?.fornecedores?.nome ?? null,
-      tipo: /\(saída\)/.test(mensagem) ? 'fim' : /\(entrada\)/.test(mensagem) ? 'entrada' : null,
+      tipo: /\(saída\)/.test(mensagem) ? 'fim' : /\(entrada\)/.test(mensagem) ? 'entrada' : /\(meio\)/.test(mensagem) ? 'meio' : null,
       quando: l.created_at as string,
       distanciaM: num(l.distancia_m),
       latitude: num(l.latitude),
       longitude: num(l.longitude),
-      endereco: null,
+      endereco: (l.endereco_aproximado as string | null) ?? null,
       quemRegistrou: quem(l.perfil_id),
     })
   }
   linhas.sort((a, b) => b.quando.localeCompare(a.quando))
   return { localConfigurado: !!local, raioM: local?.raioM ?? null, linhas }
+}
+
+const COLUNAS_TENTATIVA = 'id, created_at, latitude, longitude, distancia_m, perfil_id, mensagem, funcionario_id, funcionarios(nome, fornecedores(nome))'
+
+/**
+ * As tentativas recusadas por estar fora do raio (`leituras_qr`, resultado 'fora_do_local'). Tolerante: sem a
+ * coluna do endereço (upgrade-endereco-tentativa-fora.sql pendente), lê sem ela.
+ */
+async function lerTentativas(coluna: 'evento_id' | 'funcionario_id', valor: string): Promise<Record<string, unknown>[]> {
+  const ler = (colunas: string) => buscarTudo<Record<string, unknown>>((de, ate) => supabaseAdmin
+    .from('leituras_qr').select(colunas)
+    .eq(coluna, valor)
+    .eq('resultado', 'fora_do_local')
+    .order('created_at', { ascending: false })
+    .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>)
+  try {
+    return await ler(`${COLUNAS_TENTATIVA}, endereco_aproximado`)
+  } catch {
+    return ler(COLUNAS_TENTATIVA).catch(() => [])
+  }
+}
+
+export type TentativaForaDoLocal = {
+  id: string
+  quando: string
+  tipo: 'entrada' | 'meio' | 'fim' | null
+  distanciaM: number | null
+  endereco: string | null
+  latitude: number | null
+  longitude: number | null
+  quemRegistrou: string
+}
+
+/** As tentativas recusadas de UMA pessoa — o histórico dela (aba Histórico da ficha), mais recente primeiro. */
+export async function tentativasForaDoLocalDe(funcionarioId: string): Promise<TentativaForaDoLocal[]> {
+  const linhas = await lerTentativas('funcionario_id', funcionarioId)
+  const perfilIds = [...new Set(linhas.map(l => l.perfil_id as string | null).filter((v): v is string => !!v))]
+  const nomes = new Map<string, string>()
+  if (perfilIds.length) {
+    const { data } = await supabaseAdmin.from('perfis').select('id, nome').in('id', perfilIds)
+    for (const p of data ?? []) nomes.set(p.id as string, p.nome as string)
+  }
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  return linhas.map(l => {
+    const mensagem = (l.mensagem as string | null) ?? ''
+    return {
+      id: l.id as string,
+      quando: l.created_at as string,
+      tipo: /\(saída\)/.test(mensagem) ? 'fim' : /\(entrada\)/.test(mensagem) ? 'entrada' : /\(meio\)/.test(mensagem) ? 'meio' : null,
+      distanciaM: num(l.distancia_m),
+      endereco: (l.endereco_aproximado as string | null) ?? null,
+      latitude: num(l.latitude),
+      longitude: num(l.longitude),
+      quemRegistrou: l.perfil_id ? (nomes.get(l.perfil_id as string) ?? 'Operador') : 'Celular da própria pessoa',
+    }
+  })
 }

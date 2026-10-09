@@ -34,5 +34,16 @@ ok(view.includes('Batidas registradas fora do local') && view.includes('Tentativ
 ok(view.includes('https://www.google.com/maps?q='), 'link para o mapa do ponto')
 ok(view.includes("await import('exceljs')"), 'baixa em planilha')
 
+console.log('\n4 · tentativa recusada fica no nome da pessoa, com o endereço (pedido do Juan, 08/10/2026)')
+ok(/async function auditarTentativaForaDoLocal/.test(actions) && /acao: 'TENTATIVA_FORA_DO_LOCAL'/.test(actions), 'grava na auditoria, no nome da pessoa')
+ok(/TENTATIVA_FORA_DO_LOCAL: /.test(ler('lib/auditoria-rotulos.ts')), 'rótulo na auditoria')
+ok((actions.match(/await enderecoDaPosicao\(/g) || []).length >= 3, 'busca o endereço nos três caminhos: celular, scanner e registro manual')
+ok((actions.match(/origem: '(celular|scanner|registro_manual)', momento/g) || []).length === 3, 'os três caminhos registram a tentativa')
+ok(/endereco_aproximado text/.test(ler('supabase/upgrade-endereco-tentativa-fora.sql')), 'coluna do endereço em leituras_qr (migração)')
+ok(/endereco: \(l\.endereco_aproximado as string \| null\) \?\? null/.test(lib), 'o relatório mostra o endereço da tentativa')
+ok(/h\.tentativasForaDoLocal = await tentativasForaDoLocalDe\(funcionarioId\)/.test(actions) && /if \(perfil && podeGerenciarEventos\(perfil\)\) h\.tentativasForaDoLocal/.test(actions),
+  'histórico da pessoa (ficha) traz as tentativas — só para quem gerencia o evento')
+ok(ler('components/HistoricoBatidas.tsx').includes('de bater o ponto fora do local do evento'), 'a aba Histórico mostra as tentativas com endereço e mapa')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

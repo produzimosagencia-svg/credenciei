@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle, LogIn, Camera, Pencil, Trash2 } from 'lucide-react'
+import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle, LogIn, Camera, Pencil, Trash2, MapPin } from 'lucide-react'
 import { formatarBR, isoParaInput } from '@/lib/tz'
 import { lancarPontoManual, apagarBatida, type MomentoPresenca } from '@/lib/actions'
 import { Badge } from '@/components/ui/Superficie'
@@ -112,6 +112,41 @@ export default function HistoricoBatidas({
         <StatCard label="Faltas" value={resumo.diasFaltados} icon={X} tom={resumo.diasFaltados ? 'erro' : 'neutro'} />
         <StatCard label="Horas registradas" value={resumo.horasTotais.toString().replace('.', ',')} icon={Clock} tom="info" />
       </div>
+
+      {/*
+        * Tentativas RECUSADAS por estar fora do raio do local do evento, com o endereço de onde a pessoa tentou
+        * (pedido do Juan, 08/10/2026). Só chega preenchido para quem gerencia o evento — ver
+        * `obterHistoricoDoFuncionario`.
+        */}
+      {!!h.tentativasForaDoLocal?.length && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 space-y-2">
+          <p className="flex items-center gap-1.5 text-red-800 text-sm font-semibold">
+            <MapPin className="w-4 h-4 shrink-0" />
+            {h.tentativasForaDoLocal.length} tentativa{h.tentativasForaDoLocal.length === 1 ? '' : 's'} de bater o ponto fora do local do evento
+          </p>
+          <ul className="space-y-1.5">
+            {h.tentativasForaDoLocal.map(t => {
+              const mapa = t.latitude != null && t.longitude != null ? `https://www.google.com/maps?q=${t.latitude},${t.longitude}` : null
+              const dist = t.distanciaM == null ? null : t.distanciaM >= 1000
+                ? `${(t.distanciaM / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : `${t.distanciaM} m`
+              return (
+                <li key={t.id} className="bg-white rounded-xl border border-red-100 px-3 py-2 text-xs text-slate-700">
+                  <p className="font-semibold text-slate-800">
+                    {formatarBR(t.quando, 'curto')}
+                    {t.tipo ? ` · ${t.tipo === 'fim' ? 'Saída' : t.tipo === 'meio' ? 'Meio' : 'Entrada'}` : ''}
+                    {dist ? ` · a ${dist} do local` : ''}
+                  </p>
+                  <p className="text-slate-600 mt-0.5">{t.endereco ?? 'Endereço não encontrado'}</p>
+                  <p className="text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-2">
+                    <span>{t.quemRegistrou}</span>
+                    {mapa && <a href={mapa} target="_blank" rel="noopener noreferrer" className="text-brand-600 font-semibold hover:underline">Ver no mapa</a>}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
 
       {/*
         * As três contagens de batida, à parte do resumo principal.

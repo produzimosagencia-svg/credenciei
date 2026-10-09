@@ -18,6 +18,7 @@
 // fechamento — "estava escalado para 5 dias e veio em 4".
 
 import { supabaseAdmin, meusSetores } from './supabase-server'
+import type { TentativaForaDoLocal } from './alertas-local'
 import { veTodosEventos } from './permissions'
 import { janelaDoMeio, faseDoDia, diaBRT, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
 
@@ -93,6 +94,12 @@ export type HistoricoNoEvento = {
   descredenciadoEm: string | null
   dias: DiaDoHistorico[]
   resumo: ResumoHistorico
+  /**
+   * Tentativas de bater o ponto RECUSADAS por estar fora do raio do local do evento, com o endereço (pedido do
+   * Juan, 08/10/2026). Só vem para quem gerencia o evento — `obterHistoricoDoFuncionario` preenche; o resto do
+   * sistema (supervisor, encarregado) não recebe, igual às outras marcas de localização.
+   */
+  tentativasForaDoLocal?: TentativaForaDoLocal[]
 }
 
 const H_MS = 60 * 60 * 1000

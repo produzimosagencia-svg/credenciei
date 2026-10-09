@@ -74,7 +74,7 @@ import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela,
   diasAutoatendimentoDoEvento, diaPermiteAutoatendimento,
 } from './autoatendimento'
-import { relatorioForaDoLocal, type RelatorioForaDoLocal } from './alertas-local'
+import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -7065,6 +7065,42 @@ async function marcarLocalDaBatida(registroId: string | null | undefined, evento
   } catch (e) { console.error('[geo] batida não marcada (migração pendente?)', e) }
 }
 
+/**
+ * Tentativa de batida RECUSADA por estar fora do raio do local do evento — fica no nome da pessoa (pedido do Juan,
+ * 08/10/2026: "no tal dia, tal pessoa tentou bater fora do evento… me traga o endereço que ela bateu"). Busca o
+ * endereço do ponto (Nominatim) e grava na auditoria; a linha em `leituras_qr` (relatório "Fora do local" e
+ * histórico da pessoa) é gravada por quem chama, com o mesmo endereço. Nunca lança — roda depois da resposta.
+ */
+async function enderecoDaPosicao(pos: Posicao | null): Promise<string | null> {
+  if (!pos) return null
+  try { return await enderecoAproximado(pos.latitude, pos.longitude) } catch { return null }
+}
+
+const ROTULO_MOMENTO_TENTATIVA: Record<string, string> = { entrada: 'entrada', meio: 'meio', fim: 'saída' }
+
+async function auditarTentativaForaDoLocal(t: {
+  eventoId: string; funcionarioId: string | null
+  /** Quem estava com o aparelho. `id` nulo = o celular da própria pessoa (autoatendimento). */
+  quem: { id: string | null; nome: string }
+  origem: 'celular' | 'scanner' | 'registro_manual'
+  momento: string | null; distanciaM: number | null; endereco: string | null
+}) {
+  const ondeFoi = t.origem === 'celular' ? 'pelo próprio celular' : t.origem === 'scanner' ? 'no scanner do operador' : 'no registro manual do operador'
+  await registrarAuditoria({
+    perfil: t.quem, acao: 'TENTATIVA_FORA_DO_LOCAL',
+    campoAlterado: `Tentativa de ${t.momento ? ROTULO_MOMENTO_TENTATIVA[t.momento] ?? t.momento : 'batida'} fora do local (${ondeFoi})`,
+    valorNovo: curto(`${t.distanciaM != null ? descreverDistancia(t.distanciaM) : 'localização não confirmada'}${t.endereco ? ` — ${t.endereco}` : ''}`, 400),
+    funcionarioId: t.funcionarioId ?? undefined, eventoId: t.eventoId,
+  })
+}
+
+/** Insere em `leituras_qr` com o endereço; sem a coluna (upgrade-endereco-tentativa-fora.sql pendente), grava sem ele. */
+async function inserirLeituraComEndereco(linha: Record<string, unknown>, endereco: string | null) {
+  let { error } = await supabaseAdmin.from('leituras_qr').insert([{ ...linha, endereco_aproximado: endereco }])
+  if (error && /endereco_aproximado/.test(error.message)) ({ error } = await supabaseAdmin.from('leituras_qr').insert([linha]))
+  return error
+}
+
 function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
@@ -7109,11 +7145,24 @@ async function gravarLeituraQR(dados: {
     }
     const pos = dados.local ?? null
     const geo = pos && dados.eventoId ? avaliarLocal(pos, await localDoEvento(dados.eventoId)) : { distanciaM: null, foraDoLocal: null }
-    let { error } = await supabaseAdmin.from('leituras_qr').insert([{
+    // Recusada por estar fora do raio: guarda o endereço e deixa no nome da pessoa (auditoria) — ver `auditarTentativaForaDoLocal`.
+    const recusadaFora = !!r?.foraDoLocal
+    const endereco = recusadaFora ? await enderecoDaPosicao(pos) : null
+    let error = await inserirLeituraComEndereco({
       ...base,
       latitude: pos?.latitude ?? null, longitude: pos?.longitude ?? null, precisao_m: pos?.precisao ?? null,
       distancia_m: geo.distanciaM, fora_do_local: geo.foraDoLocal,
-    }])
+    }, endereco)
+    if (recusadaFora && dados.eventoId) {
+      const { data: op } = dados.perfilId
+        ? await supabaseAdmin.from('perfis').select('nome').eq('id', dados.perfilId).maybeSingle()
+        : { data: null }
+      await auditarTentativaForaDoLocal({
+        eventoId: dados.eventoId, funcionarioId,
+        quem: { id: dados.perfilId, nome: (op?.nome as string | undefined) ?? 'Operador' },
+        origem: 'scanner', momento: r?.momento ?? null, distanciaM: geo.distanciaM ?? r?.distanciaForaDoLocal ?? null, endereco,
+      })
+    }
     // Sem as colunas de localização (migração pendente): grava a leitura como antes.
     if (error && /latitude|longitude|precisao_m|distancia_m|fora_do_local/.test(error.message)) {
       ({ error } = await supabaseAdmin.from('leituras_qr').insert([base]))
@@ -8482,13 +8531,18 @@ export async function registrarPresencaLivre(
       const { distanciaM, foraDoLocal } = avaliarLocal(posicaoPropria, localEvento)
       if (!posicaoPropria || foraDoLocal) {
         after(async () => {
-          const { error } = await supabaseAdmin.from('leituras_qr').insert([{
+          const endereco = await enderecoDaPosicao(posicaoPropria)
+          const error = await inserirLeituraComEndereco({
             evento_id: eventoId, perfil_id: null, funcionario_id: func.id, tipo: 'credencial', sucesso: false,
             resultado: 'fora_do_local',
             mensagem: `Autoatendimento pelo celular (${momento === 'entrada' ? 'entrada' : 'saída'}) recusado: fora do local do evento`,
             latitude, longitude, precisao_m: null, distancia_m: distanciaM, fora_do_local: true,
-          }])
+          }, endereco)
           if (error) console.error('[autoatendimento] tentativa fora do local não gravada', error.message)
+          await auditarTentativaForaDoLocal({
+            eventoId, funcionarioId: func.id, quem: { id: null, nome: `${(func.nome as string) ?? 'Colaborador'} (próprio celular)` },
+            origem: 'celular', momento, distanciaM, endereco,
+          })
         })
         return {
           error: distanciaM != null
@@ -9405,6 +9459,8 @@ export async function obterHistoricoDoFuncionario(
   }
   const h = await historicoDoFuncionario(funcionarioId)
   if (!h) return { error: 'Funcionário não encontrado.' }
+  // Tentativas recusadas por estar fora do local, com endereço — só para quem gerencia eventos (admin/master).
+  if (perfil && podeGerenciarEventos(perfil)) h.tentativasForaDoLocal = await tentativasForaDoLocalDe(funcionarioId)
   return { historico: h }
 }
 
@@ -9909,6 +9965,22 @@ export async function registrarPresencaAssistida(
     if (localEvento) {
       const { distanciaM, foraDoLocal } = avaliarLocal(posOperador, localEvento)
       if (!posOperador || foraDoLocal) {
+        // A tentativa fica no nome da pessoa, com o endereço — mesmo rastro do scanner e do celular.
+        after(async () => {
+          const endereco = await enderecoDaPosicao(posOperador)
+          const error = await inserirLeituraComEndereco({
+            evento_id: evento.id, perfil_id: perfil.id, funcionario_id: funcionarioId, tipo: 'credencial', sucesso: false,
+            resultado: 'fora_do_local',
+            mensagem: `Registro manual (${ROTULO_MOMENTO_TENTATIVA[momento] ?? momento}) recusado: fora do local do evento`,
+            latitude: posOperador?.latitude ?? null, longitude: posOperador?.longitude ?? null, precisao_m: posOperador?.precisao ?? null,
+            distancia_m: distanciaM, fora_do_local: true,
+          }, endereco)
+          if (error) console.error('[registro manual] tentativa fora do local não gravada', error.message)
+          await auditarTentativaForaDoLocal({
+            eventoId: evento.id, funcionarioId, quem: { id: perfil.id, nome: perfil.nome },
+            origem: 'registro_manual', momento, distanciaM, endereco,
+          })
+        })
         return {
           error: posOperador
             ? `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`
