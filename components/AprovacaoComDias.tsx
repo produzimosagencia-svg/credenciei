@@ -65,15 +65,19 @@ export default function AprovacaoComDias({
    * algo obrigatório ... trava, manda mensagem de erro"). Antes, cadastro sem `escala.status` (planilha, ou
    * evento que ligou a escala depois) podia ser aprovado com ZERO dias marcados — "QR vale todo dia", o oposto
    * do que se quer agora. O mesmo vale pra `salvarDias`, que já recusava lista vazia.
+   *
+   * EXCETO supervisor (`detalhe.ehSupervisor`, pedido do Juan, 08/10/2026, depois de liberar manualmente os do
+   * VITAL): sai aprovado para todos os dias sozinho — o servidor força isso (`aprovarCredenciamento`), a grade
+   * nem aparece pra marcar nada.
    */
-  const exigeDias = detalhe.usaEscala
+  const exigeDias = detalhe.usaEscala && !detalhe.ehSupervisor
   const aprovar = () => {
     if (exigeDias && !marcados.length) { setErro('Marque pelo menos um dia de trabalho.'); return }
     executar(async () => {
       const r = await aprovarCredenciamento(funcionarioId, fornecedorId, eventoId, exigeDias ? marcados : undefined)
       // Cadastro anterior ao recurso (sem dias escolhidos): se o supervisor
       // marcou dias, eles passam a valer a partir daqui.
-      if (r.ok && detalhe.usaEscala && !detalhe.escala?.status && marcados.length) {
+      if (r.ok && detalhe.usaEscala && !detalhe.ehSupervisor && !detalhe.escala?.status && marcados.length) {
         return ajustarEscalaDoFuncionario(funcionarioId, fornecedorId, eventoId, marcados)
       }
       return r
@@ -99,7 +103,11 @@ export default function AprovacaoComDias({
             <CalendarDays className="w-3.5 h-3.5" /> Dias de trabalho
           </p>
 
-          {escalaAprovada ? (
+          {detalhe.ehSupervisor ? (
+            <p className="text-emerald-700 text-xs">
+              Supervisor — liberado automaticamente para todos os dias do evento ({listarDias(detalhe.diasDoEvento.map(d => d.data))}).
+            </p>
+          ) : escalaAprovada ? (
             <div className="text-xs space-y-0.5">
               <p className="text-green-700 font-semibold">QR válido em: {listarDias(aprovados)}</p>
               {detalhe.escala?.decididaPor && (
@@ -119,17 +127,21 @@ export default function AprovacaoComDias({
             </p>
           )}
 
-          <SeletorDiasEscala
-            dias={detalhe.diasDoEvento} marcados={marcados} onAlternar={alternar}
-            pedidos={pedidos} lotados={detalhe.lotados} desabilitado={isPending || detalhe.status === 'negado'}
-          />
-          <LegendaFases comPedido={pedidos.length > 0} />
+          {!detalhe.ehSupervisor && (
+            <>
+              <SeletorDiasEscala
+                dias={detalhe.diasDoEvento} marcados={marcados} onAlternar={alternar}
+                pedidos={pedidos} lotados={detalhe.lotados} desabilitado={isPending || detalhe.status === 'negado'}
+              />
+              <LegendaFases comPedido={pedidos.length > 0} />
 
-          {(recusados.length > 0 || naoPedidos.length > 0) && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-600 space-y-0.5">
-              {recusados.length > 0 && <p>Pedidos que <strong>não</strong> vão valer: {listarDias(recusados)}</p>}
-              {naoPedidos.length > 0 && <p>Acrescentados pelo supervisor: {listarDias(naoPedidos)}</p>}
-            </div>
+              {(recusados.length > 0 || naoPedidos.length > 0) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-600 space-y-0.5">
+                  {recusados.length > 0 && <p>Pedidos que <strong>não</strong> vão valer: {listarDias(recusados)}</p>}
+                  {naoPedidos.length > 0 && <p>Acrescentados pelo supervisor: {listarDias(naoPedidos)}</p>}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -171,7 +183,7 @@ export default function AprovacaoComDias({
         </div>
       )}
 
-      {detalhe.status === 'aprovado' && detalhe.usaEscala && mudou && (
+      {detalhe.status === 'aprovado' && detalhe.usaEscala && !detalhe.ehSupervisor && mudou && (
         <div className="space-y-2">
           <input
             value={motivo} onChange={e => setMotivo(e.target.value)}

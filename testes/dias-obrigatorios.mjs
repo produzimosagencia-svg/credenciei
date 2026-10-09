@@ -25,7 +25,7 @@ ok(/if \(diasEscala && !diasEscolhidos\.length\) \{/.test(form) && /Selecione pe
 ok(/!!diasEscala && !diasEscolhidos\.length/.test(form), '… e o botão de enviar já fica desabilitado sem nenhum dia marcado')
 
 const aprovDias = ler('components/AprovacaoComDias.tsx')
-ok(/const exigeDias = detalhe\.usaEscala$/m.test(aprovDias), 'a tela de aprovação/ajuste exige dia em QUALQUER evento de escala, mesmo sem escala.status prévio')
+ok(/const exigeDias = detalhe\.usaEscala && !detalhe\.ehSupervisor$/m.test(aprovDias), 'a tela de aprovação/ajuste exige dia em QUALQUER evento de escala, mesmo sem escala.status prévio (exceto supervisor, liberado para todos os dias)')
 ok(/Marque pelo menos um dia de trabalho\./.test(aprovDias) && /Marque pelo menos um dia\. Para tirar a pessoa do evento, use Desativar ou Descredenciar\./.test(aprovDias), 'as duas ações (aprovar e salvar dias) mostram o erro antes de chamar o servidor')
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')

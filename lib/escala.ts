@@ -26,6 +26,25 @@ import {
  *     Configurações → Funcionalidades do Sistema (nasce desligado).
  * Evento normal → `false`, sempre.
  */
+/**
+ * Esta pessoa (pelo CPF) tem conta de supervisor em algum fornecedor do sistema? Vira regra automática a partir
+ * de 08/10/2026 (pedido do Juan, depois de liberar manualmente os supervisores do VITAL: "quem for supervisor
+ * pode deixar liberado todos os dias... todas as pessoas que for supervisor pode liberar pra todos os dias") —
+ * supervisor precisa poder estar presente em qualquer dia do evento, não só nos que marcou no próprio cadastro
+ * de colaborador. `aprovarCredenciamento` e `ajustarEscalaDoFuncionario` chamam isto pra forçar todos os dias,
+ * ignorando o que foi pedido/marcado na tela.
+ */
+export async function pessoaEhSupervisor(cpf: string | null | undefined): Promise<boolean> {
+  const limpo = (cpf ?? '').replace(/\D/g, '')
+  if (limpo.length !== 11) return false
+  try {
+    const { data } = await supabaseAdmin.from('perfis').select('id').eq('cpf', limpo).eq('role', 'supervisor').limit(1).maybeSingle()
+    return !!data
+  } catch {
+    return false
+  }
+}
+
 export async function eventoUsaEscalaPorDia(eventoId: string): Promise<boolean> {
   try {
     const { data: evento, error } = await supabaseAdmin
@@ -153,6 +172,8 @@ export type DetalheCredenciamento = {
   escala: EscalaDoFuncionario | null
   /** Dias em que o setor já tem o máximo de aprovados (sem contar esta pessoa). */
   lotados: string[]
+  /** Supervisor (ver `pessoaEhSupervisor`) — sai aprovado para todos os dias, sem grade pra marcar. */
+  ehSupervisor: boolean
 }
 
 export async function escalaDoFuncionario(funcionarioId: string): Promise<EscalaDoFuncionario | null> {

@@ -49,6 +49,7 @@ import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_M
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
   gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
+  pessoaEhSupervisor,
   type DetalheCredenciamento,
 } from './escala'
 import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
@@ -4475,7 +4476,7 @@ export async function aprovarCredenciamento(
     const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId)
 
     const { data: func } = await supabaseAdmin
-      .from('funcionarios').select('status_credenciamento, telefone, qr_token').eq('id', funcionarioId).single()
+      .from('funcionarios').select('status_credenciamento, telefone, qr_token, cpf').eq('id', funcionarioId).single()
     if (!func) return { error: 'Funcionário não encontrado.' }
     if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'pendente') {
       return { error: 'Este credenciamento já foi decidido.' }
@@ -4491,12 +4492,18 @@ export async function aprovarCredenciamento(
      * (pedido do Juan, 08/10/2026: "os dias precisa ser algo obrigatório"). Antes, cadastro sem dias escolhidos
      * (planilha, ou evento que ligou a escala depois) aprovava direto com ZERO dias — e o QR "valia todo dia", o
      * oposto do que se queria. `conferirDiasPermitidos` já recusa lista vazia com a frase pronta.
+     *
+     * EXCETO supervisor (pessoaEhSupervisor): esta pessoa pode estar presente em qualquer dia do evento, então os
+     * dias "pedidos"/escolhidos na tela são ignorados e ela sai aprovada para TODOS os dias disponíveis.
      */
     const escala = await escalaDoFuncionario(funcionarioId)
     if (await eventoUsaEscalaPorDia(eventoId)) {
       const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+      const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null)
       const pedidos = (escala?.dias ?? []).filter(d => d.selecionado).map(d => d.data)
-      const conferido = conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
+      const conferido = souSupervisor
+        ? conferirDiasPermitidos(disponiveis, disponiveis)
+        : conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
       if (!conferido.ok) return { error: conferido.erro }
       const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, [])
       if (cheios) return { error: cheios }
@@ -4597,7 +4604,7 @@ export async function ajustarEscalaDoFuncionario(
     const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId, motivo)
 
     const { data: func } = await supabaseAdmin
-      .from('funcionarios').select('fornecedor_id, qr_token, fornecedores(evento_id)').eq('id', funcionarioId).maybeSingle()
+      .from('funcionarios').select('fornecedor_id, qr_token, cpf, fornecedores(evento_id)').eq('id', funcionarioId).maybeSingle()
     if (!func) return { error: 'Funcionário não encontrado.' }
     // A guarda acima confere o setor informado; aqui, que a pessoa É desse setor e desse evento.
     if (func.fornecedor_id !== fornecedorId || (func.fornecedores as unknown as { evento_id?: string } | null)?.evento_id !== eventoId) {
@@ -4606,11 +4613,15 @@ export async function ajustarEscalaDoFuncionario(
     if (!(await eventoUsaEscalaPorDia(eventoId))) return { error: 'Este evento não usa escala por dia.' }
 
     const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
-    const conferido = conferirDiasPermitidos(dias, disponiveis)
+    // Supervisor: todos os dias, sempre — ver `pessoaEhSupervisor`. Ignora `dias` e a trava de cota do setor.
+    const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null)
+    const conferido = conferirDiasPermitidos(souSupervisor ? disponiveis : dias, disponiveis)
     if (!conferido.ok) return { error: conferido.erro }
-    const jaAprovados = ((await escalaDoFuncionario(funcionarioId))?.dias ?? []).filter(d => d.aprovado).map(d => d.data)
-    const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, jaAprovados)
-    if (cheios) return { error: cheios }
+    if (!souSupervisor) {
+      const jaAprovados = ((await escalaDoFuncionario(funcionarioId))?.dias ?? []).filter(d => d.aprovado).map(d => d.data)
+      const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, jaAprovados)
+      if (cheios) return { error: cheios }
+    }
 
     const gravado = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: conferido.dias, perfilId: perfil.id })
     if (!gravado.ok) return { error: mensagemAmigavel(gravado.erro) }
@@ -4670,6 +4681,7 @@ export async function detalheDoCredenciamento(funcionarioId: string, fornecedorI
     const diasDoEvento: DiaDaEscala[] = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
     const escala = usaEscala ? await escalaDoFuncionario(funcionarioId) : null
     const lotados = usaEscala ? await diasLotados(fornecedorId, 'aprovado', funcionarioId) : []
+    const ehSupervisor = usaEscala ? await pessoaEhSupervisor(f.cpf as string | null) : false
 
     return {
       ok: true,
@@ -4692,6 +4704,7 @@ export async function detalheDoCredenciamento(funcionarioId: string, fornecedorI
         diasDoEvento,
         escala,
         lotados,
+        ehSupervisor,
       },
     }
   } catch (e) {
