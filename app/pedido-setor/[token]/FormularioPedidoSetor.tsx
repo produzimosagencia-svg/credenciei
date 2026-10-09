@@ -101,15 +101,17 @@ export default function FormularioPedidoSetor({
       {setores.map((s, i) => (
         <Bloco
           key={s.chave}
-          titulo={setores.length > 1 ? `Setor ${i + 1}` : 'Setor'}
+          titulo={setores.length > 1 ? `Serviço / Fornecedor ${i + 1}` : 'Serviço / Fornecedor'}
           acao={setores.length > 1 && (
             <button type="button" onClick={() => setSetores(l => l.filter(x => x.chave !== s.chave))} className="text-red-500 text-xs font-medium inline-flex items-center gap-1 hover:underline">
               <Trash2 className="w-3.5 h-3.5" /> Remover
             </button>
           )}
         >
-          <Campo rotulo="Nome do setor / fornecedor *">
-            <NomeMaiusculoInput required className="input" placeholder="Ex.: LIMPEZA, SEGURANÇA, BAR…" onValueChange={nome => mudar(s.chave, { nome })} />
+          {/* "Setor" virou "Serviço / Fornecedor" (pedido do Juan, 09/10/2026): quem preenche diz a FUNÇÃO que vai
+              desempenhar no evento. O que ele escreve continua sendo o nome do setor no sistema. */}
+          <Campo rotulo="Função que vai desempenhar no evento *">
+            <NomeMaiusculoInput required className="input" placeholder="Ex.: SEGURANÇA, LIMPEZA, COMUNICAÇÃO VISUAL, BUFFET…" onValueChange={nome => mudar(s.chave, { nome })} />
           </Campo>
 
           {ctx.subeventoIds && (
@@ -124,7 +126,7 @@ export default function FormularioPedidoSetor({
             </Campo>
           )}
 
-          <Campo rotulo="Quantidade de colaboradores *" ajuda="O total de pessoas que você precisa neste setor.">
+          <Campo rotulo="Quantidade de colaboradores *" ajuda="O total de pessoas que você precisa para este serviço.">
             <input
               required type="number" inputMode="numeric" min={1} step={1} placeholder="Ex.: 10" className="input tabular-nums"
               value={s.quantidade} onChange={e => mudar(s.chave, { quantidade: e.target.value })}
@@ -132,7 +134,7 @@ export default function FormularioPedidoSetor({
           </Campo>
 
           {!!dias.length && (
-            <Campo rotulo="Dias de trabalho *" ajuda="Toque nos dias em que o setor trabalha e diga quantas pessoas precisa em cada um.">
+            <Campo rotulo="Dias de trabalho *" ajuda="Toque nos dias em que o serviço acontece e diga quantas pessoas precisa em cada um.">
               <DiasComQuantidade
                 dias={dias}
                 valores={s.dias}
@@ -144,11 +146,11 @@ export default function FormularioPedidoSetor({
 
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input type="checkbox" checked={s.outroSupervisor} onChange={e => mudar(s.chave, { outroSupervisor: e.target.checked })} className="w-4 h-4 accent-brand-500" />
-            Este setor tem outro supervisor (diferente do responsável acima)
+            Este serviço tem outro supervisor (diferente do responsável acima)
           </label>
           {s.outroSupervisor && (
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <Campo rotulo="Nome do supervisor deste setor *">
+              <Campo rotulo="Nome do supervisor deste serviço *">
                 <NomeInput required className="input" onValueChange={nome => mudar(s.chave, { supervisor: { ...s.supervisor, nome } })} />
               </Campo>
               <Campo rotulo="CPF *">
@@ -164,7 +166,7 @@ export default function FormularioPedidoSetor({
 
       {setores.length < MAX_SETORES_POR_PEDIDO && (
         <button type="button" onClick={() => setSetores(l => [...l, novoSetor()])} className="btn btn-secundario w-full">
-          <Plus className="w-4 h-4" /> Incluir outro setor neste pedido
+          <Plus className="w-4 h-4" /> Incluir outro serviço / fornecedor neste pedido
         </button>
       )}
 

@@ -65,7 +65,7 @@ export default async function PedidoSetorPage({ params }: { params: Promise<{ to
           <p className="text-slate-600 text-sm font-semibold mt-1">{evento.nome as string}</p>
           {evento.local && <p className="text-slate-500 text-xs mt-0.5">{evento.local as string}</p>}
           <p className="text-slate-500 text-sm mt-4 leading-relaxed">
-            Diga qual setor você vai montar, quantas pessoas precisa e quem será o supervisor. O administrador do
+            Diga qual serviço você vai prestar no evento (segurança, limpeza, buffet…), quantas pessoas precisa e quem será o supervisor. O administrador do
             evento analisa o pedido e, se aprovado, o supervisor recebe o acesso no WhatsApp.
           </p>
           {!!situacao.aberto && evento.pedido_setor_prazo && (

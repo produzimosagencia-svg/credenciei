@@ -101,20 +101,20 @@ export function normalizarSetor(
   const prefixo = rotulo ? `${rotulo}: ` : ''
 
   const nome = nomeEmMaiusculo(String(e.nome ?? ''))
-  if (nome.length < 2) return falha(`${prefixo}informe o nome do setor.`)
-  if (nome.length > MAX_NOME) return falha(`${prefixo}o nome do setor está muito comprido.`)
+  if (nome.length < 2) return falha(`${prefixo}informe a função que vai desempenhar no evento.`)
+  if (nome.length > MAX_NOME) return falha(`${prefixo}o nome da função está muito comprido.`)
 
   const subRaw = String(e.subeventoId ?? '').trim()
   let subeventoId: string | null = null
   if (ctx.subeventoIds) {
-    if (!subRaw) return falha(`${prefixo}escolha o subevento do setor.`)
+    if (!subRaw) return falha(`${prefixo}escolha o subevento do serviço.`)
     if (!ctx.subeventoIds.includes(subRaw)) return falha(`${prefixo}o subevento escolhido não existe neste evento.`)
     subeventoId = subRaw
   }
 
   const quantidade = lerQuantidade(e.quantidade)
   if (quantidade === undefined) return falha(`${prefixo}a quantidade de colaboradores precisa ser um número inteiro.`)
-  if (quantidade === null) return falha(`${prefixo}informe quantos colaboradores o setor precisa.`)
+  if (quantidade === null) return falha(`${prefixo}informe quantos colaboradores o serviço precisa.`)
 
   const porDia: Record<string, number> = {}
   const dias = (e.porDia ?? {}) as Record<string, unknown>
@@ -136,11 +136,11 @@ export function normalizarSetor(
   let supervisor = padrao
   const proprio = e.supervisor as Record<string, unknown> | null | undefined
   if (proprio && (String(proprio.nome ?? '').trim() || String(proprio.cpf ?? '').trim() || String(proprio.telefone ?? '').trim())) {
-    const r = lerPessoa(proprio, 'do supervisor deste setor')
+    const r = lerPessoa(proprio, 'do supervisor deste serviço')
     if (!r.ok) return falha(`${prefixo}${r.erro[0].toLocaleLowerCase('pt-BR')}${r.erro.slice(1)}`)
     supervisor = r.valor
   }
-  if (!supervisor) return falha(`${prefixo}informe o supervisor do setor.`)
+  if (!supervisor) return falha(`${prefixo}informe o supervisor do serviço.`)
 
   return { ok: true, valor: { nome, subeventoId, quantidade, porDia, supervisor } }
 }
@@ -157,18 +157,18 @@ export function normalizarPedidoPublico(entrada: unknown, ctx: ContextoDoPedido)
   if (!contato.ok) return falha(contato.erro)
 
   const lista = Array.isArray(e.setores) ? e.setores : []
-  if (!lista.length) return falha('Inclua pelo menos um setor no pedido.')
+  if (!lista.length) return falha('Inclua pelo menos um serviço / fornecedor no pedido.')
   if (lista.length > MAX_SETORES_POR_PEDIDO) {
-    return falha(`Um pedido aceita até ${MAX_SETORES_POR_PEDIDO} setores. Envie os demais em outro pedido.`)
+    return falha(`Um pedido aceita até ${MAX_SETORES_POR_PEDIDO} serviços. Envie os demais em outro pedido.`)
   }
 
   const setores: SetorPedido[] = []
   const vistos = new Set<string>()
   for (let i = 0; i < lista.length; i++) {
-    const r = normalizarSetor(lista[i], ctx, lista.length > 1 ? `Setor ${i + 1}` : '', contato.valor)
+    const r = normalizarSetor(lista[i], ctx, lista.length > 1 ? `Serviço / Fornecedor ${i + 1}` : '', contato.valor)
     if (!r.ok) return falha(r.erro)
     const chave = chaveDoSetor(r.valor.nome, r.valor.subeventoId)
-    if (vistos.has(chave)) return falha(`O setor "${r.valor.nome}" aparece mais de uma vez neste pedido.`)
+    if (vistos.has(chave)) return falha(`O serviço "${r.valor.nome}" aparece mais de uma vez neste pedido.`)
     vistos.add(chave)
     setores.push(r.valor)
   }
