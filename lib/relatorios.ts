@@ -24,10 +24,10 @@
  * dado não existe, o campo fica vazio — nunca um valor calculado que pareça
  * um registro.
  */
-import { getPerfil, supabaseAdmin, meusSetores, buscarTudo } from './supabase-server'
+import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { emLotes } from './lotes'
-import { podeGerenciarEventos, ehMaster } from './permissions'
 import { diaBRT } from './janelas'
+import { exigirAcessoAoEvento } from './relatorios-acesso'
 
 export type Periodo = { de: string; ate: string }
 
@@ -74,55 +74,6 @@ export type DadosRelatorioEvento = {
   /** O período EFETIVAMENTE analisado — o pedido, recortado pelo período real do evento. */
   periodo: Periodo
   setores: SetorRelatorio[]
-}
-
-/**
- * Confere se este perfil pode gerar relatório deste evento.
- *
- * Master: qualquer evento. Admin/gerente/cliente: só da própria organização.
- * Supervisor: só os setores dele mesmo (nunca o relatório completo do
- * evento) — a mesma régua de isolamento que o resto do sistema já aplica.
- */
-type EventoParaRelatorio = {
-  id: string
-  nome: string
-  organizacao_id: string | null
-  organizacoes: { nome: string } | null
-}
-
-type AcessoRelatorio =
-  | { erro: string }
-  | { perfil: { role: string; organizacao_id: string | null }; evento: EventoParaRelatorio; setoresPermitidos: Set<string> | null }
-
-async function exigirAcessoAoEvento(eventoId: string): Promise<AcessoRelatorio> {
-  const perfil = await getPerfil()
-  if (!perfil) return { erro: 'Não autenticado.' }
-
-  const { data } = await supabaseAdmin
-    .from('eventos')
-    .select('id, nome, organizacao_id, organizacoes(nome)')
-    .eq('id', eventoId)
-    .single()
-  if (!data) return { erro: 'Evento não encontrado.' }
-  const evento = data as unknown as EventoParaRelatorio
-
-  /*
-   * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
-   * GANHOU um vínculo de supervisor neste evento (achado ao vivo,
-   * 05/10/2026, caso da Mara Lúcia).
-   */
-  const meus = await meusSetores(perfil)
-  const meusNesteEvento = meus.filter(s => s.evento_id === eventoId)
-  if (meusNesteEvento.length) {
-    return { perfil, evento, setoresPermitidos: new Set(meusNesteEvento.map(s => s.id)) }
-  }
-  if (perfil.role === 'supervisor') return { erro: 'Sem permissão sobre este evento.' }
-
-  if (!podeGerenciarEventos(perfil)) return { erro: 'Sem permissão para gerar relatórios.' }
-  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
-    return { erro: 'Sem permissão sobre este evento.' }
-  }
-  return { perfil, evento, setoresPermitidos: null }
 }
 
 /**
@@ -393,6 +344,8 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
   periodoCompleto: Periodo
   setores: { id: string; nome: string }[]
   totalFuncionarios: number
+  /** Quem gerencia o evento inteiro (não só setores dele) — vê o PDF de entrega de valor e todos os relatórios. */
+  eventoInteiro: boolean
 } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
@@ -407,7 +360,7 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
   const setores = (fornecedores ?? []).map(f => ({ id: f.id as string, nome: f.nome as string }))
   const totalFuncionarios = (fornecedores ?? []).reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0)
 
-  return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios }
+  return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios, eventoInteiro: !acesso.setoresPermitidos }
 }
 
 // ════════════════════════════════════════════════════════════════════════

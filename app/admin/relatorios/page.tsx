@@ -7,6 +7,8 @@ import { obterResumoParaTelaDeRelatorios } from '@/lib/relatorios'
 import { PageHeader } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
 import ExportarRelatorio from '../eventos/[id]/relatorios/ExportarRelatorio'
+import OutrosRelatorios from '../eventos/[id]/relatorios/OutrosRelatorios'
+import BotaoEntregaValor from '../eventos/[id]/relatorios/BotaoEntregaValor'
 
 export const revalidate = 0
 
@@ -49,12 +51,15 @@ export default async function RelatoriosPage({
             </Link>
           }
         />
+        {/* O PDF de entrega de valor — só para quem gerencia o evento inteiro (pedido do Juan, 09/10/2026). */}
+        {resumo.eventoInteiro && <BotaoEntregaValor eventoId={eventoParam} />}
         <ExportarRelatorio
           eventoId={eventoParam}
           periodoCompleto={resumo.periodoCompleto}
           setores={resumo.setores}
           totalFuncionarios={resumo.totalFuncionarios}
         />
+        <OutrosRelatorios eventoId={eventoParam} eventoInteiro={resumo.eventoInteiro} />
       </div>
     )
   }

@@ -12,6 +12,7 @@ const lib = ler('lib/alertas-local.ts')
 const actions = ler('lib/actions.ts')
 const view = ler('app/admin/eventos/[id]/fora-do-local/RelatorioForaDoLocalView.tsx')
 const shell = ler('components/AppShell.tsx')
+const excelFora = ler('lib/relatorio-fora-local-excel.ts')
 
 let falhas = 0
 function ok(cond, nome) {
@@ -34,10 +35,10 @@ ok(/if \(podeGerenciarEventos\(perfil\) \|\| role === 'supervisor' \|\| temVincu
 
 console.log('\n3 · a tela')
 ok(view.includes('Batidas registradas fora do local') && view.includes('Tentativas recusadas'), 'separa registradas de recusadas')
-ok(view.includes('https://www.google.com/maps?q='), 'link para o mapa do ponto')
-ok(view.includes("await import('exceljs')"), 'baixa em planilha')
+ok(excelFora.includes('https://www.google.com/maps?q='), 'link para o mapa do ponto')
+ok(excelFora.includes("await import('exceljs')") && excelFora.includes("formatarBR(l.quando, 'completo')"), 'baixa em planilha, com a data no horário de Brasília')
 ok(view.includes("'Todo o evento'") && view.includes('relatorio.setores.map(st =>'), 'planilha do evento inteiro ou de um setor (seletor)')
-ok(view.includes('baixarPlanilha(filtradas, eventoNome, relatorio.raioM, nomeRecorte)'), 'a planilha sai com o recorte escolhido')
+ok(view.includes('baixarPlanilhaForaDoLocal(filtradas, eventoNome, relatorio.raioM, nomeRecorte)'), 'a planilha sai com o recorte escolhido')
 
 console.log('\n4 · tentativa recusada fica no nome da pessoa, com o endereço (pedido do Juan, 08/10/2026)')
 ok(/async function auditarTentativaForaDoLocal/.test(actions) && /acao: 'TENTATIVA_FORA_DO_LOCAL'/.test(actions), 'grava na auditoria, no nome da pessoa')
