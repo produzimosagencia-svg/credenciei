@@ -139,13 +139,13 @@ ok(/tem_subeventos !== true\) return false/.test(escalaTs) && escalaTs.includes(
 ok(/escala_por_dia_habilitada !== true\) return false/.test(escalaTs),
   'e a chave "Dias de trabalho" ligada em Funcionalidades do Sistema (nasce desligada)')
 
-// ── A trava por dia está DESLIGADA: a quantidade de gente por dia é livre (Juan, 08/10/2026) ──
+// ── A trava por dia está LIGADA de novo (Juan, 08/10/2026: "seja sábado ou domingo a trava tem que existir") ──
 {
   const { TRAVA_POR_DIA_ATIVA } = await import('../lib/escala-regras.ts')
   const esc = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
-  ok(TRAVA_POR_DIA_ATIVA === false, 'a trava por dia está desligada')
-  ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \[\]/.test(esc), 'com ela desligada, nenhum dia aparece como lotado (formulário e aprovação)')
-  ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \{ ok: true \}/.test(esc), 'com ela desligada, o portão não barra por lotação do setor')
+  ok(TRAVA_POR_DIA_ATIVA === true, 'a trava por dia está ligada')
+  ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \[\]/.test(esc), 'desligada (fallback), nenhum dia aparece como lotado — mas hoje está ligada')
+  ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \{ ok: true \}/.test(esc), 'desligada (fallback), o portão não barraria por lotação — mas hoje está ligada')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
