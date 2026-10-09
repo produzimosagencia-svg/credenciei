@@ -91,7 +91,9 @@ ok(readFileSync(new URL('../app/admin/lancar-ponto/LancarPonto.tsx', import.meta
   const a = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
   ok(/if \(jaEraDesteEvento\) \{[\s\S]{0,400}avisado: false/.test(a), 'quem já foi avisado neste evento só ganha o setor, sem mensagem')
   ok(/jaFoiAvisadoNesteEvento\(\[telefone, existente\.telefone/.test(a), 'a checagem considera também o telefone que já está no cadastro')
-  ok(/\.eq\('evento_id', eventoId\)\s*\.eq\('tipo', 'disparo_manual'\)/.test(a), 'o corte é por EVENTO (evento novo continua avisando)')
+  // A consulta mora em lib/internos-servidor.ts desde 09/10/2026 (o Encarregado usa a mesma).
+  const internos = readFileSync(new URL('../lib/internos-servidor.ts', import.meta.url), 'utf8')
+  ok(/\.eq\('evento_id', eventoId\)\s*\.eq\('tipo', 'disparo_manual'\)/.test(internos), 'o corte é por EVENTO (evento novo continua avisando)')
 }
 
 // ── Tirar supervisor de UM setor NÃO apaga a conta nem os outros setores (Juan, 08/10/2026) ──

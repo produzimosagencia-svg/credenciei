@@ -23,13 +23,14 @@ function ok(cond, nome) {
   console.log(`  ${cond ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m ${nome}`)
 }
 
-console.log('1 · pessoaEhSupervisor — por CPF, role supervisor, tolerante à migração')
-ok(/export async function pessoaEhSupervisor/.test(escala), 'função existe em lib/escala.ts')
-ok(/\.eq\('role', 'supervisor'\)/.test(escala), 'confere role supervisor')
+console.log('1 · pessoaEhSupervisor — por CPF, supervisor de um setor DESTE evento (09/10/2026), tolerante à migração')
+ok(/export async function pessoaEhSupervisor\(cpf: string \| null \| undefined, eventoId: string\)/.test(escala), 'função existe em lib/escala.ts e recebe o evento')
+ok(/from\('supervisor_setores'\)[\s\S]{0,160}\.eq\('fornecedores\.evento_id', eventoId\)/.test(escala),
+  'confere o vínculo de supervisor num setor do evento (não mais só a conta de supervisor)')
 ok(/if \(limpo\.length !== 11\) return false/.test(escala), 'CPF inválido/incompleto não é supervisor')
 
 console.log('\n2 · aprovarCredenciamento força todos os dias pra supervisor, ignorando o que foi pedido')
-ok(/const souSupervisor = await pessoaEhSupervisor\(func\.cpf as string \| null\)/.test(actions),
+ok(/const souSupervisor = await pessoaEhSupervisor\(func\.cpf as string \| null, eventoId\)/.test(actions),
   'consulta pessoaEhSupervisor com o cpf do funcionário')
 ok(/souSupervisor\s*\?\s*conferirDiasPermitidos\(disponiveis, disponiveis\)/.test(actions),
   'supervisor: confere com a lista inteira de dias disponíveis (sempre todos)')
@@ -50,7 +51,7 @@ ok(/\{!detalhe\.ehSupervisor && \(/.test(aprovDias),
 
 console.log('\n5 · detalheDoCredenciamento expõe ehSupervisor pro componente usar')
 ok(/ehSupervisor: boolean/.test(ler('lib/escala.ts')), 'campo no tipo DetalheCredenciamento')
-ok(/const ehSupervisor = usaEscala \? await pessoaEhSupervisor\(f\.cpf as string \| null\) : false/.test(actions),
+ok(/const ehSupervisor = usaEscala \? await pessoaEhSupervisor\(f\.cpf as string \| null, eventoId\) : false/.test(actions),
   'calculado em detalheDoCredenciamento')
 
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')

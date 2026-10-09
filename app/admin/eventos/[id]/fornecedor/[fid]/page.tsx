@@ -1,3 +1,4 @@
+import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
@@ -348,6 +349,23 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     }
   }
 
+  /*
+   * A FUNÇÃO de cada pessoa neste setor (Colaborador / Encarregado / Supervisor — pedido do Juan, 09/10/2026, ver
+   * lib/funcao-na-equipe.ts): supervisor pelo vínculo do CPF com o setor, Encarregado pelo vínculo da ficha.
+   */
+  const [cpfsSupervisores, fichasEncarregadas] = await Promise.all([
+    supabase.from('supervisor_setores').select('perfis(cpf)').eq('fornecedor_id', fid)
+      .then(r => new Set((r.data ?? []).map(v => ((v as unknown as { perfis: { cpf: string | null } | null }).perfis?.cpf ?? '').replace(/\D/g, '')).filter(Boolean)), () => new Set<string>()),
+    supabase.from('encarregados_setor').select('funcionario_id').eq('fornecedor_id', fid)
+      .then(r => new Set((r.data ?? []).map(v => v.funcionario_id as string)), () => new Set<string>()),
+  ])
+  const funcaoDe = (f: { id: string; cpf: string | null }): FuncaoNaEquipe =>
+    cpfsSupervisores.has((f.cpf ?? '').replace(/\D/g, '')) ? 'supervisor' : fichasEncarregadas.has(f.id) ? 'encarregado' : 'colaborador'
+  /* Quem muda a função: master, administrador da organização e o supervisor deste setor — a régua de `definirFuncaoNaEquipe`. */
+  const podeMudarFuncao = ehMaster(perfil.role)
+    || (podeGerenciarUsuarios(perfil) && organizacaoDoEvento === perfil.organizacao_id)
+    || setoresDoSupervisor.some(s => s.id === fid)
+
   const funcionariosEnriquecidos = (funcionarios ?? []).map(f => {
     const entrada = presencaPorFunc[f.id]?.entrada ?? null
     const meio = presencaPorFunc[f.id]?.meio ?? null
@@ -359,6 +377,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       telefone: f.telefone,
       empresa: f.empresa ?? '',
       cargo: f.cargo ?? '',
+      funcao: funcaoDe({ id: f.id as string, cpf: f.cpf as string | null }),
       qr_token: f.qr_token,
       valorReceber: f.valor_receber ?? 0,
       chavePix: f.chave_pix ?? null,
@@ -671,6 +690,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            * que não podia depois de já ter tentado.
            */
           podeCriarSupervisor={podeGerenciarUsuarios(perfil)}
+          podeMudarFuncao={podeMudarFuncao}
           podeEditarCpf={podeCorrigirNomeECpf(perfil)}
           /* Mesma régua de `lancarPontoManual` no servidor. */
           podeEditarPonto={podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte'}

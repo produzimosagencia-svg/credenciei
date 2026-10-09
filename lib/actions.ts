@@ -42,8 +42,11 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
-import { podeReceberFuncaoExtra } from './funcoes'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento } from './internos-servidor'
+import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
+import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
+import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
+import { alterarEncarregadoNoSetor } from './actions-encarregado'
 import { alcancaSetor } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
@@ -77,6 +80,8 @@ import {
 import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
+
+type PerfilDaSessao = NonNullable<Awaited<ReturnType<typeof getPerfil>>>
 import { enderecoAproximado } from './geocoding'
 import { lerCodigoQR, gerarCodigoQR, faseConfere, NOME_DA_FASE } from './credencial-qr'
 import { descritorValido, distanciaEuclidiana, decidirMatch, MENSAGEM_POR_MOTIVO, LIMIAR_PADRAO, type Candidato } from './biometria'
@@ -767,27 +772,11 @@ async function jaFoiAvisadoNesteEvento(telefone: string | (string | null | undef
    * supervisor foi avisado num número e agora é ligado a outro setor com o telefone escrito
    * diferente (ou o da lista de funcionários), a checagem só pelo número digitado não o achava
    * e mandava a mensagem de novo — o aviso repetido que o Juan quer evitar (07/10/2026).
+   *
+   * Qualquer uma das duas conta: supervisor novo recebe só o link de senha, quem já tinha conta
+   * recebe o aviso de escala. A consulta mora em lib/internos-servidor.ts (o Encarregado usa a mesma).
    */
-  const numeros = [...new Set(
-    (Array.isArray(telefone) ? telefone : [telefone])
-      .map(t => (t ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''))
-      .filter(Boolean),
-  )]
-  if (!numeros.length) return false
-  const { data, error } = await supabaseAdmin
-    .from('mensagens_agendadas')
-    .select('mensagem')
-    .eq('evento_id', eventoId)
-    .eq('tipo', 'disparo_manual')
-    .in('telefone', numeros.flatMap(n => [n, `55${n}`]))
-    .in('status', ['pendente', 'enviado'])
-  if (error) return false
-  // Qualquer uma das duas conta: supervisor novo recebe só o link de senha,
-  // quem já tinha conta recebe o aviso de escala.
-  return (data ?? []).some(m => {
-    const texto = String(m.mensagem ?? '')
-    return texto.includes('"supervisor_escalado_evento"') || texto.includes('"cadastro_supervisor_cpf_link"')
-  })
+  return jaRecebeuMensagemNoEvento(telefone, eventoId, ['supervisor_escalado_evento', 'cadastro_supervisor_cpf_link'])
 }
 
 /**
@@ -847,8 +836,9 @@ async function acharUsuarioAuthPorEmail(admin: ReturnType<typeof getAdminSupabas
   return null
 }
 
-async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, formData: FormData) {
-  const perfil = await getPerfil()
+/** `jaAutorizado`: quem chama já conferiu a permissão (a Função da ficha da equipe, que também aceita o supervisor do setor). */
+async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, formData: FormData, jaAutorizado?: PerfilDaSessao) {
+  const perfil = jaAutorizado ?? await getPerfil()
   if (!perfil) throw new Error('Sem permissão para criar supervisores')
 
   const { data: fornecedor } = await supabaseAdmin
@@ -861,7 +851,9 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
   const eventoDoFornecedor = fornecedor.eventos as any
   const organizacaoId = eventoDoFornecedor?.organizacao_id
 
-  if (podeGerenciarUsuarios(perfil)) {
+  if (jaAutorizado) {
+    // Conferido por quem chamou — ver `definirFuncaoNaEquipe`.
+  } else if (podeGerenciarUsuarios(perfil)) {
     if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) {
       throw new Error('Sem permissão sobre este fornecedor')
     }
@@ -2351,8 +2343,13 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
  *   - se o supervisor era uma função EXTRA e acabaram os setores, a função sai — a conta e a função de base ficam.
  */
 export async function removerSupervisorDoSetor(perfilId: string, fornecedorId: string): Promise<{ ok: true; restantes: number } | { error: string }> {
+  return tirarSupervisorDoSetor(perfilId, fornecedorId)
+}
+
+/** O corpo de `removerSupervisorDoSetor`; `jaAutorizado` é quem chama já tendo conferido a permissão (ver `definirFuncaoNaEquipe`). */
+async function tirarSupervisorDoSetor(perfilId: string, fornecedorId: string, jaAutorizado?: PerfilDaSessao): Promise<{ ok: true; restantes: number } | { error: string }> {
   try {
-    const perfil = await getPerfil()
+    const perfil = jaAutorizado ?? await getPerfil()
     if (!perfil) return { error: 'Sessão expirada. Entre de novo.' }
 
     const { data: setor } = await supabaseAdmin
@@ -2361,7 +2358,9 @@ export async function removerSupervisorDoSetor(perfilId: string, fornecedorId: s
     const organizacaoId = ((setor.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id ?? null) as string | null
     const eventoId = setor.evento_id as string
 
-    if (podeGerenciarUsuarios(perfil)) {
+    if (jaAutorizado) {
+      // Conferido por quem chamou.
+    } else if (podeGerenciarUsuarios(perfil)) {
       if (!ehMaster(perfil.role) && organizacaoId !== perfil.organizacao_id) return { error: 'Sem permissão sobre este setor.' }
     } else if (perfil.role === 'suporte') {
       if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
@@ -2427,6 +2426,206 @@ export async function removerSupervisorDoSetor(perfilId: string, fornecedorId: s
     return { ok: true, restantes: restantes.length }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
+  }
+}
+
+/** A função de hoje da pessoa NESTE setor — ver lib/funcao-na-equipe.ts. Sem tabela/consulta falha → colaborador. */
+async function funcaoAtualNaEquipe(funcionarioId: string, fornecedorId: string, contaId: string | null): Promise<FuncaoNaEquipe> {
+  if (contaId) {
+    const { data } = await supabaseAdmin.from('supervisor_setores').select('perfil_id')
+      .eq('perfil_id', contaId).eq('fornecedor_id', fornecedorId).limit(1)
+    if (data?.length) return 'supervisor'
+  }
+  const { data: enc } = await supabaseAdmin.from('encarregados_setor').select('id')
+    .eq('funcionario_id', funcionarioId).eq('fornecedor_id', fornecedorId).limit(1)
+  return enc?.length ? 'encarregado' : 'colaborador'
+}
+
+/**
+ * A FUNÇÃO da pessoa na ficha da equipe: Colaborador, Encarregado ou Supervisor (pedido do Juan, 09/10/2026). Mudar
+ * a função muda o ACESSO na hora, e a pessoa nunca sai da equipe — continua com o QR, as batidas e o pagamento.
+ *
+ *   * Supervisor  → ganha o acesso de supervisor deste setor e sai liberado em TODOS os dias do evento.
+ *   * Encarregado → ganha a consulta da equipe deste setor (lib/actions-encarregado.ts).
+ *   * Colaborador → só o QR. Quem deixa de ser supervisor/Encarregado perde o acesso daquele setor; sem nenhum
+ *     outro setor, a conta é desativada (volta quando alguém der a função de novo — a senha continua a mesma).
+ *
+ * O LINK VAI UMA VEZ POR EVENTO e por tipo: quem já recebeu o de supervisor (ou o de Encarregado) neste evento —
+ * por outro setor, ou porque saiu e voltou — não recebe outro (`jaRecebeuMensagemNoEvento`).
+ *
+ * Quem pode: master, administrador da organização e o supervisor DESTE setor. Tudo que pode recusar é conferido
+ * ANTES de mexer em qualquer acesso, pra não sobrar meio-termo (perdeu a função velha e não ganhou a nova).
+ */
+export async function definirFuncaoNaEquipe(
+  funcionarioId: string, fornecedorId: string, eventoId: string, funcao: FuncaoNaEquipe,
+): Promise<{ ok: true; mensagem: string } | { erro: string }> {
+  try {
+    if (!ehFuncaoNaEquipe(funcao)) return { erro: 'Função inválida.' }
+    const perfil = await getPerfil()
+    if (!perfil) return { erro: 'Sessão expirada. Entre de novo.' }
+
+    const { data: setor } = await supabaseAdmin
+      .from('fornecedores').select('id, nome, evento_id, eventos(organizacao_id, nome)').eq('id', fornecedorId).maybeSingle()
+    if (!setor || setor.evento_id !== eventoId) return { erro: 'Setor não encontrado neste evento.' }
+    const ev = setor.eventos as unknown as { organizacao_id?: string | null; nome?: string } | null
+    const organizacaoId = ev?.organizacao_id ?? null
+
+    const ehAdminDaOrg = ehMaster(perfil.role)
+      || (podeGerenciarUsuarios(perfil) && !!organizacaoId && organizacaoId === perfil.organizacao_id)
+    const ehSupervisorDoSetor = !ehAdminDaOrg && (await meusSetores(perfil)).some(s => s.id === fornecedorId)
+    if (!ehAdminDaOrg && !ehSupervisorDoSetor) {
+      return { erro: 'Só o supervisor do setor, o administrador ou o master mudam a função.' }
+    }
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, cpf, telefone, cargo, origem, ativo, status_credenciamento, descredenciado_em, fornecedor_id')
+      .eq('id', funcionarioId).maybeSingle()
+    if (!func || func.fornecedor_id !== fornecedorId) return { erro: 'Esta pessoa não é desta equipe.' }
+    const nome = (func.nome as string).trim()
+    const primeiro = nome.split(/\s+/)[0]
+    const cpf = normalizarCpf((func.cpf as string | null) ?? '')
+    const telefone = ((func.telefone as string | null) ?? '').replace(/\D/g, '')
+    if (cpf.length === 11 && cpf === normalizarCpf((perfil.cpf as string | null) ?? '') && !ehMaster(perfil.role)) {
+      return { erro: 'Você não pode mudar a sua própria função.' }
+    }
+
+    const { data: contaLida } = cpf.length === 11
+      ? await supabaseAdmin.from('perfis').select('id, role, ativo').eq('cpf', cpf).maybeSingle()
+      : { data: null }
+    const conta = contaLida as { id: string; role: string; ativo: boolean | null } | null
+    const atual = await funcaoAtualNaEquipe(funcionarioId, fornecedorId, conta?.id ?? null)
+    if (atual === funcao) return { ok: true, mensagem: `${primeiro} já é ${rotuloDaFuncao(funcao)} deste setor.` }
+
+    // ── Conferências (nada foi mexido ainda) ──
+    if (funcao !== 'colaborador') {
+      if (func.ativo === false || func.descredenciado_em) return { erro: 'Esta pessoa não está ativa na equipe. Ative antes de mudar a função.' }
+      if (!validarCpf(cpf)) return { erro: 'O CPF desta pessoa está inválido. Corrija antes de mudar a função.' }
+      if (telefone.length < 10 || telefone.length > 13) {
+        return { erro: 'Esta pessoa não tem um WhatsApp válido no cadastro. É por ele que o acesso é enviado.' }
+      }
+      const combina = !conta || conta.role === 'supervisor' || conta.role === 'encarregado'
+        || (funcao === 'supervisor' && conta.role === 'master') || podeReceberFuncaoExtra(conta.role)
+      if (!combina) return { erro: MSG_FUNCAO_NAO_COMBINA }
+      if (conta && conta.ativo === false && conta.role !== 'supervisor' && conta.role !== 'encarregado') {
+        return { erro: 'O acesso desta pessoa está bloqueado em Acessos. Fale com o master.' }
+      }
+    }
+    if (funcao === 'encarregado') {
+      if (func.status_credenciamento !== 'aprovado') return { erro: 'O credenciamento desta pessoa ainda não foi aprovado.' }
+      if (!(await obterFuncionalidadesOrganizacao(organizacaoId)).encarregadosHabilitado) return { erro: MSG_FUNCIONALIDADE_DESLIGADA }
+    }
+
+    // ── 1. Sai da função de hoje NESTE setor (continua na equipe) ──
+    let perdeuAcesso = false
+    if (atual === 'supervisor' && conta) {
+      // O crachá nascido de "tornar supervisor" iria embora junto com o vínculo (ver `tirarSupervisorDoSetor`): vira da equipe.
+      if (func.origem === 'supervisor') await supabaseAdmin.from('funcionarios').update({ origem: 'equipe' }).eq('id', funcionarioId)
+      const r = await tirarSupervisorDoSetor(conta.id, fornecedorId, perfil)
+      if ('error' in r) return { erro: r.error }
+      if (r.restantes === 0 && conta.role === 'supervisor' && funcao === 'colaborador') {
+        // Sem setor nenhum, não entra mais. Quem ainda tem outra função (extra) fica com ela.
+        const { count: extras } = await supabaseAdmin.from('perfil_funcoes').select('id', { count: 'exact', head: true }).eq('perfil_id', conta.id)
+        if (!extras) {
+          await supabaseAdmin.from('perfis').update({ ativo: false }).eq('id', conta.id)
+          perdeuAcesso = true
+        }
+      }
+    }
+    if (atual === 'encarregado') {
+      const r = await alterarEncarregadoNoSetor(funcionarioId, eventoId, fornecedorId, false)
+      if ('erro' in r) return { erro: r.erro }
+      if (conta?.role === 'encarregado' && funcao === 'colaborador') {
+        const { count } = await supabaseAdmin.from('encarregados_setor').select('id', { count: 'exact', head: true }).eq('perfil_id', conta.id)
+        if (!count) perdeuAcesso = true   // `salvarEncarregado` já desativou a conta
+      }
+    }
+
+    // ── 2. Entra na função nova ──
+    /*
+     * Conta que só existia pela função VELHA (nenhum setor sobrando nela — inclusive quem foi rebaixado a colaborador
+     * antes e ficou com a conta desativada) troca de tipo, em vez de ganhar a nova como função extra numa conta
+     * desativada. A senha continua a mesma.
+     */
+    if (conta && funcao === 'supervisor' && conta.role === 'encarregado') {
+      const { count } = await supabaseAdmin.from('encarregados_setor').select('id', { count: 'exact', head: true }).eq('perfil_id', conta.id)
+      if (!count) {
+        await supabaseAdmin.from('perfis').update({ role: 'supervisor', ativo: true }).eq('id', conta.id)
+        await removerFuncaoExtra(conta.id, 'supervisor')
+        conta.role = 'supervisor'
+      }
+    }
+    if (conta && funcao === 'encarregado' && conta.role === 'supervisor') {
+      const { count } = await supabaseAdmin.from('supervisor_setores').select('perfil_id', { count: 'exact', head: true }).eq('perfil_id', conta.id)
+      if (!count) {
+        // Sem organização nem setor ativo, como toda conta de Encarregado (ver lib/encarregado.ts); `salvarEncarregado` reativa.
+        await supabaseAdmin.from('perfis').update({ role: 'encarregado', organizacao_id: null, fornecedor_id: null }).eq('id', conta.id)
+        await removerFuncaoExtra(conta.id, 'encarregado')
+        conta.role = 'encarregado'
+      }
+    }
+
+    let aviso = ''
+    if (funcao === 'supervisor') {
+      const dados = new FormData()
+      dados.set('nome', nome)
+      dados.set('cpf', cpf)
+      dados.set('telefone', telefone)
+      dados.set('ativo', 'true')
+      let r: Awaited<ReturnType<typeof criarSupervisorOuLanca>>
+      try {
+        r = await criarSupervisorOuLanca(fornecedorId, eventoId, dados, perfil)
+      } catch (e) {
+        return { erro: `${mensagemAmigavel(e)}${atual !== 'colaborador' ? ` ${primeiro} ficou como Colaborador.` : ''}` }
+      }
+      if (r && typeof r === 'object' && 'error' in r) return { erro: String((r as { error: unknown }).error) }
+      const res = r as { novo?: boolean; avisado?: boolean }
+      aviso = res.novo || res.avisado
+        ? 'Recebeu o acesso pelo WhatsApp.'
+        : 'Não reenviamos o link: já tinha recebido neste evento.'
+
+      // Supervisor: todos os dias do evento — ver `pessoaEhSupervisor`.
+      if (await eventoUsaEscalaPorDia(eventoId)) {
+        const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+        if (disponiveis.length) {
+          const g = await gravarEscalaAprovada({ funcionarioId, eventoId, aprovados: disponiveis, perfilId: perfil.id })
+          if (g.ok) after(() => sincronizarAgendamentos(eventoId, { funcionarioId }).catch(console.error))
+        }
+      }
+    }
+    if (funcao === 'encarregado') {
+      const r = await alterarEncarregadoNoSetor(funcionarioId, eventoId, fornecedorId, true)
+      if ('erro' in r) return { erro: `${r.erro}${atual !== 'colaborador' ? ` ${primeiro} ficou como Colaborador.` : ''}` }
+      aviso = !r.primeiroAcesso || r.jaTinhaLink
+        ? 'Não reenviamos o link: já tinha recebido neste evento.'
+        : r.mensagemEnviada
+          ? 'Recebeu o acesso pelo WhatsApp.'
+          : 'O WhatsApp não saiu: peça para tocar em "Esqueci a senha" no login, com o CPF.'
+    }
+
+    // O cargo acompanha só quando está vazio ou é o nome de uma função — "Bartender" não é sobrescrito.
+    if (cargoAcompanhaFuncao(func.cargo as string | null)) {
+      await supabaseAdmin.from('funcionarios').update({ cargo: rotuloDaFuncao(funcao) }).eq('id', funcionarioId)
+    }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_SETOR', campoAlterado: 'função na equipe',
+      valorAnterior: `${nome}: ${rotuloDaFuncao(atual)}`, valorNovo: `${nome}: ${rotuloDaFuncao(funcao)} (${setor.nome})`,
+      funcionarioId, eventoId, organizacaoId: organizacaoId ?? undefined,
+    }))
+    revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    revalidatePath('/admin/encarregados')
+    revalidatePath('/admin/usuarios')
+
+    const mensagem = funcao === 'supervisor'
+      ? `${primeiro} agora é Supervisor deste setor, liberado em todos os dias. ${aviso}`
+      : funcao === 'encarregado'
+        ? `${primeiro} agora é Encarregado deste setor. ${aviso}`
+        : `${primeiro} agora é Colaborador: só o QR Code. ${perdeuAcesso ? 'Não entra mais no sistema.' : `Perdeu o acesso de ${rotuloDaFuncao(atual)} deste setor.`} Continua na equipe; os dias você ajusta abaixo.`
+    return { ok: true, mensagem }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
   }
 }
 
@@ -4610,7 +4809,7 @@ export async function aprovarCredenciamento(
     const escala = await escalaDoFuncionario(funcionarioId)
     if (await eventoUsaEscalaPorDia(eventoId)) {
       const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
-      const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null)
+      const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null, eventoId)
       const pedidos = (escala?.dias ?? []).filter(d => d.selecionado).map(d => d.data)
       const conferido = souSupervisor
         ? conferirDiasPermitidos(disponiveis, disponiveis)
@@ -4725,7 +4924,7 @@ export async function ajustarEscalaDoFuncionario(
 
     const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
     // Supervisor: todos os dias, sempre — ver `pessoaEhSupervisor`. Ignora `dias` e a trava de cota do setor.
-    const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null)
+    const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null, eventoId)
     const conferido = conferirDiasPermitidos(souSupervisor ? disponiveis : dias, disponiveis)
     if (!conferido.ok) return { error: conferido.erro }
     if (!souSupervisor) {
@@ -4792,7 +4991,7 @@ export async function detalheDoCredenciamento(funcionarioId: string, fornecedorI
     const diasDoEvento: DiaDaEscala[] = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
     const escala = usaEscala ? await escalaDoFuncionario(funcionarioId) : null
     const lotados = usaEscala ? await diasLotados(fornecedorId, 'aprovado', funcionarioId) : []
-    const ehSupervisor = usaEscala ? await pessoaEhSupervisor(f.cpf as string | null) : false
+    const ehSupervisor = usaEscala ? await pessoaEhSupervisor(f.cpf as string | null, eventoId) : false
 
     return {
       ok: true,

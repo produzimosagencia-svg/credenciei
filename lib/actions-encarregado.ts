@@ -12,7 +12,7 @@ import { cpfParaEmail, normalizarCpf } from './usuario'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import { emLotes } from './lotes'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
-import { obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra } from './internos-servidor'
+import { obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento } from './internos-servidor'
 import {
   PERMISSOES_PADRAO, MSG_FUNCIONALIDADE_DESLIGADA, listarEmTexto, nomeDoSetorComArea,
   type CandidatoEncarregado, type EncarregadoDoEvento, type SetorOpcao,
@@ -191,7 +191,7 @@ export async function listarCandidatosEncarregado(eventoId: string): Promise<
  */
 export async function salvarEncarregado(
   funcionarioId: string, eventoId: string, fornecedorIds: string[],
-): Promise<{ ok: true; primeiroAcesso: boolean; mensagemEnviada: boolean; nome: string; total: number } | { erro: string }> {
+): Promise<{ ok: true; primeiroAcesso: boolean; mensagemEnviada: boolean; jaTinhaLink: boolean; nome: string; total: number } | { erro: string }> {
   try {
     const g = await escopoDoGestor(eventoId)
     if (!g.ok) return { erro: g.erro }
@@ -351,8 +351,14 @@ export async function salvarEncarregado(
      * designado ainda entra por "Esqueci a senha".
      */
     const primeiroAcesso = jaTinha.size === 0 && paraAdicionar.length > 0
+    /*
+     * E o link vai UMA vez por evento (Juan, 09/10/2026): `jaTinha` só enxerga os setores de quem chama, então
+     * Encarregado de outro supervisor, ou quem saiu e voltou (Função na ficha da equipe), recebia de novo.
+     */
+    const jaTinhaLink = primeiroAcesso && !!perfilId
+      && await jaRecebeuMensagemNoEvento([telefone, func.telefone as string | null], evento.id, ['cadastro_encarregado_cpf_link'])
     let mensagemEnviada = false
-    if (primeiroAcesso && perfilId) {
+    if (primeiroAcesso && perfilId && !jaTinhaLink) {
       const setoresNoTexto = listarEmTexto(nomesDosSetores(escolhidos))
       try {
         const link = await criarConviteSenhaSupervisor({
@@ -373,10 +379,30 @@ export async function salvarEncarregado(
     }
 
     revalidatePath('/admin/encarregados')
-    return { ok: true, primeiroAcesso, mensagemEnviada, nome: func.nome as string, total: escolhidos.length }
+    return { ok: true, primeiroAcesso, mensagemEnviada, jaTinhaLink, nome: func.nome as string, total: escolhidos.length }
   } catch (e) {
     return { erro: mensagemAmigavel(e) }
   }
+}
+
+/**
+ * Liga ou desliga o Encarregado em UM setor, sem mexer nos outros setores dela — é o que a Função da ficha da
+ * equipe usa (Colaborador / Encarregado / Supervisor). Mesmo porteiro e mesmas regras de `salvarEncarregado`.
+ */
+export async function alterarEncarregadoNoSetor(
+  funcionarioId: string, eventoId: string, fornecedorId: string, ligar: boolean,
+): Promise<{ ok: true; primeiroAcesso: boolean; mensagemEnviada: boolean; jaTinhaLink: boolean } | { erro: string }> {
+  const g = await escopoDoGestor(eventoId)
+  if (!g.ok) return { erro: g.erro }
+  const { data: atuais } = await supabaseAdmin
+    .from('encarregados_setor').select('fornecedor_id')
+    .eq('funcionario_id', funcionarioId).in('fornecedor_id', g.setores.map(s => s.id))
+  const lista = new Set((atuais ?? []).map(l => l.fornecedor_id as string))
+  if (ligar === lista.has(fornecedorId)) return { ok: true, primeiroAcesso: false, mensagemEnviada: false, jaTinhaLink: false }
+  if (ligar) lista.add(fornecedorId)
+  else lista.delete(fornecedorId)
+  const r = await salvarEncarregado(funcionarioId, eventoId, [...lista])
+  return 'erro' in r ? { erro: r.erro } : { ok: true, primeiroAcesso: r.primeiroAcesso, mensagemEnviada: r.mensagemEnviada, jaTinhaLink: r.jaTinhaLink }
 }
 
 /** Tira a função de Encarregado de TODOS os setores do chamador neste evento. A pessoa continua na equipe. */

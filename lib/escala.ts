@@ -35,12 +35,23 @@ import {
  * de colaborador. `aprovarCredenciamento` e `ajustarEscalaDoFuncionario` chamam isto pra forçar todos os dias,
  * ignorando o que foi pedido/marcado na tela.
  */
-export async function pessoaEhSupervisor(cpf: string | null | undefined): Promise<boolean> {
+/*
+ * POR EVENTO desde 09/10/2026 (pedido do Juan: "supervisor pode ter permissão de ir todos os dias; encarregado e
+ * colaborador são dias selecionados"). Antes bastava a conta ter `role = 'supervisor'` em qualquer lugar — e quem
+ * era rebaixado a colaborador (Função na ficha da equipe) continuava com a conta de supervisor, então os dias dele
+ * voltavam a ser "todos" a cada ajuste. Agora vale quem SUPERVISIONA um setor deste evento (`supervisor_setores`).
+ */
+export async function pessoaEhSupervisor(cpf: string | null | undefined, eventoId: string): Promise<boolean> {
   const limpo = (cpf ?? '').replace(/\D/g, '')
   if (limpo.length !== 11) return false
   try {
-    const { data } = await supabaseAdmin.from('perfis').select('id').eq('cpf', limpo).eq('role', 'supervisor').limit(1).maybeSingle()
-    return !!data
+    const { data: contas } = await supabaseAdmin.from('perfis').select('id').eq('cpf', limpo)
+    const ids = (contas ?? []).map(c => c.id as string)
+    if (!ids.length) return false
+    const { data } = await supabaseAdmin
+      .from('supervisor_setores').select('fornecedor_id, fornecedores!inner(evento_id)')
+      .in('perfil_id', ids).eq('fornecedores.evento_id', eventoId).limit(1)
+    return !!data?.length
   } catch {
     return false
   }

@@ -1,11 +1,11 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, ShieldCheck, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, criarSupervisor, situacaoDoAcesso, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, definirFuncaoNaEquipe, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
+import { FUNCOES_NA_EQUIPE, rotuloDaFuncao, type FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import HistoricoBatidas from '@/components/HistoricoBatidas'
@@ -26,6 +26,8 @@ type Funcionario = {
   telefone: string
   empresa: string
   cargo: string
+  /** Colaborador / Encarregado / Supervisor neste setor — ver lib/funcao-na-equipe.ts. */
+  funcao?: FuncaoNaEquipe
   valorReceber: number
   chavePix: string | null
   pago: boolean
@@ -50,7 +52,7 @@ export default function FuncionarioDetalheModal({
   trigger,
   outrosSetores = [],
   podeMoverDeSetor = false,
-  podeCriarSupervisor = false,
+  podeMudarFuncao = false,
   podeEditarCpf = false,
   podeAtivarDesativar = false,
   podeEditarPonto = false,
@@ -67,8 +69,10 @@ export default function FuncionarioDetalheModal({
   outrosSetores?: { id: string; nome: string; /** O subevento do fornecedor, quando o evento usa subeventos. */ area?: string | null }[]
   /** Só admin/master: mover afeta a equipe de outro supervisor. */
   podeMoverDeSetor?: boolean
-  /** Mesma permissão que `criarSupervisor` exige no servidor. */
+  /** Mesma permissão que `criarSupervisor` exige no servidor. (O botão saiu em 09/10/2026 — a Função cobre.) */
   podeCriarSupervisor?: boolean
+  /** Master, admin da organização e o supervisor do setor — a régua de `definirFuncaoNaEquipe`. */
+  podeMudarFuncao?: boolean
   /** Liga os lápis de nome e CPF — ver `podeCorrigirNomeECpf`; o servidor confere o setor/organização. */
   podeEditarCpf?: boolean
   /** Mesma régua de `alternarAtivacao` no servidor. */
@@ -174,7 +178,7 @@ export default function FuncionarioDetalheModal({
     })
   }
 
-  // ── Corrigir a função (cargo) ─────────────────────────────────────────────
+  // ── Corrigir o cargo ─────────────────────────────────────────────
   /*
    * Texto livre no cadastro público — a mesma função vinha escrita de dez
    * jeitos. Quem cuida da equipe corrige aqui; o <datalist> sugere a grafia
@@ -196,13 +200,13 @@ export default function FuncionarioDetalheModal({
 
   const salvarCargo = () => {
     setErroCargo(null)
-    if (!novoCargo.trim()) { setErroCargo('A função não pode ficar em branco.'); return }
+    if (!novoCargo.trim()) { setErroCargo('O cargo não pode ficar em branco.'); return }
     if (motivoObrigatorio && !motivoCargo.trim()) { setErroCargo('Informe o motivo da correção.'); return }
     startTransitionCargo(async () => {
       const r = await editarCargoFuncionario(f.id, fornecedorId, eventoId, novoCargo, motivoCargo || undefined)
       if ('erro' in r) { setErroCargo(r.erro); return }
       setEditandoCargo(false)
-      setOkCargo('Função atualizada.')
+      setOkCargo('Cargo atualizado.')
       router.refresh()
     })
   }
@@ -300,73 +304,35 @@ export default function FuncionarioDetalheModal({
     })
   }
 
-  // ── Tornar supervisor ─────────────────────────────────────────────────────
+  // ── Função na equipe (Colaborador / Encarregado / Supervisor) ─────────────
   /*
-   * `criarSupervisor` já faz tudo: cria o login (Auth + `perfis`) se o CPF
-   * for novo, ou reaproveita/realoca se já existir, e dispara a mensagem de
-   * WhatsApp avisando a pessoa. `perfis` (login de supervisor) e
-   * `funcionarios` (credenciamento/pagamento) são tabelas independentes — a
-   * mesma pessoa pode estar nas duas, ligada só pelo CPF. Por isso este botão
-   * não precisa de nenhuma lógica nova: só chama a action existente com os
-   * dados que este funcionário já tem cadastrados.
+   * Muda o ACESSO da pessoa na hora — ver `definirFuncaoNaEquipe`. Substituiu o "Tornar supervisor" (09/10/2026):
+   * a mesma escolha cobre os três casos, inclusive tirar alguém de supervisor sem tirar da equipe.
    */
-  const [telefoneSupervisor, setTelefoneSupervisor] = useState(f.telefone)
-  const [confirmandoSupervisor, setConfirmandoSupervisor] = useState(false)
-  const [erroSupervisor, setErroSupervisor] = useState<string | null>(null)
-  const [okSupervisor, setOkSupervisor] = useState<string | null>(null)
-  const [isPendingSupervisor, startTransitionSupervisor] = useTransition()
-  /*
-   * O conflito de acesso (CPF já é operador de portão, admin etc.) é
-   * conferido ANTES de mostrar o formulário — não depois do "Confirmar".
-   *
-   * Sem isto, a pessoa preenchia telefone e clicava Confirmar pra só então
-   * descobrir que o CPF já tinha outro tipo de acesso — passos perdidos por
-   * um erro que já era sabido desde o primeiro clique. Foi o que aconteceu
-   * de verdade com uma operadora de portão.
-   *
-   * `undefined` = ainda não verificado; `null` = verificado, sem conflito.
-   */
-  const [conflitoAcesso, setConflitoAcesso] = useState<string | null | undefined>(undefined)
-  const [verificandoAcesso, setVerificandoAcesso] = useState(false)
+  const funcaoAtual: FuncaoNaEquipe = f.funcao ?? 'colaborador'
+  const [editandoFuncao, setEditandoFuncao] = useState(false)
+  const [novaFuncao, setNovaFuncao] = useState<FuncaoNaEquipe>(funcaoAtual)
+  const [erroFuncao, setErroFuncao] = useState<string | null>(null)
+  const [okFuncao, setOkFuncao] = useState<string | null>(null)
+  const [isPendingFuncao, startTransitionFuncao] = useTransition()
 
-  const abrirTornarSupervisor = () => {
-    setOkSupervisor(null)
-    setErroSupervisor(null)
-    setConfirmandoSupervisor(true)
-    setVerificandoAcesso(true)
-    situacaoDoAcesso(f.cpf).then(r => {
-      setConflitoAcesso(r.role && r.role !== 'supervisor' ? r.nomePapel : null)
-    }).catch(() => {
-      // Falhou a checagem prévia: não bloqueia o fluxo — o servidor confere
-      // de novo no envio de qualquer forma, ver `criarSupervisor`.
-      setConflitoAcesso(null)
-    }).finally(() => setVerificandoAcesso(false))
+  const abrirEditarFuncao = () => {
+    setErroFuncao(null); setOkFuncao(null)
+    setNovaFuncao(funcaoAtual)
+    setEditandoFuncao(true)
   }
 
-  const tornarSupervisor = () => {
-    setErroSupervisor(null)
-    const dados = new FormData()
-    dados.set('nome', f.nome)
-    dados.set('cpf', f.cpf)
-    dados.set('telefone', telefoneSupervisor)
-    dados.set('ativo', 'true')
-    startTransitionSupervisor(async () => {
+  const salvarFuncao = () => {
+    setErroFuncao(null)
+    startTransitionFuncao(async () => {
       try {
-        const r = await criarSupervisor(fornecedorId, eventoId, dados)
-        if ('error' in r) { setErroSupervisor(r.error); return }
-        setConfirmandoSupervisor(false)
-        setOkSupervisor(
-          r.novo
-            ? 'Supervisor criado e avisado por WhatsApp.'
-            : r.avisado
-              ? 'Login de supervisor associado a este fornecedor e pessoa avisada por WhatsApp.'
-              // Já era supervisora deste evento: nada de WhatsApp de novo — ela
-              // troca de setor no próprio acesso, em "Meus setores".
-              : 'Fornecedor adicionado ao acesso dela. Não avisamos de novo por WhatsApp: ela já supervisiona este evento e troca de fornecedor no próprio login.'
-        )
+        const r = await definirFuncaoNaEquipe(f.id, fornecedorId, eventoId, novaFuncao)
+        if ('erro' in r) { setErroFuncao(r.erro); return }
+        setEditandoFuncao(false)
+        setOkFuncao(r.mensagem)
         router.refresh()
       } catch (e: any) {
-        setErroSupervisor(mensagemAmigavel(e))
+        setErroFuncao(mensagemAmigavel(e))
       }
     })
   }
@@ -577,11 +543,28 @@ export default function FuncionarioDetalheModal({
                   <div>
                     <p className="text-slate-400 text-xs">Função</p>
                     <div className="flex items-center gap-1.5">
+                      <p className="text-slate-700 font-medium">{rotuloDaFuncao(funcaoAtual)}</p>
+                      {podeMudarFuncao && (
+                        <button
+                          onClick={abrirEditarFuncao}
+                          className="p-0.5 text-slate-300 hover:text-brand-500"
+                          title="Mudar função"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* O cargo de verdade ("Bartender", "Caixa móvel") — sai no crachá. A Função acima é o acesso. */}
+                  <div>
+                    <p className="text-slate-400 text-xs">Cargo</p>
+                    <div className="flex items-center gap-1.5">
                       <p className="text-slate-700 font-medium">{f.cargo || '—'}</p>
                       <button
                         onClick={abrirEditarCargo}
                         className="p-0.5 text-slate-300 hover:text-brand-500"
-                        title="Corrigir função"
+                        title="Corrigir cargo"
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
@@ -620,7 +603,8 @@ export default function FuncionarioDetalheModal({
                   * pessoa (pedido do Juan, 06/10/2026). Some sozinho em evento
                   * sem escala por dia — ver SecaoEscala.tsx.
                   */}
-                <SecaoEscala funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} />
+                {/* `key`: muda a função, recarrega (supervisor = todos os dias; os outros, dias escolhidos). */}
+                <SecaoEscala key={funcaoAtual} funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} />
 
                 {/*
                   * Corrigir CPF — separado do bloco acima (não inline no grid)
@@ -677,13 +661,48 @@ export default function FuncionarioDetalheModal({
                   </div>
                 )}
 
+                {okFuncao && (
+                  <p className="text-green-700 text-xs bg-green-50 border border-green-200 rounded-xl px-3 py-2">{okFuncao}</p>
+                )}
+                {editandoFuncao && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                    <div className="space-y-1.5">
+                      {FUNCOES_NA_EQUIPE.map(op => (
+                        <button
+                          key={op.valor}
+                          type="button"
+                          onClick={() => setNovaFuncao(op.valor)}
+                          className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                            novaFuncao === op.valor ? 'border-brand-500 bg-white ring-1 ring-brand-500' : 'border-amber-200 bg-white/60 hover:bg-white'
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold text-slate-700">{op.rotulo}</span>
+                          <span className="block text-xs text-slate-500">{op.ajuda}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-amber-800 text-xs">
+                      {novaFuncao === 'colaborador'
+                        ? 'Continua na equipe, com os mesmos dias. Perde o acesso ao sistema deste setor.'
+                        : 'O link vai pelo WhatsApp só se ainda não recebeu neste evento.'}
+                    </p>
+                    <div className="flex gap-2">
+                      <button onClick={salvarFuncao} disabled={isPendingFuncao || novaFuncao === funcaoAtual} className="btn btn-primario btn-sm disabled:opacity-50">
+                        {isPendingFuncao ? 'Salvando…' : 'Confirmar'}
+                      </button>
+                      <button onClick={() => setEditandoFuncao(false)} disabled={isPendingFuncao} className="btn btn-secundario btn-sm">Cancelar</button>
+                    </div>
+                    {erroFuncao && <p className="text-red-500 text-xs">{erroFuncao}</p>}
+                  </div>
+                )}
+
                 {okCargo && (
                   <p className="text-green-700 text-xs bg-green-50 border border-green-200 rounded-xl px-3 py-2">{okCargo}</p>
                 )}
                 {editandoCargo && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
                     <p className="text-amber-800 text-xs">
-                      A função aparece no relatório e no crachá. Comece a digitar — as mais comuns aparecem na lista.
+                      O cargo aparece no relatório e no crachá. Comece a digitar — os mais comuns aparecem na lista.
                     </p>
                     <input
                       type="text"
@@ -889,88 +908,6 @@ export default function FuncionarioDetalheModal({
                       </div>
                     )}
                     {erroMover && <p className="text-red-500 text-xs mt-1.5">{erroMover}</p>}
-                  </div>
-                )}
-
-                {/*
-                  * Tornar supervisor — reaproveita nome/CPF já credenciados;
-                  * só o telefone fica editável, pra confirmar que é o WhatsApp
-                  * certo antes de disparar o convite.
-                  */}
-                {podeCriarSupervisor && (
-                  <div className="border-t border-slate-100 pt-4">
-                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Supervisor</p>
-
-                    {/* O nome do setor pode ser comprido ("Tecnica (som Luz Led e
-                        Gerador) - Gynlight/gabisom"): o rótulo do botão quebra em
-                        linhas em vez de vazar pra fora do modal no celular. */}
-                    {!confirmandoSupervisor ? (
-                      <button
-                        onClick={abrirTornarSupervisor}
-                        className="btn btn-secundario w-full whitespace-normal text-left justify-start items-start gap-2 py-2.5"
-                      >
-                        <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span className="min-w-0">Tornar {f.nome.split(' ')[0]} supervisor(a) de {setorNome}</span>
-                      </button>
-                    ) : verificandoAcesso ? (
-                      <div className="flex items-center gap-2 text-slate-400 text-xs py-2">
-                        <LogoLoading tamanho="sm" /> Conferindo o CPF…
-                      </div>
-                    ) : conflitoAcesso ? (
-                      /*
-                       * CPF já tem outro tipo de acesso — dito ANTES de pedir
-                       * telefone, não depois de um "Confirmar" que ia falhar.
-                       */
-                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
-                        <p className="text-red-700 text-xs">
-                          {f.nome} já tem acesso ao sistema como <strong>{conflitoAcesso}</strong>, com este mesmo CPF.
-                          Uma pessoa não pode ter dois tipos de acesso — desative o acesso atual dela antes de torná-la
-                          supervisor(a), em <Link href="/admin/usuarios" className="underline font-medium">Acessos</Link>.
-                        </p>
-                        <button
-                          onClick={() => setConfirmandoSupervisor(false)}
-                          className="btn btn-secundario btn-sm"
-                        >
-                          Entendi
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
-                        <p className="text-amber-800 text-xs">
-                          {f.nome} passa a ter login de supervisor(a) de <strong>{setorNome}</strong>, entrando com o CPF já
-                          cadastrado. Ela recebe um WhatsApp avisando da escala e com um link para criar a senha. O
-                          credenciamento dela como funcionária continua igual, para efeito de pagamento.
-                        </p>
-                        <div>
-                          <p className="text-amber-700 text-2xs font-semibold uppercase tracking-wide mb-1">Telefone para o convite</p>
-                          <input
-                            type="tel"
-                            value={telefoneSupervisor}
-                            onChange={e => setTelefoneSupervisor(e.target.value.replace(/\D/g, ''))}
-                            className="input text-sm"
-                            placeholder="27999999999"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={tornarSupervisor}
-                            disabled={isPendingSupervisor || telefoneSupervisor.replace(/\D/g, '').length < 10}
-                            className="btn btn-primario btn-sm disabled:opacity-50"
-                          >
-                            {isPendingSupervisor ? 'Enviando…' : 'Confirmar'}
-                          </button>
-                          <button
-                            onClick={() => setConfirmandoSupervisor(false)}
-                            disabled={isPendingSupervisor}
-                            className="btn btn-secundario btn-sm"
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {erroSupervisor && <p className="text-red-500 text-xs mt-1.5">{erroSupervisor}</p>}
-                    {okSupervisor && <p className="text-green-600 text-xs mt-1.5">{okSupervisor}</p>}
                   </div>
                 )}
 

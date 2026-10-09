@@ -105,7 +105,7 @@ grupo('9 · Linha dourada do supervisor na equipe')
 ok(ehSupervisorDaEquipe('Supervisor') && ehSupervisorDaEquipe('supervisor de bar') && ehSupervisorDaEquipe('SUPERVISOR'), 'quem tem a função de supervisor é reconhecido (qualquer caixa)')
 ok(!ehSupervisorDaEquipe('Assistente de supervisor') && !ehSupervisorDaEquipe(null) && !ehSupervisorDaEquipe('Administração'), 'só quem COMEÇA por "supervisor" — assistente, vazio e administração não')
 const tabelaEq = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioTable.tsx')
-ok((tabelaEq.match(/ehSupervisorDaEquipe\(f\.cargo\) \? 'linha-supervisor'/g) ?? []).length === 2, 'linha dourada na tabela (computador) e no cartão (celular)')
+ok((tabelaEq.match(/ehSupervisorDaEquipe\(f\.cargo\)\) \? 'linha-supervisor'/g) ?? []).length === 2, 'linha dourada na tabela (computador) e no cartão (celular)')
 ok(ler('app/encarregado/[fid]/ListaEquipe.tsx').includes("'linha-supervisor'") && ler('app/globals.css').includes('html[data-tema="claro"] .linha-supervisor'), 'também na lista do Encarregado, com o dourado ajustado ao tema claro')
 
 grupo('10 · O topo no celular')

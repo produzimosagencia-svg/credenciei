@@ -23,6 +23,7 @@ const SEM_AUDITORIA_DE_PROPOSITO = {
   marcarAlertaLido: 'marca o alerta de monitoramento como lido na tela do master',
   marcarTodosAlertasLidos: 'idem',
   removerEncarregado: 'chama `salvarEncarregado`, que grava REMOCAO_ENCARREGADO',
+  alterarEncarregadoNoSetor: 'chama `salvarEncarregado`, que grava CONCESSAO/REMOCAO_ENCARREGADO',
   criarFornecedor: 'chama `criarFornecedorOuLanca`, que grava SETOR_CRIADO',
 }
 

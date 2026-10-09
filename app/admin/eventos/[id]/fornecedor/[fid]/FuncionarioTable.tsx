@@ -11,6 +11,7 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
+import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
@@ -78,6 +79,8 @@ type Funcionario = {
   telefone: string
   empresa: string
   cargo: string
+  /** Colaborador / Encarregado / Supervisor neste setor — ver lib/funcao-na-equipe.ts. */
+  funcao?: FuncaoNaEquipe
   qr_token: string
   valorReceber: number
   chavePix: string | null
@@ -126,6 +129,7 @@ export default function FuncionarioTable({
   outrosSetores = [],
   podeMoverDeSetor = false,
   podeCriarSupervisor = false,
+  podeMudarFuncao = false,
   podeEditarCpf = false,
   podeEditarPonto = false,
   role,
@@ -158,6 +162,8 @@ export default function FuncionarioTable({
   podeMoverDeSetor?: boolean
   /** Mesma permissão que `criarSupervisor` exige no servidor. */
   podeCriarSupervisor?: boolean
+  /** Master, admin da organização e o supervisor do setor — a régua de `definirFuncaoNaEquipe`. */
+  podeMudarFuncao?: boolean
   /**
    * Só o master exclui. Para o supervisor/admin, DESATIVAR resolve o mesmo
    * problema do dia (a pessoa para de registrar presença) sem apagar as
@@ -441,7 +447,7 @@ export default function FuncionarioTable({
               </div>
             ))}
             {paginated.map(f => (
-              <div key={f.id} className={`p-4 space-y-2.5 ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : ''}`}>
+              <div key={f.id} className={`p-4 space-y-2.5 ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <FuncionarioDetalheModal
                     funcionario={f}
@@ -453,6 +459,7 @@ export default function FuncionarioTable({
                     outrosSetores={outrosSetores}
                     podeMoverDeSetor={podeMoverDeSetor}
                     podeCriarSupervisor={podeCriarSupervisor}
+                    podeMudarFuncao={podeMudarFuncao}
                     podeEditarCpf={podeEditarCpf}
                     podeEditarPonto={podeEditarPonto}
                     role={role}
@@ -608,7 +615,7 @@ export default function FuncionarioTable({
                   </tr>
                 ))}
                 {paginated.map(f => (
-                <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${ehSupervisorDaEquipe(f.cargo) ? 'linha-supervisor' : 'hover:bg-slate-50'}`}>
+                <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : 'hover:bg-slate-50'}`}>
                   <td className="px-4 py-3">
                     <FuncionarioDetalheModal
                       funcionario={f}
@@ -620,6 +627,7 @@ export default function FuncionarioTable({
                       outrosSetores={outrosSetores}
                       podeMoverDeSetor={podeMoverDeSetor}
                       podeCriarSupervisor={podeCriarSupervisor}
+                      podeMudarFuncao={podeMudarFuncao}
                       podeEditarCpf={podeEditarCpf}
                       podeEditarPonto={podeEditarPonto}
                       role={role}

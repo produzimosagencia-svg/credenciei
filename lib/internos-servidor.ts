@@ -225,6 +225,37 @@ export async function diasComBatida(eventoId: string, datas: string[]): Promise<
 
 
 /**
+ * Esta pessoa JÁ RECEBEU (ou tem na fila) uma destas mensagens neste evento? É o "link vai uma vez só"
+ * (Juan, 09/10/2026): supervisor ou Encarregado em mais de um setor do mesmo evento, ou que trocou de
+ * função e voltou, não recebe o mesmo link de novo.
+ *
+ * Olha a MENSAGEM na fila, não o vínculo — ver `jaFoiAvisadoNesteEvento` em lib/actions.ts (caso do
+ * Erivelton). Cancelada ou falhada não conta. Aceita vários números (o digitado e o do cadastro). Erro de
+ * consulta devolve `false`: na dúvida, avisa.
+ */
+export async function jaRecebeuMensagemNoEvento(
+  telefone: string | (string | null | undefined)[], eventoId: string, templates: string[],
+): Promise<boolean> {
+  const numeros = [...new Set(
+    (Array.isArray(telefone) ? telefone : [telefone])
+      .map(t => (t ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, ''))
+      .filter(Boolean),
+  )]
+  if (!numeros.length || !templates.length) return false
+  const { data, error } = await supabaseAdmin
+    .from('mensagens_agendadas')
+    .select('mensagem')
+    .eq('evento_id', eventoId)
+    .eq('tipo', 'disparo_manual')
+    .in('telefone', numeros.flatMap(n => [n, `55${n}`]))
+    .in('status', ['pendente', 'enviado'])
+  if (error) return false
+  return (data ?? []).some(m => {
+    const texto = String(m.mensagem ?? '')
+    return templates.some(t => texto.includes(`"${t}"`))
+  })
+}
+/**
  * Dá a uma pessoa que JÁ TEM acesso uma função a mais (ver
  * supabase/upgrade-funcoes-multiplas.sql). Idempotente: dar de novo a mesma
  * função só confirma. Recusa as identidades que não se misturam (master,

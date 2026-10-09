@@ -208,6 +208,8 @@ function ModalEncarregado({ eventoId, eventoNome, setores, existente, onFechar, 
       if ('erro' in r) { setErro(r.erro); return }
       if (!r.primeiroAcesso) {
         onConcluido(`Os setores de ${r.nome} foram atualizados (${r.total} setor${r.total === 1 ? '' : 'es'}).`, 'ok')
+      } else if (r.jaTinhaLink) {
+        onConcluido(`${r.nome} agora é Encarregado de ${r.total} setor${r.total === 1 ? '' : 'es'}. Não reenviamos o link: já tinha recebido neste evento.`, 'ok')
       } else if (r.mensagemEnviada) {
         onConcluido(`${r.nome} agora é Encarregado de ${r.total} setor${r.total === 1 ? '' : 'es'} e recebeu o acesso pelo WhatsApp (uma mensagem só).`, 'ok')
       } else {
