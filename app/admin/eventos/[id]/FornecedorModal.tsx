@@ -1,4 +1,5 @@
 'use client'
+import { TRAVA_POR_DIA_ATIVA } from '@/lib/escala-regras'
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Pencil, Check } from 'lucide-react'
@@ -209,9 +210,12 @@ export default function FornecedorModal(props: Props) {
                     })}
                   </div>
                   <p className="text-slate-500 text-xs mt-1">
-                    Quantidade de pessoas combinada para este setor em cada dia (ex.: quinta 4, sexta 5,
-                    sábado 8). É só referência: o sistema não barra ninguém por causa deste número. Em
-                    branco = sem número naquele dia.
+                    {/* O texto segue a chave de verdade (TRAVA_POR_DIA_ATIVA): dizia "só referência" mesmo com a trava religada. */}
+                    {TRAVA_POR_DIA_ATIVA
+                      ? <>Máximo de pessoas deste setor em cada dia. Chegou no número, a aprovação não passa e o portão barra
+                          a próxima entrada do dia (o crachá do supervisor não conta). Em branco = sem limite naquele dia.</>
+                      : <>Quantidade de pessoas combinada para este setor em cada dia (ex.: quinta 4, sexta 5, sábado 8). É só
+                          referência: o sistema não barra ninguém por causa deste número. Em branco = sem número naquele dia.</>}
                   </p>
                 </div>
               )}

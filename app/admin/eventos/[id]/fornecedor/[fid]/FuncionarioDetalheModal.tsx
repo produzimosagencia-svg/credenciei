@@ -1,9 +1,9 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, definirFuncaoNaEquipe, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, definirFuncaoNaEquipe, funcaoDaPessoaNaEquipe, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { FUNCOES_NA_EQUIPE, rotuloDaFuncao, type FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { formatarBR } from '@/lib/tz'
@@ -98,9 +98,19 @@ export default function FuncionarioDetalheModal({
    */
   const [naBase, setNaBase] = useState<{ primeiroCadastro: string | null; totalEventos: number } | null>(null)
 
+  /*
+   * Tela que abre a ficha sem dizer a função (a busca do evento, por exemplo): pergunta ao servidor ao abrir — a
+   * função de hoje e se quem está vendo pode mudar. Sem isto a ficha mostrava "Colaborador" pra todo mundo e
+   * nenhum lápis (Juan, 09/10/2026: "tentei mudar o acesso de um colaborador e não consegui").
+   */
+  const [funcaoDoServidor, setFuncaoDoServidor] = useState<{ funcao: FuncaoNaEquipe; podeMudar: boolean } | null | undefined>(undefined)
+
   const abrirFicha = () => {
     setOpen(true)
     if (!naBase) desdeQuandoNaBase(f.cpf).then(setNaBase).catch(() => setNaBase(null))
+    if (f.funcao === undefined && funcaoDoServidor === undefined) {
+      funcaoDaPessoaNaEquipe(f.id).then(setFuncaoDoServidor).catch(() => setFuncaoDoServidor(null))
+    }
   }
   const [aba, setAba] = useState<Aba>('dados')
   const [valor, setValor] = useState(String(f.valorReceber))
@@ -309,12 +319,19 @@ export default function FuncionarioDetalheModal({
    * Muda o ACESSO da pessoa na hora — ver `definirFuncaoNaEquipe`. Substituiu o "Tornar supervisor" (09/10/2026):
    * a mesma escolha cobre os três casos, inclusive tirar alguém de supervisor sem tirar da equipe.
    */
-  const funcaoAtual: FuncaoNaEquipe = f.funcao ?? 'colaborador'
+  const funcaoAtual: FuncaoNaEquipe = f.funcao ?? funcaoDoServidor?.funcao ?? 'colaborador'
+  const funcaoCarregando = f.funcao === undefined && funcaoDoServidor === undefined
+  const mostrarLapisFuncao = podeMudarFuncao || funcaoDoServidor?.podeMudar === true
   const [editandoFuncao, setEditandoFuncao] = useState(false)
   const [novaFuncao, setNovaFuncao] = useState<FuncaoNaEquipe>(funcaoAtual)
   const [erroFuncao, setErroFuncao] = useState<string | null>(null)
   const [okFuncao, setOkFuncao] = useState<string | null>(null)
   const [isPendingFuncao, startTransitionFuncao] = useTransition()
+  // Abriu o quadro da função: rola até ele (no celular ele pode nascer fora da tela, e o lápis "não fazia nada").
+  const quadroFuncao = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (editandoFuncao) quadroFuncao.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [editandoFuncao])
 
   const abrirEditarFuncao = () => {
     setErroFuncao(null); setOkFuncao(null)
@@ -330,6 +347,8 @@ export default function FuncionarioDetalheModal({
         if ('erro' in r) { setErroFuncao(r.erro); return }
         setEditandoFuncao(false)
         setOkFuncao(r.mensagem)
+        // A tela que abriu a ficha sem a função não recebe a nova pelo refresh: guarda aqui.
+        if (f.funcao === undefined) setFuncaoDoServidor(v => ({ funcao: novaFuncao, podeMudar: v?.podeMudar ?? true }))
         router.refresh()
       } catch (e: any) {
         setErroFuncao(mensagemAmigavel(e))
@@ -543,8 +562,8 @@ export default function FuncionarioDetalheModal({
                   <div>
                     <p className="text-slate-400 text-xs">Função</p>
                     <div className="flex items-center gap-1.5">
-                      <p className="text-slate-700 font-medium">{rotuloDaFuncao(funcaoAtual)}</p>
-                      {podeMudarFuncao && (
+                      <p className="text-slate-700 font-medium">{funcaoCarregando ? '…' : rotuloDaFuncao(funcaoAtual)}</p>
+                      {mostrarLapisFuncao && (
                         <button
                           onClick={abrirEditarFuncao}
                           className="p-0.5 text-slate-300 hover:text-brand-500"
@@ -598,13 +617,6 @@ export default function FuncionarioDetalheModal({
                   )}
                 </div>
 
-                {/*
-                  * Dias de trabalho + aprovação, logo depois dos dados da
-                  * pessoa (pedido do Juan, 06/10/2026). Some sozinho em evento
-                  * sem escala por dia — ver SecaoEscala.tsx.
-                  */}
-                {/* `key`: muda a função, recarrega (supervisor = todos os dias; os outros, dias escolhidos). */}
-                <SecaoEscala key={funcaoAtual} funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} />
 
                 {/*
                   * Corrigir CPF — separado do bloco acima (não inline no grid)
@@ -665,7 +677,7 @@ export default function FuncionarioDetalheModal({
                   <p className="text-green-700 text-xs bg-green-50 border border-green-200 rounded-xl px-3 py-2">{okFuncao}</p>
                 )}
                 {editandoFuncao && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
+                  <div ref={quadroFuncao} className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5 -mt-2">
                     <div className="space-y-1.5">
                       {FUNCOES_NA_EQUIPE.map(op => (
                         <button
@@ -817,6 +829,14 @@ export default function FuncionarioDetalheModal({
                     {erroCpf && <p className="text-red-500 text-xs">{erroCpf}</p>}
                   </div>
                 )}
+
+                {/*
+                  * Dias de trabalho + aprovação, logo depois dos dados (e dos quadros de correção, que abrem colados nos dados — 09/10/2026: abrindo embaixo da escala, no celular o clique no lápis parecia não fazer nada) da
+                  * pessoa (pedido do Juan, 06/10/2026). Some sozinho em evento
+                  * sem escala por dia — ver SecaoEscala.tsx.
+                  */}
+                {/* `key`: muda a função, recarrega (supervisor = todos os dias; os outros, dias escolhidos). */}
+                <SecaoEscala key={funcaoAtual} funcionarioId={f.id} fornecedorId={fornecedorId} eventoId={eventoId} />
 
                 {/*
                   * Mover para outro setor — só quem gerencia o evento inteiro.

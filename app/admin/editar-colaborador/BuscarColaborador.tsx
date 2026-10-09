@@ -5,6 +5,7 @@ import { chaveBusca, formatCpf } from '@/lib/format'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
 import FuncionarioDetalheModal from '../eventos/[id]/fornecedor/[fid]/FuncionarioDetalheModal'
 import type { Presenca } from '../eventos/[id]/fornecedor/[fid]/FuncionarioTable'
+import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 
 export type ColaboradorDoEvento = {
   id: string
@@ -13,6 +14,8 @@ export type ColaboradorDoEvento = {
   telefone: string
   empresa: string
   cargo: string
+  /** Colaborador / Encarregado / Supervisor no setor dela — ver lib/funcao-na-equipe.ts. */
+  funcao?: FuncaoNaEquipe
   valorReceber: number
   chavePix: string | null
   pago: boolean
@@ -46,7 +49,7 @@ const MINIMO = 2
  */
 export default function BuscarColaborador({
   colaboradores, eventoId, eventoNome, outrosSetores, podeMoverDeSetor, podeCriarSupervisor, podeEditarCpf,
-  podeAtivarDesativar, role,
+  podeAtivarDesativar, role, podeMudarFuncao = false,
 }: {
   colaboradores: ColaboradorDoEvento[]
   eventoId: string
@@ -54,6 +57,8 @@ export default function BuscarColaborador({
   outrosSetores: { id: string; nome: string; area?: string | null }[]
   podeMoverDeSetor: boolean
   podeCriarSupervisor: boolean
+  /** Master e admin da organização — a régua de `definirFuncaoNaEquipe`. */
+  podeMudarFuncao?: boolean
   podeEditarCpf: boolean
   podeAtivarDesativar: boolean
   /** Ver o mesmo prop em FuncionarioDetalheModal — decide se motivo é obrigatório. */
@@ -131,6 +136,7 @@ export default function BuscarColaborador({
               outrosSetores={outrosSetores.filter(s => s.id !== c.fornecedorId)}
               podeMoverDeSetor={podeMoverDeSetor}
               podeCriarSupervisor={podeCriarSupervisor}
+              podeMudarFuncao={podeMudarFuncao}
               podeEditarCpf={podeEditarCpf}
               podeAtivarDesativar={podeAtivarDesativar}
               podeEditarPonto={podeAtivarDesativar}

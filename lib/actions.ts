@@ -2466,6 +2466,33 @@ async function funcaoAtualNaEquipe(funcionarioId: string, fornecedorId: string, 
 }
 
 /**
+ * A função de hoje da pessoa no setor dela e se QUEM PERGUNTA pode mudá-la — pra ficha aberta por uma tela que não
+ * calcula isso (a busca do evento, por exemplo). Mesma régua de `definirFuncaoNaEquipe`. `null` = sem acesso.
+ */
+export async function funcaoDaPessoaNaEquipe(funcionarioId: string): Promise<{ funcao: FuncaoNaEquipe; podeMudar: boolean } | null> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil) return null
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios').select('id, cpf, fornecedor_id, fornecedores(evento_id, eventos(organizacao_id))').eq('id', funcionarioId).maybeSingle()
+    if (!func) return null
+    const orgId = (func.fornecedores as unknown as { eventos?: { organizacao_id?: string | null } | null } | null)?.eventos?.organizacao_id ?? null
+    const ehAdminDaOrg = ehMaster(perfil.role)
+      || (podeGerenciarUsuarios(perfil) && !!orgId && orgId === perfil.organizacao_id)
+    const doSetor = !ehAdminDaOrg && (await meusSetores(perfil)).some(s => s.id === func.fornecedor_id)
+    if (!ehAdminDaOrg && !doSetor && orgId !== perfil.organizacao_id && perfil.role !== 'suporte') return null
+    const cpf = normalizarCpf((func.cpf as string | null) ?? '')
+    const { data: conta } = cpf.length === 11
+      ? await supabaseAdmin.from('perfis').select('id').eq('cpf', cpf).maybeSingle()
+      : { data: null }
+    const funcao = await funcaoAtualNaEquipe(funcionarioId, func.fornecedor_id as string, (conta?.id as string | undefined) ?? null)
+    return { funcao, podeMudar: ehAdminDaOrg || doSetor }
+  } catch {
+    return null
+  }
+}
+
+/**
  * A FUNÇÃO da pessoa na ficha da equipe: Colaborador, Encarregado ou Supervisor (pedido do Juan, 09/10/2026). Mudar
  * a função muda o ACESSO na hora, e a pessoa nunca sai da equipe — continua com o QR, as batidas e o pagamento.
  *

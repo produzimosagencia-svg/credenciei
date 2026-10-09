@@ -42,7 +42,13 @@ ok(/\(await meusSetores\(perfil\)\)\.some\(s => s\.id === fornecedorId\)/.test(a
 ok(/Você não pode mudar a sua própria função/.test(acao), 'ninguém muda a própria função')
 ok(/const podeMudarFuncao = ehMaster\(perfil\.role\)/.test(pagina) && /podeMudarFuncao=\{podeMudarFuncao\}/.test(pagina),
   'a tela usa a mesma régua')
-ok(/\{podeMudarFuncao && \(/.test(modal), 'o lápis da função só aparece pra quem pode')
+ok(/const mostrarLapisFuncao = podeMudarFuncao \|\| funcaoDoServidor\?\.podeMudar === true/.test(modal) && /\{mostrarLapisFuncao && \(/.test(modal),
+  'o lápis da função só aparece pra quem pode (a tela diz, ou o servidor responde)')
+ok(/podeMudarFuncao=\{podeMudarFuncao\}/.test(ler('app/admin/editar-colaborador/page.tsx')) && /funcao: funcaoDe\(f\)/.test(ler('app/admin/editar-colaborador/page.tsx')),
+  '"Editar colaborador" também mostra a função e o lápis (faltava — 09/10/2026)')
+ok(/funcaoDaPessoaNaEquipe\(f\.id\)/.test(modal) && /export async function funcaoDaPessoaNaEquipe/.test(actions),
+  'ficha aberta por tela que não manda a função pergunta ao servidor')
+ok(modal.indexOf('{editandoFuncao && (') < modal.indexOf('<SecaoEscala key='), 'o quadro da função abre colado nos dados, antes de "Dias de trabalho"')
 
 console.log('\n3 · conferências antes de mexer em qualquer acesso')
 const conf = acao.indexOf('── Conferências')

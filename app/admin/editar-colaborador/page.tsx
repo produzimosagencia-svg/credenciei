@@ -3,8 +3,10 @@ import Link from 'next/link'
 import { UserCog, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import {
-  veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf,
+  ehMaster, veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf,
 } from '@/lib/permissions'
+import { emLotes } from '@/lib/lotes'
+import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
 import { PageHeader } from '@/components/ui/Superficie'
@@ -163,6 +165,31 @@ export default async function EditarColaboradorPage({
     }
   }
 
+  /*
+   * A FUNÇÃO de cada pessoa no setor dela (Colaborador / Encarregado / Supervisor) — a mesma conta da tela da equipe.
+   * Faltava aqui (09/10/2026): esta ficha é a mesma da equipe, mas chegava sem a função e sem o lápis, então o Juan
+   * não conseguia tornar ninguém supervisor por "Editar colaborador".
+   */
+  const limpo = (c: string | null | undefined) => (c ?? '').replace(/\D/g, '')
+  const [linksSupervisor, linksEncarregado] = idsSetores.length
+    ? await Promise.all([
+        Promise.all(emLotes(idsSetores, 150).map(lote => supabase.from('supervisor_setores')
+          .select('fornecedor_id, perfis(cpf)').in('fornecedor_id', lote).then(r => r.data ?? [], () => [])))
+          .then(xs => xs.flat()),
+        Promise.all(emLotes(idsSetores, 150).map(lote => supabase.from('encarregados_setor')
+          .select('fornecedor_id, funcionario_id').in('fornecedor_id', lote).then(r => r.data ?? [], () => [])))
+          .then(xs => xs.flat()),
+      ])
+    : [[], []]
+  const supervisorNoSetor = new Set(linksSupervisor.map(v =>
+    `${v.fornecedor_id as string}|${limpo((v as unknown as { perfis: { cpf: string | null } | null }).perfis?.cpf)}`))
+  const encarregadoNoSetor = new Set(linksEncarregado.map(v => `${v.fornecedor_id as string}|${v.funcionario_id as string}`))
+  const funcaoDe = (f: Record<string, unknown>): FuncaoNaEquipe =>
+    supervisorNoSetor.has(`${f.fornecedor_id as string}|${limpo(f.cpf as string)}`) ? 'supervisor'
+      : encarregadoNoSetor.has(`${f.fornecedor_id as string}|${f.id as string}`) ? 'encarregado' : 'colaborador'
+  // Mesma régua de `definirFuncaoNaEquipe` (o supervisor muda pela tela da equipe dele; esta tela é de admin).
+  const podeMudarFuncao = ehMaster(perfil.role) || (podeGerenciarUsuarios(perfil) && evento.organizacao_id === perfil.organizacao_id)
+
   const dadosSetor = new Map((setores ?? []).map(s => [s.id as string, s]))
   const colaboradores: ColaboradorDoEvento[] = (funcionarios ?? []).map(f => {
     const setor = dadosSetor.get(f.fornecedor_id as string)
@@ -174,6 +201,7 @@ export default async function EditarColaboradorPage({
       telefone: (f.telefone as string | null) ?? '',
       empresa: (f.empresa as string | null) ?? '',
       cargo: (f.cargo as string | null) ?? '',
+      funcao: funcaoDe(f),
       valorReceber: Number(f.valor_receber ?? 0),
       chavePix: (f.chave_pix as string | null) ?? null,
       pago: f.pago === true,
@@ -209,6 +237,7 @@ export default async function EditarColaboradorPage({
            aqui) — dentro dele, ele pode as mesmas três coisas de admin/master. */
         podeMoverDeSetor={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
         podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'}
+        podeMudarFuncao={podeMudarFuncao}
         podeEditarCpf={podeCorrigirNomeECpf(perfil)}
         podeAtivarDesativar={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
         role={perfil.role}
