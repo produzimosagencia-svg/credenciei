@@ -30,10 +30,18 @@ ok(rodar('/admin/eventos/1', { 'credenciei-tema': 'claro' }) === 'claro', 'quem 
 ok(rodar('/admin', { 'credenciei-tema': 'escuro' }) === null, 'quem escolheu ESCURO continua no escuro')
 ok(rodar('/admin', 'quebrado') === 'claro', 'navegador que bloqueia o armazenamento (aba anônima) também abre no claro')
 
-console.log('\n\x1b[1m2 · O resto continua escuro\x1b[0m')
-ok(rodar('/login', {}) === null && rodar('/', {}) === null && rodar('/credential/abc', {}) === null && rodar('/form/abc', {}) === null, 'login, landing, credencial e formulário público seguem escuros')
+console.log('\n\x1b[1m2 · Landing: claro por padrão, escuro por escolha (09/10/2026)\x1b[0m')
+ok(rodar('/', {}) === 'claro', 'a landing abre no CLARO para quem nunca escolheu')
+ok(rodar('/', { 'credenciei-tema': 'escuro' }) === null, 'quem escolheu escuro vê a landing escura')
+const landing = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8')
+ok(landing.includes('<TemaLanding'), 'a landing tem o botão de trocar o tema')
+ok(!landing.includes('<Link href="/login"') && landing.includes('<a href="/login"'),
+  'o "Entrar" recarrega a página, pra o login (sempre escuro) não herdar o tema claro da landing')
 
-console.log('\n\x1b[1m3 · A chave de volta pro escuro\x1b[0m')
+console.log('\n\x1b[1m3 · O resto continua escuro\x1b[0m')
+ok(rodar('/login', {}) === null && rodar('/credential/abc', {}) === null && rodar('/form/abc', {}) === null, 'login, credencial e formulário público seguem escuros')
+
+console.log('\n\x1b[1m4 · A chave de volta pro escuro\x1b[0m')
 const tema = readFileSync(new URL('../components/Tema.tsx', import.meta.url), 'utf8')
 ok(tema.includes("localStorage.setItem(CHAVE_TEMA, tema)") && tema.includes("else html.removeAttribute('data-tema')"), 'escolher escuro grava a escolha (senão voltaria pro claro a cada tela)')
 ok(tema.includes("() => 'claro' as Tema"), 'o servidor já responde claro (sem piscar o ícone do botão)')

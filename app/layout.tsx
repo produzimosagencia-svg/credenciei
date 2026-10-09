@@ -37,10 +37,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full">
         {/* Tema (ver components/Tema.tsx): o CLARO é o padrão, e só fica escuro quem escolheu
             escuro (localStorage vazio ou bloqueado também dá claro). Roda antes da hidratação
-            pra tela não abrir de um jeito e piscar pro outro. Só no sistema interno: landing,
-            login e telas públicas são sempre escuras, então o atributo nem é lido lá. */}
+            pra tela não abrir de um jeito e piscar pro outro. Vale no sistema interno e na landing (`/`,
+            desde 09/10/2026); login e telas públicas continuam sempre escuros. */}
         <Script id="tema-credenciei" strategy="beforeInteractive">
-          {"var p=location.pathname;if(p.indexOf('/admin')===0||p.indexOf('/scan')===0||p.indexOf('/encarregado')===0){var t=null;try{t=localStorage.getItem('credenciei-tema')}catch(e){}if(t!=='escuro')document.documentElement.setAttribute('data-tema','claro')}"}
+          {"var p=location.pathname;if(p==='/'||p.indexOf('/admin')===0||p.indexOf('/scan')===0||p.indexOf('/encarregado')===0){var t=null;try{t=localStorage.getItem('credenciei-tema')}catch(e){}if(t!=='escuro')document.documentElement.setAttribute('data-tema','claro')}"}
         </Script>
         {children}
       </body>

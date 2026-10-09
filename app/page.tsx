@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import type { Metadata } from 'next'
 import {
   ArrowDown, Link as LinkIcon, MessageCircle, QrCode,
@@ -10,6 +9,7 @@ import Calculadora from './_landing/Calculadora'
 import AnimatedScanLoader from '@/components/ui/animated-scan-loader'
 import IconeInstagram from '@/components/ui/IconeInstagram'
 import VideoApp from './_landing/VideoApp'
+import TemaLanding from './_landing/TemaLanding'
 
 /*
  * Landing pública — a raiz do site. O painel continua em /admin; quem já
@@ -101,7 +101,9 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
             >
               <IconeInstagram size={20} />
             </a>
-            <Link href="/login" className={`${s.btn} ${s.btnVidro}`}>Entrar</Link>
+            <TemaLanding className={`${s.btn} ${s.btnVidro} ${s.btnIcone}`} />
+            {/* <a> e não <Link>: carrega a página de novo, pra o login (sempre escuro) não herdar o tema claro da landing. */}
+            <a href="/login" className={`${s.btn} ${s.btnVidro}`}>Entrar</a>
             <a href="#cta" className={`${s.btn} ${s.btnPrimario}`}><MessageCircle size={16} />Fale com o time</a>
           </div>
         </nav>
@@ -112,7 +114,9 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
         {/* O logo sendo "escaneado": a linha laranja varre e corta a marca. */}
         <AnimatedScanLoader className={s.logoScan}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marca/logo-branco.png" alt="" className={s.logoScanImg} />
+          <img src="/marca/logo-branco.png" alt="" className={`${s.logoScanImg} ${s.soEscuro}`} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/marca/logo-laranja.png" alt="" className={`${s.logoScanImg} ${s.soClaro}`} />
         </AnimatedScanLoader>
         <h1 className={s.h1}>Toda a equipe do seu evento credenciada, <span className={s.gradienteTexto}>sem fila e sem planilha.</span></h1>
         <p className={s.heroTexto}>Fornecedores cadastram a equipe por link, cada pessoa recebe um QR único e o check-in no portão fica registrado — quem entrou, por onde e a que hora.</p>
@@ -215,8 +219,10 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
       <footer className={s.rodape}>
         <div className={`${s.limite} ${s.rodapeInterno}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marca/logo-branco.png" alt="Credenciei" style={{ height: 18, width: 'auto', opacity: 0.7 }} />
-          <div className={s.rodapeLinks}><a href="#como">Como funciona</a><a href="#beneficios">Benefícios</a><a href="#precos">Preços</a><Link href="/login">Entrar</Link></div>
+          <img src="/marca/logo-branco.png" alt="Credenciei" className={s.soEscuro} style={{ height: 18, width: 'auto', opacity: 0.7 }} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/marca/logo-preto.png" alt="Credenciei" className={s.soClaro} style={{ height: 18, width: 'auto', opacity: 0.7 }} />
+          <div className={s.rodapeLinks}><a href="#como">Como funciona</a><a href="#beneficios">Benefícios</a><a href="#precos">Preços</a><a href="/login">Entrar</a></div>
           <span>credenciei.com.br · © {new Date().getFullYear()}</span>
         </div>
       </footer>
