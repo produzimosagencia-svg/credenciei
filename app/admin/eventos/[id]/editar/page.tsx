@@ -1,6 +1,6 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, obterConfiguracaoDoMeio } from '@/lib/actions'
+import { editarEvento, obterConfiguracaoDoMeio, obterConfiguracaoDoAutoatendimento } from '@/lib/actions'
 import { diasDoEvento, obterFuncionalidadesOrganizacao, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
@@ -8,6 +8,7 @@ import DiasDeTrabalho from './DiasDeTrabalho'
 import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
+import ConfiguracaoDoAutoatendimento from './ConfiguracaoDoAutoatendimento'
 import LocalNoMapa from './LocalNoMapa'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput, NomeMaiusculoInput } from '@/components/inputs'
@@ -80,8 +81,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const [dias, configMeio, funcionalidades, tutorialDoEvento] = await Promise.all([
-    diasDoEvento(id), obterConfiguracaoDoMeio(id), obterFuncionalidadesOrganizacao(evento.organizacao_id), tutorialHabilitadoNoEvento(id),
+  const [dias, configMeio, configAutoatendimento, funcionalidades, tutorialDoEvento] = await Promise.all([
+    diasDoEvento(id), obterConfiguracaoDoMeio(id), obterConfiguracaoDoAutoatendimento(id),
+    obterFuncionalidadesOrganizacao(evento.organizacao_id), tutorialHabilitadoNoEvento(id),
   ])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
@@ -176,55 +178,6 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               </div>
             </div>
           </label>
-
-          {/*
-            * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026): fora da janela abaixo, a
-            * entrada e a saída continuam só pelo operador — isto existe para quando a equipe de credenciamento já
-            * foi embora e ainda sobra gente dentro do evento sem jeito de bater a saída. Nasce DESLIGADO; e mesmo
-            * ligado aqui, só vale depois que o operador apertar "Estou indo embora" na tela de scanner — ligar aqui
-            * é só permitir que o evento TENHA a função, não ativar na hora.
-            */}
-          <div
-            className="bg-white rounded-2xl border border-slate-200 p-4"
-            data-tutorial="edt-autoatendimento"
-          >
-            <input type="hidden" name="autoatendimento_presente" value="1" />
-            <label htmlFor="autoatendimento_habilitado" className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                id="autoatendimento_habilitado"
-                name="autoatendimento_habilitado"
-                defaultChecked={(evento as { autoatendimento_habilitado?: boolean }).autoatendimento_habilitado === true}
-                className="w-4 h-4 mt-0.5 rounded border-slate-300 accent-brand-500 shrink-0"
-              />
-              <div className="min-w-0">
-                <p className="text-slate-800 font-semibold text-sm">Autoatendimento fora do horário da portaria</p>
-                <p className="text-slate-600 text-xs mt-1">
-                  Permite que o operador de portão libere, ao ir embora, o colaborador bater a própria entrada/saída
-                  pelo celular (com geolocalização obrigatória) até o horário de fim abaixo — depois disso volta
-                  automaticamente a exigir o operador.
-                </p>
-              </div>
-            </label>
-            <div className="flex flex-wrap items-center gap-3 mt-3 ml-7">
-              <label className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-600">Início</span>
-                <input
-                  type="time" name="autoatendimento_inicio"
-                  defaultValue={((evento as { autoatendimento_inicio?: string | null }).autoatendimento_inicio ?? '').slice(0, 5)}
-                  className="input w-28"
-                />
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-600">Fim</span>
-                <input
-                  type="time" name="autoatendimento_fim"
-                  defaultValue={((evento as { autoatendimento_fim?: string | null }).autoatendimento_fim ?? '').slice(0, 5)}
-                  className="input w-28"
-                />
-              </label>
-            </div>
-          </div>
 
           {/*
             * Aviso de uniforme/identificação (Vital, 30/09/2026) — texto FIXO,
@@ -433,6 +386,15 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               de custo mais cara do sistema: duas mensagens cobradas por
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
+
+          {/*
+            * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026) — existe para quando a
+            * equipe de credenciamento já foi embora e ainda sobra gente dentro do evento sem jeito de bater a
+            * saída. Mesmo padrão de `ConfiguracaoDoMeio` acima: seção própria, com o seu próprio botão de salvar.
+            */}
+          <div data-tutorial="edt-autoatendimento">
+            <ConfiguracaoDoAutoatendimento eventoId={id} config={configAutoatendimento} />
+          </div>
 
           {ehMaster(perfil.role) ? (
             <MetodoIdentificacao

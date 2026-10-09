@@ -25,6 +25,14 @@
 --      Mesmo sem apertar, a JANELA DE HORÁRIO é a trava final: fora dela, nada
 --      funciona mesmo com `ativado_em` ainda preenchido (lib/autoatendimento.ts).
 --
+-- POR DIA (correção do Juan, mesmo dia: "precisa ter como colocar mais de um
+-- dia"): o horário de início/fim é um só pro evento, mas QUAIS dias usam o
+-- recurso é marcado dia a dia, em `jornada_dias.autoatendimento_dia` — mesmo
+-- padrão de `meio_fora_do_evento` (supabase/upgrade-meio-montagem.sql). Nasce
+-- desligado em todo dia; SÓ dia que não é o dia principal do evento pode ser
+-- marcado (no dia principal é sempre só o operador, sem exceção nenhuma —
+-- ver o bloqueio em `registrarPresencaLivre`, lib/actions.ts).
+--
 -- Rodar no SQL Editor do Supabase. Idempotente.
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -35,12 +43,18 @@ alter table eventos
   add column if not exists autoatendimento_ativado_em timestamptz,
   add column if not exists autoatendimento_ativado_por uuid references perfis(id) on delete set null;
 
+alter table jornada_dias
+  add column if not exists autoatendimento_dia boolean not null default false;
+
 comment on column eventos.autoatendimento_habilitado is
   'true = este evento usa o autoatendimento fora do horário da portaria (precisa também de inicio/fim configurados).';
 comment on column eventos.autoatendimento_ativado_em is
   'Preenchido quando o operador aperta "Estou indo embora"; null quando "Cheguei" ou nunca ativado. A janela de horário manda por cima disto.';
+comment on column jornada_dias.autoatendimento_dia is
+  'true = autoatendimento ligado NESTE dia (só vale pra dia que não é o principal do evento). Padrão: desligado.';
 
 -- ROLLBACK
+--   alter table jornada_dias drop column if exists autoatendimento_dia;
 --   alter table eventos
 --     drop column if exists autoatendimento_ativado_por,
 --     drop column if exists autoatendimento_ativado_em,

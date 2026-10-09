@@ -567,7 +567,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * funcionário, somente com os operadores e gestores de credenciamento do portão da portaria" — o servidor já
    * recusa (`registrarPresencaLivre`), isto só evita mostrar um botão que erraria na hora.
    */
-  const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora(evento?.id ?? null)
+  const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora(evento?.id ?? null, dataRef)
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>

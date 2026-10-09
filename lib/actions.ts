@@ -70,7 +70,10 @@ import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
 import { guardarNaLixeira } from './lixeira'
 import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
-import { obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela } from './autoatendimento'
+import {
+  obterAutoatendimento, autoatendimentoLiberadoAgora, descreverJanela,
+  diasAutoatendimentoDoEvento, diaPermiteAutoatendimento,
+} from './autoatendimento'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 import { enderecoAproximado } from './geocoding'
@@ -2918,24 +2921,6 @@ export async function editarEvento(id: string, formData: FormData) {
       .update({ tutorial_habilitado: formData.get('tutorial_habilitado') === 'on' })
       .eq('id', id)
     if (erroTutorial) console.error('[editarEvento] tutorial_habilitado não gravado (migração pendente?)', erroTutorial.message)
-  }
-
-  /*
-   * Autoatendimento fora do horário da portaria (supabase/upgrade-autoatendimento-portao.sql) — à parte e
-   * tolerante, mesmo cuidado de `tutorial_habilitado` acima. Horário vazio = recusa só esse campo (não derruba o
-   * resto do evento); sem `autoatendimento_presente`, a seção nem apareceu na tela (organização sem o recurso).
-   */
-  if (formData.has('autoatendimento_presente')) {
-    const habilitado = formData.get('autoatendimento_habilitado') === 'on'
-    const inicio = ((formData.get('autoatendimento_inicio') as string) || '').trim() || null
-    const fim = ((formData.get('autoatendimento_fim') as string) || '').trim() || null
-    if (habilitado && (!inicio || !fim)) {
-      throw new Error('Para ligar o autoatendimento, informe o horário de início e de fim.')
-    }
-    const { error: erroAuto } = await db.from('eventos')
-      .update({ autoatendimento_habilitado: habilitado, autoatendimento_inicio: inicio, autoatendimento_fim: fim })
-      .eq('id', id)
-    if (erroAuto) console.error('[editarEvento] autoatendimento não gravado (migração pendente?)', erroAuto.message)
   }
 
   /*
@@ -8383,9 +8368,10 @@ export async function registrarPresencaLivre(
    * A ÚNICA exceção é esta janela: o operador apertou "Estou indo embora" (`ativarAutoatendimentoPortao`) e ainda
    * está dentro do horário configurado em Editar evento — pensada pra quando a equipe do credenciamento já foi
    * embora e ainda sobra gente dentro do evento sem jeito de bater a saída. Fora da janela, continua tudo como
-   * era: só o operador.
+   * era: só o operador. E só nos dias marcados (`diaPermiteAutoatendimento`) — `diaDoTurno` é o dia do TURNO,
+   * não o do calendário, porque a janela cruza a meia-noite.
    */
-  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId)
+  const autoatendimentoLiberado = await autoatendimentoLiberadoAgora(eventoId, await diaDoTurno(eventoId))
   if (!autoatendimentoLiberado) {
     if (ENTRADA_E_SAIDA_SO_PELO_OPERADOR) {
       return { error: 'A entrada e a saída são registradas no portão, pelo operador. Mostre o QR Code da sua credencial.' }
@@ -10474,7 +10460,7 @@ export async function statusAutoatendimentoPortao(eventoId: string): Promise<Sta
   if (!(await podeEscanearEvento(perfil, eventoId))) {
     return { habilitado: false, liberadoAgora: false, janelaTexto: null, ativadoPorNome: null }
   }
-  const cfg = await obterAutoatendimento(eventoId)
+  const [cfg, dia] = await Promise.all([obterAutoatendimento(eventoId), diaDoTurno(eventoId)])
   let ativadoPorNome: string | null = null
   if (cfg.ativadoPor) {
     const { data } = await supabaseAdmin.from('perfis').select('nome').eq('id', cfg.ativadoPor).maybeSingle()
@@ -10482,7 +10468,7 @@ export async function statusAutoatendimentoPortao(eventoId: string): Promise<Sta
   }
   return {
     habilitado: cfg.habilitado,
-    liberadoAgora: await autoatendimentoLiberadoAgora(eventoId),
+    liberadoAgora: await autoatendimentoLiberadoAgora(eventoId, dia),
     janelaTexto: descreverJanela(cfg),
     ativadoPorNome,
   }
@@ -10499,6 +10485,11 @@ export async function ativarAutoatendimentoPortao(eventoId: string): Promise<{ o
 
   const cfg = await obterAutoatendimento(eventoId)
   if (!cfg.habilitado) return { erro: 'Este evento não tem essa função ligada. Ligue em Editar evento.' }
+
+  const dia = await diaDoTurno(eventoId)
+  if (!(await diaPermiteAutoatendimento(eventoId, dia))) {
+    return { erro: 'Hoje não está marcado para autoatendimento. Marque este dia em Editar evento → Autoatendimento.' }
+  }
 
   const { error } = await supabaseAdmin
     .from('eventos')
@@ -10531,6 +10522,77 @@ export async function desativarAutoatendimentoPortao(eventoId: string): Promise<
   })
   revalidatePath('/scan')
   return { ok: true }
+}
+
+export type ConfiguracaoDoAutoatendimento = {
+  habilitado: boolean
+  inicio: string
+  fim: string
+  /** Só os dias que NÃO são o principal do evento — nele é sempre só o operador, não tem o que marcar. */
+  dias: { data: string; fase: 'montagem' | 'evento' | 'desmontagem'; habilitado: boolean }[]
+  /** false = a migração `upgrade-autoatendimento-portao.sql` ainda não rodou (coluna por dia). */
+  diasDisponiveis: boolean
+}
+
+/**
+ * O que a tela "Autoatendimento" (Editar evento) mostra: liga/desliga, horário e em quais dias — mesmo padrão de
+ * `obterConfiguracaoDoMeio` (pedido do Juan, 08/10/2026: "precisa seguir o padrão de layout do sistema").
+ */
+export async function obterConfiguracaoDoAutoatendimento(eventoId: string): Promise<ConfiguracaoDoAutoatendimento> {
+  await exigirEventoDaOrg(eventoId)
+  const [cfg, { ok: diasDisponiveis, dias }] = await Promise.all([obterAutoatendimento(eventoId), diasAutoatendimentoDoEvento(eventoId)])
+  return {
+    habilitado: cfg.habilitado,
+    inicio: cfg.inicio?.slice(0, 5) ?? '',
+    fim: cfg.fim?.slice(0, 5) ?? '',
+    dias: dias.filter(d => d.tipo !== 'principal').map(d => ({ data: d.data, fase: d.fase, habilitado: d.habilitado })),
+    diasDisponiveis,
+  }
+}
+
+/** Liga/desliga o autoatendimento, o horário, e em quais dias — grava os três de uma vez. */
+export async function salvarConfiguracaoDoAutoatendimento(
+  eventoId: string, dados: { habilitado: boolean; inicio: string; fim: string; dias: string[] },
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    const inicio = (dados.inicio ?? '').trim() || null
+    const fim = (dados.fim ?? '').trim() || null
+    if (dados.habilitado && (!inicio || !fim)) {
+      return { ok: false, erro: 'Para ligar o autoatendimento, informe o horário de início e de fim.' }
+    }
+
+    const { error: erroEvento } = await supabaseAdmin.from('eventos')
+      .update({ autoatendimento_habilitado: dados.habilitado, autoatendimento_inicio: inicio, autoatendimento_fim: fim })
+      .eq('id', eventoId)
+    if (erroEvento) return { ok: false, erro: 'Não foi possível salvar (migração upgrade-autoatendimento-portao.sql pendente?).' }
+
+    const { data: diasDoEvento } = await supabaseAdmin
+      .from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false)
+    // Dia principal nunca é tocado — nele é sempre só o operador, a coluna fica sempre false.
+    const naoPrincipais = (diasDoEvento ?? []).filter(d => d.tipo !== 'principal').map(d => d.data as string)
+    const ligar = naoPrincipais.filter(d => dados.dias.includes(d))
+    const desligar = naoPrincipais.filter(d => !dados.dias.includes(d))
+    const erroDias =
+      (ligar.length ? (await supabaseAdmin.from('jornada_dias').update({ autoatendimento_dia: true }).eq('evento_id', eventoId).in('data', ligar)).error : null)
+      ?? (desligar.length ? (await supabaseAdmin.from('jornada_dias').update({ autoatendimento_dia: false }).eq('evento_id', eventoId).in('data', desligar)).error : null)
+    if (erroDias) return { ok: false, erro: 'Os dias precisam da migração supabase/upgrade-autoatendimento-portao.sql aplicada no banco.' }
+
+    const diasLigados = naoPrincipais.filter(d => dados.dias.includes(d))
+    auditar(perfil, 'AUTOATENDIMENTO_CONFIGURADO', {
+      eventoId, campoAlterado: 'Autoatendimento fora do horário da portaria',
+      valorNovo: dados.habilitado
+        ? curto(`Ligado, ${inicio}–${fim}, em ${diasLigados.length} dia(s): ${listarDias(diasLigados)}`)
+        : 'Desligado',
+    })
+
+    revalidatePath(`/admin/eventos/${eventoId}/editar`)
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    revalidatePath('/scan')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, erro: mensagemAmigavel(e) }
+  }
 }
 
 export async function obterConfiguracaoDoMeio(eventoId: string): Promise<ConfiguracaoDoMeio> {

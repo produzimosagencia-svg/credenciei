@@ -16,6 +16,9 @@ const botao = ler('components/AutoatendimentoBotao.tsx')
 const credencial = ler('app/credential/[token]/page.tsx')
 const checkin = ler('app/credential/[token]/CheckinPresenca.tsx')
 const editarPage = ler('app/admin/eventos/[id]/editar/page.tsx')
+const config = ler('app/admin/eventos/[id]/editar/ConfiguracaoDoAutoatendimento.tsx')
+const autoatendimentoLib = ler('lib/autoatendimento.ts')
+const sql = ler('supabase/upgrade-autoatendimento-portao.sql')
 
 let falhas = 0
 function confere(nome, recebido, esperado) {
@@ -38,9 +41,9 @@ confere("desativar grava 'AUTOATENDIMENTO_DESATIVADO'", /auditar\(perfil, 'AUTOA
 confere("os dois códigos têm rótulo em auditoria-rotulos.ts",
   /AUTOATENDIMENTO_ATIVADO: /.test(ler('lib/auditoria-rotulos.ts')) && /AUTOATENDIMENTO_DESATIVADO: /.test(ler('lib/auditoria-rotulos.ts')), true)
 
-console.log('\n3 · registrarPresencaLivre: bloqueado por padrão, liberado só na janela')
-confere('consulta autoatendimentoLiberadoAgora(eventoId) antes de decidir',
-  /const autoatendimentoLiberado = await autoatendimentoLiberadoAgora\(eventoId\)/.test(actions), true)
+console.log('\n3 · registrarPresencaLivre: bloqueado por padrão, liberado só na janela E no dia certo')
+confere('consulta autoatendimentoLiberadoAgora(eventoId, diaDoTurno) antes de decidir',
+  /const autoatendimentoLiberado = await autoatendimentoLiberadoAgora\(eventoId, await diaDoTurno\(eventoId\)\)/.test(actions), true)
 confere('fora da janela, continua recusando (ENTRADA_E_SAIDA_SO_PELO_OPERADOR)',
   /if \(!autoatendimentoLiberado\) \{\s*if \(ENTRADA_E_SAIDA_SO_PELO_OPERADOR\) \{/.test(actions), true)
 confere('dentro da janela, a saída (momento === "fim") deixa de ser recusada incondicionalmente',
@@ -56,7 +59,7 @@ confere('a checagem de dia principal não tem mais a exceção "!autoatendimento
 confere('dia principal bloqueia incondicionalmente (exceto o checkin_autonomo antigo)',
   /if \(resolucao\.diaPrincipal && evento\.checkin_autonomo !== true\) \{\s*return \{ error: 'No dia do evento/.test(actions), true)
 confere('a credencial some com o botão no dia principal, mesmo com a janela ligada',
-  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null, dataRef\)/.test(credencial), true)
 
 console.log('\n5 · auditoria específica do registro feito nessa janela')
 confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",
@@ -64,24 +67,44 @@ confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",
 confere('só quando autoatendimentoLiberado (não a cada entrada/saída comum)',
   /if \(autoatendimentoLiberado && registro\) \{/.test(actions), true)
 
-console.log('\n6 · editar evento: config tolerante (habilitado + início/fim), mesmo padrão do tutorial_habilitado')
-confere("campo sentinela autoatendimento_presente", editarPage.includes("name=\"autoatendimento_presente\""), true)
-confere('editarEvento grava tolerante (try/catch isolado, não derruba o resto do salvar)',
-  /if \(formData\.has\('autoatendimento_presente'\)\) \{[\s\S]{0,600}?erroAuto/.test(actions), true)
+console.log('\n6 · configuração própria (igual ConfiguracaoDoMeio), não mais dentro do <form> grande do evento')
+confere('editarEvento NÃO tem mais o campo sentinela autoatendimento_presente (saiu pra ação própria)',
+  !actions.includes("formData.has('autoatendimento_presente')"), true)
+confere('editar/page.tsx usa o componente ConfiguracaoDoAutoatendimento', editarPage.includes('<ConfiguracaoDoAutoatendimento'), true)
+confere('salvarConfiguracaoDoAutoatendimento grava habilitado/início/fim',
+  /export async function salvarConfiguracaoDoAutoatendimento[\s\S]{0,700}?autoatendimento_habilitado: dados\.habilitado/.test(actions), true)
 confere('exige início E fim quando habilitado', /Para ligar o autoatendimento, informe o horário de início e de fim\./.test(actions), true)
+confere('grava auditoria própria da configuração', /auditar\(perfil, 'AUTOATENDIMENTO_CONFIGURADO'/.test(actions), true)
 
-console.log('\n7 · tela do operador (/scan): botão só aparece quando o evento tem a função ligada')
+console.log('\n6b · "mais de um dia" — jornada_dias.autoatendimento_dia, nunca no dia principal')
+confere('migração tem a coluna por dia', /autoatendimento_dia boolean not null default false/.test(sql), true)
+confere('diasAutoatendimentoDoEvento nunca marca o dia principal como habilitado',
+  /habilitado: tipo !== 'principal' && d\.autoatendimento_dia === true/.test(autoatendimentoLib), true)
+confere('diaPermiteAutoatendimento também recusa o dia principal',
+  /return data\.tipo !== 'principal' && data\.autoatendimento_dia === true/.test(autoatendimentoLib), true)
+confere('ativarAutoatendimentoPortao recusa fora do dia marcado',
+  /if \(!\(await diaPermiteAutoatendimento\(eventoId, dia\)\)\) \{/.test(actions), true)
+confere('a tela de configuração usa o DateTimePicker do sistema (não <input type="time">)',
+  config.includes('<DateTimePicker') && !config.includes('type="time"'), true)
+confere('a tela de configuração deixa marcar vários dias (grade de chips, mesmo padrão de ConfiguracaoDoMeio)',
+  config.includes('config.dias.map(d =>') && config.includes('alternarDia'), true)
+
+console.log('\n7 · tela do operador: botão só aparece quando o evento tem a função ligada')
 confere('ScannerRouter renderiza o botão nos dois modos (qr e rosto)',
   (scannerRouter.match(/<AutoatendimentoBotao eventoId=\{eventoAtivo\} \/>/g) || []).length === 2, true)
+confere("tela 'Bem-vindo' do operador também mostra o botão, com a descrição embaixo (pedido do Juan, 08/10/2026)",
+  ler('app/admin/bem-vindo/page.tsx').includes('<AutoatendimentoBotao eventoId={e.id} tema="claro" />'), true)
 confere('o componente não renderiza nada sem status.habilitado (sem recurso = sem botão)',
   /if \(!status\?\.habilitado\) return null/.test(botao), true)
+confere('a descrição do que o botão faz fica sempre visível, não só depois de ativar',
+  /Ative só quando for embora/.test(botao), true)
 confere('ativar chama o servidor e refaz o status (não assume sucesso sem reconferir)',
   /const s = await statusAutoatendimentoPortao\(eventoId\)/.test(botao), true)
 
 console.log('\n8 · credencial: a saída deixou de ser bloqueada incondicionalmente na tela')
 confere('podeAutoRegistrar não é mais fixo em false', !credencial.includes('podeAutoRegistrar={false}'), true)
 confere('a tela calcula a partir da janela de autoatendimento (e nunca no dia principal)',
-  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null\)/.test(credencial), true)
+  /const podeAutoRegistrar = !ehPrincipalHoje && await autoatendimentoLiberadoAgora\(evento\?\.id \?\? null, dataRef\)/.test(credencial), true)
 confere("CheckinPresenca não trava mais 'fim' separado de podeAutoRegistrar",
   !/info\.momento !== 'fim' && podeAutoRegistrar/.test(checkin), true)
 

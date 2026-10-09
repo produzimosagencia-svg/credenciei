@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ScanLine, ClipboardCheck, CalendarDays } from 'lucide-react'
 import { getPerfil, eventosEscaneaveisSemData, eventosAcontecendoHoje } from '@/lib/supabase-server'
 import { podeAcompanhar } from '@/lib/permissions'
+import AutoatendimentoBotao from '@/components/AutoatendimentoBotao'
 
 export const revalidate = 0
 
@@ -89,6 +90,16 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
                       <ClipboardCheck className="w-4 h-4 shrink-0" /> Registrar ponto
                     </Link>
                   </div>
+                  {/*
+                    * "Estou indo embora" / "Cheguei" (pedido do Juan, 08/10/2026) — fica embaixo dos botões de
+                    * cima de propósito: não é o uso de todo dia, é o que o operador aperta uma vez, no fim do
+                    * turno. Só no evento de hoje, mesmo motivo do Scanner acima.
+                    */}
+                  {hoje.has(e.id) && (
+                    <div className="mt-3 pt-3 border-t border-slate-100">
+                      <AutoatendimentoBotao eventoId={e.id} tema="claro" />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
