@@ -19,10 +19,10 @@ export default async function TravasPage({ params }: { params: Promise<{ id: str
     <div className="space-y-5">
       <PageHeader
         titulo="Limite de pessoas por dia"
-        descricao={`${r.eventoNome} — quais setores têm trava configurada em cada dia, e quantos já estão aprovados`}
+        descricao={`${r.eventoNome} — limite de cada setor em cada dia (vazio = livre). Edite e salve direto aqui.`}
         voltarPara={`/admin/eventos/${eventoId}`}
       />
-      <RelatorioTravasView relatorio={r.relatorio} />
+      <RelatorioTravasView eventoId={eventoId} relatorio={r.relatorio} eventoNome={r.eventoNome} />
     </div>
   )
 }

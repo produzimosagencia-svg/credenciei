@@ -52,7 +52,7 @@ import {
   pessoaEhSupervisor, relatorioTravasPorDia,
   type DetalheCredenciamento, type RelatorioTravas,
 } from './escala'
-import { conferirDiasPermitidos, listarDias, type DiaDaEscala } from './escala-regras'
+import { conferirDiasPermitidos, listarDias, rotuloDoDia, type DiaDaEscala } from './escala-regras'
 import {
   planejarEstrutura, mesmoNome, normalizarCpfPlanilha, maiorTrava,
   type LinhaEstrutura, type LinhaPlanejada, type PlanoEstrutura, type ContextoEstrutura, type ResultadoLinhaEstrutura,
@@ -3308,6 +3308,50 @@ export async function obterRelatorioTravas(eventoId: string): Promise<
     return { ok: true, eventoNome: (evento?.nome as string | null) ?? 'Evento', relatorio }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
+  }
+}
+
+/**
+ * Edita a trava por dia de UM setor direto do painel "Limite por dia" (pedido do Juan, 08/10/2026: "seria bom a
+ * gente editar os dias por aqui também, ser meio que um painel"). Mesma gravação do modal do fornecedor
+ * (`gravarTravasDoFornecedor`): número = limite; `null` = sem trava (livre). Só os dias do evento são aceitos.
+ */
+export async function salvarTravasDoSetor(
+  eventoId: string, fornecedorId: string, porDia: Record<string, number | null>,
+): Promise<{ ok: true } | { ok: false; erro: string }> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    const { data: setor } = await supabaseAdmin
+      .from('fornecedores').select('id, nome, evento_id').eq('id', fornecedorId).maybeSingle()
+    if (!setor || setor.evento_id !== eventoId) return { ok: false, erro: 'Este setor não pertence a este evento.' }
+
+    const diasDoEvento = new Set((await diasDaEscalaDoEvento(eventoId)).map(d => d.data))
+    const limpo: Record<string, number | null> = {}
+    for (const [dia, valor] of Object.entries(porDia)) {
+      if (!diasDoEvento.has(dia)) return { ok: false, erro: 'Um dos dias não faz parte deste evento. Atualize a página.' }
+      if (valor === null) { limpo[dia] = null; continue }
+      const n = Math.floor(Number(valor))
+      if (!Number.isFinite(n) || n < 1 || n > 100000) return { ok: false, erro: 'O limite precisa ser um número a partir de 1 (ou vazio para deixar livre).' }
+      limpo[dia] = n
+    }
+    if (!Object.keys(limpo).length) return { ok: true }
+
+    const antes = await travasDoFornecedor(fornecedorId)
+    const r = await gravarTravasDoFornecedor(fornecedorId, limpo)
+    if (!r.ok) return { ok: false, erro: 'Não foi possível gravar o limite (migração upgrade-trava-por-dia.sql pendente?).' }
+
+    const resumo = (m: (dia: string) => number | null | undefined) =>
+      Object.keys(limpo).sort().map(d => `${rotuloDoDia(d).curto}: ${m(d) ?? 'livre'}`).join(' · ')
+    auditar(perfil, 'TRAVA_POR_DIA_ALTERADA', {
+      eventoId, campoAlterado: `Limite por dia — ${setor.nome as string}`,
+      valorAnterior: curto(resumo(d => antes.get(d) ?? null), 400),
+      valorNovo: curto(resumo(d => limpo[d]), 400),
+    })
+    revalidatePath(`/admin/eventos/${eventoId}/travas`)
+    revalidatePath('/admin/travas')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, erro: mensagemAmigavel(e) }
   }
 }
 

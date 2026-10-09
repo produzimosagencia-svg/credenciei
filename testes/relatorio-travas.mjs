@@ -36,7 +36,7 @@ ok(view.includes("l.nome.toLowerCase().includes(termo)"), 'busca filtra por nome
 ok(view.includes('l.supervisores.some(s => s.toLowerCase().includes(termo))'), 'busca filtra por supervisor também')
 ok(/situacao: 'sem_trava'/.test(view) && /situacao: 'parcial'/.test(view) && /situacao: 'completa'/.test(view),
   'os três grupos estão na tela')
-ok(/d\.aprovados > d\.maximo[\s\S]{0,40}'bg-red-50/.test(view), 'estourado (mais aprovados que o limite) fica destacado')
+ok(/Number\(v\) < d\.aprovados \? 'abaixo'/.test(view) && view.includes("'border-red-200 bg-red-50'"), 'estourado (limite abaixo dos aprovados) fica destacado em vermelho')
 
 console.log('\n4 · caminho pelo menu, igual Relatórios (escolhe o evento, depois mostra)')
 ok(shell.includes("administrativo.push({ href: '/admin/travas', label: 'Limite por dia', icon: ShieldAlert })"),
@@ -46,6 +46,22 @@ ok(shell.includes('if (podeGerenciarEventos(perfil)) {\n    administrativo.push(
 ok(paginaMenu.includes('eventosQuePossoAbrir()') && paginaMenu.includes('obterRelatorioTravas(eventoParam)'),
   '/admin/travas escolhe o evento e reusa obterRelatorioTravas')
 ok(paginaEvento.includes('obterRelatorioTravas(eventoId)'), '/admin/eventos/[id]/travas também existe, direto do evento')
+
+console.log('\n5 · baixar em planilha (.xlsx), mesmo padrão visual da auditoria')
+const excel = ler('lib/relatorio-travas-excel.ts')
+ok(view.includes('gerarPlanilhaTravas(relatorio, eventoNome)') && view.includes('Baixar planilha'), 'botão "Baixar planilha" na tela')
+ok(excel.includes("await import('exceljs')") && excel.includes('adicionarLogoNaAba'), 'exceljs com a logo, igual aos outros relatórios')
+ok(excel.includes("d.maximo == null ? 'livre' : `${d.aprovados}/${d.maximo}`"), 'célula = aprovados/limite, ou "livre"')
+
+console.log('\n6 · painel: edita o limite de cada dia ali mesmo (pedido do Juan, 08/10/2026)')
+ok(/export async function salvarTravasDoSetor[\s\S]{0,300}?exigirEventoDaOrg\(eventoId\)/.test(actions), 'salvar confere permissão de gestor do evento')
+ok(/setor\.evento_id !== eventoId/.test(actions), 'recusa setor de outro evento (o id vem do navegador)')
+ok(/if \(!diasDoEvento\.has\(dia\)\)/.test(actions), 'recusa dia que não é do evento')
+ok(/auditar\(perfil, 'TRAVA_POR_DIA_ALTERADA'/.test(actions) && /TRAVA_POR_DIA_ALTERADA: /.test(ler('lib/auditoria-rotulos.ts')),
+  'grava na auditoria (antes → depois), com rótulo')
+ok(view.includes('salvarTravasDoSetor(eventoId, linha.fornecedorId, porDia)'), 'a tela chama o salvar por setor')
+ok(view.includes('placeholder="livre"'), 'campo vazio = livre (sem trava)')
+ok(view.includes('Abaixo dos aprovados'), 'avisa quando o limite fica abaixo de quem já está aprovado')
 
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

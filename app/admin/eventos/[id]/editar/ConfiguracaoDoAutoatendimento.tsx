@@ -111,7 +111,7 @@ export default function ConfiguracaoDoAutoatendimento({ eventoId, config }: { ev
             </button>
           )}
         </div>
-        {!config.dias.length ? (
+        {!config.diasDisponiveis ? null : !config.dias.length ? (
           <p className="text-slate-400 text-xs">
             Este evento não tem dia de montagem/desmontagem — só o dia principal, onde é sempre só o operador.
           </p>

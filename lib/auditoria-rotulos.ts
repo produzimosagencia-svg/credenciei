@@ -126,6 +126,7 @@ export const ACAO_LABELS: Record<string, string> = {
   NEGACAO_AMPLIACAO: 'Mais colaboradores negado',
   AUTOATENDIMENTO_ATIVADO: 'Autoatendimento ativado (operador foi embora)',
   AUTOATENDIMENTO_DESATIVADO: 'Autoatendimento desativado (operador chegou)',
+  TRAVA_POR_DIA_ALTERADA: 'Limite por dia alterado',
   AUTOATENDIMENTO_CONFIGURADO: 'Autoatendimento configurado (horário e dias)',
   REGISTRO_AUTOATENDIMENTO: 'Ponto batido pelo colaborador (fora do horário da portaria)',
 }

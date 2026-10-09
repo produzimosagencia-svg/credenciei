@@ -35,14 +35,14 @@ export default async function TravasPorMenuPage({
       <div className="space-y-5">
         <PageHeader
           titulo="Limite de pessoas por dia"
-          descricao={`${r.eventoNome} — quais setores têm trava configurada em cada dia, e quantos já estão aprovados`}
+          descricao={`${r.eventoNome} — limite de cada setor em cada dia (vazio = livre). Edite e salve direto aqui.`}
           acoes={
             <Link href="/admin/travas" className="btn btn-secundario">
               <CalendarDays className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
             </Link>
           }
         />
-        <RelatorioTravasView relatorio={r.relatorio} />
+        <RelatorioTravasView eventoId={eventoParam} relatorio={r.relatorio} eventoNome={r.eventoNome} />
       </div>
     )
   }
