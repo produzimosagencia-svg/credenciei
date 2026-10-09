@@ -163,6 +163,40 @@ export async function obterFuncionalidadesOrganizacao(organizacaoId: string | nu
   }
 }
 
+/** Coluna de `organizacoes` (e chave de `eventos.funcionalidades`) → campo de `FuncionalidadesOrganizacao`. */
+export const CHAVES_FUNCIONALIDADES = {
+  subeventos_habilitado: 'subeventosHabilitado',
+  trava_cota_habilitada: 'travaCotaHabilitada',
+  aviso_uniforme_habilitado: 'avisoUniformeHabilitado',
+  escala_por_dia_habilitada: 'escalaPorDiaHabilitada',
+  encarregados_habilitado: 'encarregadosHabilitado',
+  area_no_scanner_habilitada: 'areaNoScannerHabilitada',
+} as const satisfies Record<string, keyof FuncionalidadesOrganizacao>
+
+/** Mistura a organização com o que o evento salvou (`eventos.funcionalidades`; null = segue a organização). */
+function aplicarDoEvento(daOrg: FuncionalidadesOrganizacao, doEvento: unknown): FuncionalidadesOrganizacao {
+  if (!doEvento || typeof doEvento !== 'object') return daOrg
+  const r = { ...daOrg }
+  for (const [coluna, campo] of Object.entries(CHAVES_FUNCIONALIDADES)) {
+    const v = (doEvento as Record<string, unknown>)[coluna]
+    if (typeof v === 'boolean') r[campo] = v
+  }
+  return r
+}
+
+/**
+ * As funcionalidades que valem NESTE evento (pedido do Juan, 09/10/2026 — "Configurações" dentro do evento): as da
+ * organização, com o que o evento salvou por cima. `personalizado` = o evento tem configuração própria.
+ * Tolerante: sem a coluna `eventos.funcionalidades` (migração pendente), é exatamente a organização.
+ */
+export async function obterFuncionalidadesDoEvento(eventoId: string | null | undefined): Promise<FuncionalidadesOrganizacao & { personalizado: boolean }> {
+  if (!eventoId) return { ...(await obterFuncionalidadesOrganizacao(null)), personalizado: false }
+  const { data: ev } = await supabaseAdmin.from('eventos').select('*').eq('id', eventoId).maybeSingle()
+  const daOrg = await obterFuncionalidadesOrganizacao((ev as { organizacao_id?: string | null } | null)?.organizacao_id ?? null)
+  const doEvento = (ev as { funcionalidades?: unknown } | null)?.funcionalidades ?? null
+  return { ...aplicarDoEvento(daOrg, doEvento), personalizado: !!doEvento && typeof doEvento === 'object' }
+}
+
 /**
  * Dos eventos dados, em quais o leitor deve pedir/conferir a ÁREA (subevento)
  * de quem entra. Vem da organização do evento — Configurações → Funcionalidades
@@ -187,13 +221,9 @@ export async function tutorialHabilitadoNoEvento(eventoId: string | null | undef
 export async function eventosComAreaNoScanner(eventoIds: string[]): Promise<Set<string>> {
   if (!eventoIds.length) return new Set()
   try {
-    const { data: eventos } = await supabaseAdmin.from('eventos').select('id, organizacao_id').in('id', eventoIds)
-    const orgs = [...new Set((eventos ?? []).map(e => e.organizacao_id as string | null).filter((o): o is string => !!o))]
-    if (!orgs.length) return new Set()
-    const { data, error } = await supabaseAdmin.from('organizacoes').select('*').in('id', orgs)
-    if (error) return new Set()
-    const ligadas = new Set((data ?? []).filter(o => (o as { area_no_scanner_habilitada?: boolean }).area_no_scanner_habilitada === true).map(o => o.id as string))
-    return new Set((eventos ?? []).filter(e => ligadas.has(e.organizacao_id as string)).map(e => e.id as string))
+    // Por EVENTO desde 09/10/2026: a configuração do evento, quando existe, vale por cima da organização.
+    const lidos = await Promise.all([...new Set(eventoIds)].map(async id => [id, (await obterFuncionalidadesDoEvento(id)).areaNoScannerHabilitada] as const))
+    return new Set(lidos.filter(([, ligado]) => ligado).map(([id]) => id))
   } catch {
     return new Set()
   }

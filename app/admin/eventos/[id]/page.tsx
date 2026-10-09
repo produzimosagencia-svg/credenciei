@@ -3,11 +3,11 @@ import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase, buscarTudo 
 import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeCorrigirNomeECpf, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
-import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck } from 'lucide-react'
+import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck, Settings } from 'lucide-react'
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao, tutorialHabilitadoNoEvento, subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
+import { obterFuncionalidadesDoEvento, operadoresDaOrganizacao, tutorialHabilitadoNoEvento, subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
@@ -115,7 +115,7 @@ export default async function EventoPage({
   // em Configurações → Funcionalidade do Sistema (ver obterFuncionalidadesOrganizacao).
   // `evento.tem_subeventos` é quem decide se ESTE evento usa a estrutura
   // nova (select('*') já trouxe — nunca falha por coluna nova ausente).
-  const funcionalidades = await obterFuncionalidadesOrganizacao(evento.organizacao_id as string | null)
+  const funcionalidades = await obterFuncionalidadesDoEvento(id)
   const usaSubeventos = funcionalidades.subeventosHabilitado && (evento as { tem_subeventos?: boolean }).tem_subeventos === true
 
   // Isolamento por organização: admin só acessa eventos da própria org
@@ -443,6 +443,12 @@ export default async function EventoPage({
           */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
           <TutorialButton />
+          {/* As funcionalidades SÓ deste evento (09/10/2026) — mesma tela de Configurações, só para o master. */}
+          {ehMaster(perfil?.role) && (
+            <Link href={`/admin/eventos/${id}/configuracoes`} className="btn btn-secundario">
+              <Settings className="w-3.5 h-3.5" /> Configurações
+            </Link>
+          )}
           {evento.spreadsheet_id && (
             <a
               href={`https://docs.google.com/spreadsheets/d/${evento.spreadsheet_id}`}

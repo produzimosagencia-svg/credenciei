@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso, travasDeCadastroDoEvento, motivoCadastroTravado } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, obterFuncionalidadesDoEvento, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso, travasDeCadastroDoEvento, motivoCadastroTravado, CHAVES_FUNCIONALIDADES } from './internos-servidor'
 import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
 import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
@@ -2525,7 +2525,7 @@ export async function definirFuncaoNaEquipe(
     }
     if (funcao === 'encarregado') {
       if (func.status_credenciamento !== 'aprovado') return { erro: 'O credenciamento desta pessoa ainda não foi aprovado.' }
-      if (!(await obterFuncionalidadesOrganizacao(organizacaoId)).encarregadosHabilitado) return { erro: MSG_FUNCIONALIDADE_DESLIGADA }
+      if (!(await obterFuncionalidadesDoEvento(eventoId)).encarregadosHabilitado) return { erro: MSG_FUNCIONALIDADE_DESLIGADA }
     }
 
     // ── 1. Sai da função de hoje NESTE setor (continua na equipe) ──
@@ -7679,7 +7679,7 @@ async function autorizarPresenca(args: {
    * validado" nem "QR inválido" nem o "negado" genérico: a credencial é
    * válida, só pertence a outro portão.
    */
-  if (subeventoIdsLidos?.length && (await obterFuncionalidadesOrganizacao(evento.organizacao_id)).areaNoScannerHabilitada) {
+  if (subeventoIdsLidos?.length && (await obterFuncionalidadesDoEvento(evento.id)).areaNoScannerHabilitada) {
     // Só confere a área se a organização LIGOU a seleção de área no leitor. Desligada (padrão), um leitor com áreas
     // guardadas de antes (localStorage) também não barra ninguém: o leitor só registra quem entra.
     try {
@@ -9297,7 +9297,7 @@ export async function cadastrarFuncionarioPublico(
     })
   }
 
-  const { travaCotaHabilitada } = await obterFuncionalidadesOrganizacao(organizacaoIdDoEvento)
+  const { travaCotaHabilitada } = await obterFuncionalidadesDoEvento(fornecedor.evento_id as string)
   if (travaCotaHabilitada) {
     const cota = fornecedorCompleto?.quantidade_estimada ?? null
     if (cota) {
@@ -12246,6 +12246,59 @@ async function garantirSubeventosHabilitadoNaOrg(organizacaoId: string | null) {
 }
 
 // `obterFuncionalidadesOrganizacao` mora em lib/internos-servidor.ts: função de servidor SEM login, que não pode ser endpoint público.
+
+/**
+ * "Configurações" DENTRO do evento (pedido do Juan, 09/10/2026): as mesmas opções de Configurações →
+ * Funcionalidades, valendo só para ESTE evento (`eventos.funcionalidades`, upgrade-funcionalidades-por-evento.sql).
+ * Grava as 6 de uma vez — salvo aqui, o evento deixa de seguir a organização até `seguirOrganizacaoNoEvento`.
+ * Master-only, como a tela da organização. Erro como valor (o Next esconde exceção em produção).
+ */
+export async function editarFuncionalidadesDoEvento(eventoId: string, formData: FormData): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil || !ehMaster(perfil.role)) return { erro: 'Apenas o master altera as configurações do evento.' }
+    const { data: ev } = await supabaseAdmin.from('eventos').select('*').eq('id', eventoId).maybeSingle()
+    if (!ev) return { erro: 'Evento não encontrado.' }
+
+    const novas = Object.fromEntries(Object.keys(CHAVES_FUNCIONALIDADES).map(coluna => [coluna, formData.get(coluna) === 'on']))
+    const { error } = await supabaseAdmin.from('eventos').update({ funcionalidades: novas }).eq('id', eventoId)
+    if (error) {
+      return /funcionalidades/.test(error.message)
+        ? { erro: 'O banco ainda não tem o campo das configurações por evento. Rode supabase/upgrade-funcionalidades-por-evento.sql no SQL Editor do Supabase.' }
+        : { erro: mensagemAmigavel(error) }
+    }
+    const antes = (ev as { funcionalidades?: Record<string, boolean> | null }).funcionalidades ?? null
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_FUNCIONALIDADE', campoAlterado: `Configurações do evento ${(ev as { nome?: string }).nome ?? ''}`.trim(),
+      valorAnterior: antes ? JSON.stringify(antes) : 'Seguia a organização', valorNovo: JSON.stringify(novas),
+      eventoId, organizacaoId: ((ev as { organizacao_id?: string | null }).organizacao_id ?? undefined) || undefined,
+    }))
+    revalidatePath(`/admin/eventos/${eventoId}`, 'layout')
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+/** Apaga a configuração própria do evento: ele volta a seguir Configurações → Funcionalidades da organização. */
+export async function seguirOrganizacaoNoEvento(eventoId: string): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil || !ehMaster(perfil.role)) return { erro: 'Apenas o master altera as configurações do evento.' }
+    const { data: ev } = await supabaseAdmin.from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).maybeSingle()
+    if (!ev) return { erro: 'Evento não encontrado.' }
+    const { error } = await supabaseAdmin.from('eventos').update({ funcionalidades: null }).eq('id', eventoId)
+    if (error) return { erro: mensagemAmigavel(error) }
+    after(() => registrarAuditoria({
+      perfil, acao: 'ALTERACAO_FUNCIONALIDADE', campoAlterado: `Configurações do evento ${ev.nome as string}`,
+      valorNovo: 'Volta a seguir a organização', eventoId, organizacaoId: (ev.organizacao_id as string | null) ?? undefined,
+    }))
+    revalidatePath(`/admin/eventos/${eventoId}`, 'layout')
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
 
 /** Master-only — mesmo guard da tela de Configurações. */
 export async function editarFuncionalidadesOrganizacao(organizacaoId: string, formData: FormData) {

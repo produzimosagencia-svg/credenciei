@@ -30,8 +30,8 @@ ok(/name="area_no_scanner_habilitada"/.test(form), 'checkbox em Configurações 
 ok(/formData\.get\('area_no_scanner_habilitada'\) === 'on'/.test(acoes), 'a edição lê o checkbox')
 ok(/campoAlterado: 'Selecionar a área no leitor'/.test(acoes), 'a mudança é auditada')
 ok(/add column if not exists area_no_scanner_habilitada boolean not null default false/.test(sql), 'migração: coluna desligada por padrão')
-ok(/subeventoIdsLidos\?\.length && \(await obterFuncionalidadesOrganizacao\(evento\.organizacao_id\)\)\.areaNoScannerHabilitada/.test(acoes),
-  'o servidor só confere a área quando a organização ligou (nem com áreas guardadas no aparelho)')
+ok(/subeventoIdsLidos\?\.length && \(await obterFuncionalidadesDoEvento\(evento\.id\)\)\.areaNoScannerHabilitada/.test(acoes),
+  'o servidor só confere a área quando o evento (ou a organização, sem configuração própria) ligou — nem com áreas guardadas no aparelho')
 for (const [nome, src] of [['/scan', scan], ['/admin/scanner', scanPainel]]) {
   ok(/eventosComAreaNoScanner/.test(src) && /delete subeventosPorEvento\[id\]/.test(src), `${nome}: sem a funcionalidade, nenhum evento pergunta área`)
 }

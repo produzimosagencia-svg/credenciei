@@ -1,5 +1,6 @@
 import 'server-only'
 import { supabaseAdmin } from './supabase-server'
+import { obterFuncionalidadesDoEvento } from './internos-servidor'
 
 /** A organização liberou "Criar Encarregado"? Tolerante: falhou ou migração pendente → falso (a opção some, nada quebra). */
 export async function encarregadosLigadosParaOrganizacao(organizacaoId: string | null | undefined): Promise<boolean> {
@@ -21,10 +22,9 @@ export async function encarregadosLigadosParaOrganizacao(organizacaoId: string |
 export async function encarregadosLigadosParaSetor(fornecedorId: string | null | undefined): Promise<boolean> {
   if (!fornecedorId) return false
   try {
-    const { data: forn } = await supabaseAdmin
-      .from('fornecedores').select('eventos(organizacao_id)').eq('id', fornecedorId).maybeSingle()
-    const orgId = (forn?.eventos as unknown as { organizacao_id?: string | null } | null)?.organizacao_id
-    return await encarregadosLigadosParaOrganizacao(orgId)
+    // A configuração do EVENTO do setor (09/10/2026), que sem configuração própria é a da organização.
+    const { data: forn } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).maybeSingle()
+    return (await obterFuncionalidadesDoEvento((forn?.evento_id as string | undefined) ?? null)).encarregadosHabilitado
   } catch {
     return false
   }

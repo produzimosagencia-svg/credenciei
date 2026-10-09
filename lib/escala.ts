@@ -1,4 +1,5 @@
 import { supabaseAdmin, buscarTudo } from './supabase-server'
+import { obterFuncionalidadesDoEvento } from './internos-servidor'
 import { faseDoDia, periodoDoEvento, somarDias } from './janelas'
 import { emLotes } from './lotes'
 import {
@@ -65,10 +66,9 @@ export async function eventoUsaEscalaPorDia(eventoId: string): Promise<boolean> 
 
     const orgId = (evento as { organizacao_id?: string | null }).organizacao_id
     if (!orgId) return false
-    const { data: org } = await supabaseAdmin
-      .from('organizacoes').select('subeventos_habilitado, escala_por_dia_habilitada').eq('id', orgId).maybeSingle()
-    const flags = org as { subeventos_habilitado?: boolean; escala_por_dia_habilitada?: boolean } | null
-    if (flags?.subeventos_habilitado !== true || flags?.escala_por_dia_habilitada !== true) return false
+    // As do EVENTO (Configurações dentro do evento, 09/10/2026), que sem configuração própria são as da organização.
+    const flags = await obterFuncionalidadesDoEvento(eventoId)
+    if (!flags.subeventosHabilitado || !flags.escalaPorDiaHabilitada) return false
 
     // A tabela existe? Sem ela não há onde guardar a escolha — melhor seguir
     // sem escala do que derrubar o cadastro inteiro.

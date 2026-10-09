@@ -134,10 +134,10 @@ ok(cadastro.includes('conferirDiasPermitidos') && cadastro.includes('eventoUsaEs
   'cadastro público só aceita dias do período, e só em evento de subeventos')
 
 const escalaTs = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
-ok(/tem_subeventos !== true\) return false/.test(escalaTs) && escalaTs.includes('subeventos_habilitado'),
-  'escala por dia exige evento com subeventos E organização com subeventos liberado')
-ok(/escala_por_dia_habilitada !== true\) return false/.test(escalaTs),
-  'e a chave "Dias de trabalho" ligada em Funcionalidades do Sistema (nasce desligada)')
+ok(/tem_subeventos !== true\) return false/.test(escalaTs) && /!flags\.subeventosHabilitado/.test(escalaTs),
+  'escala por dia exige evento com subeventos E subeventos liberado (no evento, ou na organização sem configuração própria)')
+ok(/\|\| !flags\.escalaPorDiaHabilitada\) return false/.test(escalaTs) && /obterFuncionalidadesDoEvento\(eventoId\)/.test(escalaTs),
+  'e a chave "Dias de trabalho" ligada (Configurações do evento ou Funcionalidades do Sistema; nasce desligada)')
 
 // ── A trava por dia está LIGADA de novo (Juan, 08/10/2026: "seja sábado ou domingo a trava tem que existir") ──
 {

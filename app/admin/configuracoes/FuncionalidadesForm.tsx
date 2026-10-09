@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { Check } from 'lucide-react'
-import { editarFuncionalidadesOrganizacao, type FuncionalidadesOrganizacao } from '@/lib/actions'
+import { editarFuncionalidadesOrganizacao, editarFuncionalidadesDoEvento, type FuncionalidadesOrganizacao } from '@/lib/actions'
 import { mensagemAmigavel } from '@/lib/erros'
 
 /**
@@ -9,10 +9,12 @@ import { mensagemAmigavel } from '@/lib/erros'
  * 30/09/2026) — a maioria dos clientes nunca vai ver nada disto ligado.
  */
 export default function FuncionalidadesForm({
-  organizacaoId, funcionalidades,
+  organizacaoId, funcionalidades, eventoId,
 }: {
   organizacaoId: string
   funcionalidades: FuncionalidadesOrganizacao
+  /** Com evento: salva SÓ neste evento ("Configurações" dentro do evento, 09/10/2026). */
+  eventoId?: string
 }) {
   const [isPending, startTransition] = useTransition()
   const [erro, setErro] = useState<string | null>(null)
@@ -28,7 +30,12 @@ export default function FuncionalidadesForm({
     setSalvo(false)
     startTransition(async () => {
       try {
-        await editarFuncionalidadesOrganizacao(organizacaoId, formData)
+        if (eventoId) {
+          const r = await editarFuncionalidadesDoEvento(eventoId, formData)
+          if ('erro' in r) { setErro(r.erro); return }
+        } else {
+          await editarFuncionalidadesOrganizacao(organizacaoId, formData)
+        }
         setSalvo(true)
       } catch (e) {
         setErro(mensagemAmigavel(e))

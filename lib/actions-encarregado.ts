@@ -12,7 +12,7 @@ import { cpfParaEmail, normalizarCpf } from './usuario'
 import { criarConviteSenhaSupervisor } from './supervisor-convite'
 import { emLotes } from './lotes'
 import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
-import { obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento } from './internos-servidor'
+import { obterFuncionalidadesDoEvento, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento } from './internos-servidor'
 import {
   PERMISSOES_PADRAO, MSG_FUNCIONALIDADE_DESLIGADA, listarEmTexto, nomeDoSetorComArea,
   type CandidatoEncarregado, type EncarregadoDoEvento, type SetorOpcao,
@@ -86,7 +86,7 @@ export async function listarEncarregadosDoEvento(eventoId: string): Promise<Pain
   try {
     const g = await escopoDoGestor(eventoId)
     if (!g.ok) return { erro: g.erro }
-    const funcionalidades = await obterFuncionalidadesOrganizacao(g.evento.organizacaoId)
+    const funcionalidades = await obterFuncionalidadesDoEvento(g.evento.id)
 
     const { data, error } = await supabaseAdmin
       .from('encarregados_setor')
@@ -228,7 +228,7 @@ export async function salvarEncarregado(
     const telefone = normalizarCpf((func.telefone as string) ?? '')
 
     if (paraAdicionar.length) {
-      const funcionalidades = await obterFuncionalidadesOrganizacao(evento.organizacaoId)
+      const funcionalidades = await obterFuncionalidadesDoEvento(evento.id)
       if (!funcionalidades.encarregadosHabilitado) return { erro: MSG_FUNCIONALIDADE_DESLIGADA }
       if (func.ativo === false || func.descredenciado_em) return { erro: 'Esta pessoa não está ativa na equipe.' }
       if (func.status_credenciamento !== 'aprovado') return { erro: 'O credenciamento desta pessoa ainda não foi aprovado.' }

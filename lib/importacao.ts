@@ -8,7 +8,7 @@ import { validarCpf } from '@/lib/format'
 import { normalizarCpfPlanilha } from '@/lib/estrutura-regras'
 import { mensagemAmigavel } from '@/lib/erros'
 import { registrarCadastrosEmLote } from '@/lib/auditoria'
-import { obterFuncionalidadesOrganizacao, travasDeCadastroDoEvento } from '@/lib/internos-servidor'
+import { obterFuncionalidadesDoEvento, travasDeCadastroDoEvento } from '@/lib/internos-servidor'
 import type { LinhaPlanilha } from '@/lib/planilha'
 
 /**
@@ -91,7 +91,7 @@ export async function importarFuncionarios(
     return { ok: false, status: 423, error: `O cadastro de novas pessoas ${onde} está travado. Para importar, destrave no painel "Cadastro de pessoas e setores" do subgrupo.` }
   }
 
-  const funcionalidades = await obterFuncionalidadesOrganizacao(evento?.organizacao_id ?? null)
+  const funcionalidades = await obterFuncionalidadesDoEvento(eventoId)
 
   /*
    * NINGUÉM ENTRA INATIVO — nem acima do teto do setor.

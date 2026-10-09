@@ -1,7 +1,7 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
 import { editarEvento, obterConfiguracaoDoMeio, obterConfiguracaoDoAutoatendimento } from '@/lib/actions'
-import { diasDoEvento, obterFuncionalidadesOrganizacao, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
+import { diasDoEvento, obterFuncionalidadesDoEvento, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
 import DiasDeTrabalho from './DiasDeTrabalho'
@@ -14,7 +14,8 @@ import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
 import { NomeInput, NomeMaiusculoInput } from '@/components/inputs'
 import DateTimePicker from '@/components/DateTimePicker'
 import { FormLoadingOverlay } from '@/components/LoadingOverlay'
-import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save, MessageCircle } from 'lucide-react'
+import { CalendarDays, CalendarRange, CalendarPlus, MapPin, LogIn, LogOut, Save, MessageCircle, Settings } from 'lucide-react'
+import Link from 'next/link'
 import { PageHeader } from '@/components/ui/Superficie'
 import { getPerfil } from '@/lib/supabase-server'
 import { ehMaster, veTodosEventos, podeGerenciarEventos } from '@/lib/permissions'
@@ -83,7 +84,7 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
 
   const [dias, configMeio, configAutoatendimento, funcionalidades, tutorialDoEvento] = await Promise.all([
     diasDoEvento(id), obterConfiguracaoDoMeio(id), obterConfiguracaoDoAutoatendimento(id),
-    obterFuncionalidadesOrganizacao(evento.organizacao_id), tutorialHabilitadoNoEvento(id),
+    obterFuncionalidadesDoEvento(id), tutorialHabilitadoNoEvento(id),
   ])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
@@ -94,7 +95,17 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
         voltarPara={`/admin/eventos/${id}`}
         titulo="Editar evento"
         descricao={evento.nome}
-        acoes={<TutorialButton />}
+        acoes={
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* As funcionalidades SÓ deste evento (09/10/2026) — só para o master. */}
+            {ehMaster(perfil?.role) && (
+              <Link href={`/admin/eventos/${id}/configuracoes`} className="btn btn-secundario">
+                <Settings className="w-3.5 h-3.5" /> Configurações
+              </Link>
+            )}
+            <TutorialButton />
+          </div>
+        }
       />
 
       <form action={action} className="bg-white border border-slate-200 rounded-3xl shadow-xl shadow-slate-200/60 overflow-hidden">
