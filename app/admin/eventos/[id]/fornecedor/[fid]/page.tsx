@@ -3,6 +3,7 @@ import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import { emLotes } from '@/lib/lotes'
+import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -324,6 +325,29 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     }
   }
 
+  /*
+   * Escala por dia na própria lista (pedido do Juan, 09/10/2026: "ver a escala por dia dentro do sistema, sem
+   * extrair relatório — filtrar equipe por dia"). Master, admin e supervisor do setor. Os dias de cada pessoa: os
+   * APROVADOS; quem ainda não teve a escala aprovada aparece nos dias que PEDIU (a lista já marca "aguardando").
+   */
+  const verEscala = ehMaster(perfil.role) || perfil.role === 'admin' || perfil.role === 'supervisor'
+    || setoresDoSupervisor.some(s => s.id === fid)
+  const diasDaEscala = verEscala && await eventoUsaEscalaPorDia(id) ? await diasDaEscalaDoEvento(id) : []
+  const diasPorFunc = new Map<string, { aprovados: string[]; pedidos: string[] }>()
+  if (diasDaEscala.length) {
+    const linhas = await buscarTudo<{ funcionario_id: string; data: string; aprovado: boolean | null; selecionado: boolean | null }>(
+      (de, ate) => supabase.from('funcionario_dias')
+        .select('funcionario_id, data, aprovado, selecionado, funcionarios!inner(fornecedor_id)')
+        .eq('funcionarios.fornecedor_id', fid).order('id').range(de, ate),
+    ).catch(() => [])
+    for (const l of linhas) {
+      const d = diasPorFunc.get(l.funcionario_id) ?? { aprovados: [], pedidos: [] }
+      if (l.aprovado) d.aprovados.push(l.data)
+      if (l.selecionado) d.pedidos.push(l.data)
+      diasPorFunc.set(l.funcionario_id, d)
+    }
+  }
+
   const funcionariosEnriquecidos = (funcionarios ?? []).map(f => {
     const entrada = presencaPorFunc[f.id]?.entrada ?? null
     const meio = presencaPorFunc[f.id]?.meio ?? null
@@ -349,6 +373,12 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
       temBiometria: comBiometria.has(f.id as string),
+      ...(() => {
+        const d = diasPorFunc.get(f.id as string)
+        return d?.aprovados.length
+          ? { diasEscala: [...d.aprovados].sort(), diasSaoPedido: false }
+          : { diasEscala: [...(d?.pedidos ?? [])].sort(), diasSaoPedido: (d?.pedidos.length ?? 0) > 0 }
+      })(),
       entrada,
       meio,
       fim,
@@ -597,6 +627,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         <FuncionarioTable
           funcionarios={funcionariosEnriquecidos}
           supervisoresDeFora={supervisoresDeFora}
+          diasDaEscala={diasDaEscala}
           fornecedorId={fid}
           eventoId={id}
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}

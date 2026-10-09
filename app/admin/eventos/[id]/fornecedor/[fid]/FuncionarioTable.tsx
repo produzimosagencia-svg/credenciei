@@ -15,6 +15,7 @@ import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
 import { descreverDistancia } from '@/lib/geo-local'
+import { rotuloDoDia, listarDias, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -33,6 +34,18 @@ export type SupervisorDeFora = {
   setorDoCracha: { id: string; nome: string } | null
   /** Só quando quem vê consegue abrir aquele setor. */
   linkDoCracha: string | null
+}
+
+/** Os dias da escala da pessoa, embaixo do nome — "pediu" enquanto a escala não foi aprovada. */
+function DiasDaPessoa({ f }: { f: { diasEscala?: string[]; diasSaoPedido?: boolean } }) {
+  const dias = f.diasEscala ?? []
+  return (
+    <p className="text-xs truncate text-slate-500">
+      {dias.length
+        ? <>{f.diasSaoPedido ? 'Pediu: ' : 'Dias: '}<span className="tabular-nums">{listarDias(dias)}</span></>
+        : <span className="text-amber-600">Sem dias de trabalho</span>}
+    </p>
+  )
 }
 
 function OndeEstaOCracha({ s }: { s: SupervisorDeFora }) {
@@ -79,6 +92,9 @@ type Funcionario = {
   descredenciadoEm?: string | null
   /** Já tem rosto cadastrado NESTE evento — só importa quando `usaBiometria` (prop da tabela). */
   temBiometria?: boolean
+  /** Dias da escala: os aprovados, ou os pedidos enquanto a escala não foi aprovada (`diasSaoPedido`). */
+  diasEscala?: string[]
+  diasSaoPedido?: boolean
   fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
@@ -100,6 +116,7 @@ const OPCOES_STATUS: { value: StatusEtapa | 'todos'; label: string }[] = [
 export default function FuncionarioTable({
   funcionarios,
   supervisoresDeFora = [],
+  diasDaEscala = [],
   fornecedorId,
   eventoId,
   eventoNome,
@@ -117,6 +134,11 @@ export default function FuncionarioTable({
   funcionarios: Funcionario[]
   /** Supervisores deste setor com o crachá em outra equipe — aparecem no topo da lista, só como referência. */
   supervisoresDeFora?: SupervisorDeFora[]
+  /**
+   * Os dias do evento, quando ele usa escala por dia E quem vê é master/admin/supervisor do setor — liga a fileira
+   * "Escala por dia" (pedido do Juan, 09/10/2026). Vazio = sem a fileira.
+   */
+  diasDaEscala?: DiaDaEscala[]
   fornecedorId: string
   eventoId: string
   /** Só para o cabeçalho do modal do funcionário — não muda nenhuma consulta. */
@@ -153,6 +175,8 @@ export default function FuncionarioTable({
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [filtroRapido, setFiltroRapido] = useState<FiltroRapido>('todos')
+  // A escala por dia: um dia escolhido mostra só quem trabalha nele.
+  const [diaFiltro, setDiaFiltro] = useState<string | null>(null)
   const [statusEntrada, setStatusEntrada] = useState<StatusEtapa | 'todos'>('todos')
   const [statusMeio, setStatusMeio] = useState<StatusEtapa | 'todos'>('todos')
   const [statusFim, setStatusFim] = useState<StatusEtapa | 'todos'>('todos')
@@ -173,6 +197,7 @@ export default function FuncionarioTable({
       chaveBusca(f.empresa).includes(s) ||
       chaveBusca(f.cargo).includes(s)
     if (!bateBusca) return false
+    if (diaFiltro && !(f.diasEscala ?? []).includes(diaFiltro)) return false
 
     if (statusEntrada !== 'todos' && f.statusEntrada !== statusEntrada) return false
     if (statusMeio !== 'todos' && f.statusMeio !== statusMeio) return false
@@ -184,7 +209,17 @@ export default function FuncionarioTable({
     if (filtroRapido === 'nao_ativados' && f.ativo) return false
 
     return true
-  }), [funcionarios, search, filtroRapido, statusEntrada, statusMeio, statusFim])
+  }), [funcionarios, search, diaFiltro, filtroRapido, statusEntrada, statusMeio, statusFim])
+
+  // Quantos trabalham em cada dia — quem está na equipe (fora do evento e negado não contam).
+  const porDia = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const f of funcionarios) {
+      if (f.descredenciadoEm || f.statusCredenciamento === 'negado') continue
+      for (const d of f.diasEscala ?? []) m.set(d, (m.get(d) ?? 0) + 1)
+    }
+    return m
+  }, [funcionarios])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -294,6 +329,37 @@ export default function FuncionarioTable({
           <p className="text-slate-400 text-xs shrink-0 hidden sm:block">{filtered.length} de {funcionarios.length}</p>
         </div>
 
+        {diasDaEscala.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wide shrink-0">Escala por dia</span>
+            <button
+              onClick={() => { setDiaFiltro(null); setPage(1) }}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+                diaFiltro === null ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+            >
+              Todos os dias
+            </button>
+            {diasDaEscala.map(({ data, fase }) => {
+              const r = rotuloDoDia(data)
+              const ativo = diaFiltro === data
+              return (
+                <button
+                  key={data}
+                  onClick={() => { setDiaFiltro(ativo ? null : data); setPage(1) }}
+                  title={`${r.semana}, ${r.curto} — ${ROTULO_FASE[fase as keyof typeof ROTULO_FASE] ?? ''}`}
+                  className={`shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors tabular-nums ${
+                    ativo ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span className="uppercase">{r.semanaCurta}</span> {r.curto}
+                  <span className={`ml-1.5 font-bold ${ativo ? 'text-white' : 'text-slate-800'}`}>{porDia.get(data) ?? 0}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           {([
             ['todos', 'Todos'],
@@ -396,6 +462,7 @@ export default function FuncionarioTable({
                         <div className="min-w-0">
                           <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
                           <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
+                          {diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                         </div>
                       </div>
                     }
@@ -573,6 +640,7 @@ export default function FuncionarioTable({
                               )}
                               <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                             </div>
+                            {diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                           </div>
                         </div>
                       }
