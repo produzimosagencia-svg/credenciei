@@ -225,6 +225,23 @@ export async function diasComBatida(eventoId: string, datas: string[]): Promise<
 
 
 /**
+ * Dos subgrupos (subeventos) informados, quais estão com o cadastro de novas pessoas TRAVADO
+ * (`subeventos.cadastro_suspenso`, supabase/upgrade-cadastro-subevento.sql). Tolerante: sem a coluna (migração
+ * não rodada) ou com erro, devolve vazio — a página de cadastro é a porta de entrada da equipe e não pode cair.
+ */
+export async function subeventosComCadastroSuspenso(ids: (string | null | undefined)[]): Promise<Set<string>> {
+  const limpos = [...new Set(ids.filter((x): x is string => !!x))]
+  if (!limpos.length) return new Set()
+  try {
+    const { data, error } = await supabaseAdmin.from('subeventos').select('id, cadastro_suspenso').in('id', limpos)
+    if (error) return new Set()
+    return new Set((data ?? []).filter(r => (r as { cadastro_suspenso?: boolean }).cadastro_suspenso === true).map(r => r.id as string))
+  } catch {
+    return new Set()
+  }
+}
+
+/**
  * Esta pessoa JÁ RECEBEU (ou tem na fila) uma destas mensagens neste evento? É o "link vai uma vez só"
  * (Juan, 09/10/2026): supervisor ou Encarregado em mais de um setor do mesmo evento, ou que trocou de
  * função e voltou, não recebe o mesmo link de novo.

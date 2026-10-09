@@ -4,6 +4,7 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { formatarBR } from '@/lib/tz'
 import { periodoDoEvento, diaBRT, type EventoJanelas } from '@/lib/janelas'
 import IdentificarPorCpf from './IdentificarPorCpf'
+import { subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
 
 export const revalidate = 0
 
@@ -62,7 +63,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
 
   const { data: setores } = await supabase
     .from('fornecedores')
-    .select('id, nome, token_formulario, link_ativo')
+    .select('id, nome, token_formulario, link_ativo, subevento_id')
     .eq('evento_id', evento.id)
     .order('nome')
 
@@ -74,7 +75,10 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
    * `undefined` se a migração ainda não rodou; aí vale como ligado, e o
    * cartaz segue funcionando como antes.
    */
-  const disponiveis = (setores ?? []).filter(s => s.token_formulario && s.link_ativo !== false)
+  // Nem o de subgrupo travado (`subeventos.cadastro_suspenso`, 09/10/2026).
+  const subgruposTravados = await subeventosComCadastroSuspenso((setores ?? []).map(s => s.subevento_id as string | null))
+  const disponiveis = (setores ?? []).filter(s => s.token_formulario && s.link_ativo !== false
+    && !(s.subevento_id && subgruposTravados.has(s.subevento_id as string)))
 
   return (
     <div className="min-h-screen bg-[#0e0e0e] flex flex-col">

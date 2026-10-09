@@ -2,7 +2,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle, Search, Users, UserCog, Layers, Building2 } from 'lucide-react'
+import { Plus, X, Pencil, Trash2, ArrowRight, CalendarRange, Merge, AlertTriangle, Search, Users, UserCog, Layers, Building2, Lock } from 'lucide-react'
 import { criarSubevento, editarSubevento, excluirSubevento, mesclarSubeventos, buscarNoEvento, type ResultadoBuscaEvento } from '@/lib/actions'
 import { mesmoNome, nomesParecem } from '@/lib/estrutura-regras'
 import { NomeMaiusculoInput } from '@/components/inputs'
@@ -24,11 +24,13 @@ type Contagem = { fornecedores: number; equipe: number }
  * precisar de novo).
  */
 export default function SubeventosCard({
-  eventoId, subeventos, contagens,
+  eventoId, subeventos, contagens, travados = [],
 }: {
   eventoId: string
   subeventos: Subevento[]
   contagens?: Record<string, Contagem>
+  /** Subgrupos com o cadastro de novas pessoas travado (`alternarCadastroDoSubevento`) — ganham um selo. */
+  travados?: string[]
 }) {
   // Pesquisa do evento (subsetor, setor, supervisor, colaborador). Os hooks
   // ficam antes do `return` da lista enxuta pra respeitar a ordem dos hooks.
@@ -146,6 +148,12 @@ export default function SubeventosCard({
                     {s.nome}
                   </h3>
                 </Link>
+
+                {travados.includes(s.id) && (
+                  <p className="flex items-center gap-1.5 mt-2.5 text-amber-400 text-xs font-semibold">
+                    <Lock className="w-3.5 h-3.5 shrink-0" /> Cadastro de novas pessoas travado
+                  </p>
+                )}
 
                 {duplicadaDe.length > 0 && (
                   <p className="flex items-start gap-1.5 mt-2.5 text-amber-400 text-xs leading-snug">

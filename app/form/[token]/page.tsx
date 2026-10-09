@@ -9,6 +9,7 @@ import { consultarAutorizacaoCadastroIndividual } from '@/lib/cadastro-individua
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, diasLotados } from '@/lib/escala'
 import { diaBRT } from '@/lib/janelas'
 import type { DiaDaEscala } from '@/lib/escala-regras'
+import { subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
 
 const TUTORIAL: TutorialConfig = {
   tela: 'funcionario-cadastro',
@@ -113,7 +114,9 @@ export default async function FormPage({
    * (`cadastro_suspenso`) ou só ESTE setor desligado (`link_ativo`, o
    * botão no card do setor). Ver upgrade-link-do-setor.sql.
    */
-  if ((evento?.cadastro_suspenso || fornecedor.link_ativo === false) && !excecaoIndividualValida) {
+  // A terceira tranca (09/10/2026): o subgrupo inteiro travado — ver `alternarCadastroDoSubevento`.
+  const subgrupoSuspenso = (await subeventosComCadastroSuspenso([fornecedor.subevento_id as string | null])).size > 0
+  if ((evento?.cadastro_suspenso || fornecedor.link_ativo === false || subgrupoSuspenso) && !excecaoIndividualValida) {
     return (
       <div className="min-h-screen bg-[#0e0e0e] flex items-center justify-center p-4">
         <div className="w-full max-w-md text-center">

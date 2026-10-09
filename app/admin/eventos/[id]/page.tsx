@@ -7,7 +7,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
+import { obterFuncionalidadesOrganizacao, operadoresDaOrganizacao, tutorialHabilitadoNoEvento, subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
@@ -632,7 +632,7 @@ export default async function EventoPage({
 
           {usaSubeventos ? (
             <>
-              <SubeventosCard eventoId={id} subeventos={subeventos} contagens={contagensPorSubevento} />
+              <SubeventosCard eventoId={id} subeventos={subeventos} contagens={contagensPorSubevento} travados={[...(await subeventosComCadastroSuspenso(subeventos.map(s => s.id)))]} />
 
               {/*
                 * Fornecedores sem subevento — o caso real do fornecedor

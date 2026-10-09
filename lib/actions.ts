@@ -42,7 +42,7 @@ import { grafiaDaCidade } from './cidades'
 import { normalizarCpf, cpfParaEmail, usuarioParaEmail } from './usuario'
 import { mensagemAmigavel } from './erros'
 import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './veiculos-constantes'
-import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento } from './internos-servidor'
+import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso } from './internos-servidor'
 import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
 import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
@@ -9057,7 +9057,7 @@ export async function cadastrarFuncionarioPublico(
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
-    .select('id, evento_id, nome, link_ativo, eventos(cadastro_suspenso, organizacao_id)')
+    .select('id, evento_id, nome, link_ativo, subevento_id, eventos(cadastro_suspenso, organizacao_id)')
     .eq('id', fornecedorId)
     .single()
   if (!fornecedor) return { error: 'Formulário inválido' }
@@ -9077,6 +9077,9 @@ export async function cadastrarFuncionarioPublico(
    */
   const eventoSuspenso = Boolean((fornecedor.eventos as unknown as { cadastro_suspenso?: boolean } | null)?.cadastro_suspenso)
   const setorSuspenso = (fornecedor as { link_ativo?: boolean }).link_ativo === false
+  // A terceira, entre as duas (09/10/2026): o SUBGRUPO inteiro travado — `alternarCadastroDoSubevento`.
+  const subeventoDoSetor = (fornecedor as { subevento_id?: string | null }).subevento_id ?? null
+  const subgrupoSuspenso = (await subeventosComCadastroSuspenso([subeventoDoSetor])).size > 0
   let excecaoIndividualValida = false
   if (autorizacaoIndividual) {
     const autorizacao = await consultarAutorizacaoCadastroIndividual(autorizacaoIndividual)
@@ -9090,7 +9093,7 @@ export async function cadastrarFuncionarioPublico(
   if (eventoSuspenso && !excecaoIndividualValida) {
     return { error: 'O cadastro para este evento foi encerrado pela organização.' }
   }
-  if (setorSuspenso && !excecaoIndividualValida) {
+  if ((setorSuspenso || subgrupoSuspenso) && !excecaoIndividualValida) {
     return { error: 'O cadastro para este fornecedor foi encerrado. Fale com quem te contratou.' }
   }
 
@@ -10727,6 +10730,39 @@ export async function alternarCadastroPorLink(eventoId: string, suspender: boole
 
   revalidatePath(`/admin/eventos/${eventoId}`)
   return { ok: true as const }
+}
+
+/**
+ * Trava (ou destrava) o cadastro de novas pessoas de UM SUBGRUPO (subevento) inteiro — todos os fornecedores dele,
+ * de uma vez, sem mexer no link de cada um (pedido do Juan, 09/10/2026: "travar o do setor geral" no VITAL).
+ *
+ * Fica entre `alternarCadastroPorLink` (evento inteiro) e `alternarLinkDoSetor` (um fornecedor): qualquer tranca
+ * fechada basta pra recusar, nenhuma vence a outra — destravar o subgrupo não reabre fornecedor fechado no card.
+ * Checado em app/form, app/portaria e `cadastrarFuncionarioPublico`. Mesma permissão das outras duas.
+ */
+export async function alternarCadastroDoSubevento(eventoId: string, subeventoId: string, suspender: boolean): Promise<{ ok: true } | { erro: string }> {
+  // Erro como VALOR, não exceção: o Next esconde a mensagem de exceção de Server Action em produção.
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+
+    const { data: sub } = await supabaseAdmin.from('subeventos').select('id, nome, evento_id').eq('id', subeventoId).maybeSingle()
+    if (!sub || sub.evento_id !== eventoId) return { erro: 'Subgrupo não encontrado neste evento.' }
+
+    const { error } = await supabaseAdmin.from('subeventos').update({ cadastro_suspenso: suspender }).eq('id', subeventoId)
+    if (error) {
+      if (/cadastro_suspenso/.test(error.message)) {
+        return { erro: 'O banco ainda não tem o campo da trava por subgrupo. Rode supabase/upgrade-cadastro-subevento.sql no SQL Editor do Supabase.' }
+      }
+      return { erro: 'Não foi possível mudar o cadastro deste subgrupo. Tente de novo.' }
+    }
+    auditar(perfil, 'CADASTRO_POR_LINK_ALTERADO', { campoAlterado: `Cadastro por link (subgrupo ${sub.nome})`, eventoId, valorNovo: suspender ? 'Travado' : 'Aberto' })
+
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    revalidatePath(`/admin/eventos/${eventoId}/subevento/${subeventoId}`)
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
 }
 
 /**

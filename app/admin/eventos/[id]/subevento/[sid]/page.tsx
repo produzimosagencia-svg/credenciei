@@ -6,6 +6,8 @@ import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'luc
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
 import ExportarSubevento from './ExportarSubevento'
+import TravaDeCadastro from './TravaDeCadastro'
+import { subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import SeletorDeDia from '@/components/SeletorDeDia'
@@ -38,7 +40,7 @@ export default async function SubeventoPage({
   if (!perfil) redirect('/login')
 
   const [{ data: evento }, { data: subevento }, { data: diasTrabalho }] = await Promise.all([
-    supabase.from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).single(),
+    supabase.from('eventos').select('id, nome, organizacao_id, cadastro_suspenso').eq('id', eventoId).single(),
     supabase.from('subeventos').select('id, nome, evento_id').eq('id', sid).single(),
     supabase.from('jornada_dias').select('data, tipo').eq('evento_id', eventoId).eq('cancelado', false).order('data'),
   ])
@@ -169,6 +171,8 @@ export default async function SubeventoPage({
   const supervisoresSemCracha = supervisoresSemCrachaPorSetor(supervisoresPorFornecedor, (candidatosRows ?? []) as { cpf?: string | null; fornecedor_id?: string }[])
 
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
+  // As travas de cadastro (subgrupo e evento): mesma permissão do interruptor do evento. Tolerante à migração.
+  const subgrupoTravado = podeGerenciarEventos(perfil) && (await subeventosComCadastroSuspenso([sid])).has(sid)
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
   const quemFez = (t: string) =>
@@ -222,6 +226,18 @@ export default async function SubeventoPage({
           icon={LogOut} tom="aviso"
         />
       </div>
+
+      {podeGerenciarEventos(perfil) && (
+        <TravaDeCadastro
+          eventoId={eventoId}
+          subeventoId={sid}
+          subgrupoNome={subevento.nome}
+          subgrupoTravado={subgrupoTravado}
+          eventoTravado={(evento as { cadastro_suspenso?: boolean }).cadastro_suspenso === true}
+          fornecedoresTravados={setoresComLinkDesligado.size}
+          totalFornecedores={fornecedorIds.length}
+        />
+      )}
 
       <Secao
         tom="acento"
