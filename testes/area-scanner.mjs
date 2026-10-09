@@ -23,6 +23,7 @@ const modal = ler('app/admin/eventos/[id]/FornecedorModal.tsx')
 const sql = ler('supabase/upgrade-area-no-scanner.sql')
 
 console.log('Área no leitor')
+ok(/const ehSaida = conferirArea && \(escolhido === 'fim' \|\| \(escolhido !== 'entrada' && !!\(await entradaDoTurno\(func\.id, eventoId, agora\)\)\)\)/.test(acoes), 'saída é livre: a área só vale na entrada (09/10/2026)')
 ok(/areaNoScannerHabilitada: boolean/.test(acoes), 'a funcionalidade existe no tipo')
 ok(/areaNoScannerHabilitada: false/.test(servidor), 'nasce desligada (valor padrão)')
 ok(/\(data as \{ area_no_scanner_habilitada\?: boolean \}\)\.area_no_scanner_habilitada === true/.test(servidor), 'só liga com true explícito (coluna ausente = desligada)')
@@ -30,7 +31,7 @@ ok(/name="area_no_scanner_habilitada"/.test(form), 'checkbox em Configurações 
 ok(/formData\.get\('area_no_scanner_habilitada'\) === 'on'/.test(acoes), 'a edição lê o checkbox')
 ok(/campoAlterado: 'Selecionar a área no leitor'/.test(acoes), 'a mudança é auditada')
 ok(/add column if not exists area_no_scanner_habilitada boolean not null default false/.test(sql), 'migração: coluna desligada por padrão')
-ok(/subeventoIdsLidos\?\.length && \(await obterFuncionalidadesDoEvento\(evento\.id\)\)\.areaNoScannerHabilitada/.test(acoes),
+ok(/const conferirArea = !!subeventoIdsLidos\?\.length && \(await obterFuncionalidadesDoEvento\(evento\.id\)\)\.areaNoScannerHabilitada/.test(acoes) && /if \(conferirArea && !ehSaida/.test(acoes),
   'o servidor só confere a área quando o evento (ou a organização, sem configuração própria) ligou — nem com áreas guardadas no aparelho')
 for (const [nome, src] of [['/scan', scan], ['/admin/scanner', scanPainel]]) {
   ok(/eventosComAreaNoScanner/.test(src) && /delete subeventosPorEvento\[id\]/.test(src), `${nome}: sem a funcionalidade, nenhum evento pergunta área`)

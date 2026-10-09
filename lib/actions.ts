@@ -7679,7 +7679,13 @@ async function autorizarPresenca(args: {
    * validado" nem "QR inválido" nem o "negado" genérico: a credencial é
    * válida, só pertence a outro portão.
    */
-  if (subeventoIdsLidos?.length && (await obterFuncionalidadesDoEvento(evento.id)).areaNoScannerHabilitada) {
+  /*
+   * SAÍDA É LIVRE (Juan, 09/10/2026): a área só vale na ENTRADA. Saindo — botão SAÍDA, ou entrada em aberto sem o
+   * botão ENTRADA (o mesmo critério que decide o momento logo abaixo) — qualquer leitor registra, sem "ÁREA DIFERENTE".
+   */
+  const conferirArea = !!subeventoIdsLidos?.length && (await obterFuncionalidadesDoEvento(evento.id)).areaNoScannerHabilitada
+  const ehSaida = conferirArea && (escolhido === 'fim' || (escolhido !== 'entrada' && !!(await entradaDoTurno(func.id, eventoId, agora))))
+  if (conferirArea && !ehSaida && subeventoIdsLidos?.length) {
     // Só confere a área se a organização LIGOU a seleção de área no leitor. Desligada (padrão), um leitor com áreas
     // guardadas de antes (localStorage) também não barra ninguém: o leitor só registra quem entra.
     try {

@@ -792,7 +792,7 @@ export default function ScannerView({
           <div className="w-full max-w-sm text-white">
             <p className="text-lg font-bold text-center">Qual área você vai atuar?</p>
             <p className="text-white/50 text-sm text-center mt-1.5">
-              Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas.
+              Selecione uma ou mais áreas. Este leitor só vai liberar entrada de ingressos destas áreas. A saída é livre.
             </p>
             <div className="mt-5 space-y-2 max-h-[45vh] overflow-y-auto">
               {subeventosDoEvento.map(s => (
