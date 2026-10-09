@@ -10732,6 +10732,8 @@ export async function alternarPortaria(eventoId: string, ligar: boolean) {
  */
 export async function alternarCadastroPorLink(eventoId: string, suspender: boolean) {
   const perfil = await exigirEventoDaOrg(eventoId)
+  // Só o master trava/destrava (Juan, 09/10/2026: "somente nós master podemos ter esses dois botões de trava").
+  if (!ehMaster(perfil.role)) throw new Error('Só o master trava ou destrava o cadastro do evento.')
 
   const { error } = await supabaseAdmin
     .from('eventos')
@@ -10763,6 +10765,8 @@ export async function alternarCadastroDoSubevento(eventoId: string, subeventoId:
   // Erro como VALOR, não exceção: o Next esconde a mensagem de exceção de Server Action em produção.
   try {
     const perfil = await exigirEventoDaOrg(eventoId)
+    // Só o master (Juan, 09/10/2026) — mesma regra de `alternarCadastroPorLink`.
+    if (!ehMaster(perfil.role)) return { erro: 'Só o master trava ou destrava o cadastro do subgrupo.' }
 
     const { data: sub } = await supabaseAdmin.from('subeventos').select('id, nome, evento_id').eq('id', subeventoId).maybeSingle()
     if (!sub || sub.evento_id !== eventoId) return { erro: 'Subgrupo não encontrado neste evento.' }

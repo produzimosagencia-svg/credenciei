@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getPerfil, diaDoTurno, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeCorrigirNomeECpf } from '@/lib/permissions'
+import { ehMaster, veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeCorrigirNomeECpf } from '@/lib/permissions'
 import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
@@ -171,8 +171,8 @@ export default async function SubeventoPage({
   const supervisoresSemCracha = supervisoresSemCrachaPorSetor(supervisoresPorFornecedor, (candidatosRows ?? []) as { cpf?: string | null; fornecedor_id?: string }[])
 
   const podeGerenciarSupervisores = podeGerenciarUsuarios(perfil)
-  // As travas de cadastro (subgrupo e evento): mesma permissão do interruptor do evento. Tolerante à migração.
-  const subgrupoTravado = podeGerenciarEventos(perfil) && (await subeventosComCadastroSuspenso([sid])).has(sid)
+  // As travas de cadastro (subgrupo e evento): só o master (Juan, 09/10/2026). Tolerante à migração.
+  const subgrupoTravado = ehMaster(perfil.role) && (await subeventosComCadastroSuspenso([sid])).has(sid)
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
   const quemFez = (t: string) =>
@@ -227,7 +227,7 @@ export default async function SubeventoPage({
         />
       </div>
 
-      {podeGerenciarEventos(perfil) && (
+      {ehMaster(perfil.role) && (
         <TravaDeCadastro
           eventoId={eventoId}
           subeventoId={sid}

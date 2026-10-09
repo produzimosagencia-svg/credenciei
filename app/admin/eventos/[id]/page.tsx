@@ -590,7 +590,8 @@ export default async function EventoPage({
               `perfil` no lugar de `perfil.role` é o que faz a permissão
               enxergar as exceções da organização. `ehMaster` continua por
               papel de propósito: identidade não é configurável. */}
-          {podeGerenciarEventos(perfil) && (
+          {/* Só o master trava/destrava o cadastro (Juan, 09/10/2026). */}
+          {ehMaster(perfil?.role) && (
             <CadastroPorLinkCard
               eventoId={id}
               suspenso={evento.cadastro_suspenso === true}

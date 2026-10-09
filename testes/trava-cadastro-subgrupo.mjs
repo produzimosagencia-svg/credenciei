@@ -32,7 +32,7 @@ ok(/if \(\(setorSuspenso \|\| subgrupoSuspenso\) && !excecaoIndividualValida\)/.
 
 console.log('\n3 · o interruptor')
 const acao = actions.slice(actions.indexOf('export async function alternarCadastroDoSubevento'))
-ok(/const perfil = await exigirEventoDaOrg\(eventoId\)/.test(acao.slice(0, 600)), 'mesma permissão das outras travas')
+ok(/const perfil = await exigirEventoDaOrg\(eventoId\)/.test(acao.slice(0, 600)), 'evento da organização')
 ok(/sub\.evento_id !== eventoId/.test(acao.slice(0, 900)), 'o subgrupo precisa ser deste evento')
 ok(/return \{ erro: mensagemAmigavel\(e\) \}/.test(acao.slice(0, 2200)), 'erro como valor (o Next esconde exceção em produção)')
 
@@ -40,7 +40,8 @@ console.log('\n4 · as telas')
 ok(/subgrupoSuspenso\) && !excecaoIndividualValida/.test(ler('app/form/[token]/page.tsx')), 'formulário mostra "Cadastro encerrado"')
 ok(/subgruposTravados\.has\(s\.subevento_id/.test(ler('app/portaria/[token]/page.tsx')), 'cartaz da portaria esconde os fornecedores do subgrupo travado')
 const pagina = ler('app/admin/eventos/[id]/subevento/[sid]/page.tsx')
-ok(/<TravaDeCadastro/.test(pagina) && /podeGerenciarEventos\(perfil\) && \(\s*<TravaDeCadastro/.test(pagina), 'painel dentro de cada subgrupo, para quem administra o evento')
+ok(/<TravaDeCadastro/.test(pagina) && /ehMaster\(perfil\.role\) && \(\s*<TravaDeCadastro/.test(pagina), 'painel dentro de cada subgrupo, só para o master')
+ok(/if \(!ehMaster\(perfil\.role\)\) return \{ erro: 'Só o master trava/.test(acao.slice(0, 900)) && /if \(!ehMaster\(perfil\.role\)\) throw new Error\('Só o master trava/.test(actions), 'servidor: só o master trava (subgrupo e evento)')
 const painel = ler('app/admin/eventos/[id]/subevento/[sid]/TravaDeCadastro.tsx')
 ok(/alternarCadastroDoSubevento\(eventoId, subeventoId, !subgrupoTravado\)/.test(painel) && /alternarCadastroPorLink\(eventoId, !eventoTravado\)/.test(painel),
   'trava o subgrupo e o evento inteiro, nos dois sentidos')
