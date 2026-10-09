@@ -26,6 +26,8 @@ type Props =
       subeventos?: Subevento[]
       /** O subevento ATUAL deste fornecedor, se houver. */
       subevento_id?: string | null
+      /** Lápis com texto, no tamanho dos botões do cabeçalho — a página da equipe (pedido do Juan, 09/10/2026). */
+      comoBotao?: boolean
     }
 
 export default function FornecedorModal(props: Props) {
@@ -118,7 +120,11 @@ export default function FornecedorModal(props: Props) {
 
   return (
     <>
-      {isEditar ? (
+      {isEditar && (props as any).comoBotao ? (
+        <button onClick={abrir} className="btn btn-secundario" title="Editar setor">
+          <Pencil className="w-3.5 h-3.5 shrink-0" /> Editar setor
+        </button>
+      ) : isEditar ? (
         <button onClick={abrir} className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Editar fornecedor">
           <Pencil className="w-3.5 h-3.5" />
         </button>

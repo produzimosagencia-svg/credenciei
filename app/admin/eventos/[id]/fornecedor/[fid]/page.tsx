@@ -26,6 +26,7 @@ import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { avisosPendentesSupervisor } from '@/lib/avisos'
 import AvisoExibicaoModal from '@/components/AvisoExibicaoModal'
+import FornecedorModal from '../../FornecedorModal'
 
 export const revalidate = 0
 
@@ -218,6 +219,12 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
       ? `/admin/eventos/${id}/fornecedor/${s.setorDoCracha.id}`
       : null,
   }))
+
+  // Para o "Editar setor" do cabeçalho: os subeventos do evento (vazio = sem seletor). Tolerante, como no evento.
+  const subeventosDoEvento: { id: string; nome: string }[] = podeGerenciarEventos(perfil)
+    ? await supabase.from('subeventos').select('id, nome').eq('evento_id', id).order('nome')
+      .then(r => (r.data ?? []) as { id: string; nome: string }[], () => [])
+    : []
 
   // Nomes dos supervisores que fizeram os registros de QR (entrada/saída)
   const perfilIds = [...new Set((registros ?? []).map(r => r.criado_por_perfil_id).filter((v): v is string => !!v))]
@@ -484,6 +491,23 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
             <Link href={`/admin/eventos/${id}/presenca?ver=faltam`} className="btn btn-secundario">
               <ClipboardList className="w-3.5 h-3.5 shrink-0" /> Pendências
             </Link>
+            {/* O mesmo lápis do card do setor na tela do evento (pedido do Juan, 09/10/2026) — só para quem
+                `editarFornecedor` aceita (gestor de eventos da organização). */}
+            {podeGerenciarEventos(perfil) && (
+              <FornecedorModal
+                mode="editar"
+                comoBotao
+                eventoId={id}
+                fornecedorId={fid}
+                nome={fornecedor.nome}
+                valor_combinado={fornecedor.valor_combinado ?? null}
+                quantidade_estimada={fornecedor.quantidade_estimada ?? null}
+                exige_meio={fornecedor.exige_meio === true}
+                entrada_qualquer_horario={fornecedor.entrada_qualquer_horario === true}
+                subeventos={subeventosDoEvento}
+                subevento_id={fornecedor.subevento_id ?? null}
+              />
+            )}
             {/* O supervisor não credencia: quem lê o QR é o posto de
                 credenciamento. Mostrar o botão para ele levaria a uma tela que
                 o expulsa — pior que não ter botão. */}
