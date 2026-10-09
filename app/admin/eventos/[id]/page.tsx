@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { getPerfil, meuSetor, diaDoTurno, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade, podeExcluirOperadorPortao } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeCorrigirNomeECpf, podeExcluirOperadorPortao } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import Link from 'next/link'
 import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, LogOut, Camera, ClipboardCheck } from 'lucide-react'
@@ -661,7 +661,7 @@ export default async function EventoPage({
                     podeExcluir={podeExcluir(perfil)}
                     eventoNome={evento.nome}
                     podeMoverDeSetor={podeGerenciarEventos(perfil)}
-                    podeEditarCpf={podeEditarIdentidade(perfil)}
+                    podeEditarCpf={podeCorrigirNomeECpf(perfil)}
                     podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
                     role={perfil?.role}
                     subeventos={subeventos}
@@ -687,7 +687,7 @@ export default async function EventoPage({
               podeExcluir={podeExcluir(perfil)}
               eventoNome={evento.nome}
               podeMoverDeSetor={podeGerenciarEventos(perfil)}
-              podeEditarCpf={podeEditarIdentidade(perfil)}
+              podeEditarCpf={podeCorrigirNomeECpf(perfil)}
               /* Mesma régua de `lancarPontoManual` no servidor — supervisor não
                  chega nesta tela (é redirecionado pro próprio setor), então
                  basta cobrir gerente/admin/master/suporte. */

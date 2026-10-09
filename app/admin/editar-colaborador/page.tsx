@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { UserCog, CalendarDays } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import {
-  veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade,
+  veTodosEventos, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf,
 } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { diaBRT, TETO_TURNO_H } from '@/lib/janelas'
@@ -209,7 +209,7 @@ export default async function EditarColaboradorPage({
            aqui) — dentro dele, ele pode as mesmas três coisas de admin/master. */
         podeMoverDeSetor={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
         podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'}
-        podeEditarCpf={podeEditarIdentidade(perfil)}
+        podeEditarCpf={podeCorrigirNomeECpf(perfil)}
         podeAtivarDesativar={podeGerenciarEventos(perfil) || perfil.role === 'suporte'}
         role={perfil.role}
       />

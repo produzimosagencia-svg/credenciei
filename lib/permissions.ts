@@ -249,6 +249,17 @@ export const ehSuporte = (role?: string) => role === 'suporte'
 export const podeEditarIdentidade = capacidade('corrigir_cpf', role => role === 'master' || role === 'suporte')
 
 /**
+ * Pode corrigir NOME e CPF na ficha do colaborador (pedido do Juan, 09/10/2026: "supervisor também pode editar
+ * o nome, cpf, telefone"). Mesma régua do telefone e da função: quem cuida da equipe — o supervisor nos setores
+ * dele, admin/gerente/cliente na organização — além de quem já tem `podeEditarIdentidade`. Aqui só decide se o
+ * lápis aparece; o recorte (setor, organização, escopo do suporte) é conferido na action.
+ */
+export const podeCorrigirNomeECpf = (alvo?: AlvoPermissao) => {
+  const role = typeof alvo === 'string' ? alvo : alvo?.role
+  return podeEditarIdentidade(alvo) || podeGerenciarEventos(alvo) || role === 'supervisor'
+}
+
+/**
  * Pode cadastrar/excluir VEÍCULOS autorizados a entrar no evento.
  *
  * Mais estreito que `podeGerenciarEventos` de propósito (decisão do Juan,

@@ -3,7 +3,7 @@ import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import { emLotes } from '@/lib/lotes'
-import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeEditarIdentidade } from '@/lib/permissions'
+import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
@@ -549,7 +549,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
            * que não podia depois de já ter tentado.
            */
           podeCriarSupervisor={podeGerenciarUsuarios(perfil)}
-          podeEditarCpf={podeEditarIdentidade(perfil)}
+          podeEditarCpf={podeCorrigirNomeECpf(perfil)}
           /* Mesma régua de `lancarPontoManual` no servidor. */
           podeEditarPonto={podeGerenciarEventos(perfil) || perfil.role === 'supervisor' || perfil.role === 'suporte'}
           role={perfil.role}

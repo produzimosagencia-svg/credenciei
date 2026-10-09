@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getPerfil, diaDoTurno, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
-import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeEditarIdentidade } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeGerenciarEventos, podeExcluir, podeCorrigirNomeECpf } from '@/lib/permissions'
 import { Users, ChevronLeft, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
 import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
@@ -257,7 +257,7 @@ export default async function SubeventoPage({
             podeExcluir={podeExcluir(perfil)}
             eventoNome={evento.nome}
             podeMoverDeSetor={podeGerenciarEventos(perfil)}
-            podeEditarCpf={podeEditarIdentidade(perfil)}
+            podeEditarCpf={podeCorrigirNomeECpf(perfil)}
             podeEditarPonto={podeGerenciarEventos(perfil) || perfil?.role === 'suporte'}
             role={perfil?.role}
             subeventos={[]}

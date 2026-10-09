@@ -69,7 +69,7 @@ export default function FuncionarioDetalheModal({
   podeMoverDeSetor?: boolean
   /** Mesma permissão que `criarSupervisor` exige no servidor. */
   podeCriarSupervisor?: boolean
-  /** Mesma permissão que `editarCpfFuncionario` exige no servidor — ver `podeEditarIdentidade`. */
+  /** Liga os lápis de nome e CPF — ver `podeCorrigirNomeECpf`; o servidor confere o setor/organização. */
   podeEditarCpf?: boolean
   /** Mesma régua de `alternarAtivacao` no servidor. */
   podeAtivarDesativar?: boolean
@@ -208,7 +208,7 @@ export default function FuncionarioDetalheModal({
   }
 
   // ── Corrigir nome ──────────────────────────────────────────────────────────
-  /** Mesma permissão de `editarCpfFuncionario` — ver `podeEditarIdentidade`: nome é identidade, não é qualquer correção. */
+  /** Mesma permissão de `editarCpfFuncionario` — ver `podeCorrigirNomeECpf` (supervisor corrige os do setor dele, com motivo). */
   const [editandoNome, setEditandoNome] = useState(false)
   const [novoNome, setNovoNome] = useState(f.nome)
   const [motivoNome, setMotivoNome] = useState('')
@@ -240,7 +240,8 @@ export default function FuncionarioDetalheModal({
 
   // ── Corrigir CPF ───────────────────────────────────────────────────────────
   /*
-   * Só master, por enquanto — ver `podeEditarIdentidade`. Existe porque
+   * Quem cuida da equipe, desde 09/10/2026 — ver `podeCorrigirNomeECpf` (o CPF
+   * de quem tem login no sistema continua só com o master). Existe porque
    * "refazer o cadastro" perde QR, histórico e pagamento já vinculados ao
    * registro antigo; corrigir no mesmo registro preserva os três.
    */

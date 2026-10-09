@@ -4092,14 +4092,54 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
 }
 
 /**
+ * Quem pode corrigir NOME e CPF na ficha do colaborador — e com qual alcance (pedido do Juan, 09/10/2026:
+ * "supervisor também pode editar o nome, cpf, telefone").
+ *
+ *   - master e quem tem `podeEditarIdentidade` → corrige qualquer um (suporte, como sempre, só no escopo e com motivo);
+ *   - quem cuida da equipe → a régua do telefone (`exigirAcessoFuncionarios`): supervisor só nos setores DELE (e com
+ *     motivo, que vai pra auditoria), admin/gerente/cliente na própria organização.
+ *
+ * `plena: false` é o segundo caso: ali o CPF de quem tem LOGIN no sistema (supervisor, operador...) não é mexido —
+ * ver `editarCpfFuncionario`.
+ */
+async function conferirCorrecaoDeIdentidade(fornecedorId: string, eventoId: string, motivo: string | undefined, oQue: string): Promise<
+  { erro: string } | { perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>; plena: boolean }
+> {
+  const perfil = await getPerfil()
+  if (!perfil) return { erro: `Sem permissão para corrigir ${oQue}.` }
+
+  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
+  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
+
+  if (perfil.role === 'suporte') {
+    if (!podeEditarIdentidade(perfil)) return { erro: `Sem permissão para corrigir ${oQue}.` }
+    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+    const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
+    if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
+      return { erro: 'Este evento não está no seu escopo de atendimento.' }
+    }
+    return { perfil, plena: true }
+  }
+  if (podeEditarIdentidade(perfil)) return { perfil, plena: true }
+
+  try {
+    await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  } catch {
+    return { erro: `Sem permissão para corrigir ${oQue} desta pessoa.` }
+  }
+  if (perfil.role === 'supervisor' && !(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
+  return { perfil, plena: false }
+}
+
+/**
  * Corrige o CPF de um funcionário já cadastrado.
  *
  * Existe porque refazer o cadastro do zero (a alternativa óbvia) perde o QR
  * já impresso/salvo, o histórico de batidas e o vínculo de pagamento — tudo
  * amarrado ao `id` antigo. Corrigir o CPF NO MESMO registro preserva os três.
  *
- * Master sempre; suporte também, mas só dentro do escopo dele — ver
- * `podeEditarIdentidade`. CPF é a identidade da pessoa em todo o sistema
+ * Quem pode: ver `conferirCorrecaoDeIdentidade` (desde 09/10/2026 o supervisor
+ * corrige os do setor dele, como já fazia com telefone). CPF é a identidade da pessoa em todo o sistema
  * (login de supervisor, base regional, histórico entre eventos); trocá-lo
  * sem cuidado troca quem a pessoa É pro sistema, não só um campo de
  * formulário — por isso exige motivo e fica na auditoria.
@@ -4125,27 +4165,28 @@ export async function atualizarValorReceber(funcionarioId: string, fornecedorId:
 export async function editarCpfFuncionario(
   funcionarioId: string, fornecedorId: string, eventoId: string, novoCpfBruto: string, motivo?: string,
 ): Promise<{ ok: true } | { erro: string }> {
-  const perfil = await getPerfil()
-  if (!podeEditarIdentidade(perfil)) return { erro: 'Sem permissão para corrigir CPF.' }
-
   const novoCpf = normalizarCpf(novoCpfBruto)
   if (!validarCpf(novoCpf)) return { erro: 'CPF inválido. Confira os 11 dígitos.' }
 
-  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
-
-  // Suporte só corrige dentro do próprio escopo — master passa direto.
-  if (perfil!.role === 'suporte') {
-    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
-    const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
-    if (!(await suporteTemEscopo(perfil!.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
-      return { erro: 'Este evento não está no seu escopo de atendimento.' }
-    }
-  }
+  const permissao = await conferirCorrecaoDeIdentidade(fornecedorId, eventoId, motivo, 'o CPF')
+  if ('erro' in permissao) return permissao
+  const { perfil } = permissao
 
   const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, nome, cpf, fornecedor_id').eq('id', funcionarioId).single()
   if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste fornecedor.' }
   if (atual.cpf === novoCpf) return { ok: true } // nada mudou
+
+  /*
+   * Quem corrige pela régua da equipe (supervisor, admin) não mexe no CPF de quem tem LOGIN no sistema, nem põe
+   * na ficha o CPF de um login: o CPF é o que liga a ficha ao acesso (supervisor sai liberado em todos os dias
+   * por ele — `pessoaEhSupervisor`). Trocar de um lado só separaria os dois, ou daria a alguém o que é de outro.
+   */
+  if (!permissao.plena) {
+    const { data: comLogin } = await supabaseAdmin.from('perfis').select('id').in('cpf', [atual.cpf as string, novoCpf]).limit(1)
+    if (comLogin?.length) {
+      return { erro: 'Este CPF é de alguém com acesso ao sistema (supervisor, operador...). Peça ao administrador master para corrigir.' }
+    }
+  }
 
   /*
    * Mesma régua do cadastro público: uma pessoa não pode estar em dois
@@ -4176,7 +4217,7 @@ export async function editarCpfFuncionario(
   if (error) return { erro: mensagemAmigavel(error) }
 
   after(() => registrarAuditoria({
-    perfil: perfil!, acao: 'ALTERACAO_CPF', campoAlterado: 'cpf',
+    perfil, acao: 'ALTERACAO_CPF', campoAlterado: 'cpf',
     valorAnterior: atual.cpf, valorNovo: novoCpf, motivo: motivo ?? null,
     funcionarioId, eventoId,
   }))
@@ -4188,8 +4229,8 @@ export async function editarCpfFuncionario(
 /**
  * Corrige o NOME de uma pessoa NESTE cadastro (um evento) — pedido do Juan, 08/10/2026: a ficha do colaborador já
  * deixava corrigir CPF, telefone e função, mas não o nome, que é exatamente o mesmo tipo de erro de digitação
- * (ou nome incompleto) no cadastro público. Mesma régua de `editarCpfFuncionario`: identidade é sensível, então
- * só master (e suporte, dentro do escopo, com motivo) corrige — não é o mesmo tanto gente de `editarTelefoneFuncionario`.
+ * (ou nome incompleto) no cadastro público. Mesma régua de `editarCpfFuncionario` — `conferirCorrecaoDeIdentidade`:
+ * desde 09/10/2026 o supervisor também corrige, nos setores dele e com motivo.
  *
  * Para trocar o nome em TODOS os eventos da pessoa de uma vez, o caminho é a Base de funcionários
  * (`editarDadosDaPessoaNaBase`); aqui corrige só este cadastro.
@@ -4197,23 +4238,12 @@ export async function editarCpfFuncionario(
 export async function editarNomeFuncionario(
   funcionarioId: string, fornecedorId: string, eventoId: string, novoNomeBruto: string, motivo?: string,
 ): Promise<{ ok: true } | { erro: string }> {
-  const perfil = await getPerfil()
-  if (!podeEditarIdentidade(perfil)) return { erro: 'Sem permissão para corrigir o nome.' }
-
   const novoNome = (novoNomeBruto ?? '').replace(/\s+/g, ' ').trim()
   if (novoNome.length < 2 || novoNome.length > 120) return { erro: 'Informe um nome válido.' }
 
-  const { data: fornecedor } = await supabaseAdmin.from('fornecedores').select('evento_id, eventos(organizacao_id)').eq('id', fornecedorId).single()
-  if (!fornecedor || fornecedor.evento_id !== eventoId) return { erro: 'Fornecedor não encontrado neste evento.' }
-
-  // Suporte só corrige dentro do próprio escopo — master passa direto.
-  if (perfil!.role === 'suporte') {
-    if (!(motivo ?? '').trim()) return { erro: 'Informe o motivo da correção.' }
-    const organizacaoId = (fornecedor.eventos as unknown as { organizacao_id: string | null } | null)?.organizacao_id
-    if (!(await suporteTemEscopo(perfil!.id, { eventoId, organizacaoId: organizacaoId ?? undefined }))) {
-      return { erro: 'Este evento não está no seu escopo de atendimento.' }
-    }
-  }
+  const permissao = await conferirCorrecaoDeIdentidade(fornecedorId, eventoId, motivo, 'o nome')
+  if ('erro' in permissao) return permissao
+  const { perfil } = permissao
 
   const { data: atual } = await supabaseAdmin.from('funcionarios').select('id, nome, fornecedor_id').eq('id', funcionarioId).single()
   if (!atual || atual.fornecedor_id !== fornecedorId) return { erro: 'Funcionário não encontrado neste fornecedor.' }
@@ -4223,7 +4253,7 @@ export async function editarNomeFuncionario(
   if (error) return { erro: mensagemAmigavel(error) }
 
   after(() => registrarAuditoria({
-    perfil: perfil!, acao: 'ALTERACAO_NOME', campoAlterado: 'nome',
+    perfil, acao: 'ALTERACAO_NOME', campoAlterado: 'nome',
     valorAnterior: atual.nome as string, valorNovo: novoNome, motivo: motivo ?? null,
     funcionarioId, eventoId,
   }))
