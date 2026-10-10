@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, LogIn, Camera, LogOut, Clock, UserX, CameraOff, LogOut as SaidaX } from 'lucide-react'
-import { getPerfil, diaDoTurno, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, diaDoTurno, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeAcompanhar } from '@/lib/permissions'
 import { VISOES, ehVisao, linhasDaVisao, type Visao } from '@/lib/presenca-visoes'
 import { PageHeader } from '@/components/ui/Superficie'
@@ -49,7 +49,15 @@ export default async function PresencaPage({
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).single()
   if (!evento) notFound()
-  if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) notFound()
+  /*
+   * O supervisor enxerga TODOS os setores dele neste evento — inclusive o de outra organização (09/10/2026: é o link
+   * do aviso "não bateram o meio", que soma os setores dele; antes dava "não encontrado" pra supervisor de fora e,
+   * pros outros, mostrava só o setor aberto na tela).
+   */
+  const setoresNoEvento = perfil.role === 'supervisor'
+    ? (await meusSetores(perfil)).filter(s => s.evento_id === eventoId).map(s => s.id)
+    : []
+  if (perfil.role === 'supervisor' ? !setoresNoEvento.length : (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id)) notFound()
 
   const visao: Visao = ehVisao(ver) ? ver : 'entrada'
   const Icone = ICONE[visao]
@@ -68,10 +76,10 @@ export default async function PresencaPage({
     ?? hoje
 
   // Supervisor enxerga só a própria equipe — mesma régua do resto do sistema.
-  const setorDoSupervisor = perfil.role === 'supervisor' ? (perfil.fornecedor_id as string | null) : null
+  const setorDoSupervisor = perfil.role === 'supervisor' ? setoresNoEvento : null
 
   const { linhas, colunaHora } = await linhasDaVisao({
-    eventoId, visao, dia: diaEscolhido, fornecedorId: setorDoSupervisor,
+    eventoId, visao, dia: diaEscolhido, fornecedorIds: setorDoSupervisor,
   })
 
   const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }
@@ -124,7 +132,7 @@ export default async function PresencaPage({
         linhas={linhas}
         icone={<Icone className="w-3.5 h-3.5" />}
         colunaHora={colunaHora}
-        mostrarSetor={!setorDoSupervisor}
+        mostrarSetor={!setorDoSupervisor || setorDoSupervisor.length > 1}
       />
     </div>
   )

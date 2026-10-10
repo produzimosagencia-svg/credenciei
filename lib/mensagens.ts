@@ -532,20 +532,29 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
   if (!funcionarios.length) return
 
   const fornecedorIds = [...new Set(funcionarios.map(f => f.fornecedor_id))]
-  const { data: supervisores } = await supabase
-    .from('perfis')
-    .select('id, telefone, fornecedor_id')
-    .eq('role', 'supervisor')
-    .eq('ativo', true)
-    .in('fornecedor_id', fornecedorIds)
-  // Havendo mais de um supervisor ativo no mesmo setor, o alerta vai só pro
-  // primeiro: a chave de dedupe é por perfil+tipo+dia, e notificar vários
-  // exigiria redesenhá-la.
+  /*
+   * QUEM RECEBE o aviso de pendência: TODO supervisor ligado a um setor deste evento (`supervisor_setores`), UMA
+   * linha por pessoa — o conteúdo, montado no envio, já soma todos os setores dela (`montarEnvioTemplate`). Era
+   * `perfis.role = 'supervisor'` com o setor ABERTO (`perfis.fornecedor_id`) neste evento: no VITAL (09/10/2026)
+   * isso dava 47 de ~100 supervisores — ficava de fora quem estava com outro setor aberto, quem é supervisor como
+   * função extra e o segundo supervisor do mesmo setor. A chave (perfil, tipo, dia) continua deduplicando.
+   */
   const supervisorPorFornecedor = new Map<string, { perfilId: string; telefone: string | null }>()
-  for (const s of supervisores ?? []) {
-    if (!supervisorPorFornecedor.has(s.fornecedor_id as string)) {
-      supervisorPorFornecedor.set(s.fornecedor_id as string, { perfilId: s.id, telefone: s.telefone })
+  for (let i = 0; i < fornecedorIds.length; i += 100) {
+    const { data: vinculos } = await supabase
+      .from('supervisor_setores').select('perfil_id, perfis!inner(id, telefone, ativo)')
+      .in('fornecedor_id', fornecedorIds.slice(i, i + 100))
+    for (const v of vinculos ?? []) {
+      const p = v.perfis as unknown as { id: string; telefone: string | null; ativo: boolean | null } | null
+      if (!p || p.ativo === false || supervisorPorFornecedor.has(p.id)) continue
+      supervisorPorFornecedor.set(p.id, { perfilId: p.id, telefone: p.telefone })
     }
+  }
+  // Rede de segurança (setor aberto sem o vínculo gravado — migração antiga): o de sempre.
+  const { data: supervisoresPeloSetorAberto } = await supabase
+    .from('perfis').select('id, telefone').eq('role', 'supervisor').eq('ativo', true).in('fornecedor_id', fornecedorIds)
+  for (const p of supervisoresPeloSetorAberto ?? []) {
+    if (!supervisorPorFornecedor.has(p.id as string)) supervisorPorFornecedor.set(p.id as string, { perfilId: p.id as string, telefone: p.telefone as string | null })
   }
 
   // Só o que trava (enviado/cancelado) interessa aqui — e paginado: num

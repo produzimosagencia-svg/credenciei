@@ -25,5 +25,11 @@ ok(/alerta_supervisor_pendencia: \(\[nome, quantidade, setor, etapa, link, event
 ok(/new Date\(entradaFimReal \?\? entrada \?\? instanteBRT\(dia, ENTRADA_PADRAO\)\)\.getTime\(\) \+\s*\(HORAS_ATE_MEIO \+ DURACAO_JANELA_MEIO_H\) \* H_MS/.test(ler('lib/janelas.ts')),
   'o aviso sai 6h depois do FIM da janela de entrada (VITAL: 16h → 22h), quando o meio de todo mundo que entrou no horário já fechou')
 
+ok(/from\('supervisor_setores'\)\.select\('perfil_id, perfis!inner\(id, telefone, ativo\)'\)/.test(msg) && /supervisorPorFornecedor\.set\(p\.id, \{ perfilId: p\.id/.test(msg),
+  'recebe TODO supervisor ligado a setor do evento, uma linha por pessoa (não só quem está com o setor aberto)')
+const pres = ler('app/admin/eventos/[id]/presenca/page.tsx')
+ok(/const setoresNoEvento = perfil\.role === 'supervisor'/.test(pres) && /fornecedorIds: setorDoSupervisor/.test(pres), 'o link abre a lista com TODOS os setores dele no evento (também pra supervisor de outra organização)')
+ok(/const filtroSetores = fornecedorIds\?\.length/.test(ler('lib/presenca-visoes.ts')), 'a lista de presença aceita vários setores')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -53,19 +53,25 @@ export const ehVisao = (v: string | undefined): v is Visao => !!v && v in VISOES
  * sistema. `null`/ausente = o evento inteiro.
  */
 export async function linhasDaVisao({
-  eventoId, visao, dia, fornecedorId,
+  eventoId, visao, dia, fornecedorId, fornecedorIds,
 }: {
   eventoId: string
   visao: Visao
   dia: string
   fornecedorId?: string | null
+  /**
+   * Vários setores (o supervisor que cobre mais de um — 09/10/2026: o link do aviso "não bateram o meio" soma
+   * todos os setores dele, e a lista que ele abre precisa mostrar os mesmos). Ganha de `fornecedorId`.
+   */
+  fornecedorIds?: string[] | null
 }): Promise<{ linhas: LinhaPresenca[]; colunaHora: string }> {
   const config = VISOES[visao]
+  const filtroSetores = fornecedorIds?.length ? fornecedorIds : fornecedorId ? [fornecedorId] : null
 
   if (config.tipo === 'pendencia') {
-    const pendencias = await pendenciasDoDia({
-      eventoId, data: dia, fornecedorId: fornecedorId ?? undefined, etapas: [config.etapa],
-    })
+    const pendencias = filtroSetores
+      ? (await Promise.all(filtroSetores.map(id => pendenciasDoDia({ eventoId, data: dia, fornecedorId: id, etapas: [config.etapa] })))).flat()
+      : await pendenciasDoDia({ eventoId, data: dia, etapas: [config.etapa] })
     return {
       linhas: pendencias
         .map(p => ({ id: p.funcionarioId, nome: p.nome, cpf: p.cpf, setor: p.setorNome, em: p.realizadoEm, manual: false }))
@@ -94,7 +100,7 @@ export async function linhasDaVisao({
       .from('funcionarios')
       .select('id, nome, cpf, ativo, fornecedor_id, fornecedores!inner(nome, evento_id)')
       .eq('fornecedores.evento_id', eventoId)
-    if (fornecedorId) q = q.eq('fornecedor_id', fornecedorId)
+    if (filtroSetores) q = q.in('fornecedor_id', filtroSetores)
     return q.order('nome').order('id')
   }
 
