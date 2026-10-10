@@ -423,10 +423,12 @@ export function horariosEsperados(
      * dentro da própria janela e por isso não entra na lista.
      */
     // Sem `janela_meio_fim`: o meio não tem mais horário configurado em lugar
-    // nenhum. Seis horas depois da entrada esperada é quando a janela de quem
-    // chegou no horário se fecha (4h para abrir + 2h de duração).
+    // nenhum. Seis horas depois do FIM da janela de entrada é quando a janela do
+    // meio de TODO mundo que entrou no horário já fechou (4h para abrir + 2h).
+    // Era o início da janela (09/10/2026, VITAL: entrada 14h–16h → aviso às 20h):
+    // só entrava quem chegou até as 14h, quase ninguém. Sem fim, vale o início.
     meioAlerta: new Date(
-      new Date(entrada ?? instanteBRT(dia, ENTRADA_PADRAO)).getTime() +
+      new Date(entradaFimReal ?? entrada ?? instanteBRT(dia, ENTRADA_PADRAO)).getTime() +
       (HORAS_ATE_MEIO + DURACAO_JANELA_MEIO_H) * H_MS
     ).toISOString(),
   }

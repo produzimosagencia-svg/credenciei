@@ -22,5 +22,8 @@ ok(/params: \[\s*supervisor\.nome,\s*String\(pendentes\.length\),\s*setorNoTexto
 ok(/alerta_supervisor_pendencia: 5,/.test(meta), 'só as 5 primeiras vão pro corpo da Meta')
 ok(/alerta_supervisor_pendencia: \(\[nome, quantidade, setor, etapa, link, evento, lista\]\)/.test(modelos), 'o texto livre lê na mesma ordem (evento e lista no fim)')
 
+ok(/new Date\(entradaFimReal \?\? entrada \?\? instanteBRT\(dia, ENTRADA_PADRAO\)\)\.getTime\(\) \+\s*\(HORAS_ATE_MEIO \+ DURACAO_JANELA_MEIO_H\) \* H_MS/.test(ler('lib/janelas.ts')),
+  'o aviso sai 6h depois do FIM da janela de entrada (VITAL: 16h → 22h), quando o meio de todo mundo que entrou no horário já fechou')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
