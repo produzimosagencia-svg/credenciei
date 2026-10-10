@@ -40,5 +40,8 @@ ok(/meioJaAberto: momento === 'meio'/.test(msg) && /opcoes\.meioJaAberto \? j\.i
 ok(/&abertos=1/.test(msg) && /meioJaAberto: abertos === '1'/.test(pres), 'o link mostra a mesma lista da mensagem')
 ok(/<AvisoMeioSupervisor/.test(ler('app/admin/eventos/[id]/editar/page.tsx')) && /Configurar horário que o supervisor recebe o aviso do meio/.test(ler('app/admin/eventos/[id]/editar/AvisoMeioSupervisor.tsx')), 'seção em Editar evento')
 
+ok(/\.filter\(m => m\.perfil_id && m\.status === 'enviado'\)/.test(msg) && /status: 'pendente', erro: null,/.test(msg),
+  'aviso de supervisor cancelado por regra volta a ser agendado (só o enviado trava)')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -577,9 +577,15 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
       .filter(m => m.funcionario_id && (m.status === 'enviado' || m.status === 'cancelado'))
       .map(m => `${m.funcionario_id}:${m.tipo}:${m.data_ref}`)
   )
+  /*
+   * Aviso de SUPERVISOR: só o ENVIADO trava (10/10/2026). O cancelado por regra (supervisor que trocou de setor
+   * aberto, regra de destinatário que mudou) travava para sempre — e no VITAL deixou 31 dos 56 supervisores de meio
+   * sem o aviso do dia. O conteúdo é montado na hora do envio, então recriar não repete nada; a linha cancelada é
+   * reaproveitada pelo upsert (mesma chave perfil + tipo + dia) e volta a pendente.
+   */
   const travadosPorSupervisor = new Set(
     (existentes ?? [])
-      .filter(m => m.perfil_id && (m.status === 'enviado' || m.status === 'cancelado'))
+      .filter(m => m.perfil_id && m.status === 'enviado')
       .map(m => `${m.perfil_id}:${m.tipo}:${m.data_ref}`)
   )
 
@@ -608,6 +614,7 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
   type LinhaSup = {
     evento_id: string; perfil_id: string; tipo: TipoMensagem; data_ref: string
     agendado_para: string; telefone: string; mensagem: string
+    status: 'pendente'; erro: null
   }
   const linhasFuncionario: LinhaFunc[] = []
   const linhasSupervisor: LinhaSup[] = []
@@ -860,6 +867,8 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
         linhasSupervisor.push({
           evento_id: eventoId, perfil_id: supervisor.perfilId, tipo, data_ref: dia.data,
           agendado_para: new Date(quando).toISOString(), telefone: supervisor.telefone, mensagem: PLACEHOLDER,
+          // Reaproveita a linha cancelada por regra (ver `travadosPorSupervisor`): volta a pendente.
+          status: 'pendente', erro: null,
         })
       }
     }
