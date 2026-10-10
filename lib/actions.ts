@@ -8015,7 +8015,14 @@ async function autorizarPresenca(args: {
     if (exigeMeioDoFornecedor) {
       const diaDaJornada = await diaDeTrabalho(eventoId, resolucao.dataRef)
       const esperado = horariosEsperados(evento, resolucao.dataRef, diaDaJornada)
-      if (esperado.entrada && agora.getTime() > new Date(esperado.entrada).getTime()) {
+      /*
+       * Atrasado = depois do FIM da janela de entrada (Juan, 09/10/2026, véspera do dia principal do VITAL: "considera
+       * atraso só quem chega depois das 16h" — janela 14h–16h). Antes valia o INÍCIO: quem entrava às 14h05, dentro da
+       * janela, já obrigava o porteiro a digitar motivo, nos 39 setores com meio. Sem fim configurado, vale o início
+       * (como antes); sem horário de entrada no dia (montagem/desmontagem), continua sem pedir motivo.
+       */
+      const limiteDoAtraso = esperado.entrada ? (esperado.entradaLimite ?? esperado.entrada) : null
+      if (limiteDoAtraso && agora.getTime() > new Date(limiteDoAtraso).getTime()) {
         precisaJustificativaAtraso = true
       }
     }
