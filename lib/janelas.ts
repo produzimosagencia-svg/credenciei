@@ -364,6 +364,17 @@ function instanteBRT(dia: string, hora: string): string {
   return new Date(`${dia}T${hora}:00-03:00`).toISOString()
 }
 
+/**
+ * O instante do aviso do meio ao supervisor quando o evento CONFIGUROU a hora (Editar evento → "Aviso do meio para
+ * o supervisor", 10/10/2026). "20:00" no dia "2026-10-10" → 20:00 desse dia em Brasília. Hora que cai antes da
+ * abertura da entrada daquele dia (ex.: 01:00 num show que entra às 14h) é a madrugada SEGUINTE.
+ */
+export function instanteDoAvisoDoMeio(dia: string, hora: string, entradaInicio: string | null): string {
+  let t = new Date(`${dia}T${hora.slice(0, 5)}:00-03:00`).getTime()
+  if (entradaInicio && t <= new Date(entradaInicio).getTime()) t += 24 * H_MS
+  return new Date(t).toISOString()
+}
+
 export function horariosEsperados(
   evento: EventoJanelas,
   dia: string,

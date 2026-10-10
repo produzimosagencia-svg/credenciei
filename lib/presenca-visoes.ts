@@ -53,7 +53,7 @@ export const ehVisao = (v: string | undefined): v is Visao => !!v && v in VISOES
  * sistema. `null`/ausente = o evento inteiro.
  */
 export async function linhasDaVisao({
-  eventoId, visao, dia, fornecedorId, fornecedorIds,
+  eventoId, visao, dia, fornecedorId, fornecedorIds, meioJaAberto,
 }: {
   eventoId: string
   visao: Visao
@@ -64,14 +64,16 @@ export async function linhasDaVisao({
    * todos os setores dele, e a lista que ele abre precisa mostrar os mesmos). Ganha de `fornecedorId`.
    */
   fornecedorIds?: string[] | null
+  /** Meio: pendente desde que a janela ABRIU — a lista do link do aviso ao supervisor (ver `pendenciasDoDia`). */
+  meioJaAberto?: boolean
 }): Promise<{ linhas: LinhaPresenca[]; colunaHora: string }> {
   const config = VISOES[visao]
   const filtroSetores = fornecedorIds?.length ? fornecedorIds : fornecedorId ? [fornecedorId] : null
 
   if (config.tipo === 'pendencia') {
     const pendencias = filtroSetores
-      ? (await Promise.all(filtroSetores.map(id => pendenciasDoDia({ eventoId, data: dia, fornecedorId: id, etapas: [config.etapa] })))).flat()
-      : await pendenciasDoDia({ eventoId, data: dia, etapas: [config.etapa] })
+      ? (await Promise.all(filtroSetores.map(id => pendenciasDoDia({ eventoId, data: dia, fornecedorId: id, etapas: [config.etapa], meioJaAberto })))).flat()
+      : await pendenciasDoDia({ eventoId, data: dia, etapas: [config.etapa], meioJaAberto })
     return {
       linhas: pendencias
         .map(p => ({ id: p.funcionarioId, nome: p.nome, cpf: p.cpf, setor: p.setorNome, em: p.realizadoEm, manual: false }))

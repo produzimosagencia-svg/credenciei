@@ -8,6 +8,7 @@ import DiasDeTrabalho from './DiasDeTrabalho'
 import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
+import AvisoMeioSupervisor from './AvisoMeioSupervisor'
 import ConfiguracaoDoAutoatendimento from './ConfiguracaoDoAutoatendimento'
 import LocalNoMapa from './LocalNoMapa'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
@@ -397,6 +398,13 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
               de custo mais cara do sistema: duas mensagens cobradas por
               pessoa por dia. Ver lib/meio.ts. */}
           <ConfiguracaoDoMeio eventoId={id} config={configMeio} />
+
+          {/* Horários do aviso do meio para o supervisor (10/10/2026). Coluna nova: sem ela, vem em branco (o padrão). */}
+          <AvisoMeioSupervisor
+            eventoId={id}
+            primeira={((evento as { aviso_meio_supervisor_hora?: string | null }).aviso_meio_supervisor_hora ?? null)?.slice(0, 5) ?? null}
+            segunda={((evento as { aviso_meio_supervisor_hora_2?: string | null }).aviso_meio_supervisor_hora_2 ?? null)?.slice(0, 5) ?? null}
+          />
 
           {/*
             * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026) — existe para quando a

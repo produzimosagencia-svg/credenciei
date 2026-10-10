@@ -37,14 +37,14 @@ export default async function PresencaPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ dia?: string; ver?: string }>
+  searchParams: Promise<{ dia?: string; ver?: string; abertos?: string }>
 }) {
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
   if (!podeAcompanhar(perfil)) redirect('/admin')
 
   const { id: eventoId } = await params
-  const { dia: diaParam, ver } = await searchParams
+  const { dia: diaParam, ver, abertos } = await searchParams
 
   const { data: evento } = await supabase
     .from('eventos').select('id, nome, organizacao_id').eq('id', eventoId).single()
@@ -80,6 +80,8 @@ export default async function PresencaPage({
 
   const { linhas, colunaHora } = await linhasDaVisao({
     eventoId, visao, dia: diaEscolhido, fornecedorIds: setorDoSupervisor,
+    // O link do aviso ao supervisor: o meio pendente desde que a janela abriu (mesma lista da mensagem).
+    meioJaAberto: abertos === '1',
   })
 
   const rotuloDia = (d: string) => { const [, m, dd] = d.split('-'); return `${dd}/${m}` }

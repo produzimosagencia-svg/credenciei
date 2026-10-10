@@ -58,6 +58,12 @@ type Opcoes = {
   /** Supervisor: restringe ao próprio setor. */
   fornecedorId?: string
   etapas?: EtapaPendente[]
+  /**
+   * Meio pendente desde que a janela ABRIU (entrada + 4h), e não só depois que fechou — é a régua do aviso ao
+   * supervisor no horário configurado do evento (10/10/2026: "21:00 e 00:00"): às 21h, quem entrou até as 17h e
+   * ainda não bateu o meio. Sem isto, só entra quem já passou das 2h da janela (a régua de sempre das telas).
+   */
+  meioJaAberto?: boolean
 }
 
 /**
@@ -221,7 +227,7 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
      */
     if (etapas.includes('meio') && comMeio.has(setor?.id ?? '') && !feitos.has(`${f.id}:meio`)) {
       const j = janelaDoMeio(evento as EventoJanelas, dia, entradaEm)
-      if (j && agora > new Date(j.fim).getTime()) {
+      if (j && agora > new Date(opcoes.meioJaAberto ? j.inicio : j.fim).getTime()) {
         lista.push({ ...comum, etapa: 'meio', esperadoEm: j.inicio, realizadoEm: entradaEm })
       }
     }

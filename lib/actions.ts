@@ -11192,6 +11192,51 @@ export async function obterConfiguracaoDoMeio(eventoId: string): Promise<Configu
 }
 
 /**
+ * Os horários do aviso do MEIO para o supervisor (Editar evento → "Aviso do meio para o supervisor", pedido do Juan,
+ * 10/10/2026 — VITAL: 21:00 e 00:00). Em cada dia principal, em cada horário, o supervisor recebe quantos da equipe
+ * dele já deveriam ter batido o meio e não bateram. Sem o 1º horário = o padrão (um aviso, 6h depois do fim da
+ * janela de entrada); o 2º é opcional. Ao salvar, a fila do evento é reagendada. Erro como valor.
+ */
+export async function salvarAvisoMeioSupervisor(
+  eventoId: string, primeira: string | null, segunda: string | null,
+): Promise<{ ok: true } | { erro: string }> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    const hora = (h: string | null) => {
+      const t = (h ?? '').trim()
+      if (!t) return null
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new Error(`Horário inválido: "${t}". Use o formato 21:00.`)
+      return t
+    }
+    const h1 = hora(primeira), h2 = hora(segunda)
+    if (h2 && !h1) return { erro: 'Preencha o 1º horário antes do 2º.' }
+    if (h1 && h2 && h1 === h2) return { erro: 'Os dois horários são iguais.' }
+
+    const { data: antes } = await supabaseAdmin.from('eventos').select('*').eq('id', eventoId).maybeSingle()
+    const { error } = await supabaseAdmin.from('eventos')
+      .update({ aviso_meio_supervisor_hora: h1, aviso_meio_supervisor_hora_2: h2 }).eq('id', eventoId)
+    if (error) {
+      return /aviso_meio_supervisor/.test(error.message)
+        ? { erro: 'O banco ainda não tem os campos do horário do aviso. Rode supabase/upgrade-aviso-meio-supervisor.sql no SQL Editor do Supabase.' }
+        : { erro: mensagemAmigavel(error) }
+    }
+    const lido = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 5) : 'padrão')
+    const a = antes as { aviso_meio_supervisor_hora?: string | null; aviso_meio_supervisor_hora_2?: string | null } | null
+    auditar(perfil, 'EVENTO_EDITADO', {
+      campoAlterado: 'Horário do aviso do meio para o supervisor', eventoId,
+      valorAnterior: `${lido(a?.aviso_meio_supervisor_hora)} / ${a?.aviso_meio_supervisor_hora_2 ? lido(a.aviso_meio_supervisor_hora_2) : '—'}`,
+      valorNovo: `${h1 ?? 'padrão'} / ${h2 ?? '—'}`,
+    })
+    // Reagenda os avisos já na fila (o horário novo vale a partir de agora).
+    after(() => sincronizarAgendamentos(eventoId).catch(console.error))
+    revalidatePath(`/admin/eventos/${eventoId}/editar`)
+    return { ok: true }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
+/**
  * Liga/desliga a batida do meio: quais SETORES pedem, e em quais DIAS.
  *
  * Escreve os dois lados de uma vez porque a regra é um E entre eles (ver

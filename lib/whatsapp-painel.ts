@@ -262,6 +262,7 @@ const TEMPLATE_AUTOMATICO: Record<string, string> = {
   reforco_fim: 'reforco_credenciamento',
   alerta_supervisor_entrada: 'alerta_supervisor_pendencia',
   alerta_supervisor_meio: 'alerta_supervisor_pendencia',
+  alerta_supervisor_meio_2: 'alerta_supervisor_pendencia',
   alerta_supervisor_fim: 'alerta_supervisor_pendencia',
   confirmacao_escala: 'confirmacao_escala',
   credenciais_supervisor: 'supervisor_acesso',
@@ -274,7 +275,7 @@ const TEMPLATE_AUTOMATICO: Record<string, string> = {
 export const ROTULO_DISPARO: Record<string, string> = {
   lembrete_entrada: 'Lembrete de entrada', lembrete_meio: 'Lembrete de meio', lembrete_fim: 'Lembrete de saída',
   reforco_entrada: 'Reforço de entrada', reforco_meio: 'Reforço de meio', reforco_fim: 'Reforço de saída',
-  alerta_supervisor_entrada: 'Alerta ao supervisor — entrada', alerta_supervisor_meio: 'Alerta ao supervisor — meio', alerta_supervisor_fim: 'Alerta ao supervisor — saída',
+  alerta_supervisor_entrada: 'Alerta ao supervisor — entrada', alerta_supervisor_meio: 'Alerta ao supervisor — meio', alerta_supervisor_meio_2: 'Alerta ao supervisor — meio (2º aviso)', alerta_supervisor_fim: 'Alerta ao supervisor — saída',
   confirmacao_escala: 'Confirmação de escala', credenciais_supervisor: 'Autenticação do supervisor',
   aviso_dia_evento: 'Aviso do dia do evento', boas_vindas_funcionario: 'Mensagem de cadastro',
   aviso_montagem: 'Aviso de montagem', aviso_desmontagem: 'Aviso de desmontagem',

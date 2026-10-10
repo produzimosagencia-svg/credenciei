@@ -13,7 +13,7 @@ import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import { formatarBR } from './tz'
 import {
-  diaBRT, janelaMeio, horariosEsperados, periodoDoEvento, faseDoDia, HORA_AVISO_DIA,
+  diaBRT, janelaMeio, horariosEsperados, instanteDoAvisoDoMeio, periodoDoEvento, faseDoDia, HORA_AVISO_DIA,
   type EventoJanelas, type DiaDaJornada,
 } from './janelas'
 import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
@@ -64,6 +64,8 @@ const BACKOFF_MINUTOS = [2, 10, 30] // por tentativa: 1ª, 2ª, 3ª...
 export type TipoMensagem =
   | 'lembrete_entrada' | 'lembrete_meio' | 'lembrete_fim'
   | 'alerta_supervisor_entrada' | 'alerta_supervisor_meio' | 'alerta_supervisor_fim'
+  /** 2º aviso do meio ao supervisor, no 2º horário configurado no evento (10/10/2026). */
+  | 'alerta_supervisor_meio_2'
   | 'reforco_entrada' | 'reforco_meio' | 'reforco_fim'
   | 'confirmacao_escala'
   | 'aviso_dia_evento'
@@ -163,6 +165,7 @@ const MOMENTO_POR_TIPO: Partial<Record<TipoMensagem, MomentoRegistro>> = {
   lembrete_entrada: 'entrada', lembrete_meio: 'meio', lembrete_fim: 'fim',
   reforco_entrada: 'entrada', reforco_meio: 'meio', reforco_fim: 'fim',
   alerta_supervisor_entrada: 'entrada', alerta_supervisor_meio: 'meio', alerta_supervisor_fim: 'fim',
+  alerta_supervisor_meio_2: 'meio',
 }
 
 /*
@@ -289,6 +292,7 @@ const TEMPLATE_POR_TIPO: Record<TipoMensagem, string> = {
   reforco_fim: 'reforco_credenciamento',
   alerta_supervisor_entrada: 'alerta_supervisor_pendencia',
   alerta_supervisor_meio: 'alerta_supervisor_pendencia',
+  alerta_supervisor_meio_2: 'alerta_supervisor_pendencia',
   alerta_supervisor_fim: 'alerta_supervisor_pendencia',
   confirmacao_escala: 'confirmacao_escala',
   aviso_dia_evento: 'aviso_dia_evento',
@@ -792,6 +796,16 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
 
   // Alerta ao supervisor: UMA mensagem por setor, etapa e DIA. O conteúdo (quem
   // está faltando) só dá pra saber na hora do envio; aqui só marca o gatilho.
+  /*
+   * Hora do aviso do MEIO configurada no evento (Editar evento → "Aviso do meio para o supervisor", 10/10/2026 —
+   * VITAL: 20:00). Consulta à parte e tolerante: sem a coluna (upgrade-aviso-meio-supervisor.sql pendente), vale o
+   * padrão de `horariosEsperados` (6h depois do fim da janela de entrada).
+   */
+  const horasAvisoMeio = await supabase.from('eventos').select('aviso_meio_supervisor_hora, aviso_meio_supervisor_hora_2').eq('id', eventoId).maybeSingle()
+    .then(r => {
+      const d = r.error ? null : (r.data as { aviso_meio_supervisor_hora?: string | null; aviso_meio_supervisor_hora_2?: string | null } | null)
+      return { primeira: d?.aviso_meio_supervisor_hora ?? null, segunda: d?.aviso_meio_supervisor_hora_2 ?? null }
+    }, () => ({ primeira: null, segunda: null }))
   for (const dia of dias) {
     if (desligado(fluxos, 'alerta_supervisor')) break
     const esperado = horariosEsperados(evento as EventoJanelas, dia.data, dia.jornadaDia)
@@ -823,7 +837,11 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
     const prazoSaidaReal = dia.jornadaDia?.saida_fim ?? (evento as EventoJanelas).janela_fim_fim ?? null
     const gatilhos: [TipoMensagem, string][] = ehDiaPrincipal
       ? [
-          ['alerta_supervisor_meio', esperado.meioAlerta],
+          ['alerta_supervisor_meio', horasAvisoMeio.primeira ? instanteDoAvisoDoMeio(dia.data, horasAvisoMeio.primeira, esperado.entrada) : esperado.meioAlerta],
+          // 2º aviso (Juan, 10/10/2026: "chegar uma mensagem dessa 21:00 e outra 00:00") — só com a 2ª hora configurada.
+          ...(horasAvisoMeio.segunda
+            ? [['alerta_supervisor_meio_2', instanteDoAvisoDoMeio(dia.data, horasAvisoMeio.segunda, esperado.entrada)] as [TipoMensagem, string]]
+            : []),
           ...(temHorario && prazoSaidaReal ? [['alerta_supervisor_fim', esperado.fimLimite] as [TipoMensagem, string]] : []),
         ]
       : []
@@ -883,7 +901,7 @@ async function cancelarOqueNaoValeMais(eventoId: string, mantidas: LinhaAgendada
   const TIPOS_DESTA_FUNCAO: TipoMensagem[] = [
     'lembrete_entrada', 'lembrete_fim', 'reforco_entrada', 'reforco_fim',
     'aviso_dia_evento', 'aviso_montagem', 'aviso_desmontagem', 'confirmacao_escala',
-    'alerta_supervisor_entrada', 'alerta_supervisor_meio', 'alerta_supervisor_fim',
+    'alerta_supervisor_entrada', 'alerta_supervisor_meio', 'alerta_supervisor_meio_2', 'alerta_supervisor_fim',
   ]
 
   // Paginado: a fila pendente de um evento grande passa de 1000 linhas.
@@ -1715,6 +1733,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
       data: msg.data_ref,
       fornecedorId,
       etapas: [momento],
+      // Meio: quem JÁ DEVIA ter batido (a janela abriu) e não bateu — ver `meioJaAberto`.
+      meioJaAberto: momento === 'meio',
     })))).flat()
     if (!pendentes.length) return null
 
@@ -1751,7 +1771,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         String(pendentes.length),
         setorNoTexto,
         ETAPA_CURTA[momento],
-        `${SITE_URL}/admin/eventos/${msg.evento_id}/presenca?ver=${VER_POR_MOMENTO[momento]}&dia=${msg.data_ref}`,
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/presenca?ver=${VER_POR_MOMENTO[momento]}&dia=${msg.data_ref}${momento === 'meio' ? '&abertos=1' : ''}`,
         `${pendentes[0].eventoNome} · ${formatarBR(`${msg.data_ref}T12:00:00-03:00`, 'data')}`,
         linhas.join('\n'),
       ],
