@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje, diaDoTurno } from './supabase-server'
+import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje, diaDoTurno, ehDaOrganizacaoDoPerfil } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
 import { redirect } from 'next/navigation'
 import {
@@ -307,7 +307,7 @@ async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) 
   if (!podeGerenciarEventos(perfil)) throw new Error('Sem permissão')
   const { data: evento } = await supabaseAdmin.from('eventos').select('id, organizacao_id').eq('id', eventoId).single()
   if (!evento) throw new Error('Evento não encontrado')
-  if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
     throw new Error('Sem permissão sobre este evento')
   }
   return perfil
@@ -10057,7 +10057,7 @@ export async function listarPessoasDoEvento(
       if (!(await suporteTemEscopo(perfil.id, { eventoId, organizacaoId: (evento.organizacao_id as string | null) ?? undefined }))) {
         return { error: 'Este evento não está no seu escopo de atendimento.' }
       }
-    } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+    } else if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
       if (!meusNoEvento.length) return { error: 'Este evento está fora do seu acesso.' }
       soSetores = meusNoEvento
     }
@@ -10289,7 +10289,7 @@ export async function registrarPresencaAssistida(
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento?.id, organizacaoId: evento?.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }
     }
-  } else if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
+  } else if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento?.organizacao_id)) {
     return { error: 'Esta pessoa é de outra organização.' }
   }
 
@@ -10557,7 +10557,7 @@ export async function lancarPontoManual(
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }
     }
-  } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
     return { error: 'Esta pessoa é de outra organização.' }
   }
 
@@ -11554,7 +11554,7 @@ async function exigirAcessoAVeiculos(
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       return { error: 'Este evento não está no seu escopo de atendimento.' }
     }
-  } else if (!ehMaster(perfil.role) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
     return { error: 'Sem permissão sobre este evento.' }
   }
 

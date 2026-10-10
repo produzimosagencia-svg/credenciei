@@ -394,13 +394,14 @@ export async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: stri
     return evento?.ativo ? [{ id: evento.id, nome: evento.nome }] : []
   }
 
-  // admin / gerente / cliente → eventos ativos da própria organização
-  if (!perfil.organizacao_id) return []
+  // admin / gerente / cliente → eventos ativos da própria organização; operador → de todas em que opera o portão
+  const orgs = [...organizacoesDoOperador(perfil)]
+  if (!orgs.length) return []
   const { data } = await admin
     .from('eventos')
     .select('id, nome')
     .eq('ativo', true)
-    .eq('organizacao_id', perfil.organizacao_id)
+    .in('organizacao_id', orgs)
     .order('data_inicio', { ascending: false })
   return data ?? []
 }
@@ -472,6 +473,32 @@ export async function diaDoTurno(eventoId: string, agora: Date = new Date()): Pr
   }
 }
 
+/**
+ * As organizações em que esta pessoa opera o PORTÃO — a de base e as que ganhou como função extra (Juan, 09/10/2026:
+ * "as pessoas podem sim trabalhar em mais de um evento, de organizações diferentes... precisa ser resolvido pra não
+ * acontecer com casos futuros"). Só vale pra quem está como operador: pros outros papéis é só a organização da conta,
+ * como sempre. Assim a Gestora da Fatto que também é da Navista lê o QR do evento da Navista sem trocar de perfil.
+ */
+export function organizacoesDoOperador(perfil: any): Set<string> {
+  const orgs = new Set<string>()
+  if (perfil?.organizacao_id) orgs.add(perfil.organizacao_id as string)
+  if (perfil?.role === 'operador_portao') {
+    for (const f of (perfil.funcoes ?? []) as { role: string; organizacaoId: string | null }[]) {
+      if (f.role === 'operador_portao' && f.organizacaoId) orgs.add(f.organizacaoId)
+    }
+  }
+  return orgs
+}
+
+/**
+ * É a organização desta pessoa? Pros outros papéis é EXATAMENTE a comparação de sempre (`evento.organizacao_id ===
+ * perfil.organizacao_id`); só o operador ganha as outras organizações em que opera o portão.
+ */
+export function ehDaOrganizacaoDoPerfil(perfil: any, organizacaoId: string | null | undefined): boolean {
+  if ((organizacaoId ?? null) === (perfil?.organizacao_id ?? null)) return true
+  return !!organizacaoId && perfil?.role === 'operador_portao' && organizacoesDoOperador(perfil).has(organizacaoId)
+}
+
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {
   if (!perfil || !podeEscanear(perfil)) return false
   // Portão só opera evento que está acontecendo hoje — vale até pro master.
@@ -483,11 +510,11 @@ export async function podeEscanearEvento(perfil: any, eventoId: string): Promise
     return setor?.evento_id === eventoId
   }
 
-  // admin / gerente / cliente → evento tem que ser da própria organização
+  // admin / gerente / cliente → evento tem que ser da própria organização; operador → de qualquer uma em que opera
   const { data: evento } = await admin
     .from('eventos')
     .select('organizacao_id')
     .eq('id', eventoId)
     .single()
-  return !!evento && !!perfil.organizacao_id && evento.organizacao_id === perfil.organizacao_id
+  return !!evento && !!evento.organizacao_id && ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id as string | null)
 }
