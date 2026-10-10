@@ -45,6 +45,7 @@ import { statusVeiculoValido, tipoCadastroValido, type StatusVeiculo } from './v
 import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDoEvento, diasComBatida, cpfEstaBloqueado, obterFuncionalidadesOrganizacao, obterFuncionalidadesDoEvento, garantirFuncaoExtra, removerFuncaoExtra, jaRecebeuMensagemNoEvento, subeventosComCadastroSuspenso, travasDeCadastroDoEvento, motivoCadastroTravado, CHAVES_FUNCIONALIDADES } from './internos-servidor'
 import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
 import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
+import { pessoaDaBase } from './base-pessoas'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
 import { alterarEncarregadoNoSetor } from './actions-encarregado'
 import { alcancaSetor } from './autorizacao'
@@ -4187,7 +4188,14 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
       .single(),
   ])
 
-  const pessoa = base?.[0]
+  /*
+   * Sem ficha em evento nenhum (excluída de todos), a pessoa continua na base permanente (10/10/2026) — os dados
+   * vêm de lá (`base_pessoas`, ou a lixeira sem o SQL).
+   */
+  const daBase = base?.length ? null : await pessoaDaBase(cpf)
+  const pessoa = base?.[0] ?? (daBase
+    ? { nome: daBase.nome, cpf, telefone: daBase.telefone, cargo: daBase.cargo, cidade: daBase.cidade, chave_pix: daBase.chavePix }
+    : undefined)
   if (!pessoa) throw new Error('Esta pessoa não está na base do Credenciei')
   if (!setor) throw new Error('Fornecedor não encontrado')
   const travado = await motivoCadastroTravado(setor.evento_id as string, { fornecedorId })

@@ -14,6 +14,7 @@ import TutorialProvider from '@/components/tutorial/TutorialProvider'
 import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { normalizarCidade, chaveCidade } from '@/lib/cidades'
+import { lerBasePessoas } from '@/lib/base-pessoas'
 
 export const revalidate = 0
 
@@ -61,11 +62,10 @@ const TUTORIAL: TutorialConfig = {
 }
 
 /*
- * Teto de leitura — folga grande o bastante pra nunca esconder gente sem
- * avisar (já aconteceu com um teto de 300, depois 2000 — ver histórico do
- * arquivo). A base de hoje (2198) fica bem abaixo disto.
+ * SEM TETO de leitura (10/10/2026 — o Juan: "como assim o limite é 10 mil?"). Antes havia um teto de 10.000 fichas
+ * (e, antes dele, de 300 e de 2.000): a base que passasse disso escondia os cadastros mais antigos. Agora lê tudo,
+ * de 1000 em 1000.
  */
-const TETO_BASE = 10000
 
 /** 100 por página (pedido do Juan, 28/09/2026) — renderizar os 2000+
  *  resultados de uma vez era o que deixava a tela pesada no navegador. */
@@ -84,6 +84,8 @@ type Pessoa = {
   ultimo: string
   /** O cadastro mais ANTIGO deste CPF — desde quando a pessoa existe na base. */
   desde: string
+  /** Saiu de todos os eventos (excluída) e continua na base — ver lib/base-pessoas.ts. */
+  foraDosEventos?: boolean
 }
 
 export default async function EncontrarPage({
@@ -142,8 +144,7 @@ export default async function EncontrarPage({
    * por resposta não importa o que `.limit()` peça (ver o comentário da
    * função em lib/supabase-server.ts) — um `.limit(2000)` aqui devolvia 1000
    * do mesmo jeito, e a tela continuava escondendo gente mesmo depois do
-   * teto ter subido. `TETO_BASE` vale como TETO DE VERDADE (`tetoTotal`),
-   * paginando de 1000 em 1000 até chegar nele.
+   * teto ter subido. Paginando de 1000 em 1000 até o fim, sem teto.
    */
   const cadastrosBrutos = await buscarTudo<Cadastro>((de, ate) => {
     let consulta = supabaseAdmin
@@ -158,7 +159,7 @@ export default async function EncontrarPage({
       .range(de, ate)
     if (digitos.length >= 3) consulta = consulta.like('cpf', `%${digitos}%`)
     return consulta
-  }, { tetoTotal: TETO_BASE })
+  })
 
   const cadastros = buscaPorNome
     ? cadastrosBrutos.filter(c => chaveBusca(c.nome).includes(termoNome))
@@ -210,6 +211,22 @@ export default async function EncontrarPage({
     if (c.created_at > p.ultimo) p.ultimo = c.created_at
     if (c.created_at < p.desde) p.desde = c.created_at
     porCpf.set(c.cpf, p)
+  }
+
+  /*
+   * QUEM SAIU DE TODOS OS EVENTOS CONTINUA NA BASE (10/10/2026: "funcionário nenhum pode ser excluído da base").
+   * Excluir do evento apaga a ficha (`funcionarios`), não a pessoa: ela vem da base permanente (`base_pessoas`; sem
+   * ela, da lixeira) e aparece com a etiqueta "Fora dos eventos".
+   */
+  for (const b of await lerBasePessoas()) {
+    if (porCpf.has(b.cpf)) continue
+    if (digitos.length >= 3 && !b.cpf.includes(digitos)) continue
+    if (buscaPorNome && !chaveBusca(b.nome).includes(termoNome)) continue
+    porCpf.set(b.cpf, {
+      cpf: b.cpf, nome: b.nome, telefone: b.telefone, cidade: normalizarCidade(b.cidade) || null,
+      cargos: new Map(b.cargo ? [[b.cargo, 1]] : []), eventos: new Set(), organizacoes: new Set(),
+      compareceu: 0, autorizou: b.consentimento, ultimo: b.ultimoCadastro, desde: b.primeiroCadastro, foraDosEventos: true,
+    })
   }
 
   const semFiltroDeCidade = [...porCpf.values()]
@@ -347,6 +364,7 @@ export default async function EncontrarPage({
                           aceite do formulário) — a etiqueta evita fingir que
                           autorizou quando não. */}
                       {!p.autorizou && <Badge tom="atencao">Sem autorização</Badge>}
+                      {p.foraDosEventos && <Badge tom="neutro">Fora dos eventos</Badge>}
                     </div>
                     <div className="flex items-center gap-3 flex-wrap text-slate-500 text-xs">
                       {funcao && (

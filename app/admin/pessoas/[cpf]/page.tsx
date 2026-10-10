@@ -11,6 +11,7 @@ import { formatarBR } from '@/lib/tz'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
 import AtribuirEvento from './AtribuirEvento'
+import { pessoaDaBase } from '@/lib/base-pessoas'
 import EditarDadosPessoa from './EditarDadosPessoa'
 import ListaDepoimentos, { ResumoDeNotas } from '@/components/ListaDepoimentos'
 import { resumirAvaliacoes, type Avaliacao, type Depoimento, type TipoDepoimento } from '@/lib/depoimentos'
@@ -56,7 +57,41 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
     .eq('cpf', cpf)
     .order('created_at', { ascending: false })
 
-  if (!cadastros?.length) notFound()
+  /*
+   * Saiu de TODOS os eventos (excluída) — continua na base (10/10/2026: "funcionário nenhum pode ser excluído da
+   * base"). A ficha mostra os dados guardados e deixa atribuir a um evento de novo.
+   */
+  if (!cadastros?.length) {
+    const daBase = await pessoaDaBase(cpf)
+    if (!daBase) notFound()
+    const { eventosOpcoes, setoresOpcoes } = await opcoesDeAtribuicao()
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          titulo={daBase.nome}
+          descricao={[daBase.cargo, daBase.cidade].filter(Boolean).join(' · ') || 'Sem função registrada'}
+          voltarPara="/admin/encontrar"
+        />
+        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+          <strong className="text-slate-800">Fora dos eventos.</strong> Esta pessoa foi excluída de todos os eventos, mas
+          continua na base. Para trazer de volta, atribua a um evento abaixo.
+        </p>
+        <Secao titulo="Dados na base">
+          <dl className="grid grid-cols-2 gap-3 text-sm p-4">
+            <div><dt className="text-slate-400 text-xs">CPF</dt><dd className="text-slate-700 font-mono">{formatCpf(daBase.cpf)}</dd></div>
+            <div><dt className="text-slate-400 text-xs">Telefone</dt><dd className="text-slate-700">{daBase.telefone ?? '—'}</dd></div>
+            <div><dt className="text-slate-400 text-xs">Cidade</dt><dd className="text-slate-700">{daBase.cidade ?? '—'}</dd></div>
+            <div><dt className="text-slate-400 text-xs">Cargo</dt><dd className="text-slate-700">{daBase.cargo ?? '—'}</dd></div>
+            <div><dt className="text-slate-400 text-xs">Na base desde</dt><dd className="text-slate-700">{daBase.primeiroCadastro ? formatarBR(daBase.primeiroCadastro, 'data') : '—'}</dd></div>
+            <div><dt className="text-slate-400 text-xs">Autorizou aparecer na base</dt><dd className="text-slate-700">{daBase.consentimento ? 'Sim' : 'Não'}</dd></div>
+          </dl>
+        </Secao>
+        <Secao titulo="Atribuir a um evento">
+          <AtribuirEvento cpf={cpf} nome={daBase.nome} eventos={eventosOpcoes} setores={setoresOpcoes} jaNosEventos={[]} />
+        </Secao>
+      </div>
+    )
+  }
 
   /*
    * Histórico de comportamento: depoimentos e notas de TODOS os eventos e
@@ -166,25 +201,7 @@ export default async function PessoaPage({ params }: { params: Promise<{ cpf: st
    * do cliente que contratou o serviço. Encerrados entram na lista marcados:
    * às vezes é preciso acertar a equipe de um evento que acabou de fechar.
    */
-  const [{ data: eventosBrutos }, { data: setoresBrutos }] = await Promise.all([
-    supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio').order('data_inicio', { ascending: false }).limit(100),
-    // Paginado: todos os setores da plataforma passam de 1.000 depois de alguns eventos grandes.
-    buscarTudo<{ id: string; nome: string; evento_id: string }>((de, ate) =>
-      supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('nome').order('id').range(de, ate),
-    ).then(data => ({ data }), () => ({ data: null })),
-  ])
-
-  const eventosOpcoes = (eventosBrutos ?? []).map(e => ({
-    id: e.id as string,
-    nome: e.nome as string,
-    ativo: e.ativo !== false,
-    data: e.data_inicio ? formatarBR(e.data_inicio, 'data') : 'sem data',
-  }))
-  const setoresOpcoes = (setoresBrutos ?? []).map(f => ({
-    id: f.id as string,
-    nome: f.nome as string,
-    eventoId: f.evento_id as string,
-  }))
+  const { eventosOpcoes, setoresOpcoes } = await opcoesDeAtribuicao()
   const jaNosEventos = [...new Set(trabalhos.map(t => t.eventoId))]
 
   return (
@@ -378,4 +395,27 @@ function Dado({ rotulo, valor, icone }: { rotulo: string; valor: string; icone?:
       </p>
     </div>
   )
+}
+
+/** Opções do seletor de atribuição — usado pela ficha normal e pela de quem está só na base. */
+async function opcoesDeAtribuicao() {
+  const [{ data: eventosBrutos }, { data: setoresBrutos }] = await Promise.all([
+    supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio').order('data_inicio', { ascending: false }).limit(100),
+    // Paginado: todos os setores da plataforma passam de 1.000 depois de alguns eventos grandes.
+    buscarTudo<{ id: string; nome: string; evento_id: string }>((de, ate) =>
+      supabaseAdmin.from('fornecedores').select('id, nome, evento_id').order('nome').order('id').range(de, ate),
+    ).then(data => ({ data }), () => ({ data: null })),
+  ])
+  const eventosOpcoes = (eventosBrutos ?? []).map(e => ({
+    id: e.id as string,
+    nome: e.nome as string,
+    ativo: e.ativo !== false,
+    data: e.data_inicio ? formatarBR(e.data_inicio, 'data') : 'sem data',
+  }))
+  const setoresOpcoes = (setoresBrutos ?? []).map(f => ({
+    id: f.id as string,
+    nome: f.nome as string,
+    eventoId: f.evento_id as string,
+  }))
+  return { eventosOpcoes, setoresOpcoes }
 }
