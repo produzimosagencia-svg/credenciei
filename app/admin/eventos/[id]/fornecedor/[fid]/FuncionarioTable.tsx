@@ -12,6 +12,7 @@ import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
 import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
+import TrazerCrachaSupervisor from './TrazerCrachaSupervisor'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
 import FuncionarioDetalheModal from './FuncionarioDetalheModal'
 import SeletorLista from '@/components/SeletorLista'
@@ -32,7 +33,7 @@ export type SupervisorDeFora = {
   nome: string
   cpf: string
   telefone: string
-  setorDoCracha: { id: string; nome: string } | null
+  setorDoCracha: { id: string; nome: string; /** A ficha (crachá) dele — pra trazer pra esta equipe. */ fichaId?: string } | null
   /** Só quando quem vê consegue abrir aquele setor. */
   linkDoCracha: string | null
 }
@@ -443,6 +444,9 @@ export default function FuncionarioTable({
                     <p className="text-slate-400 text-xs">Supervisor • <OndeEstaOCracha s={sp} /></p>
                   </div>
                 </div>
+                {podeMoverDeSetor && sp.setorDoCracha?.fichaId && (
+                  <TrazerCrachaSupervisor fichaId={sp.setorDoCracha.fichaId} eventoId={eventoId} fornecedorId={fornecedorId} nome={sp.nome} />
+                )}
                 {sp.telefone && <p className="text-xs text-slate-400 tabular-nums">{telefoneBR(sp.telefone)}</p>}
               </div>
             ))}
@@ -611,6 +615,11 @@ export default function FuncionarioTable({
                     </td>
                     <td colSpan={usaBiometria ? 7 : 6} className="px-4 py-3 text-xs text-slate-400">
                       Supervisiona esta equipe — <OndeEstaOCracha s={sp} />{sp.setorDoCracha ? ' (QR, batidas e pagamento ficam lá)' : ''}.
+                      {podeMoverDeSetor && sp.setorDoCracha?.fichaId && (
+                        <span className="block mt-1">
+                          <TrazerCrachaSupervisor fichaId={sp.setorDoCracha.fichaId} eventoId={eventoId} fornecedorId={fornecedorId} nome={sp.nome} />
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

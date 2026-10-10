@@ -98,9 +98,9 @@ async function supervisoresComCrachaEmOutroSetor(fid: string, eventoId: string, 
    * "GILMAR - SEGURANÇA" na Arquibancada e no Bloco) — sem ele, "crachá na equipe X" não diz qual. Tolerante:
    * sem a coluna de subevento, cai pra consulta só com o nome.
    */
-  const buscar = (campos: string) => supabase.from('funcionarios').select(`cpf, fornecedor_id, fornecedores!inner(${campos})`)
+  const buscar = (campos: string) => supabase.from('funcionarios').select(`id, cpf, fornecedor_id, fornecedores!inner(${campos})`)
     .in('cpf', cpfs).eq('fornecedores.evento_id', eventoId)
-  let fichas: { cpf: string; fornecedor_id: string; fornecedores: unknown }[] = []
+  let fichas: { id: string; cpf: string; fornecedor_id: string; fornecedores: unknown }[] = []
   if (cpfs.length) {
     const comArea = await buscar('nome, evento_id, subeventos(nome)')
     fichas = ((comArea.error ? (await buscar('nome, evento_id')).data : comArea.data) ?? []) as unknown as typeof fichas
@@ -108,7 +108,7 @@ async function supervisoresComCrachaEmOutroSetor(fid: string, eventoId: string, 
   const crachaPorCpf = new Map(fichas.map(f => {
     const setor = f.fornecedores as { nome: string; subeventos?: { nome?: string } | null }
     const area = setor.subeventos?.nome
-    return [f.cpf, { id: f.fornecedor_id, nome: area ? `${setor.nome} (${area})` : setor.nome }]
+    return [f.cpf, { id: f.fornecedor_id, nome: area ? `${setor.nome} (${area})` : setor.nome, fichaId: f.id }]
   }))
 
   return deFora

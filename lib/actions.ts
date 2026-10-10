@@ -3774,10 +3774,21 @@ export async function editarFornecedor(id: string, eventoId: string, formData: F
    */
   if (formData.has('subevento_id')) {
     const subeventoIdEditado = ((formData.get('subevento_id') as string) || '').trim() || null
+    const { data: antesSub } = await db.from('fornecedores').select('subevento_id').eq('id', id).maybeSingle()
     const { error: erroSubevento } = await db.from('fornecedores')
       .update({ subevento_id: subeventoIdEditado })
       .eq('id', id)
     if (erroSubevento) console.error('[editarFornecedor] subevento_id não gravado (migração pendente?)', erroSubevento.message)
+    /*
+     * O SETOR MUDOU DE SUBEVENTO → AS PESSOAS VÃO JUNTO (10/10/2026, VITAL: MUNDIAL LOCAÇÕES foi do GERAL para o
+     * MUVUKA e as 14 pessoas ficaram com o QR no GERAL — barradas no portão do MUVUKA com a área ligada). A área do QR
+     * é a ficha (`funcionarios.subevento_id`), inclusive o crachá do supervisor que mora neste setor.
+     */
+    const mudou = !erroSubevento && ((antesSub as { subevento_id?: string | null } | null)?.subevento_id ?? null) !== subeventoIdEditado
+    if (mudou) {
+      const { error: erroEquipe } = await db.from('funcionarios').update({ subevento_id: subeventoIdEditado }).eq('fornecedor_id', id)
+      if (erroEquipe) console.error('[editarFornecedor] a equipe não acompanhou o subevento', erroEquipe.message)
+    }
   }
   const avisoTrava = await gravarTravasDoFormulario(id, formData)
 
@@ -7737,8 +7748,14 @@ async function autorizarPresenca(args: {
     // guardadas de antes (localStorage) também não barra ninguém: o leitor só registra quem entra.
     try {
       const { data: funcSub } = await supabaseAdmin
-        .from('funcionarios').select('subevento_id, origem, subeventos(nome)').eq('id', func.id).maybeSingle()
-      const subeventoDaCredencial = (funcSub as { subevento_id?: string | null } | null)?.subevento_id ?? null
+        .from('funcionarios').select('subevento_id, origem, subeventos(nome), fornecedores(subevento_id, subeventos(nome))').eq('id', func.id).maybeSingle()
+      /*
+       * A área que vale é a do SETOR da pessoa (10/10/2026): a da ficha podia ficar para trás quando o setor mudava de
+       * subevento, ou nunca ter sido gravada — e a pessoa era barrada como "área diferente" / "sem área". A ficha fica
+       * só de reserva (setor sem subevento).
+       */
+      const setorDaFicha = (funcSub as unknown as { fornecedores?: { subevento_id?: string | null; subeventos?: { nome?: string } | null } | null } | null)?.fornecedores ?? null
+      const subeventoDaCredencial = setorDaFicha?.subevento_id ?? (funcSub as { subevento_id?: string | null } | null)?.subevento_id ?? null
 
       /*
        * SUPERVISOR EM VÁRIAS ÁREAS (Juan, 06/10/2026): ele tem UM crachá, um
@@ -7762,7 +7779,7 @@ async function autorizarPresenca(args: {
         }
       }
       if (!areaLiberada) {
-        const nomeCorreto = (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
+        const nomeCorreto = setorDaFicha?.subeventos?.nome ?? (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
         const { data: areasAqui } = await supabaseAdmin.from('subeventos').select('nome').in('id', subeventoIdsLidos)
         const nomesAqui = (areasAqui ?? []).map(s => s.nome as string).join(' / ') || 'nenhuma área cadastrada'
         return {
