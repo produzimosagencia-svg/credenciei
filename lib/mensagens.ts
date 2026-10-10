@@ -1687,24 +1687,30 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     }
 
     const { data: supervisor } = await supabase.from('perfis').select('nome, fornecedor_id').eq('id', msg.perfil_id).single()
-    if (!supervisor?.fornecedor_id) return null
+    if (!supervisor) return null
 
     /*
-     * A LISTA, nao so o numero.
-     *
-     * Antes a mensagem dizia "5 pessoas do setor X nao registraram a entrada" e
-     * mandava um link. Isso obriga o supervisor a parar, abrir o navegador e
-     * fazer login no meio da operacao so pra descobrir QUEM. Com os nomes no
-     * corpo da mensagem ele ja sai atras das pessoas; o link continua ali para
-     * o resto da lista e para quem quiser conferir.
+     * TODOS os setores dele NESTE evento (09/10/2026, véspera do dia principal do VITAL). Antes era só
+     * `perfis.fornecedor_id` — o setor ABERTO na tela dele naquele momento: quem cobre 5 setores recebia a lista
+     * de UM. A mensagem continua uma por supervisor e dia (é como ela é agendada), agora com tudo o que é dele.
      */
-    const pendentes = await pendenciasDoDia({
+    const { data: vinculos } = await supabase
+      .from('supervisor_setores').select('fornecedor_id, fornecedores!inner(evento_id)')
+      .eq('perfil_id', msg.perfil_id).eq('fornecedores.evento_id', msg.evento_id)
+    const setores = [...new Set((vinculos ?? []).map(v => v.fornecedor_id as string))]
+    if (!setores.length && supervisor.fornecedor_id) setores.push(supervisor.fornecedor_id as string)
+    if (!setores.length) return null
+
+    const pendentes = (await Promise.all(setores.map(fornecedorId => pendenciasDoDia({
       eventoId: msg.evento_id,
       data: msg.data_ref,
-      fornecedorId: supervisor.fornecedor_id,
+      fornecedorId,
       etapas: [momento],
-    })
+    })))).flat()
     if (!pendentes.length) return null
+
+    const nomesDosSetores = [...new Set(pendentes.map(p => p.setorNome))]
+    const setorNoTexto = nomesDosSetores.length <= 2 ? nomesDosSetores.join(' e ') : `${nomesDosSetores.length} fornecedores`
 
     // Teto de nomes no WhatsApp: mensagem gigante e rolada sem ser lida, e
     // volume alto de texto automatizado e o padrao que faz o numero ser banido.
@@ -1712,24 +1718,33 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     const linhas = pendentes.slice(0, MAX_NOMES).map(pen => {
       const esperado = pen.esperadoEm ? ` · esperado ${formatarBR(pen.esperadoEm, 'hora')}` : ''
       const entrou = pen.realizadoEm ? ` · entrou ${formatarBR(pen.realizadoEm, 'hora')}` : ''
-      return `• ${pen.nome} (${formatCpf(pen.cpf)})${esperado}${entrou}`
+      const doSetor = nomesDosSetores.length > 1 ? ` · ${pen.setorNome}` : ''
+      return `• ${pen.nome} (${formatCpf(pen.cpf)})${doSetor}${esperado}${entrou}`
     })
     if (pendentes.length > MAX_NOMES) linhas.push(`…e mais ${pendentes.length - MAX_NOMES} no sistema.`)
 
     // "Pendências" virou uma visão de /presenca, não uma tela própria — ver
     // o comentário no topo de app/admin/eventos/[id]/presenca/page.tsx.
     const VER_POR_MOMENTO: Record<MomentoRegistro, string> = { entrada: 'faltam', meio: 'sem_meio', fim: 'sem_saida' }
+    const ETAPA_CURTA: Record<MomentoRegistro, string> = { entrada: 'Entrada', meio: 'Meio', fim: 'Saída' }
 
+    /*
+     * ORDEM = a do template aprovado na Meta (supabase/TEMPLATES-WHATSAPP.md, item 6: nome · quantidade · setor ·
+     * etapa · link). Só os 5 primeiros vão pro corpo da Meta (`QTD_VARIAVEIS_BODY` em lib/whatsapp-meta.ts) — e
+     * nenhum deles tem quebra de linha, que a Meta recusa. Antes iam 7, com a lista de nomes (cheia de `\n`) no
+     * meio: o aviso nunca tinha sido enviado em evento nenhum, e na Meta seria recusado. Evento e lista ficam no
+     * fim, só pro texto livre (Evolution/prévia), que mostra os nomes.
+     */
     return {
       template,
       params: [
         supervisor.nome,
         String(pendentes.length),
-        pendentes[0].setorNome,
-        ROTULO_PENDENCIA[momento],
+        setorNoTexto,
+        ETAPA_CURTA[momento],
+        `${SITE_URL}/admin/eventos/${msg.evento_id}/presenca?ver=${VER_POR_MOMENTO[momento]}&dia=${msg.data_ref}`,
         `${pendentes[0].eventoNome} · ${formatarBR(`${msg.data_ref}T12:00:00-03:00`, 'data')}`,
         linhas.join('\n'),
-        `${SITE_URL}/admin/eventos/${msg.evento_id}/presenca?ver=${VER_POR_MOMENTO[momento]}&dia=${msg.data_ref}`,
       ],
     }
   }

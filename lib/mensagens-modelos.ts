@@ -223,10 +223,11 @@ Qualquer impedimento, avise seu supervisor o quanto antes. 🙏`,
    * sistema pra descobrir quem sao — os nomes no corpo da mensagem deixam ele
    * ja sair atras das pessoas, e o link fica para conferir o resto.
    */
-  alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, evento, lista, link]) =>
+  // Ordem dos params = a do template da Meta (nome, quantidade, setor, etapa, link); evento e lista vêm depois, só aqui.
+  alerta_supervisor_pendencia: ([nome, quantidade, setor, etapa, link, evento, lista]) =>
 `🚨 ${nome}, atenção!
 
-*${quantidade} pessoa(s)* do fornecedor *${setor}*: ${etapa}.
+*${quantidade} pessoa(s)* de *${setor}* não registraram a etapa *${etapa}*.
 📅 Evento: ${evento}
 
 Quem está pendente:

@@ -44,6 +44,12 @@ const QTD_VARIAVEIS_BODY: Record<string, number> = {
   veiculo_cadastrado: 2,
   alerta_supervisor_credenciamento: 4,
   /*
+   * Aviso ao supervisor (entrada/meio/saída pendentes): o template aprovado tem 5 variáveis — nome, quantidade,
+   * setor, etapa e link (supabase/TEMPLATES-WHATSAPP.md, item 6). Evento e lista de nomes vão depois, só pro texto
+   * livre: a lista tem quebra de linha, que a Meta recusa em parâmetro (achado em 09/10/2026, antes do 1º envio real).
+   */
+  alerta_supervisor_pendencia: 5,
+  /*
    * BUG REAL encontrado em 28/09/2026: `aviso_dia_evento` (9 variáveis
    * aprovadas na Meta) e `boas_vindas_funcionario` (6) passaram a receber
    * 11 e 7 `params` depois do trabalho de biometria — os itens extras
