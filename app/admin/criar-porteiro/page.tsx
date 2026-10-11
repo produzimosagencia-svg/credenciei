@@ -106,6 +106,7 @@ export default async function CriarPorteiroPage({
         funcionariosDoEvento={(funcionarios ?? []) as { id: string; nome: string; cpf: string; telefone: string }[]}
         podeExcluir={podeExcluirOperadorPortao(perfil.role)}
         metodoIdentificacao={metodoIdentificacao}
+        completo
       />
     </div>
   )

@@ -432,10 +432,14 @@ export async function operadoresDaOrganizacao(organizacaoId: string): Promise<Op
   // Migração das funções múltiplas pendente (ou erro): fica só com os operadores de base, como antes.
   const idsExtras = erroExtras ? [] : (extras ?? []).map(e => e.perfil_id as string).filter(id => !jaTem.has(id))
   if (idsExtras.length) {
-    const { data: pessoas } = await supabaseAdmin.from('perfis').select(`${colunas}, role`).in('id', idsExtras)
-    for (const p of (pessoas ?? []) as (OperadorDaOrganizacao & { role: string })[]) {
-      const { role, ...resto } = p
-      lista.push({ ...resto, funcaoExtra: ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role })
+    const { data: pessoas } = await supabaseAdmin.from('perfis').select(`${colunas}, role, organizacoes(nome)`).in('id', idsExtras)
+    for (const p of (pessoas ?? []) as unknown as (OperadorDaOrganizacao & { role: string; organizacoes: { nome: string } | null })[]) {
+      const { role, organizacoes, ...resto } = p
+      // Operador de base em OUTRA organização (Livia: Fatto + Navista): o selo diz de qual, não "também Operador de portão".
+      const funcaoExtra = role === 'operador_portao'
+        ? `operador da ${organizacoes?.nome ?? 'outra organização'}`
+        : ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role
+      lista.push({ ...resto, funcaoExtra })
     }
   }
   return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))

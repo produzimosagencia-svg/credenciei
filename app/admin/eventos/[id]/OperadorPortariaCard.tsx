@@ -36,10 +36,16 @@ const ehTotem = (o: Operador) => /^totem\d+@/.test(o.email)
  * consulta, em page.tsx.
  */
 export default function OperadorPortariaCard({
-  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false, metodoIdentificacao = 'qr',
+  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false, metodoIdentificacao = 'qr', completo = false,
 }: {
   eventoId: string
   operadores: Operador[]
+  /**
+   * A tela cheia (/admin/criar-porteiro): TODOS os operadores, com busca, e sem os links "+N" e "Ver todos e
+   * gerenciar" — que apontavam pra esta mesma tela, e ela repetia os 6 primeiros (achado do Juan, 11/10/2026:
+   * "clico em ver todos e gerenciar... não consigo ver quem são").
+   */
+  completo?: boolean
   /** Quem já está credenciado neste evento — "Criar operador" busca aqui em vez de um formulário em branco. */
   funcionariosDoEvento?: FuncionarioDoEvento[]
   /** Só o master exclui de verdade — ver `deletarUsuario` em lib/actions.ts. */
@@ -66,8 +72,15 @@ export default function OperadorPortariaCard({
    * operador (busca, editar, excluir).
    */
   const LIMITE = 6
-  const visiveis = operadores.slice(0, LIMITE)
-  const sobrando = operadores.length - visiveis.length
+  const [buscaOperador, setBuscaOperador] = useState('')
+  const termoOperador = chaveBusca(buscaOperador)
+  const digitosOperador = buscaOperador.replace(/\D/g, '')
+  const visiveis = !completo
+    ? operadores.slice(0, LIMITE)
+    : termoOperador
+      ? operadores.filter(o => chaveBusca(o.nome).includes(termoOperador) || (!!digitosOperador && !!o.cpf?.includes(digitosOperador)))
+      : operadores
+  const sobrando = completo ? 0 : operadores.length - visiveis.length
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-4 h-full flex flex-col">
@@ -92,6 +105,25 @@ export default function OperadorPortariaCard({
           <p className="text-slate-400 text-xs">Nenhum operador cadastrado nesta organização.</p>
         ) : (
           <div className="-mx-1">
+            {completo && (
+              <div className="px-1 mb-2 space-y-2">
+                <p className="text-slate-500 text-xs">
+                  {operadores.length} {operadores.length === 1 ? 'operador' : 'operadores'} nesta organização
+                </p>
+                {operadores.length >= MINIMO_PARA_BUSCAR && (
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      value={buscaOperador}
+                      onChange={e => setBuscaOperador(e.target.value)}
+                      placeholder="Buscar operador por nome ou CPF…"
+                      className="input pl-9 text-sm"
+                    />
+                  </div>
+                )}
+                {!visiveis.length && <p className="text-slate-400 text-xs">Nenhum operador com esse nome ou CPF.</p>}
+              </div>
+            )}
             {visiveis.map(o => o.funcaoExtra ? (
               /*
                * Operador por FUNÇÃO EXTRA (também é supervisor, por exemplo): a conta é dele, não
@@ -99,6 +131,7 @@ export default function OperadorPortariaCard({
                */
               <div key={o.id} className="w-full flex items-center gap-1.5 text-sm px-2 py-1.5 rounded-lg text-slate-700">
                 <span className="truncate flex-1">{o.nome}</span>
+                {completo && o.cpf && <span className="text-slate-400 text-2xs tabular-nums shrink-0 hidden sm:inline">{formatCpf(o.cpf)}</span>}
                 <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold shrink-0">também {o.funcaoExtra}</span>
                 <button
                   type="button"
@@ -117,6 +150,7 @@ export default function OperadorPortariaCard({
                 className="w-full flex items-center gap-1.5 text-left text-sm px-2 py-1.5 rounded-lg text-slate-700 hover:text-brand-500 hover:bg-slate-50 transition-colors"
               >
                 <span className="truncate flex-1">{o.nome}</span>
+                {completo && o.cpf && <span className="text-slate-400 text-2xs tabular-nums shrink-0 hidden sm:inline">{formatCpf(o.cpf)}</span>}
                 {!o.ativo && <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold shrink-0">Inativo</span>}
                 <Pencil className="w-3 h-3 text-slate-300 shrink-0" />
               </button>
@@ -134,7 +168,7 @@ export default function OperadorPortariaCard({
         )}
       </div>
 
-      {operadores.length > 0 && (
+      {operadores.length > 0 && !completo && (
         <Link
           href={`/admin/criar-porteiro?evento=${eventoId}`}
           className="flex items-center gap-1 text-slate-400 hover:text-slate-600 text-2xs font-medium mt-1"

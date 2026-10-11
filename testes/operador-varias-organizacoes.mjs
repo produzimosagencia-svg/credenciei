@@ -38,5 +38,12 @@ ok(/return org === perfil\.organizacao_id \|\| \(!!org && ehDaOrganizacaoDoPerfi
 ok(/eventoDoFunc\?\.organizacao_id === perfil\.organizacao_id\s*\|\| \(!!eventoDoFunc\?\.organizacao_id && ehDaOrganizacaoDoPerfil\(perfil, eventoDoFunc\.organizacao_id\)\)/.test(actions),
   'abrir a pessoa achada não responde "fora do seu acesso"')
 
+console.log('\n4 · "Ver todos e gerenciar" mostra TODOS os operadores (Juan, 11/10/2026: "não consigo ver quem são")')
+const card = ler('app/admin/eventos/[id]/OperadorPortariaCard.tsx'), criarPorteiro = ler('app/admin/criar-porteiro/page.tsx')
+ok(/const visiveis = !completo\s*\? operadores\.slice\(0, LIMITE\)/.test(card), 'o card do evento continua com 6; a tela cheia mostra todos, com busca')
+ok(/const sobrando = completo \? 0/.test(card) && /operadores\.length > 0 && !completo &&/.test(card), 'a tela cheia não tem mais os links que voltavam pra ela mesma')
+ok(/metodoIdentificacao=\{metodoIdentificacao\}\s*completo\s*\/>/.test(criarPorteiro), '/admin/criar-porteiro abre a lista completa')
+ok(/role === 'operador_portao'\s*\? `operador da \$\{organizacoes\?\.nome/.test(internos), 'operador de outra organização aparece com o nome dela no selo')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
