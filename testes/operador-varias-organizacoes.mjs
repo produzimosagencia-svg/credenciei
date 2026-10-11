@@ -28,5 +28,15 @@ ok((actions.match(/!ehMaster\(perfil\.role\) && !ehDaOrganizacaoDoPerfil\(perfil
   'Registrar ponto, lançamento manual, lista de pessoas, veículos e equipe usam a mesma régua')
 ok(/Gestor de credenciamento em mais de uma organização: os eventos de TODAS entram na mesma lista/.test(contexto), 'o seletor de eventos do topo já mostrava as duas')
 
+console.log('\n3 · Registrar ponto (achado ao vivo, Livia no VITAL, 11/10/2026: só aparecia o evento da Fatto)')
+const escolher = ler('app/admin/EscolherEvento.tsx'), localizar = ler('app/admin/localizar/page.tsx'), veiculos = ler('app/admin/veiculos/page.tsx')
+ok(/perfil\.role === 'operador_portao'[\s\S]{0,600}const orgs = \[\.\.\.organizacoesDoOperador\(perfil\)\][\s\S]{0,120}\.in\('organizacao_id', orgs\)/.test(escolher),
+  'a lista "Em qual evento?" traz os eventos de todas as organizações do operador')
+ok(/!veTodosEventos\(perfil\) && !ehDaOrganizacaoDoPerfil\(perfil, evento\.organizacao_id\)/.test(localizar), 'a tela do evento em Registrar ponto abre')
+ok(/!veTodosEventos\(perfil\) && !ehDaOrganizacaoDoPerfil\(perfil, evento\.organizacao_id\)/.test(veiculos), 'a tela de veículos do evento abre')
+ok(/return org === perfil\.organizacao_id \|\| \(!!org && ehDaOrganizacaoDoPerfil\(perfil, org\)\)/.test(actions), 'a busca por CPF/nome acha as pessoas do evento')
+ok(/eventoDoFunc\?\.organizacao_id === perfil\.organizacao_id\s*\|\| \(!!eventoDoFunc\?\.organizacao_id && ehDaOrganizacaoDoPerfil\(perfil, eventoDoFunc\.organizacao_id\)\)/.test(actions),
+  'abrir a pessoa achada não responde "fora do seu acesso"')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -9983,7 +9983,9 @@ export async function localizarFuncionario(
       const evento = comEvento(f.fornecedores)?.eventos
       return !!evento && (escopoSuporte!.eventos.has(evento.id) || escopoSuporte!.orgs.has(evento.organizacao_id ?? ''))
     }
-    return comEvento(f.fornecedores)?.eventos?.organizacao_id === perfil.organizacao_id
+    const org = comEvento(f.fornecedores)?.eventos?.organizacao_id
+    // Operador de portão de mais de uma organização enxerga os eventos de todas (`ehDaOrganizacaoDoPerfil`).
+    return org === perfil.organizacao_id || (!!org && ehDaOrganizacaoDoPerfil(perfil, org))
   }
   let visiveis = achados.filter(dentroDoEscopo)
   let buscaAproximada = false
@@ -10150,6 +10152,7 @@ export async function abrirFuncionarioLocalizado(
     dentroDoEscopo = !!eventoDoFunc && (await suporteTemEscopo(perfil.id, { eventoId: eventoDoFunc.id, organizacaoId: eventoDoFunc.organizacao_id ?? undefined }))
   } else {
     dentroDoEscopo = ehMaster(perfil.role) || eventoDoFunc?.organizacao_id === perfil.organizacao_id
+      || (!!eventoDoFunc?.organizacao_id && ehDaOrganizacaoDoPerfil(perfil, eventoDoFunc.organizacao_id))
   }
   if (!dentroDoEscopo) return { error: 'Esta pessoa está fora do seu acesso.' }
 

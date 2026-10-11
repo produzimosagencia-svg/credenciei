@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, organizacoesDoOperador, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -51,7 +51,18 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
     const filtros = [eventoIds.length ? `id.in.(${eventoIds.join(',')})` : null, orgIds.length ? `organizacao_id.in.(${orgIds.join(',')})` : null].filter(Boolean)
     consulta = consulta.or(filtros.join(','))
   } else if (!veTodosEventos(perfil)) {
-    consulta = consulta.eq('organizacao_id', perfil.organizacao_id)
+    if (perfil.role === 'operador_portao') {
+      /*
+       * Operador de portão de mais de uma organização (função extra, `perfil_funcoes`): os eventos de TODAS em que ele
+       * opera o portão, seja qual for a função ativa. Achado ao vivo (Livia, VITAL, 11/10/2026): em Registrar ponto só
+       * aparecia o evento da organização de origem dela.
+       */
+      const orgs = [...organizacoesDoOperador(perfil)]
+      if (!orgs.length) return []
+      consulta = consulta.in('organizacao_id', orgs)
+    } else {
+      consulta = consulta.eq('organizacao_id', perfil.organizacao_id)
+    }
   }
 
   const { data } = await consulta

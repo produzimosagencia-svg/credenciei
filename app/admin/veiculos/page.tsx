@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Truck, CalendarDays } from 'lucide-react'
-import { getPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, ehDaOrganizacaoDoPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos, podeGerenciarVeiculos } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import { linksDeVeiculoDoEvento } from '@/lib/actions'
@@ -70,7 +70,7 @@ export default async function VeiculosPage({
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) {
       notFound()
     }
-  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
     notFound()
   }
 

@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { UserSearch, CalendarDays } from 'lucide-react'
 
-import { getPerfil, meusSetores, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, ehDaOrganizacaoDoPerfil, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { podeAcompanhar, ehMaster, podeGerenciarEventos, veTodosEventos, soBateMeio } from '@/lib/permissions'
 import { suporteTemEscopo } from '@/lib/suporte'
 import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../EscolherEvento'
@@ -93,7 +93,7 @@ export default async function LocalizarPage({
     notFound()
   } else if (perfil.role === 'suporte') {
     if (!(await suporteTemEscopo(perfil.id, { eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined }))) notFound()
-  } else if (!veTodosEventos(perfil) && evento.organizacao_id !== perfil.organizacao_id) {
+  } else if (!veTodosEventos(perfil) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) {
     notFound()
   }
 
