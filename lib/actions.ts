@@ -6559,9 +6559,9 @@ async function sincronizarEndereco(registroId: string, lat: number, lng: number)
  * geral por CPF. Apagar de verdade cascateia e leva tudo isso junto, sem
  * desfazer — decisão do Juan em 04/09/2026, ao ver o alcance do cascade.
  *
- * O que muda pra pessoa: ela sai das listas de credenciados do evento e o
- * QR dela para de ser aceito ali. Se foi engano, `recredenciarFuncionario`
- * desfaz.
+ * O que muda pra pessoa: o QR dela para de ser aceito e ela deixa de ocupar
+ * vaga — mas CONTINUA na lista da equipe, em cinza, e no relatório (Juan,
+ * 11/10/2026). Se foi engano, `recredenciarFuncionario` desfaz ("Trazer de volta").
  *
  * PERMISSÃO — supervisor só na PRÓPRIA equipe:
  * `exigirAcessoFuncionarios` já é a régua que confere isso (gestor da

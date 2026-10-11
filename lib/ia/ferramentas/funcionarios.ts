@@ -418,7 +418,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           await registrarAuditoriaIA(perfil, 'excluir_funcionario', {
             funcionario_id, nome: r.func.nome, cpf: r.func.cpf, baixa: true, registros_mantidos: registros ?? 0,
           })
-          return `${r.func.nome} já tinha batido ponto: recebeu baixa. Saiu da equipe, o QR deixou de valer, a vaga foi liberada e as ${registros} batida(s) continuam no relatório.`
+          return `${r.func.nome} já tinha batido ponto: recebeu baixa. Continua na lista da equipe (em cinza), o QR deixou de valer, a vaga foi liberada e as ${registros} batida(s) continuam no relatório.`
         }
 
         if (!confirmacoes.has(operacao)) {

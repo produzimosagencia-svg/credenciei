@@ -46,6 +46,18 @@ ok(/\.is\('descredenciado_em', null\)\s*const combinado/.test(pedidos), 'pedido 
 ok((escala.match(/f\.status_credenciamento === 'negado' \|\| f\.descredenciado_em\) continue/g) ?? []).length === 2, 'limite por dia (aprovação e planilha): quem recebeu baixa devolve o dia')
 ok(/\.is\('funcionarios\.descredenciado_em', null\)/.test(escala), 'limite por dia no portão: idem')
 
+console.log('\nQuem recebeu baixa CONTINUA na equipe, em cinza, com "Trazer de volta" no fim da linha (Juan, 11/10/2026)')
+ok(/const LINHA_DE_BAIXA_TABELA = 'bg-slate-50\/80 \[&>td:not\(:last-child\)\]:opacity-50'/.test(tabela) && /\$\{f\.descredenciadoEm \? LINHA_DE_BAIXA_TABELA : ''\}/.test(tabela),
+  'computador: a linha fica cinza, menos a coluna dos botões')
+ok(/\$\{f\.descredenciadoEm \? LINHA_DE_BAIXA_CARTAO : ''\}/.test(tabela), 'celular: o cartão também')
+ok((tabela.match(/\{f\.descredenciadoEm && <BotaoTrazerDeVolta nome=\{f\.nome\} onClick=\{\(\) => voltarParaEquipe\(f\)\}/g) ?? []).length === 2,
+  'o botão "Trazer de volta" fica no fim da linha, no computador e no celular')
+ok(!/FORA DA EQUIPE/.test(tabela) && (tabela.match(/>BAIXA<\/span>/g) ?? []).length === 2, 'o selo diz BAIXA, não "fora da equipe"')
+ok(/titulo="Dar baixa"/.test(tabela) && /Ela continua na lista da equipe, em cinza, e no relatório com todas as batidas/.test(tabela), 'a confirmação diz que ela continua na equipe e no relatório')
+const extras = ler('lib/relatorios-extras.ts')
+ok(/cadastrados: lista\.length,/.test(extras) && /baixa: lista\.filter\(f => !!f\.descredenciado_em\)\.length/.test(extras) && (extras.match(/\{ titulo: 'Com baixa', largura: 11 \}/g) ?? []).length === 2,
+  'relatório de subeventos: quem tem baixa conta nos cadastrados, com a coluna "Com baixa"')
+
 console.log('\n"Funcionários do evento" nunca diminui')
 const lixeira = ler('lib/lixeira.ts'), paginaEvento = ler('app/admin/eventos/[id]/page.tsx')
 ok(/export async function cadastrosSoNaLixeira/.test(lixeira) && /\.is\('restaurado_em', null\)/.test(lixeira) && /!aindaNoEvento\.has\(c\)/.test(lixeira),

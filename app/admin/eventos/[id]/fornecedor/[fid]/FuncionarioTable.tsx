@@ -117,6 +117,29 @@ const OPCOES_STATUS: { value: StatusEtapa | 'todos'; label: string }[] = [
   { value: 'fechado', label: 'Não registrado (atrasado)' },
 ]
 
+/*
+ * BAIXA (pedido do Juan, 11/10/2026): quem recebeu baixa CONTINUA na equipe — "com a linha do nome cinza claro, meio
+ * que como estivesse inativada", porque precisa estar no relatório quando for puxado — e no fim da linha fica o botão
+ * de trazer de volta. Tudo cinza, menos a coluna/área dos botões.
+ */
+const LINHA_DE_BAIXA_TABELA = 'bg-slate-50/80 [&>td:not(:last-child)]:opacity-50'
+const LINHA_DE_BAIXA_CARTAO = 'bg-slate-50/80 [&>*:not(:first-child)]:opacity-50'
+
+function BotaoTrazerDeVolta({ nome, onClick, disabled }: { nome: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="btn btn-secundario btn-sm shrink-0 whitespace-nowrap"
+      aria-label={`Trazer ${nome} de volta para a equipe`}
+      title="Trazer de volta: o QR volta a valer e ela volta a ocupar vaga"
+    >
+      <UserCheck className="w-3.5 h-3.5" /> Trazer de volta
+    </button>
+  )
+}
+
 export default function FuncionarioTable({
   funcionarios,
   supervisoresDeFora = [],
@@ -303,7 +326,7 @@ export default function FuncionarioTable({
       // Recusa aparece no aviso do topo da tabela.
       if (r?.error) { setErroAtivacao(r.error); return }
       // Quem já bateu ponto não é apagado: recebe baixa, e o aviso diz isso (o histórico continua no relatório).
-      if (r?.baixa) setErroAtivacao(`${r.nome ?? f.nome} já tinha batido ponto: recebeu baixa. Saiu da equipe, a vaga foi liberada e as batidas continuam no relatório.`)
+      if (r?.baixa) setErroAtivacao(`${r.nome ?? f.nome} já tinha batido ponto: recebeu baixa. Continua na equipe, em cinza; o QR parou de valer, a vaga foi liberada e as batidas continuam no relatório.`)
       router.refresh()
     })
   }
@@ -453,7 +476,7 @@ export default function FuncionarioTable({
               </div>
             ))}
             {paginated.map(f => (
-              <div key={f.id} className={`p-4 space-y-2.5 ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : ''}`}>
+              <div key={f.id} className={`p-4 space-y-2.5 ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : ''} ${f.descredenciadoEm ? LINHA_DE_BAIXA_CARTAO : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <FuncionarioDetalheModal
                     funcionario={f}
@@ -470,10 +493,10 @@ export default function FuncionarioTable({
                     podeEditarPonto={podeEditarPonto}
                     role={role}
                     trigger={
-                      <div className="flex items-center gap-2.5 min-w-0 text-left">
+                      <div className={`flex items-center gap-2.5 min-w-0 text-left ${f.descredenciadoEm ? 'opacity-50' : ''}`}>
                         <Avatar url={f.fotoUrl} nome={f.nome} />
                         <div className="min-w-0">
-                          <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
+                          <p className={`text-sm font-semibold truncate ${f.ativo && !f.descredenciadoEm ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
                           <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                           {diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                         </div>
@@ -510,28 +533,19 @@ export default function FuncionarioTable({
                       * supervisor tem. Reversível: descredenciado, o mesmo
                       * lugar oferece trazer de volta.
                       */}
-                    {f.descredenciadoEm ? (
-                      <button
-                        onClick={() => voltarParaEquipe(f)}
-                        disabled={isPending}
-                        className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 disabled:opacity-50 disabled:active:scale-100"
-                        aria-label={`Trazer ${f.nome} de volta para a equipe`}
-                        title="Trazer de volta para a equipe"
-                      >
-                        <UserCheck className="w-4 h-4" />
-                      </button>
-                    ) : (
+                    {/* Com baixa, o "Trazer de volta" vai no fim da linha (pedido do Juan, 11/10/2026). */}
+                    {!f.descredenciadoEm && (
                       <button
                         onClick={() => setParaTirar(f)}
                         disabled={isPending}
                         className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50 disabled:active:scale-100"
-                        aria-label={`Tirar ${f.nome} da equipe`}
-                        title="Tirar da equipe"
+                        aria-label={`Dar baixa em ${f.nome}`}
+                        title="Dar baixa (continua na equipe, em cinza)"
                       >
                         <UserMinus className="w-4 h-4" />
                       </button>
                     )}
-                    {podeExcluir && (
+                    {podeExcluir && !f.descredenciadoEm && (
                       <button
                         onClick={() => handleDelete(f)}
                         disabled={isPending}
@@ -541,12 +555,13 @@ export default function FuncionarioTable({
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
+                    {f.descredenciadoEm && <BotaoTrazerDeVolta nome={f.nome} onClick={() => voltarParaEquipe(f)} disabled={isPending} />}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
                   {f.descredenciadoEm && (
-                    <span className="text-2xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">FORA DA EQUIPE</span>
+                    <span className="text-2xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full" title="Não trabalha mais: o QR não vale e a vaga foi liberada. As batidas continuam no relatório.">BAIXA</span>
                   )}
                   {!f.ativo && (
                     <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
@@ -626,7 +641,7 @@ export default function FuncionarioTable({
                   </tr>
                 ))}
                 {paginated.map(f => (
-                <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : 'hover:bg-slate-50'}`}>
+                <tr key={f.id} className={`border-b border-slate-100 last:border-0 transition-colors ${(f.funcao === 'supervisor' || ehSupervisorDaEquipe(f.cargo)) ? 'linha-supervisor' : 'hover:bg-slate-50'} ${f.descredenciadoEm ? LINHA_DE_BAIXA_TABELA : ''}`}>
                   <td className="px-4 py-3">
                     <FuncionarioDetalheModal
                       funcionario={f}
@@ -646,8 +661,11 @@ export default function FuncionarioTable({
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">
                           <Avatar url={f.fotoUrl} nome={f.nome} />
                           <div className="min-w-0">
-                            <p className={`text-sm font-semibold truncate ${f.ativo ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
+                            <p className={`text-sm font-semibold truncate ${f.ativo && !f.descredenciadoEm ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
                             <div className="flex items-center gap-1 min-w-0">
+                              {f.descredenciadoEm && (
+                                <span className="shrink-0 text-2xs font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full" title="Não trabalha mais: o QR não vale e a vaga foi liberada. As batidas continuam no relatório.">BAIXA</span>
+                              )}
                               {!f.ativo && (
                                 <span className="shrink-0 text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">NÃO ATIVADO</span>
                               )}
@@ -715,7 +733,17 @@ export default function FuncionarioTable({
                           <UserX className="w-4 h-4" />
                         </button>
                       )}
-                      {podeExcluir && (
+                      {!f.descredenciadoEm && (
+                        <button
+                          onClick={() => setParaTirar(f)}
+                          disabled={isPending}
+                          className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50 disabled:active:scale-100"
+                          title="Dar baixa (continua na equipe, em cinza)"
+                        >
+                          <UserMinus className="w-4 h-4" />
+                        </button>
+                      )}
+                      {podeExcluir && !f.descredenciadoEm && (
                         <button
                           onClick={() => handleDelete(f)}
                           disabled={isPending}
@@ -725,6 +753,7 @@ export default function FuncionarioTable({
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
+                      {f.descredenciadoEm && <BotaoTrazerDeVolta nome={f.nome} onClick={() => voltarParaEquipe(f)} disabled={isPending} />}
                     </div>
                   </td>
                 </tr>
@@ -763,9 +792,9 @@ export default function FuncionarioTable({
         onClose={() => setParaTirar(null)}
         onConfirm={confirmarTirarDaEquipe}
         isPending={isPending}
-        titulo="Tirar da equipe"
+        titulo="Dar baixa"
         mensagem={paraTirar
-          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste fornecedor? A pessoa sai das listas do evento, o QR dela deixa de ser aceito e a vaga fica livre para um novo cadastro. O histórico de batidas dela continua no relatório, e dá pra trazer de volta depois.`
+          ? `Dar baixa em "${paraTirar.nome}"? Ela continua na lista da equipe, em cinza, e no relatório com todas as batidas. O QR dela para de valer e a vaga fica livre para um novo cadastro. Para desfazer, use "Trazer de volta" no fim da linha.`
           : ''}
       />
 
@@ -784,7 +813,7 @@ export default function FuncionarioTable({
         mensagem={paraExcluir
           ? `Excluir "${paraExcluir.nome}" da equipe? A vaga fica livre para um novo cadastro.
 
-Se ela já bateu ponto, nada é apagado: ela recebe baixa (sai da equipe e o QR para de valer) e as batidas continuam no relatório. Se nunca bateu ponto, o cadastro vai para a lixeira.`
+Se ela já bateu ponto, nada é apagado: ela recebe baixa e continua na lista da equipe, em cinza, com as batidas no relatório; o QR para de valer. Se nunca bateu ponto, o cadastro vai para a lixeira.`
           : ''}
       />
     </div>

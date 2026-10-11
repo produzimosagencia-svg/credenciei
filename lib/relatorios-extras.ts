@@ -265,25 +265,27 @@ export async function obterRelatorioExtra(
         for (const r of data ?? []) entraramHoje.add(r.funcionario_id as string)
       }
       const nomeSub = new Map((subs ?? []).map(s => [s.id as string, s.nome as string]))
-      const contar = (lista: Func[]) => {
-        const ativos = lista.filter(f => !f.descredenciado_em)
-        return {
-          cadastrados: ativos.length,
-          aprovados: ativos.filter(f => (f.status_credenciamento ?? 'aprovado') === 'aprovado').length,
-          aguardando: ativos.filter(f => f.status_credenciamento === 'pendente').length,
-          negados: ativos.filter(f => f.status_credenciamento === 'negado').length,
-          hoje: ativos.filter(f => entraramHoje.has(f.id)).length,
-        }
-      }
+      /*
+       * Quem recebeu baixa CONTA (pedido do Juan, 11/10/2026: "não pode sair da equipe, porque precisa estar no
+       * relatório quando for puxado"): é cadastro do evento e as batidas dela valem. A coluna "Com baixa" diz quantos são.
+       */
+      const contar = (lista: Func[]) => ({
+        cadastrados: lista.length,
+        aprovados: lista.filter(f => (f.status_credenciamento ?? 'aprovado') === 'aprovado').length,
+        aguardando: lista.filter(f => f.status_credenciamento === 'pendente' && !f.descredenciado_em).length,
+        negados: lista.filter(f => f.status_credenciamento === 'negado').length,
+        hoje: lista.filter(f => entraramHoje.has(f.id)).length,
+        baixa: lista.filter(f => !!f.descredenciado_em).length,
+      })
       const grupos = new Map<string, Setor[]>()
       for (const s of setores) grupos.set(s.subevento_id ?? '', [...(grupos.get(s.subevento_id ?? '') ?? []), s])
       const resumo = [...grupos.entries()].map(([subId, lista]) => {
         const c = contar(funcs.filter(f => lista.some(s => s.id === f.fornecedor_id)))
-        return [nomeSub.get(subId) ?? 'Sem subevento', lista.length, c.cadastrados, c.aprovados, c.aguardando, c.negados, c.hoje]
+        return [nomeSub.get(subId) ?? 'Sem subevento', lista.length, c.cadastrados, c.aprovados, c.aguardando, c.negados, c.hoje, c.baixa]
       }).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
       const porSetor = setores.map(s => {
         const c = contar(funcs.filter(f => f.fornecedor_id === s.id))
-        return [nomeSub.get(s.subevento_id ?? '') ?? 'Sem subevento', s.nome, s.quantidade_estimada ?? null, c.cadastrados, c.aprovados, c.aguardando, c.negados, c.hoje]
+        return [nomeSub.get(s.subevento_id ?? '') ?? 'Sem subevento', s.nome, s.quantidade_estimada ?? null, c.cadastrados, c.aprovados, c.aguardando, c.negados, c.hoje, c.baixa]
       }).sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])))
       return { relatorio: { titulo: `Subeventos — ${ev}`, arquivo: `subeventos-${ev}`, abas: [
         {
@@ -291,6 +293,7 @@ export async function obterRelatorioExtra(
           colunas: [
             { titulo: 'Subevento', largura: 28 }, { titulo: 'Fornecedores', largura: 13 }, { titulo: 'Cadastrados', largura: 13 },
             { titulo: 'Aprovados', largura: 12 }, { titulo: 'Aguardando', largura: 12 }, { titulo: 'Negados', largura: 10 }, { titulo: `Entraram hoje (${diaCurto(dia)})`, largura: 18 },
+            { titulo: 'Com baixa', largura: 11 },
           ],
           linhas: resumo,
         },
@@ -299,6 +302,7 @@ export async function obterRelatorioExtra(
           colunas: [
             { titulo: 'Subevento', largura: 26 }, { titulo: 'Fornecedor', largura: 32 }, { titulo: 'Combinado', largura: 11 }, { titulo: 'Cadastrados', largura: 13 },
             { titulo: 'Aprovados', largura: 12 }, { titulo: 'Aguardando', largura: 12 }, { titulo: 'Negados', largura: 10 }, { titulo: `Entraram hoje (${diaCurto(dia)})`, largura: 18 },
+            { titulo: 'Com baixa', largura: 11 },
           ],
           linhas: porSetor,
         },
