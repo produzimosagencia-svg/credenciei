@@ -346,11 +346,13 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
   totalFuncionarios: number
   /** Quem gerencia o evento inteiro (não só setores dele) — vê o PDF de entrega de valor e todos os relatórios. */
   eventoInteiro: boolean
+  /** Os subgrupos (subeventos) com fornecedor — só pra quem gerencia o evento inteiro; vazio nos outros casos. */
+  subgrupos: { id: string; nome: string; fornecedores: number }[]
 } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
 
-  let query = supabaseAdmin.from('fornecedores').select('id, nome, funcionarios(count)').eq('evento_id', eventoId)
+  let query = supabaseAdmin.from('fornecedores').select('id, nome, subevento_id, funcionarios(count)').eq('evento_id', eventoId)
   if (acesso.setoresPermitidos) query = query.in('id', [...acesso.setoresPermitidos])
   const [{ data: fornecedores }, periodoCompleto] = await Promise.all([
     query.order('nome'),
@@ -360,7 +362,26 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
   const setores = (fornecedores ?? []).map(f => ({ id: f.id as string, nome: f.nome as string }))
   const totalFuncionarios = (fornecedores ?? []).reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0)
 
-  return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios, eventoInteiro: !acesso.setoresPermitidos }
+  /*
+   * "Relatório por subgrupo" na tela de relatórios (pedido do Juan, 11/10/2026: "no relatório falta a opção de aparecer
+   * subgrupo também") — o mesmo relatório do subevento que já saía de dentro da tela do subgrupo. Só pra quem gerencia o
+   * evento inteiro, a mesma régua de `obterDadosRelatorioSubevento`.
+   */
+  const eventoInteiro = !acesso.setoresPermitidos
+  let subgrupos: { id: string; nome: string; fornecedores: number }[] = []
+  if (eventoInteiro) {
+    const porSubgrupo = new Map<string, number>()
+    for (const f of fornecedores ?? []) {
+      const sid = (f as { subevento_id?: string | null }).subevento_id
+      if (sid) porSubgrupo.set(sid, (porSubgrupo.get(sid) ?? 0) + 1)
+    }
+    if (porSubgrupo.size) {
+      const { data: subs } = await supabaseAdmin.from('subeventos').select('id, nome').in('id', [...porSubgrupo.keys()]).order('nome')
+      subgrupos = (subs ?? []).map(sb => ({ id: sb.id as string, nome: sb.nome as string, fornecedores: porSubgrupo.get(sb.id as string) ?? 0 }))
+    }
+  }
+
+  return { eventoNome: acesso.evento.nome, periodoCompleto, setores, totalFuncionarios, eventoInteiro, subgrupos }
 }
 
 // ════════════════════════════════════════════════════════════════════════

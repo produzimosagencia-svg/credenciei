@@ -51,5 +51,17 @@ ok(/subeventos\(nome\), fornecedores!inner\(id, nome, evento_id, subeventos\(nom
 ok(/function areaDaLinha/.test(actions) && (actions.match(/areaNome: areaDaLinha\(/g) ?? []).length === 3, 'ficha, lista de candidatos e lista do evento levam a área')
 ok(/\{func\.areaNome && <Dado icone=\{LayoutGrid\} rotulo="Área" valor=\{func\.areaNome\} \/>\}/.test(telaLocalizar), 'a ficha mostra "Área" antes do fornecedor')
 
+console.log('\n6 · Saída de madrugada (VITAL, 11/10/2026: "no app constava a entrada, no sistema nem entrada")')
+ok(/Saída já registrada às \$\{formatarBR\(saidaRecente\[0\]\.created_at as string, 'curto'\)\}\. Não precisa bater de novo\.`, recente: true/.test(actions),
+  'a 2ª SAÍDA da mesma pessoa (outro portão) diz que a saída já foi registrada, e quando — em amarelo, não em vermelho')
+ok(/turnoFechado = \{\s*dataRef: u\.data_ref as string,/.test(actions) && /if \(!feitos\.size\) \{/.test(actions), 'Registrar ponto: com o dia de agora vazio, a ficha traz o turno que acabou de fechar e a última batida de verdade')
+ok(/\{func\.turnoFechado && \(/.test(telaLocalizar) && /já registrado/.test(telaLocalizar), 'e a tela mostra esse turno em cima, em verde')
+
+console.log('\n7 · Relatório por subgrupo na tela de relatórios (Juan, 11/10/2026)')
+const exportar = ler('app/admin/eventos/[id]/relatorios/ExportarRelatorio.tsx'), relat = ler('lib/relatorios.ts')
+ok(/titulo="Relatório por subgrupo"/.test(exportar) && /obterDadosRelatorioSubevento\(eventoId, subgrupoId, periodo\)/.test(exportar) && /gerarRelatorioSubevento\(r\.dados\)/.test(exportar), 'o cartão exporta o relatório do subgrupo, com o período escolhido')
+ok(/subgrupos: \{ id: string; nome: string; fornecedores: number \}\[\]/.test(relat) && /if \(eventoInteiro\) \{/.test(relat), 'os subgrupos só vêm pra quem gerencia o evento inteiro')
+ok(['app/admin/relatorios/page.tsx', 'app/admin/eventos/[id]/relatorios/page.tsx'].every(f => /subgrupos=\{resumo\.subgrupos\}/.test(ler(f))), 'as duas telas de relatório passam os subgrupos')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

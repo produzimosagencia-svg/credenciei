@@ -58,6 +58,7 @@ export default async function RelatoriosPage({
           periodoCompleto={resumo.periodoCompleto}
           setores={resumo.setores}
           totalFuncionarios={resumo.totalFuncionarios}
+          subgrupos={resumo.subgrupos}
         />
         <OutrosRelatorios eventoId={eventoParam} eventoInteiro={resumo.eventoInteiro} />
       </div>

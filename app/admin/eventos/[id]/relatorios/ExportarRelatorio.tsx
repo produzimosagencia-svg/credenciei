@@ -1,10 +1,10 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { FileSpreadsheet, Download, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX } from 'lucide-react'
+import { FileSpreadsheet, Download, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX, LayoutGrid } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { obterDadosRelatorioEvento, obterDadosRelatorioSetor } from '@/lib/relatorios'
+import { obterDadosRelatorioEvento, obterDadosRelatorioSetor, obterDadosRelatorioSubevento } from '@/lib/relatorios'
 import type { Periodo } from '@/lib/relatorios'
-import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip, gerarRelatorioAusentes } from '@/lib/relatorio-excel'
+import { gerarRelatorioCompleto, gerarRelatorioSetor, gerarRelatoriosPorSetorZip, gerarRelatorioAusentes, gerarRelatorioSubevento } from '@/lib/relatorio-excel'
 import { mensagemAmigavel } from '@/lib/erros'
 import SeletorLista from '@/components/SeletorLista'
 import { Secao } from '@/components/ui/Superficie'
@@ -26,12 +26,14 @@ type Setor = { id: string; nome: string }
  * memória do navegador com um arquivo que a pessoa talvez nem baixe.
  */
 export default function ExportarRelatorio({
-  eventoId, periodoCompleto, setores, totalFuncionarios,
+  eventoId, periodoCompleto, setores, totalFuncionarios, subgrupos = [],
 }: {
   eventoId: string
   periodoCompleto: Periodo
   setores: Setor[]
   totalFuncionarios: number
+  /** Os subgrupos do evento — o cartão "Relatório por subgrupo" só aparece com eles (quem gerencia o evento inteiro). */
+  subgrupos?: { id: string; nome: string; fornecedores: number }[]
 }) {
   const [periodo, setPeriodo] = useState<Periodo>(periodoCompleto)
   /*
@@ -49,6 +51,24 @@ export default function ExportarRelatorio({
   const [gerandoSetor, startSetor] = useTransition()
   const [erroTodos, setErroTodos] = useState<string | null>(null)
   const [gerandoTodos, startTodos] = useTransition()
+  const [subgrupoId, setSubgrupoId] = useState(subgrupos[0]?.id ?? '')
+  const [erroSubgrupo, setErroSubgrupo] = useState<string | null>(null)
+  const [gerandoSubgrupo, startSubgrupo] = useTransition()
+
+  // O relatório do subgrupo parte da EQUIPE (todo mundo, com a situação de cada um) — mesmo de dentro da tela do subgrupo.
+  const exportarSubgrupo = () => {
+    if (!subgrupoId) return
+    setErroSubgrupo(null)
+    startSubgrupo(async () => {
+      try {
+        const r = await obterDadosRelatorioSubevento(eventoId, subgrupoId, periodo)
+        if ('erro' in r) { setErroSubgrupo(r.erro); return }
+        await gerarRelatorioSubevento(r.dados)
+      } catch (e: unknown) {
+        setErroSubgrupo(mensagemAmigavel(e))
+      }
+    })
+  }
 
   const periodoValido = periodo.de <= periodo.ate
 
@@ -234,6 +254,44 @@ export default function ExportarRelatorio({
                 </button>
               </div>
             )}
+          </Secao>
+        )}
+
+        {/* RELATÓRIO POR SUBGRUPO (pedido do Juan, 11/10/2026) */}
+        {subgrupos.length > 0 && (
+          <Secao
+            icone={<LayoutGrid className="w-3.5 h-3.5" />}
+            titulo="Relatório por subgrupo"
+            descricao="Todos os fornecedores do subgrupo numa planilha só: equipe, situação de cada um, dias, batidas e supervisores"
+            corpoClassName="p-5 space-y-4"
+          >
+            <div>
+              <label className="text-slate-500 text-xs font-medium block mb-1.5">Selecione o subgrupo</label>
+              <SeletorLista
+                valor={subgrupoId}
+                onChange={setSubgrupoId}
+                titulo="Escolha o subgrupo"
+                opcoes={subgrupos.map(sg => ({ valor: sg.id, rotulo: `${sg.nome} · ${sg.fornecedores} fornecedor${sg.fornecedores === 1 ? '' : 'es'}` }))}
+              />
+            </div>
+            {ausentes && (
+              <p className="text-slate-400 text-xs">O relatório do subgrupo já traz a equipe inteira, com quem bateu e quem não bateu — o recorte “quem NÃO credenciou” não muda ele.</p>
+            )}
+            {erroSubgrupo && (
+              <p className="flex items-start gap-1.5 text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                {erroSubgrupo}
+              </p>
+            )}
+            <button
+              onClick={exportarSubgrupo}
+              disabled={gerandoSubgrupo || !subgrupoId || !periodoValido}
+              className="btn btn-secundario w-full disabled:opacity-60"
+            >
+              {gerandoSubgrupo
+                ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
+                : <><Download className="w-4 h-4" /> Exportar subgrupo</>}
+            </button>
           </Secao>
         )}
 

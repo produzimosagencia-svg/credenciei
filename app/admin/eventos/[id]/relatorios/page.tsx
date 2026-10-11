@@ -51,6 +51,7 @@ export default async function RelatoriosPage({ params }: { params: Promise<{ id:
         periodoCompleto={resumo.periodoCompleto}
         setores={resumo.setores}
         totalFuncionarios={resumo.totalFuncionarios}
+        subgrupos={resumo.subgrupos}
       />
       <OutrosRelatorios eventoId={eventoId} eventoInteiro={resumo.eventoInteiro} />
     </div>

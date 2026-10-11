@@ -5979,7 +5979,20 @@ async function inferirMomentoQR(
     const aberta = await entradaEmAberto(funcionarioId, eventoId)
     if (escolhido === 'fim') {
       if (aberta) return { momento: 'fim', entrada: aberta }
-      return { erro: 'Esta pessoa não tem entrada em aberto pra fechar. Se ela está chegando, use o botão ENTRADA.' }
+      /*
+       * A saída que OUTRO portão acabou de registrar (VITAL, madrugada de 11/10/2026): duas portarias batiam a saída da
+       * mesma pessoa com segundos de diferença, a segunda lia "não tem entrada em aberto", achava que a pessoa nem tinha
+       * entrado e ia lançar uma entrada no Registrar ponto. Agora diz que a saída já está registrada, e quando.
+       */
+      const { data: saidaRecente } = await supabaseAdmin
+        .from('registros').select('created_at')
+        .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'fim')
+        .gte('created_at', new Date(agora.getTime() - 12 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false }).limit(1)
+      if (saidaRecente?.[0]) {
+        return { erro: `Saída já registrada às ${formatarBR(saidaRecente[0].created_at as string, 'curto')}. Não precisa bater de novo.`, recente: true }
+      }
+      return { erro: 'Esta pessoa não tem entrada registrada pra fechar. Se ela está chegando, use o botão ENTRADA. Se trabalhou sem bater a entrada, a gestão corrige em Lançar ponto.' }
     }
     // escolhido === 'entrada'
     if (aberta) {
@@ -9762,6 +9775,12 @@ export type FuncionarioLocalizado = {
   eventoNome: string
   ultimaBatida: { rotulo: string; quandoISO: string } | null
   /**
+   * O turno que ACABOU de fechar, quando o dia de agora ainda está vazio (madrugada de 11/10/2026, VITAL): depois da
+   * saída, a ficha passa pro dia seguinte, zerada — e o operador lia "nenhuma batida" como "nem entrou". Com isto a
+   * tela mostra o turno fechado em cima. Null quando não há (ou quando o dia de agora já tem batida).
+   */
+  turnoFechado?: { dataRef: string; batidas: { rotulo: string; quandoISO: string }[] } | null
+  /**
    * A etapa que o sistema RECOMENDA (a primeira sem registro) — só uma
    * sugestão pré-marcada na tela. Quem decide de verdade é o operador: ver
    * `etapas`, abaixo, e o comentário em `registrarPresencaAssistida`.
@@ -10246,12 +10265,36 @@ async function fichaDoFuncionario(
 
   // Última batida = a mais recente no relógio, não a última da ordem: alguém
   // pode ter batido o meio sem ter batido a entrada.
-  const ultima = [...feitos.entries()]
-    .map(([momento, quando]) => ({
-      rotulo: ORDEM_ETAPAS.find(e => e.momento === momento)?.rotulo ?? momento,
-      quandoISO: quando,
-    }))
+  const rotuloDe = (m: string) => ORDEM_ETAPAS.find(e => e.momento === m)?.rotulo ?? m
+  let ultima = [...feitos.entries()]
+    .map(([momento, quando]) => ({ rotulo: rotuloDe(momento), quandoISO: quando }))
     .sort((a, b) => b.quandoISO.localeCompare(a.quandoISO))[0] ?? null
+
+  /*
+   * Dia de agora vazio: a "última batida" é a de verdade, de qualquer dia, e o turno dela aparece em cima se fechou há
+   * pouco (até 18h) — sem isto, quem acabou de bater a saída aparecia como "Nenhuma ainda" (VITAL, 11/10/2026).
+   */
+  let turnoFechado: FuncionarioLocalizado['turnoFechado'] = null
+  if (!feitos.size) {
+    const { data: ultimaGeral } = await supabaseAdmin
+      .from('registros').select('tipo, created_at, data_ref')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id)
+      .order('created_at', { ascending: false }).limit(1)
+    const u = ultimaGeral?.[0]
+    if (u) {
+      ultima = { rotulo: rotuloDe(u.tipo as string), quandoISO: u.created_at as string }
+      if (u.data_ref && u.data_ref !== ref.dataRef && Date.now() - new Date(u.created_at as string).getTime() < 18 * 60 * 60 * 1000) {
+        const { data: doTurno } = await supabaseAdmin
+          .from('registros').select('tipo, created_at')
+          .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('data_ref', u.data_ref as string)
+          .order('created_at')
+        turnoFechado = {
+          dataRef: u.data_ref as string,
+          batidas: (doTurno ?? []).map(r => ({ rotulo: rotuloDe(r.tipo as string), quandoISO: r.created_at as string })),
+        }
+      }
+    }
+  }
 
   let fotoUrl: string | null = null
   if (func.foto_perfil_path) {
@@ -10274,6 +10317,7 @@ async function fichaDoFuncionario(
       eventoId: evento.id,
       eventoNome: evento.nome,
       ultimaBatida: ultima,
+      turnoFechado,
       proximaPendente: proxima ? { momento: proxima.momento, rotulo: proxima.rotulo } : null,
       etapas,
     },

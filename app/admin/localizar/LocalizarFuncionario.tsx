@@ -318,6 +318,21 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
             const ehVolta = jaSaiu && momento === 'entrada'
             return (
             <>
+              {/* O turno que acabou de fechar: sem isto, depois da saída a ficha aparecia zerada e parecia que a pessoa nem
+                  tinha entrado (madrugada de 11/10/2026, VITAL). */}
+              {func.turnoFechado && (
+                <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 text-sm">
+                  <p className="text-green-800 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Turno de {func.turnoFechado.dataRef.slice(8, 10)}/{func.turnoFechado.dataRef.slice(5, 7)} já registrado
+                  </p>
+                  <p className="text-green-700 text-xs mt-1">
+                    {func.turnoFechado.batidas.map(b => `${b.rotulo} ${formatarBR(b.quandoISO, 'curto')}`).join(' · ')}
+                  </p>
+                  <p className="text-green-700/80 text-xs mt-1">As batidas abaixo são do dia de hoje. Se ela está indo embora agora, a saída já está registrada.</p>
+                </div>
+              )}
+
               {/* Seletor de etapa — o operador escolhe, o sistema só sugere.
                   Ver o comentário em registrarPresencaAssistida. */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-etapa">
