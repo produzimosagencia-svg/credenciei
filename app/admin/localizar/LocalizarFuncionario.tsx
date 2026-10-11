@@ -266,7 +266,9 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs border-t border-slate-100 pt-3">
               {/* A área vem primeiro: é o que o portão confere (pedido do Juan, 11/10/2026). */}
-              {func.areaNome && <Dado icone={LayoutGrid} rotulo="Área" valor={func.areaNome} />}
+              {(func.areas?.length ?? 0) > 0
+                ? <Dado icone={LayoutGrid} rotulo={func.areas!.length > 1 ? 'Áreas' : 'Área'} valor={func.areas!.join(' · ')} />
+                : func.areaNome && <Dado icone={LayoutGrid} rotulo="Área" valor={func.areaNome} />}
               <Dado icone={Building2} rotulo="Fornecedor" valor={func.setorNome} />
               <Dado icone={IdCard} rotulo="Cargo" valor={func.cargo || '—'} />
               <Dado icone={ShieldCheck} rotulo="Supervisor" valor={func.supervisorNome || '—'} />

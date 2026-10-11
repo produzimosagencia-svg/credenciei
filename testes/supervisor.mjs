@@ -22,9 +22,12 @@ ok(operador.includes("garantirFuncaoExtra(existente.id, 'operador_portao'") && !
 
 console.log('\n\x1b[1m2 · Um QR, vários setores, uma diária\x1b[0m')
 const area = trecho('SUPERVISOR EM VÁRIAS ÁREAS', 2200)
-ok(area.includes("origem === 'supervisor'") && area.includes("from('supervisor_setores')") && area.includes('areaLiberada'),
-  'portão de área confere todas as áreas onde o supervisor tem setor')
-ok(area.includes(".eq('fornecedores.evento_id', eventoId)"), 'só as áreas DESTE evento contam')
+const regua = trecho('async function areasDaPessoa', 1400)
+ok(area.includes('await areasDaPessoa(func.cpf as string, eventoId)') && area.includes('areaLiberada') && !area.includes("origem === 'supervisor'")
+  && regua.includes("from('supervisor_setores')") && regua.includes(".eq('cpf', cpf)"),
+  'portão de área confere todas as áreas onde o supervisor tem setor — seja qual for a origem do crachá (11/10/2026)')
+ok(regua.includes(".eq('fornecedores.evento_id', eventoId)"), 'só as áreas DESTE evento contam')
+ok(regua.includes('if (erroSetores) return []') && regua.includes("if (error || !perfis?.length) return []"), 'na dúvida (consulta falhou), não libera área a mais')
 const cracha = trecho('async function crachaNoEvento', 2600)
 ok(cracha.includes(".eq('cpf', p.cpf)") && cracha.includes('return { qrToken: existente.qr_token'),
   'o crachá é um por CPF por evento: reaproveitado nos demais setores')

@@ -49,7 +49,8 @@ console.log('\n5 · Registrar ponto mostra a ÁREA da pessoa (Juan, 11/10/2026: 
 const telaLocalizar = ler('app/admin/localizar/LocalizarFuncionario.tsx')
 ok(/subeventos\(nome\), fornecedores!inner\(id, nome, evento_id, subeventos\(nome\), eventos!inner/.test(actions), 'a busca traz a área do setor e a do crachá')
 ok(/function areaDaLinha/.test(actions) && (actions.match(/areaNome: areaDaLinha\(/g) ?? []).length === 3, 'ficha, lista de candidatos e lista do evento levam a área')
-ok(/\{func\.areaNome && <Dado icone=\{LayoutGrid\} rotulo="Área" valor=\{func\.areaNome\} \/>\}/.test(telaLocalizar), 'a ficha mostra "Área" antes do fornecedor')
+ok(/rotulo=\{func\.areas!\.length > 1 \? 'Áreas' : 'Área'\} valor=\{func\.areas!\.join\(' · '\)\}/.test(telaLocalizar), 'a ficha mostra "Área" antes do fornecedor — "Áreas", com todas, pro supervisor de mais de um lugar')
+ok(/\.\.\.\(await areasDaPessoa\(func\.cpf, evento\.id\)\)\.map\(a => a\.nome\)/.test(actions), '… com a mesma régua do portão (`areasDaPessoa`)')
 
 console.log('\n6 · Saída de madrugada (VITAL, 11/10/2026: "no app constava a entrada, no sistema nem entrada")')
 ok(/Saída já registrada às \$\{formatarBR\(saidaRecente\[0\]\.created_at as string, 'curto'\)\}\. Não precisa bater de novo\.`, recente: true/.test(actions),

@@ -7778,19 +7778,15 @@ async function autorizarPresenca(args: {
        * área o barraria como "ÁREA DIFERENTE". Aqui vale qualquer área onde
        * ele supervisiona — e só isso: ele não ganha acesso a área onde não
        * tem setor nenhum.
+       *
+       * Seja qual for a ORIGEM do crachá (11/10/2026): quem virou supervisor pela "Função na equipe" ficou com o crachá
+       * de colaborador (origem formulário/planilha) e era barrado nas outras áreas dele — 3 casos no VITAL. A mesma
+       * régua mostra as áreas no Registrar ponto (`areasDaPessoa`).
        */
       let areaLiberada = !!subeventoDaCredencial && subeventoIdsLidos.includes(subeventoDaCredencial)
-      if (!areaLiberada && (funcSub as { origem?: string | null } | null)?.origem === 'supervisor' && func.cpf) {
-        const { data: perfilDele } = await supabaseAdmin.from('perfis').select('id').eq('cpf', func.cpf as string).maybeSingle()
-        if (perfilDele) {
-          const { data: setoresDele } = await supabaseAdmin
-            .from('supervisor_setores').select('fornecedores!inner(subevento_id, evento_id)')
-            .eq('perfil_id', perfilDele.id).eq('fornecedores.evento_id', eventoId)
-          areaLiberada = (setoresDele ?? []).some(l => {
-            const sub = (l.fornecedores as unknown as { subevento_id?: string | null } | null)?.subevento_id
-            return !!sub && subeventoIdsLidos.includes(sub)
-          })
-        }
+      if (!areaLiberada && func.cpf) {
+        const areasDele = await areasDaPessoa(func.cpf as string, eventoId)
+        areaLiberada = areasDele.some(a => subeventoIdsLidos.includes(a.id))
       }
       if (!areaLiberada) {
         const nomeCorreto = setorDaFicha?.subeventos?.nome ?? (funcSub as unknown as { subeventos?: { nome?: string } | null } | null)?.subeventos?.nome ?? null
@@ -9759,6 +9755,27 @@ function areaDaLinha(f: { fornecedores?: unknown; subeventos?: unknown }): strin
   return comEvento(f.fornecedores)?.subeventos?.nome ?? (f.subeventos as { nome?: string } | null)?.nome ?? null
 }
 
+/**
+ * As áreas (subeventos) onde a pessoa ainda entra POR SER SUPERVISORA: as dos setores que ela supervisiona neste
+ * evento, pelo CPF (a mesma pessoa pode ter mais de um perfil). É a régua do portão (`autorizarPresenca`) e do
+ * Registrar ponto — pedido do Juan, 11/10/2026: "a área precisa aparecer mais de uma caso o supervisor esteja em mais
+ * de um lugar". Vazio pra quem não supervisiona; na dúvida (consulta falhou), vazio — nunca libera a mais.
+ */
+async function areasDaPessoa(cpf: string, eventoId: string): Promise<{ id: string; nome: string }[]> {
+  const { data: perfis, error } = await supabaseAdmin.from('perfis').select('id').eq('cpf', cpf)
+  if (error || !perfis?.length) return []
+  const { data: setores, error: erroSetores } = await supabaseAdmin
+    .from('supervisor_setores').select('fornecedores!inner(evento_id, subevento_id, subeventos(nome))')
+    .in('perfil_id', perfis.map(p => p.id as string)).eq('fornecedores.evento_id', eventoId)
+  if (erroSetores) return []
+  const areas = new Map<string, string>()
+  for (const l of setores ?? []) {
+    const f = l.fornecedores as unknown as { subevento_id?: string | null; subeventos?: { nome?: string } | null } | null
+    if (f?.subevento_id) areas.set(f.subevento_id, f.subeventos?.nome ?? '')
+  }
+  return [...areas].map(([id, nome]) => ({ id, nome }))
+}
+
 export type FuncionarioLocalizado = {
   id: string
   nome: string
@@ -9770,6 +9787,8 @@ export type FuncionarioLocalizado = {
   setorNome: string
   /** A área (subevento): BLOCO, GERAL... Null em evento sem subeventos. */
   areaNome: string | null
+  /** Todas as áreas em que ela entra: a do setor e, se supervisiona, as dos setores dela (a régua do portão). */
+  areas?: string[]
   supervisorNome: string | null
   eventoId: string
   eventoNome: string
@@ -10302,6 +10321,13 @@ async function fichaDoFuncionario(
     fotoUrl = data?.signedUrl ?? null
   }
 
+  // A área do setor primeiro; depois as dos setores que ela supervisiona (sem repetir).
+  const areaPropria = areaDaLinha(func)
+  const areas = [...new Set([
+    ...(areaPropria ? [areaPropria] : []),
+    ...(await areasDaPessoa(func.cpf, evento.id)).map(a => a.nome).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+  ])]
+
   return {
     funcionario: {
       id: func.id,
@@ -10313,6 +10339,7 @@ async function fichaDoFuncionario(
       setorId: func.fornecedor_id,
       setorNome: fornecedor?.nome ?? '—',
       areaNome: areaDaLinha(func),
+      areas,
       supervisorNome: supervisores?.[0]?.nome ?? null,
       eventoId: evento.id,
       eventoNome: evento.nome,
