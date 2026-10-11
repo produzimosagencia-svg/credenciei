@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
-  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace, ChevronLeft, ChevronRight,
+  MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace, ChevronLeft, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 import {
   localizarFuncionario, abrirFuncionarioLocalizado, listarPessoasDoEvento, registrarPresencaAssistida, metodoIdentificacaoDoEvento,
@@ -227,7 +227,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                   <p className="text-slate-400 text-2xs tabular-nums">
                     {formatCpf(c.cpf)}{c.cargo ? ` • ${c.cargo}` : ''}
                   </p>
-                  <p className="text-slate-400 text-2xs truncate">{c.setorNome} • {c.eventoNome}</p>
+                  <p className="text-slate-400 text-2xs truncate">{c.areaNome ? `${c.areaNome} › ` : ''}{c.setorNome} • {c.eventoNome}</p>
                 </div>
               </button>
             ))}
@@ -265,8 +265,10 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
             </div>
 
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs border-t border-slate-100 pt-3">
-              <Dado icone={IdCard} rotulo="Cargo" valor={func.cargo || '—'} />
+              {/* A área vem primeiro: é o que o portão confere (pedido do Juan, 11/10/2026). */}
+              {func.areaNome && <Dado icone={LayoutGrid} rotulo="Área" valor={func.areaNome} />}
               <Dado icone={Building2} rotulo="Fornecedor" valor={func.setorNome} />
+              <Dado icone={IdCard} rotulo="Cargo" valor={func.cargo || '—'} />
               <Dado icone={ShieldCheck} rotulo="Supervisor" valor={func.supervisorNome || '—'} />
               <Dado
                 icone={Clock}
@@ -505,7 +507,7 @@ function ListaDoEvento({ eventoId, aoEscolher, desabilitado }: {
                 {!p.ativo && <span className="ml-2 text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-semibold align-middle">Inativo</span>}
               </p>
               <p className="text-slate-400 text-2xs tabular-nums">{formatCpf(p.cpf)}{p.cargo ? ` • ${p.cargo}` : ''}</p>
-              <p className="text-slate-400 text-2xs truncate">{p.setorNome}</p>
+              <p className="text-slate-400 text-2xs truncate">{p.areaNome ? `${p.areaNome} › ` : ''}{p.setorNome}</p>
             </div>
           </button>
         ))}

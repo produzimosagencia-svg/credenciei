@@ -240,6 +240,8 @@ export async function importarFuncionarios(
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
         // Crachá do supervisor não ocupa vaga da equipe (mesma regra do cadastro público).
         .or('origem.is.null,origem.neq.supervisor')
+        // Quem recebeu baixa (tirado/excluído da equipe) devolve a vaga.
+        .is('descredenciado_em', null)
       let restante = Math.max(0, cota - (count ?? 0))
       finalPayload = finalPayload.filter(f => {
         if (restante <= 0) {

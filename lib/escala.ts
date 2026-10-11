@@ -332,7 +332,7 @@ export async function diasLotados(
   try {
     const linhas = await buscarTudo((de, ate) => supabaseAdmin
       .from('funcionario_dias')
-      .select('funcionario_id, data, selecionado, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento, escala_status)')
+      .select('funcionario_id, data, selecionado, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento, escala_status, descredenciado_em)')
       .eq('funcionarios.fornecedor_id', fornecedorId)
       .in('data', [...travas.keys()])
       .order('id').range(de, ate))
@@ -340,8 +340,9 @@ export async function diasLotados(
     const ocupacao = new Map<string, number>()
     for (const l of linhas) {
       if (l.funcionario_id === ignorarFuncionarioId) continue
-      const f = l.funcionarios as unknown as { status_credenciamento: string | null; escala_status: string | null } | null
-      if (!f || f.status_credenciamento === 'negado') continue
+      const f = l.funcionarios as unknown as { status_credenciamento: string | null; escala_status: string | null; descredenciado_em: string | null } | null
+      // Quem recebeu baixa (tirado/excluído da equipe) devolve o dia (Juan, 11/10/2026).
+      if (!f || f.status_credenciamento === 'negado' || f.descredenciado_em) continue
       const ocupa = modo === 'aprovado'
         ? l.aprovado
         : (f.escala_status === 'aprovada' ? l.aprovado : l.selecionado)
@@ -367,14 +368,14 @@ export async function vagasAprovadasPorDia(fornecedorId: string): Promise<Map<st
   try {
     const linhas = await buscarTudo((de, ate) => supabaseAdmin
       .from('funcionario_dias')
-      .select('data, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento)')
+      .select('data, aprovado, funcionarios!inner(fornecedor_id, status_credenciamento, descredenciado_em)')
       .eq('funcionarios.fornecedor_id', fornecedorId).eq('aprovado', true)
       .in('data', [...travas.keys()])
       .order('id').range(de, ate))
     const ocupacao = new Map<string, number>()
     for (const l of linhas) {
-      const f = l.funcionarios as unknown as { status_credenciamento: string | null } | null
-      if (!f || f.status_credenciamento === 'negado') continue
+      const f = l.funcionarios as unknown as { status_credenciamento: string | null; descredenciado_em: string | null } | null
+      if (!f || f.status_credenciamento === 'negado' || f.descredenciado_em) continue
       ocupacao.set(l.data as string, (ocupacao.get(l.data as string) ?? 0) + 1)
     }
     return new Map([...travas].map(([dia, max]) => [dia, Math.max(0, max - (ocupacao.get(dia) ?? 0))]))
@@ -442,6 +443,8 @@ export async function vagaNoSetorNoDia(
       .select('funcionario_id, funcionarios!inner(fornecedor_id, origem)', { count: 'exact', head: true })
       .eq('tipo', 'entrada').eq('data_ref', dia).eq('funcionarios.fornecedor_id', fornecedorId)
       .or('origem.is.null,origem.neq.supervisor', { referencedTable: 'funcionarios' })
+      // Quem recebeu baixa não ocupa mais a vaga do dia: o substituto entra.
+      .is('funcionarios.descredenciado_em', null)
     if (erroContagem) return { ok: true }
     const ocupadas = count ?? 0
     return ocupadas >= maximo ? { ok: false, maximo, ocupadas } : { ok: true }

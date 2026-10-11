@@ -379,7 +379,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
     ferramenta({
       nome: 'excluir_funcionario',
       descricao:
-        'Remove uma pessoa da equipe, junto com os registros de presença dela. Não tem desfazer — se a ideia é só tirar ela de circulação, desativar é melhor. ' +
+        'Tira uma pessoa da equipe e libera a vaga. Quem já bateu ponto recebe BAIXA (sai da equipe, o QR para de valer e as batidas continuam no relatório); quem nunca bateu ponto é apagado (vai para a lixeira, o master restaura). ' +
         'Sempre chame primeiro sem confirmação para mostrar o impacto.',
       parametros: {
         type: 'object',
@@ -395,12 +395,32 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           supabaseAdmin.from('funcionarios').select('pago, valor_receber').eq('id', funcionario_id).single(),
         ])
 
-        // Mesma regra da tela (`deletarFuncionario`): quem já bateu ponto não é apagado — só o master apaga.
-        if ((registros ?? 0) > 0 && perfil.role !== 'master') {
-          return `${r.func.nome} já registrou ponto neste evento e não pode ser excluída — isso apagaria as batidas e o QR que ela está usando. Use desativar (ou "Tirar da equipe" na tela do fornecedor), que preserva o histórico.`
+        // Mesma regra da tela (`deletarFuncionario`, Juan 11/10/2026): quem já bateu ponto não é apagado — nem pelo
+        // master. Recebe baixa: sai da equipe e libera a vaga, e as batidas ficam no relatório.
+        const temBatidas = (registros ?? 0) > 0
+        const operacao = `excluir_funcionario:${funcionario_id}`
+        if (temBatidas && !confirmacoes.has(operacao)) {
+          return JSON.stringify(pedirConfirmacao(
+            operacao,
+            `Dar baixa em ${r.func.nome} (${formatCpf(r.func.cpf)}) no fornecedor ${r.func.setorNome}`,
+            {
+              registros_de_presenca: `${registros} — continuam no relatório (nada é apagado)`,
+              vaga: 'liberada para um novo cadastro',
+              qr: 'deixa de valer',
+            }
+          ))
+        }
+        if (temBatidas) {
+          const { error } = await supabaseAdmin.from('funcionarios')
+            .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfil.id })
+            .eq('id', funcionario_id).is('descredenciado_em', null)
+          if (error) return 'Não consegui dar baixa agora. Tente de novo.'
+          await registrarAuditoriaIA(perfil, 'excluir_funcionario', {
+            funcionario_id, nome: r.func.nome, cpf: r.func.cpf, baixa: true, registros_mantidos: registros ?? 0,
+          })
+          return `${r.func.nome} já tinha batido ponto: recebeu baixa. Saiu da equipe, o QR deixou de valer, a vaga foi liberada e as ${registros} batida(s) continuam no relatório.`
         }
 
-        const operacao = `excluir_funcionario:${funcionario_id}`
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,

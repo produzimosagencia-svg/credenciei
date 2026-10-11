@@ -4291,7 +4291,7 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
  * some junto com a pessoa. Sem o nome no registro, sobraria "alguém apagou
  * alguém" — que é o mesmo que não ter auditoria.
  */
-export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string): Promise<{ error?: string }> {
+export async function deletarFuncionario(id: string, fornecedorId: string, eventoId: string, motivo?: string): Promise<{ error?: string; baixa?: boolean; nome?: string }> {
   try {
     const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
     // Esta checagem é a que vale: esconder o botão não impede a chamada direta.
@@ -4309,18 +4309,19 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
     if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
 
     /*
-     * QUEM JÁ BATEU PONTO NÃO É APAGADO (só o master apaga). Excluir leva as batidas junto (`on delete
-     * cascade`) e mata o QR que a pessoa tem no celular. Foi o que aconteceu em 08/10/2026 no VITAL: um
-     * supervisor excluiu da equipe alguém que tinha registrado a ENTRADA de manhã — a pessoa continuou
-     * trabalhando, o QR passou a dar inválido e ela sumiu do sistema. Para quem não vai mais trabalhar, "Tirar
-     * da equipe" resolve igual e preserva o histórico. Na dúvida (consulta falhou), não apaga.
+     * QUEM JÁ BATEU PONTO NÃO É APAGADO — RECEBE BAIXA, e vale até pro master (pedido do Juan, 11/10/2026, VITAL:
+     * "quando excluir uma pessoa da equipe, ela ainda precisa estar no relatório, o histórico de batida dela...
+     * precisa automaticamente dar baixa na equipe e liberar uma nova vaga para cadastro"). Apagar levaria as
+     * batidas junto (`on delete cascade`) — e é delas que sai o pagamento. A baixa é o "Tirar da equipe": a ficha e
+     * as batidas ficam (relatório), o QR para de valer e a pessoa deixa de ocupar vaga (quem tem
+     * `descredenciado_em` não entra na contagem da quantidade nem do limite por dia). Na dúvida (consulta falhou),
+     * não apaga.
      */
-    if (!ehMaster(perfil.role)) {
-      const { data: batidas, error: erroBatidas } = await db.from('registros').select('id').eq('funcionario_id', id).limit(1)
-      if (erroBatidas) throw new Error('Não foi possível conferir as batidas desta pessoa. Tente de novo.')
-      if (batidas?.length) {
-        throw new Error(`${alvo.nome} já registrou ponto neste evento e não pode ser excluída — isso apagaria as batidas dela e o QR que ela está usando. Use "Tirar da equipe": o QR para de valer e o histórico fica.`)
-      }
+    const { data: batidas, error: erroBatidas } = await db.from('registros').select('id').eq('funcionario_id', id).limit(1)
+    if (erroBatidas) throw new Error('Não foi possível conferir as batidas desta pessoa. Tente de novo.')
+    if (batidas?.length) {
+      await descredenciarFuncionario(id, fornecedorId, eventoId, motivo?.trim() || 'Excluída da equipe depois de já ter batido ponto (baixa automática)')
+      return { baixa: true, nome: alvo.nome as string }
     }
 
     // Cópia completa ANTES de apagar — é o que deixa o master restaurar (lixeira, lib/lixeira.ts).
@@ -9379,10 +9380,12 @@ export async function cadastrarFuncionarioPublico(
     const cota = fornecedorCompleto?.quantidade_estimada ?? null
     if (cota) {
       // O crachá do próprio supervisor (origem 'supervisor') não ocupa vaga da
-      // equipe — sem isto, setor de 10 vagas aceitava só 9.
+      // equipe — sem isto, setor de 10 vagas aceitava só 9. Quem recebeu baixa
+      // (tirado/excluído da equipe) também não: a vaga volta (Juan, 11/10/2026).
       const { count } = await supabaseAdmin
         .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
         .or('origem.is.null,origem.neq.supervisor')
+        .is('descredenciado_em', null)
       if ((count ?? 0) >= cota) {
         return { error: 'Seu fornecedor está com o número máximo de pessoas. Contate seu supervisor.' }
       }
@@ -9729,9 +9732,19 @@ const ORDEM_ETAPAS: { momento: MomentoPresenca; rotulo: string }[] = [
 type FornecedorComEvento = {
   nome: string
   evento_id: string
+  /** A área (subevento) do setor — BLOCO, GERAL... Ausente em evento sem subeventos. */
+  subeventos?: { nome: string } | null
   eventos: { id: string; nome: string; ativo: boolean; organizacao_id: string | null }
 }
 const comEvento = (v: unknown) => v as FornecedorComEvento | null
+
+/**
+ * A área da pessoa (pedido do Juan, 11/10/2026: no Registrar ponto "precisa aparecer de qual setor ele é, se é
+ * bloco, geral..."): a do setor dela; sem ela, a do crachá. Null em evento sem subeventos.
+ */
+function areaDaLinha(f: { fornecedores?: unknown; subeventos?: unknown }): string | null {
+  return comEvento(f.fornecedores)?.subeventos?.nome ?? (f.subeventos as { nome?: string } | null)?.nome ?? null
+}
 
 export type FuncionarioLocalizado = {
   id: string
@@ -9742,6 +9755,8 @@ export type FuncionarioLocalizado = {
   fotoUrl: string | null
   setorId: string
   setorNome: string
+  /** A área (subevento): BLOCO, GERAL... Null em evento sem subeventos. */
+  areaNome: string | null
   supervisorNome: string | null
   eventoId: string
   eventoNome: string
@@ -9767,6 +9782,7 @@ export type CandidatoLocalizado = {
   cpf: string
   cargo: string | null
   setorNome: string
+  areaNome: string | null
   eventoNome: string
   /** O CPF exato não existe; este cadastro difere em no máximo dois dígitos. */
   cpfAproximado?: boolean
@@ -9786,7 +9802,7 @@ export type CandidatoLocalizado = {
  * caso de uso e só abriria espaço pra erro.
  */
 const SELECT_LOCALIZAR =
-  'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, fornecedores!inner(id, nome, evento_id, eventos!inner(id, nome, ativo, organizacao_id))'
+  'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, subeventos(nome), fornecedores!inner(id, nome, evento_id, subeventos(nome), eventos!inner(id, nome, ativo, organizacao_id))'
 
 /** O escopo de um suporte, como dois Sets — pra checar filtro síncrono sem uma consulta por linha. */
 async function escopoDoSuporteComoConjuntos(perfilId: string): Promise<{ eventos: Set<string>; orgs: Set<string> }> {
@@ -10039,6 +10055,7 @@ export async function localizarFuncionario(
           cpf: f.cpf,
           cargo: f.cargo,
           setorNome: forn?.nome ?? '—',
+          areaNome: areaDaLinha(f),
           eventoNome: forn?.eventos?.nome ?? '—',
           cpfAproximado: buscaAproximada,
         }
@@ -10052,7 +10069,7 @@ export async function localizarFuncionario(
 /** Quantas pessoas por página na lista de "Registrar ponto" — pedido do Juan, 08/10/2026. */
 const PESSOAS_POR_PAGINA = 30
 
-export type PessoaDaLista = { id: string; nome: string; cpf: string; cargo: string | null; setorNome: string; ativo: boolean }
+export type PessoaDaLista = { id: string; nome: string; cpf: string; cargo: string | null; setorNome: string; areaNome: string | null; ativo: boolean }
 
 /**
  * A lista das pessoas do evento em "Registrar ponto", em ordem alfabética e paginada.
@@ -10093,7 +10110,7 @@ export async function listarPessoasDoEvento(
     const de = (pg - 1) * PESSOAS_POR_PAGINA
     let consulta = supabaseAdmin
       .from('funcionarios')
-      .select('id, nome, cpf, cargo, ativo, fornecedores!inner(nome, evento_id)', { count: 'exact' })
+      .select('id, nome, cpf, cargo, ativo, subeventos(nome), fornecedores!inner(nome, evento_id, subeventos(nome))', { count: 'exact' })
       .eq('fornecedores.evento_id', eventoId)
     if (soSetores) consulta = consulta.in('fornecedor_id', soSetores)
     // `id` desempata: nomes iguais não podem trocar de página entre uma consulta e outra.
@@ -10108,6 +10125,7 @@ export async function listarPessoasDoEvento(
         cpf: f.cpf as string,
         cargo: (f.cargo as string | null) ?? null,
         setorNome: ((f.fornecedores as unknown as { nome?: string } | null)?.nome ?? '—').trim(),
+        areaNome: areaDaLinha(f),
         ativo: f.ativo !== false,
       })),
       total,
@@ -10186,6 +10204,7 @@ type LinhaLocalizada = {
   foto_perfil_path: string | null
   fornecedor_id: string
   fornecedores: unknown
+  subeventos?: unknown
 }
 
 /** Monta a ficha completa — o que o supervisor precisa ver antes de confirmar. */
@@ -10250,6 +10269,7 @@ async function fichaDoFuncionario(
       fotoUrl,
       setorId: func.fornecedor_id,
       setorNome: fornecedor?.nome ?? '—',
+      areaNome: areaDaLinha(func),
       supervisorNome: supervisores?.[0]?.nome ?? null,
       eventoId: evento.id,
       eventoNome: evento.nome,

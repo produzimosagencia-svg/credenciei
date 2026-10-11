@@ -1,5 +1,6 @@
 import 'server-only'
-import { supabaseAdmin } from './supabase-server'
+import { supabaseAdmin, buscarTudo } from './supabase-server'
+import { emLotes } from './lotes'
 
 /**
  * Lixeira de funcionários — a cópia guardada ANTES de uma exclusão, e o que ela permite desfazer.
@@ -111,4 +112,29 @@ export async function listarExcluidos(busca?: string): Promise<Excluido[] | null
     restauradoEm: (e.restaurado_em as string | null) ?? null,
     restauradoPor: (e.restaurado_por_nome as string | null) ?? null,
   }))
+}
+
+/**
+ * Quantas pessoas tiveram cadastro neste evento e hoje só existem na lixeira (excluídas e não restauradas) — CPF
+ * distinto, fora quem ainda tem ficha no evento. Entra no "Funcionários do evento" (pedido do Juan, 11/10/2026:
+ * "mesmo que as pessoas sejam excluídas das equipes, não é para esse número diminuir... a gente ganha 1 real por
+ * funcionário"). Tolerante: sem a tabela, ou com erro, 0 — o número fica o de sempre.
+ */
+export async function cadastrosSoNaLixeira(eventoId: string): Promise<number> {
+  try {
+    const linhas = await buscarTudo<{ cpf: string | null }>((de, ate) => supabaseAdmin.from('funcionarios_excluidos')
+      .select('cpf').eq('evento_id', eventoId).is('restaurado_em', null).order('id').range(de, ate))
+    const cpfs = [...new Set(linhas.map(l => String(l.cpf ?? '').replace(/\D/g, '')).filter(c => c.length === 11))]
+    if (!cpfs.length) return 0
+    const aindaNoEvento = new Set<string>()
+    for (const lote of emLotes(cpfs, 200)) {
+      const { data, error } = await supabaseAdmin.from('funcionarios').select('cpf, fornecedores!inner(evento_id)')
+        .eq('fornecedores.evento_id', eventoId).in('cpf', lote)
+      if (error) return 0
+      for (const f of data ?? []) aindaNoEvento.add(String(f.cpf))
+    }
+    return cpfs.filter(c => !aindaNoEvento.has(c)).length
+  } catch {
+    return 0
+  }
 }

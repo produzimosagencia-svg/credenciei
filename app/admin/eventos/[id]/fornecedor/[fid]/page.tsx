@@ -480,7 +480,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         ampliacoesDoSetor(fid),
         // Mesma contagem do servidor: o crachá do próprio supervisor não conta como equipe.
         supabase.from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fid)
-          .or('origem.is.null,origem.neq.supervisor').then(r => r.count ?? 0, () => 0),
+          .or('origem.is.null,origem.neq.supervisor').is('descredenciado_em', null).then(r => r.count ?? 0, () => 0),
       ])
     : [[], 0]
 

@@ -26,6 +26,7 @@ import type { TutorialConfig } from '@/components/tutorial/types'
 import { ehMaster } from '@/lib/permissions'
 import AlertaForaDoLocal from './AlertaForaDoLocal'
 import { batidasForaDoLocalHoje } from '@/lib/alertas-local'
+import { cadastrosSoNaLixeira } from '@/lib/lixeira'
 
 export const revalidate = 0
 
@@ -367,6 +368,13 @@ export default async function EventoPage({
   const setoresParaMover = fornecedoresEnriquecidos.map(f => ({ id: f.id as string, nome: (f.nome as string).trim(), area: f.subevento_id ? (nomeDoSubevento.get(f.subevento_id) ?? null) : null }))
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
+  /*
+   * "Funcionários do evento" = todo mundo que TEVE cadastro aqui, e não só quem está na equipe agora (pedido do Juan,
+   * 11/10/2026: "mesmo que as pessoas sejam excluídas das equipes, não é para esse número diminuir... a gente ganha
+   * 1 real por funcionário"). Quem recebeu baixa já conta (a ficha fica); quem foi apagado vem da lixeira. As
+   * proporções de Entrada/Meio continuam sobre a equipe de agora (`totalFuncionarios`).
+   */
+  const cadastradosNoEvento = totalFuncionarios + await cadastrosSoNaLixeira(id)
 
   /*
    * OS NÚMEROS SÃO DE UM DIA, não do evento inteiro.
@@ -526,7 +534,7 @@ export default async function EventoPage({
         * que responde a mesma coisa em positivo. (Pedido do Juan, 02/09/2026.)
         */}
       <div data-tutorial="evt-stats" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <StatCard label="Funcionários do evento" value={totalFuncionarios} icon={UserCheck} tom="neutro" />
+        <StatCard label="Funcionários do evento" value={cadastradosNoEvento} icon={UserCheck} tom="neutro" />
         <StatCard
           label="Presentes no momento" value={presentesAgora} icon={Clock} tom="sucesso"
           href={`/admin/eventos/${id}/presenca?ver=presentes&dia=${diaEscolhido}`}

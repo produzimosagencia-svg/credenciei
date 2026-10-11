@@ -496,6 +496,7 @@ export async function solicitarMaisColaboradores(
     const { count: cadastrados } = await supabaseAdmin
       .from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', fornecedorId)
       .or('origem.is.null,origem.neq.supervisor')
+      .is('descredenciado_em', null)
     const combinado = (setor.quantidade_estimada as number | null) ?? null
     const atual = combinado ?? cadastrados ?? 0
 

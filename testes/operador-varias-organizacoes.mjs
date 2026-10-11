@@ -45,5 +45,11 @@ ok(/const sobrando = completo \? 0/.test(card) && /operadores\.length > 0 && !co
 ok(/metodoIdentificacao=\{metodoIdentificacao\}\s*completo\s*\/>/.test(criarPorteiro), '/admin/criar-porteiro abre a lista completa')
 ok(/role === 'operador_portao'\s*\? `operador da \$\{organizacoes\?\.nome/.test(internos), 'operador de outra organização aparece com o nome dela no selo')
 
+console.log('\n5 · Registrar ponto mostra a ÁREA da pessoa (Juan, 11/10/2026: "se é bloco, geral...")')
+const telaLocalizar = ler('app/admin/localizar/LocalizarFuncionario.tsx')
+ok(/subeventos\(nome\), fornecedores!inner\(id, nome, evento_id, subeventos\(nome\), eventos!inner/.test(actions), 'a busca traz a área do setor e a do crachá')
+ok(/function areaDaLinha/.test(actions) && (actions.match(/areaNome: areaDaLinha\(/g) ?? []).length === 3, 'ficha, lista de candidatos e lista do evento levam a área')
+ok(/\{func\.areaNome && <Dado icone=\{LayoutGrid\} rotulo="Área" valor=\{func\.areaNome\} \/>\}/.test(telaLocalizar), 'a ficha mostra "Área" antes do fornecedor')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

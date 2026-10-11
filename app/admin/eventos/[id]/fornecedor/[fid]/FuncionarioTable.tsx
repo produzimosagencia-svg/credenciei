@@ -300,8 +300,10 @@ export default function FuncionarioTable({
     startTransition(async () => {
       const r = await deletarFuncionario(f.id, fornecedorId, eventoId)
       setParaExcluir(null)
-      // Recusa (ex.: a pessoa já bateu ponto) aparece no aviso do topo da tabela.
+      // Recusa aparece no aviso do topo da tabela.
       if (r?.error) { setErroAtivacao(r.error); return }
+      // Quem já bateu ponto não é apagado: recebe baixa, e o aviso diz isso (o histórico continua no relatório).
+      if (r?.baixa) setErroAtivacao(`${r.nome ?? f.nome} já tinha batido ponto: recebeu baixa. Saiu da equipe, a vaga foi liberada e as batidas continuam no relatório.`)
       router.refresh()
     })
   }
@@ -534,7 +536,7 @@ export default function FuncionarioTable({
                         onClick={() => handleDelete(f)}
                         disabled={isPending}
                         className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                        aria-label="Excluir de vez (apaga o histórico)"
+                        aria-label="Excluir da equipe"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -718,7 +720,7 @@ export default function FuncionarioTable({
                           onClick={() => handleDelete(f)}
                           disabled={isPending}
                           className="btn-press w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-50 disabled:active:scale-100"
-                          title="Excluir de vez (apaga o histórico)"
+                          title="Excluir da equipe"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -763,7 +765,7 @@ export default function FuncionarioTable({
         isPending={isPending}
         titulo="Tirar da equipe"
         mensagem={paraTirar
-          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste fornecedor? A pessoa sai das listas do evento e o QR dela deixa de ser aceito. O histórico de batidas dela não é apagado, e dá pra trazer de volta depois.`
+          ? `Tem certeza que deseja tirar "${paraTirar.nome}" da equipe deste fornecedor? A pessoa sai das listas do evento, o QR dela deixa de ser aceito e a vaga fica livre para um novo cadastro. O histórico de batidas dela continua no relatório, e dá pra trazer de volta depois.`
           : ''}
       />
 
@@ -778,11 +780,11 @@ export default function FuncionarioTable({
         onClose={() => setParaExcluir(null)}
         onConfirm={confirmarExclusao}
         isPending={isPending}
-        titulo="Excluir de vez"
+        titulo="Excluir da equipe"
         mensagem={paraExcluir
-          ? `Apagar "${paraExcluir.nome}" do sistema? Some o cadastro e TODAS as batidas de ponto dela neste evento — isso não dá pra desfazer, nem aparece mais em relatório nenhum.
+          ? `Excluir "${paraExcluir.nome}" da equipe? A vaga fica livre para um novo cadastro.
 
-Se ela só não vai mais trabalhar aqui, use "Tirar da equipe": o QR dela para de valer e o histórico fica.`
+Se ela já bateu ponto, nada é apagado: ela recebe baixa (sai da equipe e o QR para de valer) e as batidas continuam no relatório. Se nunca bateu ponto, o cadastro vai para a lixeira.`
           : ''}
       />
     </div>
