@@ -11,6 +11,7 @@
  * tipos que têm setor, e só com as linhas dos setores dele; os que valem para o evento inteiro são só de quem
  * gerencia o evento.
  */
+import { provaDeLocal } from './geo-local'
 import { supabaseAdmin, buscarTudo, diaDoTurno } from './supabase-server'
 import { exigirAcessoAoEvento } from './relatorios-acesso'
 import { emLotes } from './lotes'
@@ -149,10 +150,10 @@ export async function obterRelatorioExtra(
       const dia = await diaDoTurno(eventoId)
       const funcs = await funcionariosDosSetores(setores.map(s => s.id))
       const porId = new Map(funcs.map(f => [f.id, f]))
-      const regs: { funcionario_id: string; tipo: string; created_at: string; criado_por_perfil_id: string | null; fora_do_local: boolean | null }[] = []
+      const regs: { funcionario_id: string; tipo: string; created_at: string; criado_por_perfil_id: string | null; fora_do_local: boolean | null; precisao_m: number | null }[] = []
       for (const lote of emLotes(funcs.map(f => f.id), 150)) {
         const linhas = await buscarTudo<typeof regs[number]>((de, ate) => supabaseAdmin
-          .from('registros').select('funcionario_id, tipo, created_at, criado_por_perfil_id, fora_do_local')
+          .from('registros').select('funcionario_id, tipo, created_at, criado_por_perfil_id, fora_do_local, precisao_m')
           .eq('evento_id', eventoId).eq('data_ref', dia).in('funcionario_id', lote).order('created_at').range(de, ate))
         regs.push(...linhas)
       }
@@ -168,7 +169,8 @@ export async function obterRelatorioExtra(
             b.entrada ? formatarBR(b.entrada.created_at, 'hora') : '', b.meio ? formatarBR(b.meio.created_at, 'hora') : '',
             b.fim ? formatarBR(b.fim.created_at, 'hora') : '', b.fim ? 'Já saiu' : 'Ainda no evento',
             b.entrada?.criado_por_perfil_id ? operadores.get(b.entrada.criado_por_perfil_id) ?? 'Operador' : 'Leitura do QR / celular',
-            Object.values(b).some(x => x.fora_do_local) ? 'Sim' : '',
+            // Localização aproximada não comprova "fora do local" (Juan, 12/10/2026).
+            Object.values(b).some(x => x.fora_do_local && provaDeLocal(x.precisao_m)) ? 'Sim' : '',
           ] as (string | number | null)[]
         })
         .sort((a, b) => String(a[2]).localeCompare(String(b[2])) || String(a[0]).localeCompare(String(b[0])))

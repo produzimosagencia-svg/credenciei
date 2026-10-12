@@ -1,7 +1,7 @@
 import 'server-only'
 import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { diaBRT } from './janelas'
-import { descreverDistancia, avaliarLocal, posicaoValida, type LocalDoEvento } from './geo-local'
+import { descreverDistancia, avaliarLocal, posicaoValida, provaDeLocal, type LocalDoEvento } from './geo-local'
 
 /**
  * O alerta de "bateu fora do local do evento" — pedido do Juan (08/10/2026): quando o aparelho de quem registrou
@@ -27,14 +27,15 @@ export async function batidasForaDoLocalHoje(eventoId: string): Promise<BatidaFo
   try {
     const { data, error } = await supabaseAdmin
       .from('registros')
-      .select('id, tipo, created_at, distancia_m, funcionarios!inner(nome, fornecedores(nome))')
+      .select('id, tipo, created_at, distancia_m, precisao_m, funcionarios!inner(nome, fornecedores(nome))')
       .eq('evento_id', eventoId)
       .eq('data_ref', diaBRT())
       .eq('fora_do_local', true)
       .order('created_at', { ascending: false })
       .limit(50)
     if (error) return []
-    return (data ?? []).map(r => ({
+    // Localização aproximada (pior que a de prova) não comprova "fora do local" — fica de fora do alerta.
+    return (data ?? []).filter(r => provaDeLocal(r.precisao_m as number | null)).map(r => ({
       id: r.id as string,
       nome: (r.funcionarios as unknown as { nome: string } | null)?.nome ?? '—',
       setorNome: (r.funcionarios as unknown as { fornecedores?: { nome?: string } | null } | null)?.fornecedores?.nome ?? null,
@@ -125,7 +126,8 @@ export async function relatorioForaDoLocal(
   for (const r of registros) {
     const pos = posicaoValida({ latitude: num(r.latitude), longitude: num(r.longitude), precisao: num(r.precisao_m) })
     const calculado = avaliarLocal(pos, local)
-    const fora = r.fora_do_local === true || calculado.foraDoLocal === true
+    // Localização aproximada (±500 m, ±50 km...) não comprova nada: nunca entra como "fora do local" (Juan, 12/10/2026).
+    const fora = provaDeLocal(pos?.precisao) && (r.fora_do_local === true || calculado.foraDoLocal === true)
     if (!fora) continue
     const f = r.funcionarios as unknown as Fn
     linhas.push({
@@ -175,7 +177,7 @@ export async function relatorioForaDoLocal(
   return { localConfigurado: !!local, raioM: local?.raioM ?? null, linhas: visiveis, setores }
 }
 
-const COLUNAS_TENTATIVA = 'id, created_at, latitude, longitude, distancia_m, perfil_id, mensagem, funcionario_id, funcionarios(nome, fornecedor_id, fornecedores(nome))'
+const COLUNAS_TENTATIVA = 'id, created_at, latitude, longitude, distancia_m, precisao_m, perfil_id, mensagem, funcionario_id, funcionarios(nome, fornecedor_id, fornecedores(nome))'
 
 /**
  * As tentativas recusadas por estar fora do raio (`leituras_qr`, resultado 'fora_do_local'). Tolerante: sem a
@@ -188,10 +190,16 @@ async function lerTentativas(coluna: 'evento_id' | 'funcionario_id', valor: stri
     .eq('resultado', 'fora_do_local')
     .order('created_at', { ascending: false })
     .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>)
+  /*
+   * Tentativa com localização APROXIMADA (pior que a de prova), sem precisão ou sem posição não é "fora do local" — não diz onde o aparelho estava
+   * (VITAL, 11/10/2026: ±500 m e ±50 km viraram "3 tentativas a 8 km" na ficha da Flávia). Fica de fora das listas.
+   */
+  // Também sai daqui a leitura SEM posição ("não foi possível confirmar sua localização") e a de precisão desconhecida.
+  const soComProva = (linhas: Record<string, unknown>[]) => linhas.filter(l => l.latitude != null && provaDeLocal(l.precisao_m as number | null))
   try {
-    return await ler(`${COLUNAS_TENTATIVA}, endereco_aproximado`)
+    return soComProva(await ler(`${COLUNAS_TENTATIVA}, endereco_aproximado`))
   } catch {
-    return ler(COLUNAS_TENTATIVA).catch(() => [])
+    return soComProva(await ler(COLUNAS_TENTATIVA).catch(() => []))
   }
 }
 

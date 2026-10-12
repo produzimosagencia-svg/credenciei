@@ -72,7 +72,9 @@ import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
-import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
+import { avaliarLocal, posicaoValida, descreverDistancia, mensagemLocalImpreciso, type Posicao, type LocalDoEvento } from './geo-local'
+
+const MENSAGEM_SEM_LOCALIZACAO = 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.'
 import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, diaDoAutoatendimentoLiberado, descreverJanela,
   diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao,
@@ -7238,6 +7240,13 @@ export type ResultadoScan = {
   foraDoLocal?: boolean
   /** A que distância (metros) a leitura foi feita, quando dá para calcular — para a mensagem do operador. */
   distanciaForaDoLocal?: number
+  /**
+   * A localização do aparelho era APROXIMADA (pior que `PRECISAO_MAXIMA_PROVA_M`) e caía fora do raio: não prova nada.
+   * A batida não é registrada (pede a localização precisa), e a leitura NÃO conta como "fora do local".
+   */
+  localImpreciso?: boolean
+  /** O aparelho não mandou posição nenhuma — "sem localização", que NÃO é "fora do local" (VITAL: 93 leituras assim). */
+  semLocalizacao?: boolean
 }
 
 /** O que a conferência por CPF devolve para quem está no portão. */
@@ -7441,6 +7450,8 @@ function resultadoDaLeitura(r: ResultadoScan): string {
   if (r.cancelado) return 'cancelado'
   if (r.jaRegistrado) return 'ja_validado'
   if (r.success) return r.momento === 'fim' && !r.veiculo ? 'saida' : 'liberado'
+  if (r.localImpreciso) return 'localizacao_imprecisa'
+  if (r.semLocalizacao) return 'sem_localizacao'
   if (r.foraDoLocal) return 'fora_do_local'
   if (r.diaNaoAutorizado) return 'dia_nao_autorizado'
   if (r.setorLotado) return 'setor_lotado'
@@ -7874,16 +7885,20 @@ async function autorizarPresenca(args: {
     const posOperador = posicaoValida({ latitude, longitude, precisao })
     const localEvento = await localDoEvento(eventoId)
     if (localEvento) {
-      const { distanciaM, foraDoLocal } = avaliarLocal(posOperador, localEvento)
-      if (!posOperador || foraDoLocal) {
+      const { distanciaM, foraDoLocal, imprecisa } = avaliarLocal(posOperador, localEvento)
+      // Localização aproximada (±500 m, ±50 km): não prova que está fora — recusa pedindo a localização precisa.
+      if (imprecisa) {
+        return { success: false, localImpreciso: true, funcionario: funcInfo, message: mensagemLocalImpreciso(posOperador?.precisao) }
+      }
+      // Sem posição nenhuma não é "fora do local" — é "sem localização" (não vai pra lista de quem bateu fora).
+      if (!posOperador) return { success: false, semLocalizacao: true, funcionario: funcInfo, message: MENSAGEM_SEM_LOCALIZACAO }
+      if (foraDoLocal) {
         return {
           success: false,
           foraDoLocal: true,
           distanciaForaDoLocal: distanciaM ?? undefined,
           funcionario: funcInfo,
-          message: posOperador
-            ? `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`
-            : 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.',
+          message: `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`,
         }
       }
     }
@@ -8819,7 +8834,9 @@ export async function registrarPresencaLivre(
    * o botão continua funcionando sozinho, senão um cartaz caído ou molhado
    * travaria a operação inteira.
    */
-  tokenDoLocal?: string
+  tokenDoLocal?: string,
+  /** A precisão (metros) da posição, vinda do aparelho — sem ela, não dá pra saber se a localização era aproximada. */
+  precisaoDoAparelho?: number | null,
 ): Promise<{ ok?: boolean; error?: string; momento?: 'entrada' | 'fim' }> {
   if (momento !== 'entrada' && momento !== 'fim') return { error: 'Etapa inválida' }
 
@@ -8879,19 +8896,22 @@ export async function registrarPresencaLivre(
    * qualquer lugar servia, até de casa. A tentativa recusada fica em `leituras_qr` (resultado 'fora_do_local',
    * sem operador) e aparece no relatório "Batidas fora do local".
    */
-  const posicaoPropria = autoatendimentoLiberado ? posicaoValida({ latitude, longitude, precisao: null }) : null
+  const posicaoPropria = autoatendimentoLiberado ? posicaoValida({ latitude, longitude, precisao: precisaoDoAparelho ?? null }) : null
   if (autoatendimentoLiberado) {
     const localEvento = await localDoEvento(eventoId)
     if (localEvento) {
-      const { distanciaM, foraDoLocal } = avaliarLocal(posicaoPropria, localEvento)
-      if (!posicaoPropria || foraDoLocal) {
+      const { distanciaM, foraDoLocal, imprecisa } = avaliarLocal(posicaoPropria, localEvento)
+      // Localização aproximada: não prova que está fora — pede a localização precisa, sem marcar "fora do local".
+      if (imprecisa) return { error: mensagemLocalImpreciso(posicaoPropria?.precisao) }
+      if (!posicaoPropria) return { error: MENSAGEM_SEM_LOCALIZACAO }
+      if (foraDoLocal) {
         after(async () => {
           const endereco = await enderecoDaPosicao(posicaoPropria)
           const error = await inserirLeituraComEndereco({
             evento_id: eventoId, perfil_id: null, funcionario_id: func.id, tipo: 'credencial', sucesso: false,
             resultado: 'fora_do_local',
             mensagem: `Autoatendimento pelo celular (${momento === 'entrada' ? 'entrada' : 'saída'}) recusado: fora do local do evento`,
-            latitude, longitude, precisao_m: null, distancia_m: distanciaM, fora_do_local: true,
+            latitude, longitude, precisao_m: posicaoPropria?.precisao ?? null, distancia_m: distanciaM, fora_do_local: true,
           }, endereco)
           if (error) console.error('[autoatendimento] tentativa fora do local não gravada', error.message)
           await auditarTentativaForaDoLocal({
@@ -10431,8 +10451,28 @@ export async function registrarPresencaAssistida(
     const posOperador = posicaoValida({ latitude: dados.latitude, longitude: dados.longitude, precisao: dados.precisao })
     const localEvento = await localDoEvento(evento.id)
     if (localEvento) {
-      const { distanciaM, foraDoLocal } = avaliarLocal(posOperador, localEvento)
-      if (!posOperador || foraDoLocal) {
+      const { distanciaM, foraDoLocal, imprecisa } = avaliarLocal(posOperador, localEvento)
+      /*
+       * Localização APROXIMADA (VITAL, 11/10/2026: o celular da supervisora mandou ±500 m e ±50 km e a Flávia ficou
+       * com "3 tentativas fora do local, a 8 km"): não prova nada. Recusa pedindo a localização precisa e grava a
+       * tentativa como 'localizacao_imprecisa' — nunca como "fora do local".
+       */
+      if (imprecisa) {
+        after(async () => {
+          const { error } = await supabaseAdmin.from('leituras_qr').insert([{
+            evento_id: evento.id, perfil_id: perfil.id, funcionario_id: funcionarioId, tipo: 'credencial', sucesso: false,
+            resultado: 'localizacao_imprecisa',
+            mensagem: `Registro manual (${ROTULO_MOMENTO_TENTATIVA[momento] ?? momento}) recusado: localização imprecisa do aparelho (±${posOperador?.precisao ?? '?'} m)`,
+            latitude: posOperador?.latitude ?? null, longitude: posOperador?.longitude ?? null, precisao_m: posOperador?.precisao ?? null,
+            distancia_m: distanciaM, fora_do_local: null,
+          }])
+          if (error) console.error('[registro manual] tentativa com localização imprecisa não gravada', error.message)
+        })
+        return { error: mensagemLocalImpreciso(posOperador?.precisao) }
+      }
+      // Sem posição nenhuma: pede o GPS de novo, sem registrar como "fora do local".
+      if (!posOperador) return { error: MENSAGEM_SEM_LOCALIZACAO }
+      if (foraDoLocal) {
         // A tentativa fica no nome da pessoa, com o endereço — mesmo rastro do scanner e do celular.
         after(async () => {
           const endereco = await enderecoDaPosicao(posOperador)
@@ -10450,9 +10490,7 @@ export async function registrarPresencaAssistida(
           })
         })
         return {
-          error: posOperador
-            ? `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`
-            : 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.',
+          error: `FORA DO LOCAL DO EVENTO (${descreverDistancia(distanciaM!)}). A batida não foi registrada. Aproxime-se do local configurado para o evento.`,
         }
       }
     }

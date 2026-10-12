@@ -132,7 +132,7 @@ confere('recusa aparece num aviso em modal, com X e o motivo (fora do local / lo
 confere('o botão exige localização antes de enviar', /if \(!posicao\) \{[\s\S]{0,300}?return/.test(checkin), true)
 
 console.log('\n10 · batida pelo celular fora do raio do evento é recusada (e a tentativa fica registrada)')
-confere('compara com o local do evento (avaliarLocal)', /const \{ distanciaM, foraDoLocal \} = avaliarLocal\(posicaoPropria, localEvento\)/.test(actions), true)
+confere('compara com o local do evento (avaliarLocal)', /const \{ distanciaM, foraDoLocal, imprecisa \} = avaliarLocal\(posicaoPropria, localEvento\)/.test(actions), true)
 confere("tentativa recusada vai para leituras_qr com resultado 'fora_do_local'",
   /resultado: 'fora_do_local',\s*mensagem: `Autoatendimento pelo celular/.test(actions), true)
 confere('batida aceita também é marcada com a distância', actions.includes('after(() => marcarLocalDaBatida(registro.id as string, eventoId, posicaoPropria))'), true)

@@ -21,6 +21,8 @@ type ScanResult = {
   qrInvalido?: boolean
   /** O aparelho de quem leu estava fora do raio do local do evento (Vital, 08/10/2026) — a batida NÃO foi gravada. */
   foraDoLocal?: boolean
+  localImpreciso?: boolean
+  semLocalizacao?: boolean
   distanciaForaDoLocal?: number
   /** Credencial válida, mas de uma área que este portão não está lendo (Vital, 01/10/2026). */
   areaErrada?: boolean
@@ -141,12 +143,14 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.semResposta) return 'semResposta'
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.localImpreciso) return 'localImpreciso'
+  if (r.semLocalizacao) return 'semLocalizacao'
   if (r.foraDoLocal) return 'foraDoLocal'
   if (r.areaErrada) return 'areaErrada'
   if (r.diaNaoAutorizado) return 'diaNaoAutorizado'
@@ -164,6 +168,8 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
   // Vermelho de verdade: a batida NÃO é gravada (pedido do Juan, 08/10/2026 — antes só marcava; testou o
   // próprio QR fora do estádio e passou direto, sem aviso nenhum).
+  localImpreciso: { fundo: 'bg-amber-600', icone: '📡', titulo: 'LOCALIZAÇÃO IMPRECISA' },
+  semLocalizacao: { fundo: 'bg-amber-600', icone: '📡', titulo: 'SEM LOCALIZAÇÃO' },
   foraDoLocal: { fundo: 'bg-red-700', icone: '📍', titulo: 'FORA DO LOCAL DO EVENTO' },
   areaErrada:  { fundo: 'bg-orange-600', icone: '⊘', titulo: 'ÁREA DIFERENTE' },
   // Vermelho, é recusa de verdade — mas com título próprio: a credencial é

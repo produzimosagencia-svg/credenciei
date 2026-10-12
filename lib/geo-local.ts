@@ -30,15 +30,54 @@ export function distanciaMetros(a: { latitude: number; longitude: number }, b: {
 }
 
 /**
+ * A pior precisão que ainda vale como PROVA de "fora do local" (Juan, 12/10/2026, VITAL — supervisora marcada "a 8 km"
+ * com a localização do celular dela em ±500 m e ±50 km: "essa localização não pode errar em hipótese alguma, é motivo de
+ * auditoria para não pagarmos a pessoa"). GPS de verdade dá 3–30 m; ±500 m, ±5 km, ±50 km é a localização APROXIMADA
+ * (iPhone com "Localização Precisa" desligada, rede do celular, IP) — não diz onde o aparelho está.
+ */
+export const PRECISAO_MAXIMA_PROVA_M = 100
+
+/** Precisão pior que a de prova: a posição não afirma nada — nem dentro, nem fora. */
+export function posicaoImprecisa(precisao: number | null | undefined): boolean {
+  return typeof precisao === 'number' && Number.isFinite(precisao) && precisao > PRECISAO_MAXIMA_PROVA_M
+}
+
+/**
+ * A posição serve de PROVA (de "fora do local")? Só com a precisão CONHECIDA e boa. Sem precisão gravada (o celular da
+ * própria pessoa não mandava até 12/10/2026) não dá pra saber se era GPS ou aproximada — então não prova.
+ */
+export function provaDeLocal(precisao: number | null | undefined): boolean {
+  return typeof precisao === 'number' && Number.isFinite(precisao) && precisao <= PRECISAO_MAXIMA_PROVA_M
+}
+
+/**
  * Dentro ou fora do local. A margem soma a imprecisão do GPS (até 300 m) — um aparelho que diz "estou aqui com
  * 200 m de erro" não é marcado como fora por causa do erro dele. Sem posição ou sem local configurado: `null`
  * (não dá para afirmar nada).
+ *
+ * Além do raio com localização APROXIMADA (`posicaoImprecisa`): `foraDoLocal: null` e `imprecisa: true` — quem chama
+ * recusa a batida pedindo a localização precisa, mas NUNCA registra isso como "fora do local".
  */
-export function avaliarLocal(pos: Posicao | null, local: LocalDoEvento | null): { distanciaM: number | null; foraDoLocal: boolean | null } {
-  if (!pos || !local) return { distanciaM: null, foraDoLocal: null }
+export function avaliarLocal(pos: Posicao | null, local: LocalDoEvento | null): { distanciaM: number | null; foraDoLocal: boolean | null; imprecisa: boolean } {
+  if (!pos || !local) return { distanciaM: null, foraDoLocal: null, imprecisa: false }
   const distanciaM = distanciaMetros(pos, local)
   const margem = Math.min(pos.precisao ?? 0, 300)
-  return { distanciaM, foraDoLocal: distanciaM > local.raioM + margem }
+  if (distanciaM <= local.raioM + margem) return { distanciaM, foraDoLocal: false, imprecisa: false }
+  // Sem precisão conhecida e boa, "fora" não se afirma (aparelho antigo, aba antiga, localização aproximada).
+  if (!provaDeLocal(pos.precisao)) return { distanciaM, foraDoLocal: null, imprecisa: true }
+  return { distanciaM, foraDoLocal: true, imprecisa: false }
+}
+
+/** "±500 m" / "±50 km". */
+function textoPrecisao(m: number): string {
+  return m >= 1000 ? `±${(m / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : `±${Math.round(m)} m`
+}
+
+/** O que a tela diz quando a localização do aparelho é aproximada. Nada é registrado. */
+export function mensagemLocalImpreciso(precisao: number | null | undefined): string {
+  return `LOCALIZAÇÃO IMPRECISA (${typeof precisao === 'number' ? textoPrecisao(precisao) : 'aproximada'}) — o aparelho não está usando o GPS. `
+    + 'A batida não foi registrada. Ligue a localização PRECISA (no iPhone: Ajustes › Privacidade › Serviços de Localização › '
+    + 'o navegador › Localização Precisa) e tente de novo.'
 }
 
 /** "a 3,2 km do local" / "a 450 m do local" — para a tela interna. */

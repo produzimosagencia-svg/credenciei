@@ -80,7 +80,8 @@ function comprimir(file: File): Promise<string> {
   })
 }
 
-type Coords = { lat: number; lng: number }
+/** `precisao`: o raio de erro (m) que o aparelho informou — vai pro servidor, que não aceita localização aproximada como prova. */
+type Coords = { lat: number; lng: number; precisao?: number }
 
 type Localizacao = {
   /** A melhor posição que já chegou, se alguma chegou. Leitura instantânea. */
@@ -125,7 +126,7 @@ function iniciarLocalizacao(): Localizacao {
     // A mais precisa vence, venha ela primeiro ou depois.
     if (pos.coords.accuracy < precisao) {
       precisao = pos.coords.accuracy
-      melhor = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+      melhor = { lat: pos.coords.latitude, lng: pos.coords.longitude, precisao: pos.coords.accuracy }
     }
     avisar?.(melhor)
   }
@@ -339,7 +340,7 @@ export function BotaoRegistroAutomatico({ token, proximo, entradaEm = null }: {
         return
       }
       setEnviando('enviando')
-      const r = await registrarPresencaLivre(token, proximo, posicao.lat, posicao.lng)
+      const r = await registrarPresencaLivre(token, proximo, posicao.lat, posicao.lng, undefined, posicao.precisao ?? null)
       if (r.ok || ehDuplicata(r.error)) router.refresh()
       else setErro(r.error ?? 'Não foi possível registrar. Tente de novo.')
     } catch {
@@ -510,7 +511,7 @@ export default function CheckinPresenca({
     try {
       const local = iniciarLocalizacao()
       const posicao = local.agora() ?? await Promise.race([local.pronta, aposMs(GRACA_MS)])
-      const r = await registrarPresencaLivre(token, momento, posicao?.lat ?? null, posicao?.lng ?? null, tokenDoLocal)
+      const r = await registrarPresencaLivre(token, momento, posicao?.lat ?? null, posicao?.lng ?? null, tokenDoLocal, posicao?.precisao ?? null)
       if (r.ok || ehDuplicata(r.error)) {
         setErro(null)
         setEscaneando(null)

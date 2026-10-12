@@ -1,3 +1,4 @@
+import { provaDeLocal } from '@/lib/geo-local'
 import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
@@ -300,9 +301,10 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
   if (ehMaster(perfil.role) || perfil.role === 'admin') {
     const ids = (registros ?? []).map(r => (r as { id?: string }).id).filter((v): v is string => !!v)
     for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await supabase.from('registros').select('id, fora_do_local, distancia_m').in('id', ids.slice(i, i + 200))
+      const { data, error } = await supabase.from('registros').select('id, fora_do_local, distancia_m, precisao_m').in('id', ids.slice(i, i + 200))
       if (error) break
-      for (const r of data ?? []) if (r.fora_do_local === true) foraDoLocal.set(r.id as string, (r.distancia_m as number | null) ?? null)
+      // Localização aproximada (pior que a de prova) não comprova "fora do local" — sem marca vermelha (Juan, 12/10/2026).
+      for (const r of data ?? []) if (r.fora_do_local === true && provaDeLocal(r.precisao_m as number | null)) foraDoLocal.set(r.id as string, (r.distancia_m as number | null) ?? null)
     }
   }
 
