@@ -43,5 +43,10 @@ ok(/<AvisoMeioSupervisor/.test(ler('app/admin/eventos/[id]/editar/page.tsx')) &&
 ok(/\.filter\(m => m\.perfil_id && m\.status === 'enviado'\)/.test(msg) && /status: 'pendente', erro: null,/.test(msg),
   'aviso de supervisor cancelado por regra volta a ser agendado (só o enviado trava)')
 
+console.log('\nLembrete só pra quem ainda não registrou (Juan, 12/10/2026: "recebeu a mensagem que precisava descredenciar, mas já tinha feito a batida")')
+ok(/const ehLembreteOuReforco = msg\.tipo\.startsWith\('lembrete_'\) \|\| msg\.tipo\.startsWith\('reforco_'\)/.test(msg) && /if \(msg\.condicao !== 'sem_registro' && !ehLembreteOuReforco\) return true/.test(msg),
+  'lembrete (entrada, meio, saída) também confere se a pessoa já bateu aquela etapa no dia — não só o reforço')
+ok(/if \(!pessoa \|\| pessoa\.descredenciado_em\) return false/.test(msg), 'quem recebeu baixa não recebe lembrete nem reforço')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

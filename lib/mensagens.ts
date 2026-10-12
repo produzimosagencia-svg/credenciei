@@ -1539,7 +1539,19 @@ async function devoEnviar(msg: MensagemClaimada): Promise<boolean> {
     if (!entrou?.length) return false
   }
 
-  if (msg.condicao !== 'sem_registro') return true
+  /*
+   * LEMBRETE E REFORÇO SÓ PRA QUEM AINDA NÃO REGISTROU (Juan, 12/10/2026: "pessoal reclamou que recebeu a mensagem
+   * que precisava descredenciar, mas já tinha feito a batida… só pode receber mensagem para descredenciar ou lembrete
+   * para bater o meio de quem ainda não registrou no sistema"). Antes só o REFORÇO ('sem_registro') conferia — o
+   * LEMBRETE saía sempre, até pra quem já tinha batido. E quem recebeu baixa não recebe mais nada.
+   */
+  const ehLembreteOuReforco = msg.tipo.startsWith('lembrete_') || msg.tipo.startsWith('reforco_')
+  if (ehLembreteOuReforco && msg.funcionario_id) {
+    const { data: pessoa } = await supabase
+      .from('funcionarios').select('descredenciado_em').eq('id', msg.funcionario_id).maybeSingle()
+    if (!pessoa || pessoa.descredenciado_em) return false
+  }
+  if (msg.condicao !== 'sem_registro' && !ehLembreteOuReforco) return true
   if (!momento || !msg.funcionario_id) return true
   // Do DIA da mensagem, nao do evento: sem o filtro, a batida de ontem
   // cancelaria o reforco de hoje e a pessoa nunca mais seria lembrada.
