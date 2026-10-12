@@ -120,8 +120,21 @@ async function supervisoresComCrachaEmOutroSetor(fid: string, eventoId: string, 
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
-export default async function FornecedorPage({ params }: { params: Promise<{ id: string; fid: string }> }) {
+export default async function FornecedorPage({
+  params, searchParams,
+}: {
+  params: Promise<{ id: string; fid: string }>
+  /** `?dia=AAAA-MM-DD`: as colunas Entrada/Meio/Saída mostram as batidas DAQUELE dia (botões "Escala por dia"). */
+  searchParams: Promise<{ dia?: string }>
+}) {
   const { id, fid } = await params
+  const { dia: diaParam } = await searchParams
+  /*
+   * O dia escolhido na fileira "Escala por dia" (pedido do Juan, 12/10/2026: "entra em um setor e vê os dias batidos de
+   * entrada, tá bugado"). Antes o botão só filtrava QUEM estava escalado, e as colunas continuavam mostrando as batidas
+   * de HOJE — no dia 10 clicado, todo mundo parecia sem entrada. Sem o parâmetro, o ciclo de hoje, como sempre.
+   */
+  const diaEscolhido = typeof diaParam === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(diaParam) ? diaParam : null
 
   const perfil = await getPerfil()
   if (!perfil) redirect('/login')
@@ -159,7 +172,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
         .select('id, funcionario_id, tipo, created_at, data_ref, foto_url, latitude, longitude, endereco_aproximado, criado_por_perfil_id, registro_manual, justificativa, funcionarios!inner(fornecedor_id)')
         .eq('evento_id', id)
         .eq('funcionarios.fornecedor_id', fid)
-        .in('data_ref', [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
+        .in('data_ref', diaEscolhido ? [diaEscolhido] : [diaBRT(agoraDoRender), diaBRT(new Date(agoraDoRender.getTime() - 24 * 60 * 60 * 1000))])
         .in('tipo', ['entrada', 'meio', 'fim'])
         .order('id')
         .range(de, ate),
@@ -290,7 +303,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
     const atual = diaPorFunc.get(r.funcionario_id)
     if (!atual || dia > atual) diaPorFunc.set(r.funcionario_id, dia)
   }
-  const diaDe = (funcId: string) => diaPorFunc.get(funcId) ?? hoje
+  const diaDe = (funcId: string) => diaEscolhido ?? diaPorFunc.get(funcId) ?? hoje
 
   /*
    * "Fora do local do evento" — SÓ para admin/master (pedido do Juan, 08/10/2026: a localização é conferência
@@ -649,6 +662,7 @@ export default async function FornecedorPage({ params }: { params: Promise<{ id:
           funcionarios={funcionariosEnriquecidos}
           supervisoresDeFora={supervisoresDeFora}
           diasDaEscala={diasDaEscala}
+          diaSelecionado={diaEscolhido}
           fornecedorId={fid}
           eventoId={id}
           eventoNome={(fornecedor.eventos as any)?.nome ?? ''}

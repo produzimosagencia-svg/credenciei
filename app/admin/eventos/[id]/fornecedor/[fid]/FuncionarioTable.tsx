@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Search, SlidersHorizontal, Trash2, X,
@@ -144,6 +144,7 @@ export default function FuncionarioTable({
   funcionarios,
   supervisoresDeFora = [],
   diasDaEscala = [],
+  diaSelecionado = null,
   fornecedorId,
   eventoId,
   eventoNome,
@@ -167,6 +168,8 @@ export default function FuncionarioTable({
    * "Escala por dia" (pedido do Juan, 09/10/2026). Vazio = sem a fileira.
    */
   diasDaEscala?: DiaDaEscala[]
+  /** O dia das colunas Entrada/Meio/Saída (`?dia=`): null = o ciclo de hoje. */
+  diaSelecionado?: string | null
   fornecedorId: string
   eventoId: string
   /** Só para o cabeçalho do modal do funcionário — não muda nenhuma consulta. */
@@ -206,7 +209,16 @@ export default function FuncionarioTable({
   const [page, setPage] = useState(1)
   const [filtroRapido, setFiltroRapido] = useState<FiltroRapido>('todos')
   // A escala por dia: um dia escolhido mostra só quem trabalha nele.
-  const [diaFiltro, setDiaFiltro] = useState<string | null>(null)
+  const [diaFiltro, setDiaFiltroLocal] = useState<string | null>(diaSelecionado)
+  const caminho = usePathname()
+  /*
+   * Escolher um dia também troca as COLUNAS para as batidas daquele dia (o servidor busca por `?dia=`) — antes só
+   * filtrava quem estava escalado e as colunas ficavam em hoje (Juan, 12/10/2026).
+   */
+  const setDiaFiltro = (dia: string | null) => {
+    setDiaFiltroLocal(dia)
+    router.push(dia ? `${caminho}?dia=${dia}` : caminho, { scroll: false })
+  }
   const [statusEntrada, setStatusEntrada] = useState<StatusEtapa | 'todos'>('todos')
   const [statusMeio, setStatusMeio] = useState<StatusEtapa | 'todos'>('todos')
   const [statusFim, setStatusFim] = useState<StatusEtapa | 'todos'>('todos')
@@ -227,7 +239,8 @@ export default function FuncionarioTable({
       chaveBusca(f.empresa).includes(s) ||
       chaveBusca(f.cargo).includes(s)
     if (!bateBusca) return false
-    if (diaFiltro && !(f.diasEscala ?? []).includes(diaFiltro)) return false
+    // Escalado no dia OU com batida naquele dia (as colunas já são do dia escolhido): quem bateu sem estar escalado aparece.
+    if (diaFiltro && !(f.diasEscala ?? []).includes(diaFiltro) && !(diaFiltro === diaSelecionado && (f.entrada || f.meio || f.fim))) return false
 
     if (statusEntrada !== 'todos' && f.statusEntrada !== statusEntrada) return false
     if (statusMeio !== 'todos' && f.statusMeio !== statusMeio) return false
