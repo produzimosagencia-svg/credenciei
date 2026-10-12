@@ -20,8 +20,9 @@ const ia = ler('lib/ia/ferramentas/funcionarios.ts')
 const sql = ler('supabase/upgrade-lixeira-funcionarios.sql')
 
 console.log('Antes de excluir, a cópia')
-ok(excluir.indexOf('guardarNaLixeira(') > 0 && excluir.indexOf('guardarNaLixeira(') < excluir.indexOf(".from('funcionarios').delete()"), 'a tela guarda a cópia ANTES de apagar')
-ok(ia.indexOf('guardarNaLixeira(') > 0 && ia.indexOf('guardarNaLixeira(') < ia.indexOf(".from('funcionarios').delete()"), 'o assistente de IA também')
+// Desde 12/10/2026 a tela e a IA não apagam mais ninguém (excluir = baixa); a lixeira fica pros excluídos de antes.
+ok(!excluir.includes(".from('funcionarios').delete()") && excluir.includes('descredenciarFuncionario('), 'a tela não apaga mais ninguém: excluir = baixa (nada vai pra lixeira)')
+ok(!ia.includes(".from('funcionarios').delete()"), 'o assistente de IA também')
 for (const t of ['registros', 'funcionario_dias', 'biometria_templates', 'veiculos']) ok(lixeira.includes(`'${t}'`), `a cópia leva ${t}`)
 ok(/dados: linha/.test(lixeira), 'a linha inteira do funcionário é guardada (mesmo id e mesmo token do QR)')
 

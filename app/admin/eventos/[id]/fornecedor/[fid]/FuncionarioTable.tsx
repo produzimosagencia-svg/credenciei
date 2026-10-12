@@ -325,8 +325,8 @@ export default function FuncionarioTable({
       setParaExcluir(null)
       // Recusa aparece no aviso do topo da tabela.
       if (r?.error) { setErroAtivacao(r.error); return }
-      // Quem já bateu ponto não é apagado: recebe baixa, e o aviso diz isso (o histórico continua no relatório).
-      if (r?.baixa) setErroAtivacao(`${r.nome ?? f.nome} já tinha batido ponto: recebeu baixa. Continua na equipe, em cinza; o QR parou de valer, a vaga foi liberada e as batidas continuam no relatório.`)
+      // Excluir não apaga ninguém: é a baixa, e o aviso diz isso (as batidas continuam no relatório).
+      if (r?.baixa) setErroAtivacao(`${r.nome ?? f.nome} recebeu baixa: continua na equipe, em cinza; o QR parou de valer, a vaga foi liberada e as batidas continuam no relatório.`)
       router.refresh()
     })
   }
@@ -811,9 +811,7 @@ export default function FuncionarioTable({
         isPending={isPending}
         titulo="Excluir da equipe"
         mensagem={paraExcluir
-          ? `Excluir "${paraExcluir.nome}" da equipe? A vaga fica livre para um novo cadastro.
-
-Se ela já bateu ponto, nada é apagado: ela recebe baixa e continua na lista da equipe, em cinza, com as batidas no relatório; o QR para de valer. Se nunca bateu ponto, o cadastro vai para a lixeira.`
+          ? `Excluir "${paraExcluir.nome}" da equipe? Nada é apagado: ela recebe baixa e continua na lista da equipe, em cinza, com as batidas no relatório. O QR para de valer e a vaga fica livre para um novo cadastro. Para desfazer, use "Trazer de volta" no fim da linha.`
           : ''}
       />
     </div>

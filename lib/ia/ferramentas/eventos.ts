@@ -419,6 +419,11 @@ export function ferramentasDeEvento(ctx: ContextoIA, pedirConfirmacao: PedirConf
         const pessoas = (setores ?? []).reduce(
           (a, s) => a + ((s.funcionarios as unknown as { count: number }[])?.[0]?.count ?? 0), 0)
 
+        // Evento com batida não se exclui (Juan, 12/10/2026: as batidas não podem sumir em hipótese nenhuma).
+        if ((registros ?? 0) > 0) {
+          return `O evento ${evento.nome} tem ${registros} batida(s) de ponto e não pode ser excluído — as batidas sumiriam. Encerre ou desative o evento em vez de excluir.`
+        }
+
         const operacao = `excluir_evento:${evento_id}`
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(

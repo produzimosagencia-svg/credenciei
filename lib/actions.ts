@@ -72,7 +72,6 @@ import { verificarTurnstile } from './turnstile'
 import { setoresComMeio, diasComMeio } from './meio'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria, registrarCadastroFuncionario } from './auditoria'
-import { guardarNaLixeira } from './lixeira'
 import { avaliarLocal, posicaoValida, descreverDistancia, type Posicao, type LocalDoEvento } from './geo-local'
 import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, diaDoAutoatendimentoLiberado, descreverJanela,
@@ -3305,6 +3304,17 @@ export async function deletarEvento(id: string) {
    * bloquear a exclusão obrigaria o master a caçar supervisor por supervisor
    * antes de remover um evento de teste.
    */
+  /*
+   * Evento com BATIDA não pode ser excluído (Juan, 12/10/2026: "não pode sumir em hipótese nenhuma do sistema as
+   * batidas de ponto") — encerra/desativa, que preserva tudo. Na dúvida (consulta falhou), não exclui.
+   */
+  const { count: batidasDoEvento, error: erroBatidasEvento } = await db
+    .from('registros').select('id', { count: 'exact', head: true }).eq('evento_id', id)
+  if (erroBatidasEvento) throw new Error('Não foi possível conferir as batidas deste evento. Tente de novo.')
+  if ((batidasDoEvento ?? 0) > 0) {
+    throw new Error(`Este evento tem ${batidasDoEvento} batida(s) de ponto e não pode ser excluído — as batidas sumiriam. Desative o evento em vez de excluir.`)
+  }
+
   const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', id)
   const idsSetores = (setores ?? []).map(f => f.id)
   if (idsSetores.length) {
@@ -3845,6 +3855,19 @@ export async function deletarFornecedor(id: string, eventoId: string): Promise<{
       return { error: 'Este fornecedor tem supervisores vinculados. Exclua ou realoque os supervisores antes de excluir o fornecedor.' }
     }
 
+    /*
+     * Setor com BATIDA não pode ser excluído (Juan, 12/10/2026: "não pode sumir em hipótese nenhuma do sistema as
+     * batidas de ponto"): excluir o setor apaga a equipe e, junto, as batidas (`on delete cascade`). Na dúvida (consulta
+     * falhou), não exclui.
+     */
+    const { count: batidasDoSetor, error: erroBatidasSetor } = await db
+      .from('registros').select('id, funcionarios!inner(fornecedor_id)', { count: 'exact', head: true })
+      .eq('funcionarios.fornecedor_id', id)
+    if (erroBatidasSetor) return { error: 'Não foi possível conferir as batidas deste fornecedor. Tente de novo.' }
+    if ((batidasDoSetor ?? 0) > 0) {
+      return { error: `Este fornecedor tem ${batidasDoSetor} batida(s) de ponto e não pode ser excluído — as batidas sumiriam do relatório. Mova as pessoas para outro fornecedor ou dê baixa nelas.` }
+    }
+
     const { data: setorExcluido } = await db.from('fornecedores').select('nome').eq('id', id).maybeSingle()
     const { count: equipeExcluida } = await db.from('funcionarios').select('id', { count: 'exact', head: true }).eq('fornecedor_id', id)
     await db.from('fornecedores').delete().eq('id', id)
@@ -4309,36 +4332,15 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
     if (alvo.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é deste fornecedor.')
 
     /*
-     * QUEM JÁ BATEU PONTO NÃO É APAGADO — RECEBE BAIXA, e vale até pro master (pedido do Juan, 11/10/2026, VITAL:
-     * "quando excluir uma pessoa da equipe, ela ainda precisa estar no relatório, o histórico de batida dela...
-     * precisa automaticamente dar baixa na equipe e liberar uma nova vaga para cadastro"). Apagar levaria as
-     * batidas junto (`on delete cascade`) — e é delas que sai o pagamento. A baixa é o "Tirar da equipe": a ficha e
-     * as batidas ficam (relatório), o QR para de valer e a pessoa deixa de ocupar vaga (quem tem
-     * `descredenciado_em` não entra na contagem da quantidade nem do limite por dia). Na dúvida (consulta falhou),
-     * não apaga.
+     * EXCLUIR SÓ TIRA DA EQUIPE — NUNCA APAGA, de ninguém, nem pelo master (Juan, 12/10/2026: "não pode sumir em
+     * hipótese nenhuma do sistema as batidas de ponto anteriores... o botão excluir só tira o funcionário da equipe").
+     * É a baixa ("Tirar da equipe"): a ficha, o QR e as batidas ficam (relatório e "Funcionários do evento"), a linha
+     * fica cinza na equipe com "Trazer de volta", o QR para de valer e a vaga volta. Antes, apagar levava as batidas
+     * junto (`on delete cascade`) — 08/10 no VITAL; de 08 a 11/10 a exclusão ainda apagava quem nunca tinha batido.
      */
-    const { data: batidas, error: erroBatidas } = await db.from('registros').select('id').eq('funcionario_id', id).limit(1)
-    if (erroBatidas) throw new Error('Não foi possível conferir as batidas desta pessoa. Tente de novo.')
-    if (batidas?.length) {
-      await descredenciarFuncionario(id, fornecedorId, eventoId, motivo?.trim() || 'Excluída da equipe depois de já ter batido ponto (baixa automática)')
-      return { baixa: true, nome: alvo.nome as string }
-    }
-
-    // Cópia completa ANTES de apagar — é o que deixa o master restaurar (lixeira, lib/lixeira.ts).
-    await guardarNaLixeira(id, { id: perfil.id, nome: perfil.nome }, motivo)
-
-    const { error } = await db.from('funcionarios').delete().eq('id', id)
-    if (error) throw new Error(mensagemAmigavel(error))
-
-    after(() => registrarAuditoria({
-      perfil, acao: 'EXCLUSAO_FUNCIONARIO', eventoId,
-      campoAlterado: 'Funcionário excluído',
-      valorAnterior: `${alvo.nome} — CPF ${formatCpf(alvo.cpf as string)}`,
-      motivo: motivo ?? null,
-    }))
-
+    await descredenciarFuncionario(id, fornecedorId, eventoId, motivo?.trim() || 'Excluída da equipe (baixa)')
     revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
-    return {}
+    return { baixa: true, nome: alvo.nome as string }
   } catch (e) {
     // Devolvido, não lançado: em produção o Next esconde a mensagem de uma exceção de Server Action.
     return { error: mensagemAmigavel(e) }
@@ -10747,6 +10749,16 @@ export async function lancarPontoManual(
     }
   }
 
+  /*
+   * O horário que vai ser SUBSTITUÍDO fica na auditoria (Juan, 12/10/2026: "não pode sumir em hipótese nenhuma do
+   * sistema as batidas de ponto anteriores") — `upsertRegistro` troca a linha, e antes só o horário novo ficava gravado.
+   */
+  const { data: substituida } = await supabaseAdmin
+    .from('registros').select('created_at')
+    .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('tipo', momento).eq('data_ref', dataRef)
+    .limit(1)
+  const horarioAnterior = (substituida?.[0]?.created_at as string | undefined) ?? null
+
   const { error } = await upsertRegistro(func.id, evento.id, momento, {
     created_at: quandoISO,
     criado_por_perfil_id: perfil.id,
@@ -10756,7 +10768,9 @@ export async function lancarPontoManual(
   if (error) return { error: mensagemAmigavel(error) }
 
   after(() => registrarAuditoria({
-    perfil, acao: 'CORRECAO_PONTO', campoAlterado: etapaEscolhida.rotulo, valorNovo: quandoLocal,
+    perfil, acao: 'CORRECAO_PONTO', campoAlterado: etapaEscolhida.rotulo,
+    valorAnterior: horarioAnterior ? `${formatarBR(horarioAnterior, 'curto')} (horário substituído)` : null,
+    valorNovo: quandoLocal,
     motivo: justificativa, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
   }))
 

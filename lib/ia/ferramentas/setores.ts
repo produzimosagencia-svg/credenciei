@@ -235,6 +235,11 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
             .eq('funcionarios.fornecedor_id', fornecedor_id),
         ])
 
+        // Setor com batida não se exclui (Juan, 12/10/2026: as batidas não podem sumir em hipótese nenhuma).
+        if ((registros ?? 0) > 0) {
+          return `O fornecedor ${r.setor.nome} tem ${registros} batida(s) de ponto e não pode ser excluído — as batidas sumiriam do relatório. Mova as pessoas para outro fornecedor ou dê baixa nelas.`
+        }
+
         const operacao = `excluir_setor:${fornecedor_id}`
         if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(

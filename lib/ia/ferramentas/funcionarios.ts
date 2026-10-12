@@ -5,7 +5,6 @@ import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/men
 import { importarFuncionarios } from '@/lib/importacao'
 import { resumirPlanilha } from '@/lib/planilha'
 import { registrarAuditoriaIA } from '../auditoria'
-import { guardarNaLixeira } from '@/lib/lixeira'
 import {
   ferramenta, exigirGestor, resolverSetor, resolverFuncionario,
   urlBase, valorNumerico, brl,
@@ -379,7 +378,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
     ferramenta({
       nome: 'excluir_funcionario',
       descricao:
-        'Tira uma pessoa da equipe e libera a vaga. Quem já bateu ponto recebe BAIXA (sai da equipe, o QR para de valer e as batidas continuam no relatório); quem nunca bateu ponto é apagado (vai para a lixeira, o master restaura). ' +
+        'Tira uma pessoa da equipe e libera a vaga: ela recebe BAIXA — continua na lista (em cinza), o QR para de valer e as batidas continuam no relatório. Ninguém é apagado. ' +
         'Sempre chame primeiro sem confirmação para mostrar o impacto.',
       parametros: {
         type: 'object',
@@ -395,50 +394,30 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
           supabaseAdmin.from('funcionarios').select('pago, valor_receber').eq('id', funcionario_id).single(),
         ])
 
-        // Mesma regra da tela (`deletarFuncionario`, Juan 11/10/2026): quem já bateu ponto não é apagado — nem pelo
-        // master. Recebe baixa: sai da equipe e libera a vaga, e as batidas ficam no relatório.
-        const temBatidas = (registros ?? 0) > 0
+        // Mesma regra da tela (`deletarFuncionario`, Juan 12/10/2026): excluir SÓ TIRA DA EQUIPE — ninguém é apagado,
+        // nem pelo master. Recebe baixa: continua na lista da equipe (em cinza), o QR para de valer, a vaga volta e as
+        // batidas ficam no relatório.
         const operacao = `excluir_funcionario:${funcionario_id}`
-        if (temBatidas && !confirmacoes.has(operacao)) {
+        if (!confirmacoes.has(operacao)) {
           return JSON.stringify(pedirConfirmacao(
             operacao,
             `Dar baixa em ${r.func.nome} (${formatCpf(r.func.cpf)}) no fornecedor ${r.func.setorNome}`,
             {
-              registros_de_presenca: `${registros} — continuam no relatório (nada é apagado)`,
+              registros_de_presenca: `${registros ?? 0} — continuam no relatório (nada é apagado)`,
               vaga: 'liberada para um novo cadastro',
               qr: 'deixa de valer',
+              pagamento: pago?.pago ? `já paga (${brl(Number(pago.valor_receber ?? 0))}) — o registro continua` : 'não paga',
             }
           ))
         }
-        if (temBatidas) {
-          const { error } = await supabaseAdmin.from('funcionarios')
-            .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfil.id })
-            .eq('id', funcionario_id).is('descredenciado_em', null)
-          if (error) return 'Não consegui dar baixa agora. Tente de novo.'
-          await registrarAuditoriaIA(perfil, 'excluir_funcionario', {
-            funcionario_id, nome: r.func.nome, cpf: r.func.cpf, baixa: true, registros_mantidos: registros ?? 0,
-          })
-          return `${r.func.nome} já tinha batido ponto: recebeu baixa. Continua na lista da equipe (em cinza), o QR deixou de valer, a vaga foi liberada e as ${registros} batida(s) continuam no relatório.`
-        }
-
-        if (!confirmacoes.has(operacao)) {
-          return JSON.stringify(pedirConfirmacao(
-            operacao,
-            `Excluir ${r.func.nome} (${formatCpf(r.func.cpf)}) do fornecedor ${r.func.setorNome}`,
-            {
-              registros_de_presenca_apagados: registros ?? 0,
-              pagamento: pago?.pago ? `JÁ FOI PAGA (${brl(Number(pago.valor_receber ?? 0))}) — o registro do pagamento some junto` : 'não paga',
-              alternativa_reversivel: 'desativar a pessoa em vez de excluir',
-            }
-          ))
-        }
-
-        await guardarNaLixeira(funcionario_id, { id: perfil.id, nome: perfil.nome }, 'Excluído pelo assistente de IA')
-        await supabaseAdmin.from('funcionarios').delete().eq('id', funcionario_id)
+        const { error } = await supabaseAdmin.from('funcionarios')
+          .update({ descredenciado_em: new Date().toISOString(), descredenciado_por: perfil.id })
+          .eq('id', funcionario_id).is('descredenciado_em', null)
+        if (error) return 'Não consegui dar baixa agora. Tente de novo.'
         await registrarAuditoriaIA(perfil, 'excluir_funcionario', {
-          funcionario_id, nome: r.func.nome, cpf: r.func.cpf, registros_apagados: registros ?? 0,
+          funcionario_id, nome: r.func.nome, cpf: r.func.cpf, baixa: true, registros_mantidos: registros ?? 0,
         })
-        return `${r.func.nome} foi excluída da equipe, junto com ${registros ?? 0} registro(s) de presença.`
+        return `${r.func.nome} recebeu baixa: continua na lista da equipe (em cinza), o QR deixou de valer, a vaga foi liberada e as ${registros ?? 0} batida(s) continuam no relatório.`
       },
     }),
   ]

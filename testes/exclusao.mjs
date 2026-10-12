@@ -22,21 +22,26 @@ const tabela = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioTable.tsx
 const ia = ler('lib/ia/ferramentas/funcionarios.ts')
 
 console.log('Na tela do fornecedor')
-ok(/const \{ data: batidas, error: erroBatidas \} = await db\.from\('registros'\)/.test(corpo) && !/if \(!ehMaster\(perfil\.role\)\) \{\s*const \{ data: batidas/.test(corpo),
-  'antes de apagar, confere se a pessoa tem batida — pra TODO mundo, master inclusive')
-ok(corpo.indexOf("from('registros')") < corpo.indexOf(".delete().eq('id', id)"), 'a conferência vem ANTES do delete')
-ok(/if \(erroBatidas\) throw/.test(corpo), 'se a conferência falhar, não apaga (na dúvida, preserva)')
-ok(/if \(batidas\?\.length\) \{\s*await descredenciarFuncionario\(id, fornecedorId, eventoId,[\s\S]{0,140}\)\s*return \{ baixa: true, nome: alvo\.nome as string \}/.test(corpo),
-  'quem já bateu ponto recebe BAIXA (o "Tirar da equipe") em vez de ser apagado')
+ok(!/\.delete\(\)/.test(corpo) && !/guardarNaLixeira/.test(corpo), 'excluir NUNCA apaga a ficha (nem a lixeira entra mais) — 12/10/2026: "o botão excluir só tira o funcionário da equipe"')
+ok(/await descredenciarFuncionario\(id, fornecedorId, eventoId, motivo\?\.trim\(\) \|\| 'Excluída da equipe \(baixa\)'\)\s*revalidatePath\([^)]*\)\s*return \{ baixa: true, nome: alvo\.nome as string \}/.test(corpo),
+  'excluir = baixa, pra todo mundo (com ou sem batida, master inclusive)')
 ok(/Promise<\{ error\?: string; baixa\?: boolean; nome\?: string \}>/.test(corpo) && /return \{ error: mensagemAmigavel\(e\) \}/.test(corpo), 'a ação devolve o erro em vez de lançar (o Next esconderia a mensagem em produção)')
 ok(/const r = await deletarFuncionario\(f\.id, fornecedorId, eventoId\)/.test(tabela) && /if \(r\?\.error\) \{ setErroAtivacao\(r\.error\); return \}/.test(tabela), 'a tela mostra a recusa no aviso do topo da tabela')
-ok(/if \(r\?\.baixa\) setErroAtivacao\(/.test(tabela) && /as batidas continuam no relatório/.test(tabela), 'e avisa quando virou baixa')
-ok(/titulo="Excluir da equipe"/.test(tabela) && !/nem aparece mais em relatório nenhum/.test(tabela), 'o aviso de confirmação não promete mais apagar as batidas')
+ok(/if \(r\?\.baixa\) setErroAtivacao\(/.test(tabela) && /as batidas continuam no relatório/.test(tabela), 'e avisa que virou baixa')
+ok(/titulo="Excluir da equipe"/.test(tabela) && /Nada é apagado: ela recebe baixa/.test(tabela) && !/vai para a lixeira/.test(tabela), 'o aviso de confirmação diz que nada é apagado')
+
+console.log('\nSetor e evento com batida não se excluem (12/10/2026)')
+ok(/Este fornecedor tem \$\{batidasDoSetor\} batida\(s\) de ponto e não pode ser excluído/.test(acoes) && acoes.indexOf('batidasDoSetor') < acoes.indexOf("await db.from('fornecedores').delete().eq('id', id)"), 'setor com batida: recusado antes do delete')
+ok(/Este evento tem \$\{batidasDoEvento\} batida\(s\) de ponto e não pode ser excluído/.test(acoes) && acoes.indexOf('batidasDoEvento') < acoes.indexOf("db.from('eventos').delete().eq('id', id)"), 'evento com batida: recusado antes do delete')
+ok(/valorAnterior: horarioAnterior \? `\$\{formatarBR\(horarioAnterior, 'curto'\)\} \(horário substituído\)` : null/.test(acoes), 'corrigir um horário guarda o horário substituído na auditoria')
+const sqlProtecao = ler('supabase/upgrade-batidas-protegidas.sql')
+ok(/before delete on registros/.test(sqlProtecao) && /insert into registros_apagados/.test(sqlProtecao) && /before delete on funcionarios/.test(sqlProtecao), 'no banco: cópia de toda batida apagada e ficha com batida não se apaga')
 
 console.log('\nNo assistente de IA')
-ok(!/perfil\.role !== 'master'/.test(ia) && /const temBatidas = \(registros \?\? 0\) > 0/.test(ia), 'o assistente também não apaga quem tem batida, nem pro master')
-ok(ia.indexOf('if (temBatidas) {') < ia.indexOf(".from('funcionarios').delete()") && /update\(\{ descredenciado_em: new Date\(\)\.toISOString\(\), descredenciado_por: perfil\.id \}\)/.test(ia),
-  '… dá baixa antes de chegar no delete')
+const setoresIA = ler('lib/ia/ferramentas/setores.ts'), eventosIA = ler('lib/ia/ferramentas/eventos.ts')
+ok(!/from\('funcionarios'\)\.delete\(\)/.test(ia) && /update\(\{ descredenciado_em: new Date\(\)\.toISOString\(\), descredenciado_por: perfil\.id \}\)/.test(ia), 'o assistente também nunca apaga uma pessoa: dá baixa')
+ok(setoresIA.indexOf('if ((registros ?? 0) > 0) {') > 0 && setoresIA.indexOf('if ((registros ?? 0) > 0) {') < setoresIA.indexOf(".from('fornecedores').delete()"), 'nem exclui setor com batida')
+ok(eventosIA.indexOf('if ((registros ?? 0) > 0) {') > 0 && eventosIA.indexOf('if ((registros ?? 0) > 0) {') < eventosIA.indexOf(".from('eventos').delete()"), 'nem evento com batida')
 
 console.log('\nA baixa libera a vaga')
 const escala = ler('lib/escala.ts'), importacao = ler('lib/importacao.ts'), pedidos = ler('lib/actions-pedidos-setor.ts')
