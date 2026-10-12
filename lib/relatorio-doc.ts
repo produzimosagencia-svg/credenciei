@@ -43,6 +43,8 @@ export type SecaoDoc = {
   vazio?: string
   /** Começa sempre numa folha nova (as seções grandes do modelo). Sem: continua na mesma folha se couber. */
   novaFolha?: boolean
+  /** Só rótulo, título e aviso — sem tabela (o fechamento da entrega de valor). */
+  semTabela?: boolean
 }
 
 /** Um pedaço de seção dentro de uma folha. */
@@ -87,7 +89,7 @@ export function paginar(secoes: SecaoDoc[], opcoes: { paisagem?: boolean } = {})
 
     if (!secao.linhas.length) {
       folha.blocos.push({ secao, linhas: [], continuacao: false })
-      livre -= 2
+      livre -= secao.semTabela ? 0 : 2
       atual = folha
       continue
     }

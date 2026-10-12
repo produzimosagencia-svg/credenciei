@@ -2,6 +2,7 @@ import 'server-only'
 import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { emLotes } from './lotes'
 import { relatorioForaDoLocal } from './alertas-local'
+import { cadastrosSoNaLixeira } from './lixeira'
 
 /**
  * Os números do "PDF de entrega de valor" (pedido do Juan, 09/10/2026): o que o Credenciei entregou no evento do
@@ -116,7 +117,8 @@ export async function dadosEntregaValor(eventoId: string): Promise<DadosEntregaV
     fornecedores: setorIds.length,
     supervisores: supervisores.size,
     cadastros: {
-      total: funcs.length,
+      // O mesmo número do cartão "Funcionários do evento": inclui quem foi apagado (lixeira) — Juan, 12/10/2026.
+      total: funcs.length + await cadastrosSoNaLixeira(eventoId),
       aprovados: ativos.filter(f => (f.status_credenciamento ?? 'aprovado') === 'aprovado').length,
       negados: funcs.filter(f => f.status_credenciamento === 'negado').length,
       aguardando: ativos.filter(f => f.status_credenciamento === 'pendente').length,

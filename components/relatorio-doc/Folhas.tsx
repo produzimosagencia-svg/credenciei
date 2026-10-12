@@ -37,7 +37,7 @@ export default function Folhas({ folhas, rotuloEvento, carimbo }: {
               )}
               {b.linhas.length ? (
                 <Tabela colunas={b.secao.colunas} linhas={b.linhas} />
-              ) : (
+              ) : !b.secao.semTabela && (
                 <p className="rd-vazio">{b.secao.vazio ?? 'Nada para mostrar.'}</p>
               )}
             </div>
@@ -74,6 +74,8 @@ function Celula({ coluna, valor: celula }: { coluna: ColunaDoc; valor: CelulaDoc
   const valor = valorDaCelula(celula)
   const destacada = celula != null && typeof celula === 'object' && celula.destaque === true
   if (coluna.tipo === 'barra') {
+    // Sem proporção (null): célula vazia, sem a trilha cinza.
+    if (valor == null) return <td />
     const p = typeof valor === 'number' && Number.isFinite(valor) ? Math.max(0, Math.min(1, valor)) : 0
     return (
       <td className="rd-dir">

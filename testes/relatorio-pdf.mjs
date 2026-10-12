@@ -49,5 +49,11 @@ ok(Object.keys({ hoje: 1, aguardando: 1, cadastros: 1, fora_local: 1, limites: 1
   'cada cartão de "Outros relatórios" tem Planilha e PDF')
 ok(/PDF do subgrupo/.test(tela), 'o cartão do subgrupo também')
 
+console.log('\nEntrega de valor no padrão novo (Juan, 12/10/2026: "pode fazer")')
+const entrega = ler('lib/relatorio-doc-entrega.ts'), botao = ler('app/admin/eventos/[id]/relatorios/BotaoEntregaValor.tsx')
+ok(/rotulo: 'Presença sob controle'/.test(entrega) && /rotulo: 'Segurança e controle de acesso'/.test(entrega) && /rotulo: 'O que o Credenciei somou ao seu evento'/.test(entrega), 'o mesmo conteúdo do PDF antigo, no padrão do modelo')
+ok(/href=\{`\/relatorios-pdf\/\$\{encodeURIComponent\(eventoId\)\}\/entrega-valor`\}/.test(botao), 'o botão abre a versão nova')
+ok(/total: funcs\.length \+ await cadastrosSoNaLixeira\(eventoId\)/.test(ler('lib/entrega-valor.ts')), '"pessoas cadastradas" = o mesmo número do cartão "Funcionários do evento"')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
