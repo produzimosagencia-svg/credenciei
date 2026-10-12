@@ -167,6 +167,21 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
   const confirmadas = useRef<string[]>([])
   const fimDaLista = useRef<HTMLDivElement>(null)
   const arquivoRef = useRef<HTMLInputElement>(null)
+  const campoRef = useRef<HTMLTextAreaElement>(null)
+
+  /*
+   * O campo CRESCE com o texto (até ~8 linhas) e rola dali pra frente — pedido do Juan, 12/10/2026: "chat do suporte
+   * sem scroll e sem crescer quando coloca informações" (RG e CPF colados em duas linhas sumiam). Volta a uma linha
+   * quando a mensagem sai.
+   */
+  useEffect(() => {
+    const el = campoRef.current
+    if (!el) return
+    const MAXIMO_PX = 200
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, MAXIMO_PX)}px`
+    el.style.overflowY = el.scrollHeight > MAXIMO_PX ? 'auto' : 'hidden'
+  }, [entrada])
   const pathname = usePathname()
 
   // A planilha é lida aqui, por código — a IA nunca transcreve CPF.
@@ -538,6 +553,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   <Paperclip className="w-4 h-4" />
                 </button>
                 <textarea
+                  ref={campoRef}
                   autoFocus
                   value={entrada}
                   onChange={e => setEntrada(e.target.value)}
@@ -549,7 +565,7 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
                   }}
                   rows={1}
                   placeholder={anexo ? 'Em qual fornecedor entram?' : estrutura ? 'Em qual evento importar?' : 'Pergunte ou peça algo...'}
-                  className="input resize-none max-h-32 text-sm"
+                  className="input resize-none text-sm"
                 />
                 <button
                   type="submit"

@@ -10,6 +10,7 @@ import { estadoWhatsAppSalvo } from '@/lib/saude'
 import { getPerfil, supabaseAdmin, licencasDeEventoRestantes, meuSetor, meusSetores, buscarTudo } from '@/lib/supabase-server'
 import { veTodosEventos, ehMaster, podeGerenciarEventos, podeAcompanhar, podeExcluir, podeGerenciarBacklog } from '@/lib/permissions'
 import AtencaoHoje from './AtencaoHoje'
+import { cadastrosSoNaLixeira } from '@/lib/lixeira'
 import Redirecionar from './Redirecionar'
 import { templatesAprovados, resumoFinanceiroWhatsApp } from '@/lib/whatsapp-painel'
 import { Secao, PageHeader, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -91,6 +92,8 @@ type LinhaEvento = {
   local: string | null
   setores: number
   equipe: number
+  /** Todo mundo que TEVE cadastro no evento (equipe + apagados da lixeira) — o mesmo "Funcionários do evento". */
+  cadastrados: number
   presentes: number
 }
 
@@ -394,6 +397,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const eid = (f.fornecedores as unknown as { evento_id: string })?.evento_id
     if (eid) equipePorEvento.set(eid, (equipePorEvento.get(eid) ?? 0) + 1)
   }
+  /*
+   * Mesmo número do cartão "Funcionários do evento" (pedido do Juan, 12/10/2026: o card daqui dava 1576 e o do evento
+   * 1660): todo mundo que TEVE cadastro, inclusive quem foi apagado antes de excluir virar baixa (lixeira).
+   */
+  // Só pra mostrar: as contas de presença (esperados/presentes) continuam sobre a equipe de agora.
+  const lixeiraPorEvento = new Map(await Promise.all(idsNaTela.map(id => cadastrosSoNaLixeira(id).then(n => [id, n] as const))))
   // Set por evento: a mesma pessoa pode ter mais de um registro de entrada.
   const presentesPorEvento = new Map<string, Set<string>>()
   for (const r of entradas ?? []) {
@@ -410,6 +419,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     local: (e.local as string | null) ?? null,
     setores: (e.fornecedores as { count: number }[] | null)?.[0]?.count ?? 0,
     equipe: equipePorEvento.get(e.id as string) ?? 0,
+    cadastrados: (equipePorEvento.get(e.id as string) ?? 0) + (lixeiraPorEvento.get(e.id as string) ?? 0),
     presentes: presentesPorEvento.get(e.id as string)?.size ?? 0,
   })
 
@@ -873,7 +883,7 @@ function EventoAoVivo({ evento, podeExcluir, podeGerir, destacar }: { evento: Li
         )}
         <dt className="text-slate-500">Equipe</dt>
         <dd className="text-slate-800 tabular-nums">
-          {evento.setores} fornecedor{evento.setores !== 1 ? 'es' : ''} · {evento.equipe} funcionário{evento.equipe !== 1 ? 's' : ''}
+          {evento.setores} fornecedor{evento.setores !== 1 ? 'es' : ''} · {evento.cadastrados} funcionário{evento.cadastrados !== 1 ? 's' : ''}
         </dd>
       </dl>
 
@@ -910,7 +920,7 @@ function EventoLinha({ evento, podeExcluir, podeGerir, destacar }: { evento: Lin
         <span className="tabular-nums text-slate-600">{data}</span>
         <span className="text-slate-500 truncate pr-3">{evento.local ?? '—'}</span>
         <span className="text-right tabular-nums text-slate-800">{evento.setores}</span>
-        <span className="text-right tabular-nums text-slate-800">{evento.equipe}</span>
+        <span className="text-right tabular-nums text-slate-800">{evento.cadastrados}</span>
         <span className="pl-4">
           {evento.ativo ? <Badge tom="positivo">Ativo</Badge> : <Badge tom="neutro">Encerrado</Badge>}
         </span>
