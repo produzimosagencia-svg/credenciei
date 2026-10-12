@@ -137,5 +137,12 @@ confere("tentativa recusada vai para leituras_qr com resultado 'fora_do_local'",
   /resultado: 'fora_do_local',\s*mensagem: `Autoatendimento pelo celular/.test(actions), true)
 confere('batida aceita também é marcada com a distância', actions.includes('after(() => marcarLocalDaBatida(registro.id as string, eventoId, posicaoPropria))'), true)
 
+console.log('\n11 · "Estou indo embora" antes da janela começar mostra que ficou ativado (Juan, 12/10/2026: "o botão não tá funcionando")')
+const botaoAuto = ler('components/AutoatendimentoBotao.tsx')
+const regrasAuto = ler('lib/autoatendimento-regras.ts')
+confere('a regra diz quando a janela começa, se a ativação vale pra ela', /export function ativacaoAguardandoJanela/.test(regrasAuto) && /return new Date\(cfg\.ativadoEm\)\.getTime\(\) >= fimDaAnterior \? comeca : null/.test(regrasAuto), true)
+confere('o status leva isso pra tela', /aguardandoInicio: ativacaoAguardandoJanela\(cfg\)\?\.toISOString\(\) \?\? null/.test(actions), true)
+confere('o botão mostra "Autoatendimento ativado — começa às…" com o "Cheguei" pra desfazer', /status\.liberadoAgora \|\| status\.aguardandoInicio \?/.test(botaoAuto) && /Autoatendimento ativado<\/b> — começa às/.test(botaoAuto), true)
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

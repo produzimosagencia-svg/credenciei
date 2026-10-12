@@ -77,7 +77,7 @@ import { avaliarLocal, posicaoValida, descreverDistancia, mensagemLocalImpreciso
 const MENSAGEM_SEM_LOCALIZACAO = 'Não foi possível confirmar sua localização. Verifique o GPS e tente de novo — a batida não foi registrada.'
 import {
   obterAutoatendimento, autoatendimentoLiberadoAgora, diaDoAutoatendimentoLiberado, descreverJanela,
-  diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao,
+  diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao, ativacaoAguardandoJanela,
 } from './autoatendimento'
 import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
 import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
@@ -11186,6 +11186,8 @@ export type StatusAutoatendimento = {
   habilitado: boolean
   /** Dentro da janela e com alguém tendo apertado "Estou indo embora" — é isto que libera o autoatendimento. */
   liberadoAgora: boolean
+  /** Ativado, mas a janela ainda não começou: quando começa (ISO). A tela mostra "ativado — começa às 18:00". */
+  aguardandoInicio: string | null
   janelaTexto: string | null
   ativadoPorNome: string | null
 }
@@ -11197,7 +11199,7 @@ export type StatusAutoatendimento = {
 export async function statusAutoatendimentoPortao(eventoId: string): Promise<StatusAutoatendimento> {
   const perfil = await getPerfil()
   if (!(await podeEscanearEvento(perfil, eventoId))) {
-    return { habilitado: false, liberadoAgora: false, janelaTexto: null, ativadoPorNome: null }
+    return { habilitado: false, liberadoAgora: false, aguardandoInicio: null, janelaTexto: null, ativadoPorNome: null }
   }
   const cfg = await obterAutoatendimento(eventoId)
   let ativadoPorNome: string | null = null
@@ -11208,6 +11210,7 @@ export async function statusAutoatendimentoPortao(eventoId: string): Promise<Sta
   return {
     habilitado: cfg.habilitado,
     liberadoAgora: await autoatendimentoLiberadoAgora(eventoId),
+    aguardandoInicio: ativacaoAguardandoJanela(cfg)?.toISOString() ?? null,
     janelaTexto: descreverJanela(cfg),
     ativadoPorNome,
   }

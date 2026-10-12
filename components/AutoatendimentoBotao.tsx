@@ -23,7 +23,7 @@ const INTERVALO_MS = 20_000
  */
 export default function AutoatendimentoBotao({ eventoId, tema = 'escuro' }: { eventoId: string; tema?: 'claro' | 'escuro' }) {
   const [status, setStatus] = useState<{
-    habilitado: boolean; liberadoAgora: boolean; janelaTexto: string | null; ativadoPorNome: string | null
+    habilitado: boolean; liberadoAgora: boolean; aguardandoInicio: string | null; janelaTexto: string | null; ativadoPorNome: string | null
   } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -56,11 +56,20 @@ export default function AutoatendimentoBotao({ eventoId, tema = 'escuro' }: { ev
 
   return (
     <div className={claro ? 'space-y-2' : 'px-4 pt-3 space-y-2'}>
-      {status.liberadoAgora ? (
+      {status.liberadoAgora || status.aguardandoInicio ? (
         <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${claro ? 'border-amber-200 bg-amber-50' : 'border-amber-400/40 bg-amber-400/10'}`}>
           <p className={`text-xs leading-snug ${claro ? 'text-amber-800' : 'text-amber-200'}`}>
-            <b>Autoatendimento ativo</b> — colaboradores podem bater o próprio ponto pelo celular
-            {status.janelaTexto ? ` (das ${status.janelaTexto})` : ''}.
+            {status.liberadoAgora ? (
+              <><b>Autoatendimento ativo</b> — colaboradores podem bater o próprio ponto pelo celular
+              {status.janelaTexto ? ` (das ${status.janelaTexto})` : ''}.</>
+            ) : (
+              /*
+               * Ativado ANTES da janela começar (Juan, 12/10/2026: apertou às 17:39 numa janela das 18:00 e o botão
+               * continuou igual — parecia que não tinha funcionado). Agora diz que está ativado e quando começa.
+               */
+              <><b>Autoatendimento ativado</b> — começa às {new Date(status.aguardandoInicio!).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' })}
+              {status.janelaTexto ? ` (janela das ${status.janelaTexto})` : ''}. Até lá, o colaborador ainda precisa do operador.</>
+            )}
             {status.ativadoPorNome ? ` Ativado por ${status.ativadoPorNome}.` : ''}
           </p>
           <button

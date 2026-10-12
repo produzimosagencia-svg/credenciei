@@ -116,6 +116,25 @@ export function janelaLiberada(cfg: ConfigAutoatendimento, agora: Date = new Dat
   return janela
 }
 
+/**
+ * Ativado e ESPERANDO a janela começar (Juan, 12/10/2026: apertou "Estou indo embora" às 17:39 numa janela das 18:00,
+ * o botão continuou igual e ele apertou de novo, achando que não tinha funcionado). Devolve quando a janela começa, pra
+ * tela dizer "ativado — começa às 18:00". `null` quando já está dentro da janela, a ativação é antiga ou não houve.
+ */
+export function ativacaoAguardandoJanela(cfg: ConfigAutoatendimento, agora: Date = new Date()): Date | null {
+  if (!cfg.habilitado || !cfg.ativadoEm) return null
+  if (janelaAtual(cfg.inicio, cfg.fim, agora)) return null
+  const i = minutosDoHorario(cfg.inicio)
+  const f = minutosDoHorario(cfg.fim)
+  if (i == null || f == null) return null
+  const comeca = instanteBRT(partesBRT(agora).dia, i)
+  if (comeca.getTime() <= agora.getTime()) return null   // a de hoje já passou — a próxima é amanhã
+  // Mesma régua de `ativacaoValeParaJanela`: vale se foi apertado depois do fim da janela ANTERIOR.
+  const duracao = i < f ? f - i : f - i + 24 * 60
+  const fimDaAnterior = comeca.getTime() - (24 * 60 - duracao) * 60_000
+  return new Date(cfg.ativadoEm).getTime() >= fimDaAnterior ? comeca : null
+}
+
 /** Liberado AGORA: habilitado, ativado pelo operador para esta janela, e dentro da janela. */
 export function liberadoAgora(cfg: ConfigAutoatendimento, agora: Date = new Date()): boolean {
   return janelaLiberada(cfg, agora) !== null
