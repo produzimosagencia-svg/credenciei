@@ -1,6 +1,6 @@
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
-import { editarEvento, obterConfiguracaoDoMeio, obterConfiguracaoDoAutoatendimento } from '@/lib/actions'
+import { editarEvento, obterConfiguracaoDoMeio, obterConfiguracaoDoAutoatendimento, obterConfiguracaoEntradaLivre } from '@/lib/actions'
 import { diasDoEvento, obterFuncionalidadesDoEvento, tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import { isoParaInput } from '@/lib/tz'
 import { diaBRT } from '@/lib/janelas'
@@ -9,6 +9,7 @@ import DiasPrincipaisExtras from './DiasPrincipaisExtras'
 import MetodoIdentificacao from '@/components/MetodoIdentificacaoEvento'
 import ConfiguracaoDoMeio from './ConfiguracaoDoMeio'
 import AvisoMeioSupervisor from './AvisoMeioSupervisor'
+import ConfiguracaoEntradaQualquerHorario from './ConfiguracaoEntradaQualquerHorario'
 import ConfiguracaoDoAutoatendimento from './ConfiguracaoDoAutoatendimento'
 import LocalNoMapa from './LocalNoMapa'
 import ConferenciaDeHorarios from '../../ConferenciaDeHorarios'
@@ -83,9 +84,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
     { key: 'fim', label: 'Saída', icon: LogOut, color: 'text-brand-600', bg: 'bg-brand-50', border: 'border-brand-100' },
   ] as const
 
-  const [dias, configMeio, configAutoatendimento, funcionalidades, tutorialDoEvento] = await Promise.all([
+  const [dias, configMeio, configAutoatendimento, funcionalidades, tutorialDoEvento, configEntradaLivre] = await Promise.all([
     diasDoEvento(id), obterConfiguracaoDoMeio(id), obterConfiguracaoDoAutoatendimento(id),
-    obterFuncionalidadesDoEvento(id), tutorialHabilitadoNoEvento(id),
+    obterFuncionalidadesDoEvento(id), tutorialHabilitadoNoEvento(id), obterConfiguracaoEntradaLivre(id),
   ])
   const diaPrincipal = evento.data_inicio ? diaBRT(evento.data_inicio as string) : ''
 
@@ -405,6 +406,9 @@ export default async function EditarEventoPage({ params }: { params: Promise<{ i
             primeira={((evento as { aviso_meio_supervisor_hora?: string | null }).aviso_meio_supervisor_hora ?? null)?.slice(0, 5) ?? null}
             segunda={((evento as { aviso_meio_supervisor_hora_2?: string | null }).aviso_meio_supervisor_hora_2 ?? null)?.slice(0, 5) ?? null}
           />
+
+          {/* Entrada em qualquer horário, pro evento inteiro — mesma ideia da seção do meio (Juan, 12/10/2026). */}
+          <ConfiguracaoEntradaQualquerHorario eventoId={id} config={configEntradaLivre} />
 
           {/*
             * Autoatendimento fora do horário da portaria (pedido do Juan, 08/10/2026) — existe para quando a

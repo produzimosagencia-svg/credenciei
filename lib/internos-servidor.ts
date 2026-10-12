@@ -444,3 +444,24 @@ export async function operadoresDaOrganizacao(organizacaoId: string): Promise<Op
   }
   return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
+
+/**
+ * Como um fornecedor NOVO nasce nas duas caixinhas "Pedir confirmação no meio do turno" e "Entrada em qualquer horário"
+ * (pedido do Juan, 12/10/2026: "quando marcar lá em editar evento, precisa tá marcado para todos os setores; quando eu
+ * marcar só dentro do fornecedor, é exclusivo para ele"): marcada quando TODOS os fornecedores do evento já estão
+ * marcados — ou seja, quando a escolha em Editar evento foi "todos". Sem fornecedor nenhum, ou na dúvida, desmarcada.
+ */
+export async function padroesDoNovoFornecedor(eventoId: string): Promise<{ exigeMeio: boolean; entradaQualquerHorario: boolean }> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('fornecedores').select('exige_meio, entrada_qualquer_horario').eq('evento_id', eventoId)
+    if (error || !data?.length) return { exigeMeio: false, entradaQualquerHorario: false }
+    const linhas = data as { exige_meio?: boolean | null; entrada_qualquer_horario?: boolean | null }[]
+    return {
+      exigeMeio: linhas.every(f => f.exige_meio === true),
+      entradaQualquerHorario: linhas.every(f => f.entrada_qualquer_horario === true),
+    }
+  } catch {
+    return { exigeMeio: false, entradaQualquerHorario: false }
+  }
+}

@@ -17,7 +17,11 @@ type Props =
    * página de um subevento (correção 30/09/2026: Evento → Subevento →
    * Fornecedor). Ausente = nasce direto no evento, como sempre foi.
    */
-  | { mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean; subeventoId?: string }
+  | {
+      mode: 'criar'; eventoId: string; podeCriarSupervisor?: boolean; subeventoId?: string
+      /** Como as duas caixinhas nascem — marcadas quando TODOS os fornecedores do evento estão marcados (`padroesDoNovoFornecedor`). */
+      padraoExigeMeio?: boolean; padraoEntradaQualquerHorario?: boolean
+    }
   | {
       mode: 'editar'; eventoId: string; fornecedorId: string; nome: string; valor_combinado: number | null
       /** Cota/teto de pessoas nesta equipe — ver a trava de cota em Configurações. */
@@ -63,8 +67,9 @@ export default function FornecedorModal(props: Props) {
   const defaultQuantidade = isEditar ? (props as any).quantidade_estimada ?? '' : ''
   // Setor novo nasce SEM o meio, a pedido: ele só importa em equipe paga por
   // pessoa, que é a minoria. Quem precisa liga — e paga o WhatsApp só ali.
-  const defaultExigeMeio = isEditar ? (props as any).exige_meio === true : false
-  const defaultEntradaQualquerHorario = isEditar ? (props as any).entrada_qualquer_horario === true : false
+  // EXCETO quando o evento inteiro está marcado em Editar evento (12/10/2026): aí o novo nasce marcado também.
+  const defaultExigeMeio = isEditar ? (props as any).exige_meio === true : (props as any).padraoExigeMeio === true
+  const defaultEntradaQualquerHorario = isEditar ? (props as any).entrada_qualquer_horario === true : (props as any).padraoEntradaQualquerHorario === true
   const subeventosDoEditar: Subevento[] = isEditar ? ((props as any).subeventos ?? []) : []
   const defaultSubeventoId = isEditar ? ((props as any).subevento_id ?? '') : ''
   // Um id por instância: a tela mostra vários destes modais ao mesmo tempo

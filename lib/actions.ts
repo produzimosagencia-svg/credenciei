@@ -11407,6 +11407,58 @@ export async function salvarAvisoMeioSupervisor(
   }
 }
 
+// ─── Entrada em qualquer horário, pro evento inteiro ──────────────────────────────────────────────────────────
+
+/**
+ * A lista de fornecedores com a "Entrada em qualquer horário" (pedido do Juan, 12/10/2026: "lá no editar, vale pôr uma
+ * aba de entrada em qualquer horário também, igual tem a do meio"). Grava o MESMO campo da caixinha do fornecedor —
+ * marcar aqui vale pra todos os marcados; marcar só dentro do fornecedor vale só pra ele. Sem a coluna
+ * (migração antiga pendente), vem tudo desmarcado e `disponivel: false`.
+ */
+export type ConfiguracaoEntradaLivre = { setores: { id: string; nome: string; ligado: boolean }[]; disponivel: boolean }
+
+export async function obterConfiguracaoEntradaLivre(eventoId: string): Promise<ConfiguracaoEntradaLivre> {
+  await exigirEventoDaOrg(eventoId)
+  const { data, error } = await supabaseAdmin
+    .from('fornecedores').select('id, nome, entrada_qualquer_horario').eq('evento_id', eventoId).order('nome')
+  if (error) {
+    const { data: semColuna } = await supabaseAdmin.from('fornecedores').select('id, nome').eq('evento_id', eventoId).order('nome')
+    return { setores: (semColuna ?? []).map(s => ({ id: s.id as string, nome: String(s.nome).trim(), ligado: false })), disponivel: false }
+  }
+  return {
+    setores: (data ?? []).map(s => ({
+      id: s.id as string, nome: String(s.nome).trim(),
+      ligado: (s as { entrada_qualquer_horario?: boolean | null }).entrada_qualquer_horario === true,
+    })),
+    disponivel: true,
+  }
+}
+
+/** Grava a lista inteira: `true` nos marcados e `false` nos outros (mesmo cuidado de `salvarConfiguracaoDoMeio`). */
+export async function salvarConfiguracaoEntradaLivre(
+  eventoId: string, setoresLigados: string[],
+): Promise<{ ok: true; setores: number; total: number } | { erro: string }> {
+  try {
+    const perfil = await exigirEventoDaOrg(eventoId)
+    const { data: setoresDoEvento } = await supabaseAdmin.from('fornecedores').select('id').eq('evento_id', eventoId)
+    const ids = (setoresDoEvento ?? []).map(s => s.id as string)
+    const ligados = ids.filter(id => setoresLigados.includes(id))
+    const desligados = ids.filter(id => !setoresLigados.includes(id))
+    const erro = (ligados.length ? (await supabaseAdmin.from('fornecedores').update({ entrada_qualquer_horario: true }).in('id', ligados)).error : null)
+      ?? (desligados.length ? (await supabaseAdmin.from('fornecedores').update({ entrada_qualquer_horario: false }).in('id', desligados)).error : null)
+    if (erro) return { erro: mensagemAmigavel(erro) }
+    auditar(perfil, 'EVENTO_EDITADO', {
+      campoAlterado: 'Entrada em qualquer horário', eventoId,
+      valorNovo: `${ligados.length} de ${ids.length} fornecedor(es)`,
+    })
+    revalidatePath(`/admin/eventos/${eventoId}`)
+    revalidatePath(`/admin/eventos/${eventoId}/editar`)
+    return { ok: true, setores: ligados.length, total: ids.length }
+  } catch (e) {
+    return { erro: mensagemAmigavel(e) }
+  }
+}
+
 /**
  * Liga/desliga a batida do meio: quais SETORES pedem, e em quais DIAS.
  *

@@ -7,7 +7,7 @@ import FornecedorModal from '../../FornecedorModal'
 import ListaDeSetores from '../../ListaDeSetores'
 import ExportarSubevento from './ExportarSubevento'
 import TravaDeCadastro from './TravaDeCadastro'
-import { subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
+import { subeventosComCadastroSuspenso, padroesDoNovoFornecedor } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import { PageHeader, Secao, EmptyState } from '@/components/ui/Superficie'
 import SeletorDeDia from '@/components/SeletorDeDia'
@@ -52,6 +52,8 @@ export default async function SubeventoPage({
     .select('id, nome, token_formulario, quantidade_estimada, valor_combinado, cpfs_autorizados, funcionarios(count)')
     .eq('subevento_id', sid)
     .order('created_at')
+  // Fornecedor novo nasce marcado no meio / entrada livre quando TODOS os do evento estão (Editar evento → "todos").
+  const padroesNovo = await padroesDoNovoFornecedor(eventoId)
 
   const fornecedorIds = fornecedores?.map(f => f.id) ?? []
   const vazio = { data: [] as never[] }
@@ -250,6 +252,7 @@ export default async function SubeventoPage({
             mode="criar"
             subeventoId={sid}
             podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'}
+            padraoExigeMeio={padroesNovo.exigeMeio} padraoEntradaQualquerHorario={padroesNovo.entradaQualquerHorario}
           />
         }
         corpoClassName={fornecedores?.length ? 'p-4' : ''}

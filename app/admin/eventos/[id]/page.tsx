@@ -7,7 +7,7 @@ import { Users, UserCheck, Clock, MapPin, CalendarDays, CalendarCheck, LogIn, Lo
 import FornecedorModal from './FornecedorModal'
 import ListaDeSetores from './ListaDeSetores'
 import SubeventosCard from './SubeventosCard'
-import { obterFuncionalidadesDoEvento, operadoresDaOrganizacao, tutorialHabilitadoNoEvento, subeventosComCadastroSuspenso } from '@/lib/internos-servidor'
+import { obterFuncionalidadesDoEvento, operadoresDaOrganizacao, tutorialHabilitadoNoEvento, subeventosComCadastroSuspenso, padroesDoNovoFornecedor } from '@/lib/internos-servidor'
 import { supervisoresSemCrachaPorSetor } from '@/lib/equipe'
 import PortariaCard from './PortariaCard'
 import CadastroPorLinkCard from './CadastroPorLinkCard'
@@ -368,6 +368,8 @@ export default async function EventoPage({
   const setoresParaMover = fornecedoresEnriquecidos.map(f => ({ id: f.id as string, nome: (f.nome as string).trim(), area: f.subevento_id ? (nomeDoSubevento.get(f.subevento_id) ?? null) : null }))
 
   const totalFuncionarios = fornecedores?.reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0) ?? 0
+  // Fornecedor novo nasce marcado no meio / entrada livre quando TODOS os do evento estão (Editar evento → "todos").
+  const padroesNovo = await padroesDoNovoFornecedor(id)
   /*
    * "Funcionários do evento" = todo mundo que TEVE cadastro aqui, e não só quem está na equipe agora (pedido do Juan,
    * 11/10/2026: "mesmo que as pessoas sejam excluídas das equipes, não é para esse número diminuir... a gente ganha
@@ -579,7 +581,10 @@ export default async function EventoPage({
             ? 'Cada subevento tem seus próprios fornecedores — abra um para gerenciar a equipe dele'
             : 'Cada fornecedor gera um link próprio de cadastro para a equipe'}
           acoes={!usaSubeventos && (
-            <FornecedorModal eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'} />
+            <FornecedorModal
+              eventoId={id} mode="criar" podeCriarSupervisor={podeGerenciarUsuarios(perfil) || perfil.role === 'suporte'}
+              padraoExigeMeio={padroesNovo.exigeMeio} padraoEntradaQualquerHorario={padroesNovo.entradaQualquerHorario}
+            />
           )}
           corpoClassName={fornecedores?.length ? 'p-4' : ''}
         >
