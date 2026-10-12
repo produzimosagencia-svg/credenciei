@@ -166,7 +166,15 @@ async function calcularStatsMestre(): Promise<StatsMestre> {
     templatesAprovados(),
   ])
 
-  const funcionariosNaBase = new Set(funcionarios.map(f => f.cpf)).size
+  /*
+   * A BASE PERMANENTE (`base_pessoas`, pedido do Juan, 10/10/2026: "funcionário nenhum pode ser excluído da base") —
+   * conta também quem foi apagado de um evento. Sem a tabela (migração pendente), o de sempre: CPF distinto das fichas.
+   */
+  const { count: naBasePermanente, error: erroBase } = await supabaseAdmin
+    .from('base_pessoas').select('cpf', { count: 'exact', head: true })
+  const funcionariosNaBase = !erroBase && naBasePermanente != null
+    ? naBasePermanente
+    : new Set(funcionarios.map(f => f.cpf)).size
   const valorTotalCobrado = ativos.reduce((acc, f) => acc + (Number(f.valor_receber) || 0), 0)
   const { custoEstimado, dias } = await resumoFinanceiroWhatsApp(templates)
 
