@@ -28,5 +28,15 @@ ok(/const soPagas = p\.escopo !== 'todas'/.test(fechamento), 'por padrão só as
 ok(/exigirAcessoAoEvento\(eventoId\)/.test(dados) && /setoresPermitidos/.test(dados), 'mesma régua de acesso dos outros relatórios (supervisor vê só os setores dele)')
 ok(/window\.open\(`\/relatorios-pdf\/\$\{eventoId\}\/turno\?dia=\$\{diaTurno\}/.test(ler('app/admin/eventos/[id]/relatorios/ExportarRelatorio.tsx')), 'o cartão na tela de Relatórios abre o PDF do dia')
 
+console.log('\nPresença (completo / por fornecedor) — resumida e completa (Juan, 12/10/2026: "contendo as horas, de entrada, meio e fim, dias trabalhados por equipe, quem bateu fora da localização")')
+const presenca = ler('lib/relatorio-doc-presenca.ts'), rota = ler('app/relatorios-pdf/[eventoId]/presenca/page.tsx'), tela = ler('app/admin/eventos/[id]/relatorios/ExportarRelatorio.tsx')
+ok(/rotulo: 'Presença no período'/.test(presenca) && /rotulo: 'Dias trabalhados por equipe'/.test(presenca) && /rotulo: 'Batidas fora do local'/.test(presenca), 'resumo, dias trabalhados por equipe e fora do local')
+ok(/titulo: 'Entrada'[\s\S]{0,80}titulo: 'Meio'[\s\S]{0,80}titulo: 'Saída'[\s\S]{0,80}titulo: 'Horas'/.test(presenca), 'cada equipe: entrada, meio, saída e horas de cada pessoa em cada dia')
+ok(/\{ valor: 'sem saída', destaque: true \}/.test(presenca) && /\{ valor: 'sem meio', destaque: true \}/.test(presenca), 'o que falta sai em laranja (o meio só onde o setor e o dia pedem)')
+ok(/relatorioForaDoLocal\(eventoId, setoresPermitidos\)/.test(rota) && /destaque: 'Só entra o que tem prova\.'/.test(presenca), 'fora do local: só o que tem prova de GPS, nos setores e no período do relatório')
+ok(/from\('pausas_turno'\)[\s\S]{0,120}meio_em/.test(rota), 'os meios de blocos anteriores (meio por bloco) também aparecem')
+ok(/export function montarAusentes/.test(presenca) && /q\.quem === 'ausentes'/.test(rota), 'e o avesso: quem não credenciou')
+ok(/abrirPresencaPdf\(\)/.test(tela) && /abrirPresencaPdf\(setorId\)/.test(tela) && /Exportar relatório completo/.test(tela), 'na tela: PDF no completo e no por fornecedor — e a planilha continua')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

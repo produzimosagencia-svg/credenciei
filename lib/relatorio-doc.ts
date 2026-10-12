@@ -22,8 +22,13 @@ export type ColunaDoc = {
   largura?: string
 }
 
-/** Uma linha: um valor por coluna, na mesma ordem. Na coluna 'barra', o valor é a proporção (0 a 1). */
-export type LinhaDoc = (string | number | null)[]
+/**
+ * Uma célula: o valor, ou `{ valor, destaque }` pra pintar de laranja só ela (ex.: a saída que falta). Na coluna
+ * 'barra', o valor é a proporção (0 a 1).
+ */
+export type CelulaDoc = string | number | null | { valor: string | number | null; destaque?: boolean }
+/** Uma linha: uma célula por coluna, na mesma ordem. */
+export type LinhaDoc = CelulaDoc[]
 
 export type SecaoDoc = {
   /** O rótulo laranja em maiúsculas ("PENDENTES POR EQUIPE"). */
@@ -36,38 +41,71 @@ export type SecaoDoc = {
   linhas: LinhaDoc[]
   /** O que aparece quando não há linha nenhuma. */
   vazio?: string
+  /** Começa sempre numa folha nova (as seções grandes do modelo). Sem: continua na mesma folha se couber. */
+  novaFolha?: boolean
 }
 
-export type FolhaDoc = {
+/** Um pedaço de seção dentro de uma folha. */
+export type BlocoDoc = {
   secao: SecaoDoc
   linhas: LinhaDoc[]
-  /** Continuação da tabela de uma seção (sem rótulo, título e aviso — só o cabeçalho da tabela). */
+  /** Continuação da tabela de uma seção (sem título e aviso — só o rótulo e o cabeçalho da tabela). */
   continuacao: boolean
 }
 
-/** Quantas linhas cabem: na primeira folha da seção (com título e aviso) e nas de continuação. Medidas do modelo. */
-export const LINHAS_NA_PRIMEIRA = 26
-export const LINHAS_NA_CONTINUACAO = 31
+export type FolhaDoc = { blocos: BlocoDoc[] }
+
+/*
+ * A conta da folha, em "linhas de tabela" (7,4 mm), medida no modelo: o corpo de uma A4 cabe 34; a abertura de uma
+ * seção (rótulo + título + aviso + cabeçalho da tabela) gasta ~7; a de uma continuação, ~3; entre duas seções na mesma
+ * folha, 2 de respiro. Uma seção só começa numa folha se couberem pelo menos 3 linhas dela depois da abertura.
+ */
+const CORPO = 33
+const ABERTURA_CONTINUACAO = 3
+const RESPIRO = 2
+const MINIMO_DE_LINHAS = 3
+
+function custoDaAbertura(secao: SecaoDoc): number {
+  return 5 + (secao.aviso ? 2 : 0) + (secao.titulo.length > 38 ? 2 : 0)
+}
 
 export function paginar(secoes: SecaoDoc[]): FolhaDoc[] {
   const folhas: FolhaDoc[] = []
+  let livre = 0
+  const abrirFolha = (): FolhaDoc => { const f: FolhaDoc = { blocos: [] }; folhas.push(f); livre = CORPO; return f }
+  let atual: FolhaDoc | undefined
+
   for (const secao of secoes) {
-    // Título longo quebra em duas linhas; sem aviso sobra espaço.
-    const naPrimeira = LINHAS_NA_PRIMEIRA - (secao.titulo.length > 38 ? 2 : 0) + (secao.aviso ? 0 : 2)
+    const abertura = custoDaAbertura(secao)
+    const precisa = abertura + Math.min(Math.max(secao.linhas.length, 1), MINIMO_DE_LINHAS)
+    let folha: FolhaDoc = atual && !secao.novaFolha && livre - (atual.blocos.length ? RESPIRO : 0) >= precisa ? atual : abrirFolha()
+    if (folha.blocos.length) livre -= RESPIRO
+    livre -= abertura
+
     if (!secao.linhas.length) {
-      folhas.push({ secao, linhas: [], continuacao: false })
+      folha.blocos.push({ secao, linhas: [], continuacao: false })
+      livre -= 2
+      atual = folha
       continue
     }
     let i = 0
     let primeira = true
     while (i < secao.linhas.length) {
-      const cabe = primeira ? naPrimeira : LINHAS_NA_CONTINUACAO
-      folhas.push({ secao, linhas: secao.linhas.slice(i, i + cabe), continuacao: !primeira })
+      if (!primeira) { folha = abrirFolha(); livre -= ABERTURA_CONTINUACAO }
+      const cabe = Math.max(1, livre)
+      folha.blocos.push({ secao, linhas: secao.linhas.slice(i, i + cabe), continuacao: !primeira })
+      livre -= Math.min(cabe, secao.linhas.length - i)
       i += cabe
       primeira = false
     }
+    atual = folha
   }
   return folhas
+}
+
+/** O valor de uma célula, sem o destaque. */
+export function valorDaCelula(c: CelulaDoc): string | number | null {
+  return c != null && typeof c === 'object' ? c.valor : c
 }
 
 /** "dados do sistema em 11/10/2026 às 03h54" — o rodapé de todas as folhas. */

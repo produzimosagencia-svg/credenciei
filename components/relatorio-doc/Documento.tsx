@@ -59,7 +59,9 @@ const CSS = `
   .rd-destaque { color: ${LARANJA}; font-weight: 800; font-size: 12pt; font-variant-numeric: tabular-nums; }
   .rd-barra { display: inline-block; width: 100%; max-width: 30mm; height: 1.4mm; border-radius: 1mm; background: #E2DED9; vertical-align: middle; overflow: hidden; }
   .rd-barra-cheia { display: block; height: 100%; background: #F25C2A; border-radius: 1mm; }
-  .rd-vazio { margin-top: 8mm; color: #6F6A64; font-size: 11pt; }
+  .rd-vazio { margin-top: 6mm; color: #6F6A64; font-size: 11pt; }
+  .rd-bloco-seguinte { margin-top: 10mm; }
+  .rd-celula-destaque { color: ${LARANJA} !important; font-weight: 800; }
   .rd-rodape { position: absolute; left: 14mm; bottom: 10mm; font-size: 9pt; color: #6F6A64; }
 
   @page { size: A4; margin: 0; }

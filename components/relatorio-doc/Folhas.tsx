@@ -1,4 +1,4 @@
-import type { FolhaDoc, ColunaDoc, LinhaDoc } from '@/lib/relatorio-doc'
+import { valorDaCelula, type FolhaDoc, type ColunaDoc, type LinhaDoc, type CelulaDoc } from '@/lib/relatorio-doc'
 
 /**
  * As folhas A4 de um relatório no padrão do modelo (docs/modelo de relatorio .pdf): logo e o rótulo do evento no
@@ -22,23 +22,26 @@ export default function Folhas({ folhas, rotuloEvento, carimbo }: {
             <span className="rd-evento">{rotuloEvento}</span>
           </header>
 
-          {!f.continuacao ? (
-            <>
-              <p className="rd-rotulo">{f.secao.rotulo}</p>
-              <h1 className="rd-titulo">{f.secao.titulo}</h1>
-              {f.secao.aviso && (
-                <p className="rd-aviso"><b>{f.secao.aviso.destaque}</b> {f.secao.aviso.texto}</p>
+          {f.blocos.map((b, bi) => (
+            <div key={bi} className={bi ? 'rd-bloco rd-bloco-seguinte' : 'rd-bloco'}>
+              {!b.continuacao ? (
+                <>
+                  <p className="rd-rotulo">{b.secao.rotulo}</p>
+                  <h1 className="rd-titulo">{b.secao.titulo}</h1>
+                  {b.secao.aviso && (
+                    <p className="rd-aviso"><b>{b.secao.aviso.destaque}</b> {b.secao.aviso.texto}</p>
+                  )}
+                </>
+              ) : (
+                <p className="rd-rotulo rd-rotulo-continua">{b.secao.rotulo} · continuação</p>
               )}
-            </>
-          ) : (
-            <p className="rd-rotulo rd-rotulo-continua">{f.secao.rotulo} · continuação</p>
-          )}
-
-          {f.linhas.length ? (
-            <Tabela colunas={f.secao.colunas} linhas={f.linhas} />
-          ) : (
-            <p className="rd-vazio">{f.secao.vazio ?? 'Nada para mostrar.'}</p>
-          )}
+              {b.linhas.length ? (
+                <Tabela colunas={b.secao.colunas} linhas={b.linhas} />
+              ) : (
+                <p className="rd-vazio">{b.secao.vazio ?? 'Nada para mostrar.'}</p>
+              )}
+            </div>
+          ))}
 
           <footer className="rd-rodape">Credenciei · {carimbo} · página {i + 1} de {folhas.length}</footer>
         </section>
@@ -67,7 +70,9 @@ function Tabela({ colunas, linhas }: { colunas: ColunaDoc[]; linhas: LinhaDoc[] 
 
 const alinhaDireita = (c: ColunaDoc) => c.tipo === 'numero' || c.tipo === 'destaque' || c.tipo === 'barra'
 
-function Celula({ coluna, valor }: { coluna: ColunaDoc; valor: string | number | null }) {
+function Celula({ coluna, valor: celula }: { coluna: ColunaDoc; valor: CelulaDoc }) {
+  const valor = valorDaCelula(celula)
+  const destacada = celula != null && typeof celula === 'object' && celula.destaque === true
   if (coluna.tipo === 'barra') {
     const p = typeof valor === 'number' && Number.isFinite(valor) ? Math.max(0, Math.min(1, valor)) : 0
     return (
@@ -81,5 +86,5 @@ function Celula({ coluna, valor }: { coluna: ColunaDoc; valor: string | number |
     : coluna.tipo === 'texto' ? 'rd-texto'
       : coluna.tipo === 'destaque' ? 'rd-dir rd-destaque'
         : 'rd-dir rd-numero'
-  return <td className={classe}>{texto}</td>
+  return <td className={destacada ? `${classe} rd-celula-destaque` : classe}>{texto}</td>
 }

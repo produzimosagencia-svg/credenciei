@@ -68,6 +68,13 @@ export default function ExportarRelatorio({
     return diasDoPeriodo.includes(hojeBRT) ? hojeBRT : (diasDoPeriodo.at(-1) ?? hojeBRT)
   })
   const [soPagas, setSoPagas] = useState(true)
+  // Presença em PDF (completo ou de um fornecedor), no mesmo período e no mesmo recorte de "quem entra".
+  const abrirPresencaPdf = (setor?: string) => {
+    const q = new URLSearchParams({ de: periodo.de, ate: periodo.ate })
+    if (setor) q.set('setor', setor)
+    if (ausentes) q.set('quem', 'ausentes')
+    window.open(`/relatorios-pdf/${eventoId}/presenca?${q.toString()}`, '_blank', 'noopener')
+  }
   const abrirFechamento = () => {
     window.open(`/relatorios-pdf/${eventoId}/turno?dia=${diaTurno}${soPagas ? '' : '&escopo=todas'}`, '_blank', 'noopener')
   }
@@ -243,6 +250,10 @@ export default function ExportarRelatorio({
                 ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar relatório completo'}</>}
             </button>
+            {/* O PDF no padrão novo — a versão resumida (as planilhas continuam). */}
+            <button onClick={() => abrirPresencaPdf()} disabled={!periodoValido} className="btn btn-secundario w-full disabled:opacity-60">
+              <FileText className="w-4 h-4" /> {ausentes ? 'PDF de quem NÃO credenciou' : 'PDF resumido (entrada, meio, saída, horas, fora do local)'}
+            </button>
           </Secao>
         )}
 
@@ -278,6 +289,9 @@ export default function ExportarRelatorio({
               {gerandoSetor
                 ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar fornecedor'}</>}
+            </button>
+            <button onClick={() => abrirPresencaPdf(setorId)} disabled={!setorId || !periodoValido} className="btn btn-secundario w-full disabled:opacity-60">
+              <FileText className="w-4 h-4" /> {ausentes ? 'PDF de quem NÃO credenciou' : 'PDF resumido do fornecedor'}
             </button>
 
             {setores.length > 1 && (

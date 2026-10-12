@@ -70,6 +70,7 @@ export function montarFechamentoDoTurno(p: {
       ],
       linhas: comPendencia.map((s): LinhaDoc => [s.nome, s.area || '—', s.entraram, s.semSaida, s.entraram ? s.semSaida / s.entraram : 0]),
       vazio: 'Todas as equipes com apontamento já estão com saída.',
+      novaFolha: true,
     },
     {
       rotulo: 'Equipes zeradas',
@@ -83,6 +84,7 @@ export function montarFechamentoDoTurno(p: {
       ],
       linhas: zeradas.map((s): LinhaDoc => [s.nome, s.area || '—', s.entraram, 0]),
       vazio: 'Nenhuma equipe está com todo mundo com saída ainda.',
+      novaFolha: true,
     },
   ]
 
