@@ -1,6 +1,6 @@
 'use client'
 import { useState, useTransition } from 'react'
-import { FileSpreadsheet, Download, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX, LayoutGrid } from 'lucide-react'
+import { FileSpreadsheet, Download, AlertTriangle, Building2, Users, CalendarRange, FolderArchive, UserCheck, UserX, LayoutGrid, FileText } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { obterDadosRelatorioEvento, obterDadosRelatorioSetor, obterDadosRelatorioSubevento } from '@/lib/relatorios'
 import type { Periodo } from '@/lib/relatorios'
@@ -51,6 +51,26 @@ export default function ExportarRelatorio({
   const [gerandoSetor, startSetor] = useTransition()
   const [erroTodos, setErroTodos] = useState<string | null>(null)
   const [gerandoTodos, startTodos] = useTransition()
+  /*
+   * FECHAMENTO DO TURNO em PDF, no padrão novo (docs/modelo de relatorio .pdf, Juan, 12/10/2026): por equipe, quem
+   * entrou e quem está sem saída no dia. Abre numa aba própria, com "Baixar PDF".
+   */
+  const diasDoPeriodo = (() => {
+    const lista: string[] = []
+    for (let d = new Date(`${periodoCompleto.de}T12:00:00Z`); d <= new Date(`${periodoCompleto.ate}T12:00:00Z`) && lista.length < 62; d.setUTCDate(d.getUTCDate() + 1)) {
+      lista.push(d.toISOString().slice(0, 10))
+    }
+    return lista
+  })()
+  // O dia de hoje (Brasília) se estiver no período; senão, o último dia do período.
+  const [diaTurno, setDiaTurno] = useState(() => {
+    const hojeBRT = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    return diasDoPeriodo.includes(hojeBRT) ? hojeBRT : (diasDoPeriodo.at(-1) ?? hojeBRT)
+  })
+  const [soPagas, setSoPagas] = useState(true)
+  const abrirFechamento = () => {
+    window.open(`/relatorios-pdf/${eventoId}/turno?dia=${diaTurno}${soPagas ? '' : '&escopo=todas'}`, '_blank', 'noopener')
+  }
   const [subgrupoId, setSubgrupoId] = useState(subgrupos[0]?.id ?? '')
   const [erroSubgrupo, setErroSubgrupo] = useState<string | null>(null)
   const [gerandoSubgrupo, startSubgrupo] = useTransition()
@@ -157,6 +177,34 @@ export default function ExportarRelatorio({
               : 'A planilha lista quem bateu ponto no período, dia a dia, com entrada e saída.'}
           </p>
         </div>
+      </Secao>
+
+      {/* FECHAMENTO DO TURNO — PDF no padrão novo (o do modelo). */}
+      <Secao
+        tom="acento"
+        icone={<FileText className="w-3.5 h-3.5" />}
+        titulo="Fechamento do turno · PDF"
+        descricao="Por equipe: quem entrou e quem ainda está sem saída no dia — no padrão novo dos relatórios"
+        corpoClassName="p-5 space-y-4"
+      >
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-slate-500 text-xs font-medium block mb-1.5">Dia</label>
+            <SeletorLista
+              valor={diaTurno}
+              onChange={setDiaTurno}
+              titulo="Escolha o dia"
+              opcoes={diasDoPeriodo.map(d => ({ valor: d, rotulo: `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` }))}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
+            <input type="checkbox" checked={soPagas} onChange={e => setSoPagas(e.target.checked)} className="w-4 h-4 accent-brand-500" />
+            Só equipes pagas por pessoa (as que pedem o meio)
+          </label>
+        </div>
+        <button onClick={abrirFechamento} className="btn btn-primario w-full sm:w-auto">
+          <FileText className="w-4 h-4" /> Abrir PDF do fechamento
+        </button>
       </Secao>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
