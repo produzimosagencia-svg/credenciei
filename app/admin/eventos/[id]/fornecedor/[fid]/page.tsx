@@ -19,7 +19,7 @@ import ImportarFuncionarios from '../../ImportarFuncionarios'
 import CpfsDuplicados, { acharDuplicados } from './CpfsDuplicados'
 import AvaliarEquipe from './AvaliarEquipe'
 import ExportarEquipe from '../../ExportarEquipe'
-import { diaBRT, ehDiaPrincipal, janelaMeio, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
+import { diaBRT, ehDiaPrincipal, janelaMeio, inicioDoBloco, TETO_TURNO_H, type EventoJanelas } from '@/lib/janelas'
 import { statusCredenciamentoValido } from '@/lib/credenciamento-constantes'
 import { conferenciaAberta, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
 import AutoRefresh from './AutoRefresh'
@@ -321,6 +321,27 @@ export default async function FornecedorPage({
     }
   }
 
+  /*
+   * As pausas do dia de cada pessoa — a coluna Meio conta do início do BLOCO (meio por bloco, 12/10/2026). Tolerante:
+   * sem a tabela, sem pausas (o meio conta da entrada, como sempre).
+   */
+  const pausasPorPessoa = new Map<string, { saiuEm: string; voltouEm: string }[]>()
+  {
+    const idsDaTela = (funcionarios ?? []).map(f => f.id as string)
+    for (let i = 0; i < idsDaTela.length; i += 200) {
+      const { data: ps, error: erroPausas } = await supabase.from('pausas_turno')
+        .select('funcionario_id, data_ref, saiu_em, voltou_em')
+        .eq('evento_id', id).in('funcionario_id', idsDaTela.slice(i, i + 200))
+      if (erroPausas) break
+      for (const p of ps ?? []) {
+        if ((p.data_ref as string) !== diaDe(p.funcionario_id as string)) continue
+        const lista = pausasPorPessoa.get(p.funcionario_id as string) ?? []
+        lista.push({ saiuEm: p.saiu_em as string, voltouEm: p.voltou_em as string })
+        pausasPorPessoa.set(p.funcionario_id as string, lista)
+      }
+    }
+  }
+
   // Mapa funcionario → { entrada, meio, fim }
   const presencaPorFunc: Record<string, Record<MomentoTipo, Presenca>> = {}
   for (const r of registros ?? []) {
@@ -420,7 +441,8 @@ export default async function FornecedorPage({
       // entrada real desta pessoa + 4h. Ver lib/janelas.ts.
       ...(() => {
         const principal = evento ? ehDiaPrincipal(evento as EventoJanelas, diaDe(f.id)) : false
-        const meioJanela = entrada ? janelaMeio(entrada.feitoEm) : null
+        // Do início do BLOCO (quem saiu e voltou pra trabalhar de novo conta da volta — 12/10/2026).
+        const meioJanela = entrada ? janelaMeio(inicioDoBloco(entrada.feitoEm, pausasPorPessoa.get(f.id) ?? []) ?? entrada.feitoEm) : null
         return {
           statusEntrada: statusEtapa(
             entrada,

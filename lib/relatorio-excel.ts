@@ -651,7 +651,7 @@ export async function montarPlanilhaSubevento(dados: DadosRelatorioSubevento, lo
       .flatMap(({ s, p }) => p.batidas.map(b => ({ s, p, b })))
       .sort((a, b) => a.b.dia.localeCompare(b.b.dia) || a.s.nome.localeCompare(b.s.nome, 'pt-BR') || a.p.nome.localeCompare(b.p.nome, 'pt-BR'))
     const linhaInfo = cabecalhoDaAba(wb, ws, logo, dados, 'HORÁRIOS DAS BATIDAS', colunas.length, [['Batidas listadas:', String(linhas.length)]])
-    escreverTabela(ws, linhaInfo, colunas, linhas.map(({ s, p, b }) => [diaCurto(b.dia), s.nome, p.nome, p.funcao || '—', ROTULO_SITUACAO[p.situacao], horaDe(b.entradaISO), horaDe(b.meioISO), horaDe(b.saidaISO)]),
+    escreverTabela(ws, linhaInfo, colunas, linhas.map(({ s, p, b }) => [diaCurto(b.dia), s.nome, p.nome, p.funcao || '—', ROTULO_SITUACAO[p.situacao], horaDe(b.entradaISO), [...(b.meiosAnterioresISO ?? []), b.meioISO].filter(Boolean).map(m => horaDe(m as string)).join(' · '), horaDe(b.saidaISO)]),
       'Nenhuma batida no período.')
   }
 

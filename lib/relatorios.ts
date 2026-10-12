@@ -399,7 +399,11 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
 /** autorizado = aprovado; pre_autorizado = aguardando aprovação do supervisor. */
 export type SituacaoNoRelatorio = 'autorizado' | 'pre_autorizado' | 'negado' | 'descredenciado'
 
-export type BatidaDoDia = { dia: string; entradaISO: string | null; meioISO: string | null; saidaISO: string | null }
+export type BatidaDoDia = {
+  dia: string; entradaISO: string | null; meioISO: string | null; saidaISO: string | null
+  /** O meio de cada bloco que terminou numa pausa (saiu e voltou pra trabalhar de novo — meio por bloco). */
+  meiosAnterioresISO?: string[]
+}
 
 export type PessoaDoSubevento = {
   id: string
@@ -500,6 +504,20 @@ export async function obterDadosRelatorioSubevento(
         else if (r.tipo === 'fim' && !b.saidaISO) b.saidaISO = r.created_at
         dias.set(r.data_ref, b)
         porPessoaDia.set(r.funcionario_id, dias)
+      }
+      // Meio por bloco: o meio de cada bloco que terminou numa pausa fica na pausa. Sem a coluna, nada a somar.
+      const { data: pausasComMeio, error: erroPausasMeio } = await supabaseAdmin.from('pausas_turno')
+        .select('funcionario_id, data_ref, meio_em')
+        .in('funcionario_id', lote).not('meio_em', 'is', null)
+        .gte('data_ref', periodo.de).lte('data_ref', periodo.ate)
+      if (!erroPausasMeio) {
+        for (const p of pausasComMeio ?? []) {
+          const dias = porPessoaDia.get(p.funcionario_id as string) ?? new Map<string, BatidaDoDia>()
+          const b = dias.get(p.data_ref as string) ?? { dia: p.data_ref as string, entradaISO: null, meioISO: null, saidaISO: null }
+          b.meiosAnterioresISO = [...(b.meiosAnterioresISO ?? []), p.meio_em as string].sort()
+          dias.set(p.data_ref as string, b)
+          porPessoaDia.set(p.funcionario_id as string, dias)
+        }
       }
     }
 

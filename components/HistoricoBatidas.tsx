@@ -451,6 +451,10 @@ function Linha({
         {/* Silencioso pelo mesmo motivo da entrada: quem nem apareceu não tem
             meio pulado, tem dia inteiro sem trabalhar — já dito no Status. */}
         <Celula batida={dia.meio} atrasoMin={dia.meioAtrasoMin} silencioso={!dia.compareceu} onEditar={editavel ? () => onEditar(dia.data, 'meio', dia.meio?.em ?? null) : undefined} />
+        {/* O meio de cada bloco que terminou numa pausa (saiu e voltou pra trabalhar de novo — meio por bloco). */}
+        {pausas.filter(p => p.meio).map(p => (
+          <span key={`meio-${p.saiu}`} className="block text-slate-500 text-2xs tabular-nums">bloco anterior {formatarBR(p.meio!, 'hora')}</span>
+        ))}
         {/* O esperado ao lado do realizado: sem ele, "12:15" não diz se foi no
             horário. Some quando não houve entrada — não havia de onde contar. */}
         {dia.meioEsperadoEm && (

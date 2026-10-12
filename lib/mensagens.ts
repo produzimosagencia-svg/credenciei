@@ -9,6 +9,7 @@
 // no agendamento; só decide QUANDO enviar. O texto real (nome do template +
 // parâmetros {{1}}, {{2}}...) é montado na hora do envio, com dados frescos
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
+import { inicioDoBlocoDe } from './meio-bloco'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import { formatarBR } from './tz'
@@ -1026,7 +1027,7 @@ export async function cancelarMeioDesligado(eventoId: string): Promise<number> {
  * Uma consulta a mais pelo funcionário porque é assim que os chamadores têm
  * a informação em mãos: nenhum deles conhece o setor de antemão.
  */
-async function pedeMeio(funcionarioId: string, eventoId: string, dataRef: string): Promise<boolean> {
+export async function pedeMeio(funcionarioId: string, eventoId: string, dataRef: string): Promise<boolean> {
   const { data: func } = await supabase
     .from('funcionarios').select('fornecedor_id').eq('id', funcionarioId).single()
   if (!func?.fornecedor_id) return false
@@ -1050,6 +1051,11 @@ export async function agendarMeioAposEntrada(params: {
   telefone: string
   entradaEm: string
   dataRef: string
+  /**
+   * Bloco NOVO no mesmo dia (voltou depois de uma pausa longa — lib/janelas.ts, `pausaAbreNovoBloco`): o lembrete e o
+   * reforço do dia já podem ter saído no 1º bloco, então voltam a ficar pendentes, no horário contado da volta.
+   */
+  novoBloco?: boolean
 }): Promise<void> {
   const telefone = (params.telefone ?? '').replace(/\D/g, '')
   if (!telefone) return
@@ -1086,6 +1092,7 @@ export async function agendarMeioAposEntrada(params: {
     telefone,
     mensagem: '(gerado no momento do envio)',
     condicao: l.condicao,
+    ...(params.novoBloco ? { status: 'pendente', erro: null } : {}),
   }))
 
   await supabase.from('mensagens_agendadas')
@@ -1586,7 +1593,10 @@ async function limiteDaEtapa(
       .eq('tipo', 'entrada')
       .eq('data_ref', msg.data_ref)
       .limit(1)
-    return entrada?.[0] ? janelaMeio(entrada[0].created_at as string).fim : null
+    if (!entrada?.[0]) return null
+    // Contado do início do BLOCO (a volta de uma pausa longa, ou a entrada) — meio por bloco, 12/10/2026.
+    const inicio = await inicioDoBlocoDe(msg.funcionario_id!, msg.evento_id, msg.data_ref, entrada[0].created_at as string)
+    return janelaMeio(inicio ?? (entrada[0].created_at as string)).fim
   }
 
   const { data: dia } = await supabase

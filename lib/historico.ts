@@ -20,7 +20,7 @@
 import { supabaseAdmin, meusSetores } from './supabase-server'
 import type { TentativaForaDoLocal } from './alertas-local'
 import { veTodosEventos } from './permissions'
-import { janelaDoMeio, faseDoDia, diaBRT, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
+import { janelaDoMeio, faseDoDia, diaBRT, inicioDoBloco, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
 
 export type Batida = {
   em: string
@@ -67,7 +67,7 @@ export type DiaDoHistorico = {
    * Saídas e voltas no meio do turno (entrada, saída, entrada, saída…), em
    * ordem. A entrada acima é a primeira do dia e o `fim` a última saída.
    */
-  pausas: { saiu: string; voltou: string }[]
+  pausas: { saiu: string; voltou: string; /** O meio do bloco que terminou nesta pausa (meio por bloco). */ meio?: string | null }[]
   /** Da entrada à saída, em horas, sem o tempo das pausas. `null` enquanto faltar uma das duas pontas. */
   horas: number | null
 }
@@ -134,21 +134,25 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       .eq('funcionario_id', funcionarioId)
       .eq('evento_id', evento.id)
       .order('created_at'),
-    // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio.
-    supabaseAdmin
-      .from('pausas_turno')
-      .select('data_ref, saiu_em, voltou_em')
-      .eq('funcionario_id', funcionarioId)
-      .eq('evento_id', evento.id)
-      .order('saiu_em')
-      .then(r => (r.error ? { data: [] as { data_ref: string; saiu_em: string; voltou_em: string }[] } : r)),
+    // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio; sem a coluna do meio por bloco
+    // (upgrade-meio-por-bloco.sql), lê sem ela.
+    (async () => {
+      const ler = (colunas: string) => supabaseAdmin
+        .from('pausas_turno').select(colunas)
+        .eq('funcionario_id', funcionarioId).eq('evento_id', evento.id).order('saiu_em')
+      type LinhaPausa = { data_ref: string; saiu_em: string; voltou_em: string; meio_em?: string | null }
+      const comMeio = await ler('data_ref, saiu_em, voltou_em, meio_em')
+      if (!comMeio.error) return { data: (comMeio.data ?? []) as unknown as LinhaPausa[] }
+      const semMeio = await ler('data_ref, saiu_em, voltou_em')
+      return { data: (semMeio.error ? [] : (semMeio.data ?? [])) as unknown as LinhaPausa[] }
+    })(),
   ])
 
-  const pausasPorDia = new Map<string, { saiu: string; voltou: string }[]>()
+  const pausasPorDia = new Map<string, { saiu: string; voltou: string; meio?: string | null }[]>()
   for (const p of pausasBrutas ?? []) {
     const dia = p.data_ref as string
     if (!pausasPorDia.has(dia)) pausasPorDia.set(dia, [])
-    pausasPorDia.get(dia)!.push({ saiu: p.saiu_em as string, voltou: p.voltou_em as string })
+    pausasPorDia.get(dia)!.push({ saiu: p.saiu_em as string, voltou: p.voltou_em as string, meio: p.meio_em ?? null })
   }
 
   const porDia = new Map<string, Map<string, Batida>>()
@@ -193,8 +197,9 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     const entrada = batidas?.get('entrada') ?? null
     const meio = batidas?.get('meio') ?? null
     const fim = batidas?.get('fim') ?? null
-    const janela = janelaDoMeio(evento, meta, entrada?.em ?? null)
     const pausas = pausasPorDia.get(data) ?? []
+    // O meio do bloco ATUAL conta da volta da última pausa longa (meio por bloco, 12/10/2026).
+    const janela = janelaDoMeio(evento, meta, inicioDoBloco(entrada?.em ?? null, pausas.map(p => ({ saiuEm: p.saiu, voltouEm: p.voltou }))))
     const foraMs = pausas.reduce((s, p) => s + Math.max(0, new Date(p.voltou).getTime() - new Date(p.saiu).getTime()), 0)
 
     return {

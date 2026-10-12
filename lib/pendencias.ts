@@ -12,8 +12,9 @@
 // ajuste, e o supervisor receberia uma lista diferente da que ele vê no
 // sistema — que é o pior tipo de erro nesse contexto: o que faz duvidar dos dois.
 
+import { pausasDoDia, type PausaDoDia } from './meio-bloco'
 import { createClient } from '@supabase/supabase-js'
-import { janelaDoMeio, horariosEsperados, diaBRT, type EventoJanelas, type DiaDaJornada } from './janelas'
+import { janelaDoMeio, horariosEsperados, diaBRT, inicioDoBloco, type EventoJanelas, type DiaDaJornada } from './janelas'
 import { setoresComMeio, diaExigeMeio } from './meio'
 
 const supabase = createClient(
@@ -188,6 +189,9 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
 
   const esperados = horariosEsperados(evento as EventoJanelas, data, dia)
 
+  // Meio por bloco (12/10/2026): quem voltou depois de uma pausa longa tem o meio contado da volta.
+  const pausas = comMeio.size ? await pausasDoDia(eventoId, data) : new Map<string, PausaDoDia[]>()
+
   const lista: Pendencia[] = []
 
   for (const f of equipe) {
@@ -226,7 +230,7 @@ export async function pendenciasDoDia(opcoes: Opcoes): Promise<Pendencia[]> {
      * ver o comentário lá.
      */
     if (etapas.includes('meio') && comMeio.has(setor?.id ?? '') && !feitos.has(`${f.id}:meio`)) {
-      const j = janelaDoMeio(evento as EventoJanelas, dia, entradaEm)
+      const j = janelaDoMeio(evento as EventoJanelas, dia, inicioDoBloco(entradaEm, pausas.get(f.id as string) ?? []))
       if (j && agora > new Date(opcoes.meioJaAberto ? j.inicio : j.fim).getTime()) {
         lista.push({ ...comum, etapa: 'meio', esperadoEm: j.inicio, realizadoEm: entradaEm })
       }

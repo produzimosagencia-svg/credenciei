@@ -161,6 +161,32 @@ export function janelaDoMeio(
   return entradaEm ? janelaMeio(entradaEm) : null
 }
 
+/**
+ * A pausa a partir da qual a volta é um NOVO BLOCO de trabalho no mesmo dia — e o meio é pedido de novo, contado da
+ * volta (Juan, 12/10/2026: "credencia, bate meio, descredencia e volta no mesmo dia para trabalhar de novo: quando ela
+ * voltar, precisa pedir o meio também"). Pausa menor é leitura dupla no portão (o VITAL teve de 3 s e de 29 s), não
+ * uma volta ao trabalho — nem mexe no meio.
+ */
+export const PAUSA_MINIMA_NOVO_BLOCO_MIN = 30
+
+/** Saiu e voltou com pelo menos `PAUSA_MINIMA_NOVO_BLOCO_MIN` de intervalo? */
+export function pausaAbreNovoBloco(saiuEm: string, voltouEm: string): boolean {
+  return new Date(voltouEm).getTime() - new Date(saiuEm).getTime() >= PAUSA_MINIMA_NOVO_BLOCO_MIN * 60_000
+}
+
+/**
+ * O início do bloco de trabalho ATUAL do dia — de onde se contam as 4 horas do meio: a volta da última pausa longa
+ * (`pausaAbreNovoBloco`), ou a entrada. `null` sem entrada.
+ */
+export function inicioDoBloco(entradaEm: string | null, pausas: { saiuEm: string; voltouEm: string }[] = []): string | null {
+  if (!entradaEm) return null
+  let inicio = entradaEm
+  for (const p of pausas) {
+    if (pausaAbreNovoBloco(p.saiuEm, p.voltouEm) && new Date(p.voltouEm).getTime() > new Date(inicio).getTime()) inicio = p.voltouEm
+  }
+  return inicio
+}
+
 /** Entrada às 08:00 → meio das 12:00 às 14:00. */
 export function janelaMeio(entradaEm: string | Date): { inicio: string; fim: string } {
   const base = (typeof entradaEm === 'string' ? new Date(entradaEm) : entradaEm).getTime()

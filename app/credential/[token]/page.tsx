@@ -15,7 +15,7 @@ import TutorialButton from '@/components/tutorial/TutorialButton'
 import type { TutorialConfig } from '@/components/tutorial/types'
 import { gerarCodigoQR, NOME_DA_FASE } from '@/lib/credencial-qr'
 import {
-  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio, faseAtualDoQR,
+  diaBRT, periodoDoEvento, ehDiaPrincipal, janelaMeio, faseAtualDoQR, inicioDoBloco,
   TETO_TURNO_H, type EventoJanelas,
 } from '@/lib/janelas'
 import { formatarBR } from '@/lib/tz'
@@ -371,7 +371,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
           janelaTexto: 'Você será avisado no WhatsApp quando chegar a hora',
         }
       }
-      const j = janelaMeio(entrada.em)
+      // Do início do BLOCO: quem saiu e voltou pra trabalhar de novo bate o meio contado da volta (12/10/2026).
+      const j = janelaMeio(inicioDoBloco(entrada.em, (pausasDoDia ?? []).map(p => ({ saiuEm: p.saiu_em as string, voltouEm: p.voltou_em as string }))) ?? entrada.em)
       const aberto = agora >= new Date(j.inicio)
       const atrasado = aberto && agora > new Date(j.fim)
       return {

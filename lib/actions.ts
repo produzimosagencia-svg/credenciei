@@ -35,7 +35,7 @@ import {
 import { inputParaISO, formatarBR } from './tz'
 import {
   diaBRT, janelaDoMeio, janelaMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
-  somarDias, TETO_TURNO_H, horariosEsperados, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
+  somarDias, TETO_TURNO_H, horariosEsperados, pausaAbreNovoBloco, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
 } from './janelas'
 import { chaveBusca, validarCpf, formatCpf, nomeEmMaiusculo } from './format'
 import { grafiaDaCidade } from './cidades'
@@ -80,7 +80,8 @@ import {
   diasAutoatendimentoDoEvento, diaPermiteAutoatendimento, diaDaAtivacao, ativacaoAguardandoJanela,
 } from './autoatendimento'
 import { relatorioForaDoLocal, tentativasForaDoLocalDe, type RelatorioForaDoLocal } from './alertas-local'
-import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
+import { inicioDoBlocoDe } from './meio-bloco'
+import { enviarMensagemAgora, sincronizarAgendamentos, agendarBoasVindasFuncionario, agendarMeioAposEntrada, pedeMeio, agendarTemplateSupervisor, cancelarMeioDesligado, agendarConfirmacaoVeiculo, agendarCredenciamentoNegado } from './mensagens'
 import QRCode from 'qrcode'
 
 type PerfilDaSessao = NonNullable<Awaited<ReturnType<typeof getPerfil>>>
@@ -6365,7 +6366,8 @@ async function resolverRegistro(
   ])
 
   if (momento === 'meio') {
-    const janela = janelaDoMeio(evento, dia, entrada?.em ?? null)
+    // Do início do BLOCO (a volta de uma pausa longa, ou a entrada) — meio por bloco, 12/10/2026.
+    const janela = janelaDoMeio(evento, dia, await inicioDoBlocoDe(funcionarioId, evento.id, dataRef, entrada?.em ?? null))
     if (!janela) {
       return { ok: false, erro: 'Registre primeiro a sua entrada. O horário do meio é contado a partir dela.' }
     }
@@ -7370,17 +7372,59 @@ async function registrarPausa(p: {
 }) {
   if (Date.now() - pausasAusenteDesde < AUSENTE_POR_MS) return
   try {
-    const { error } = await supabaseAdmin.from('pausas_turno').insert([{
+    const { data: pausa, error } = await supabaseAdmin.from('pausas_turno').insert([{
       funcionario_id: p.funcionarioId, evento_id: p.eventoId, data_ref: p.dataRef,
       saiu_em: p.saiuEm, voltou_em: p.voltouEm, registrado_por: p.perfilId, origem: p.origem,
-    }])
+    }]).select('id').single()
     if (error && /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code ?? ''} ${error.message}`)) {
       pausasAusenteDesde = Date.now()
     } else if (error) {
       console.error('[pausas_turno] não gravou', error.message)
+    } else if (pausa?.id) {
+      // Voltou pra trabalhar de novo: o bloco novo pede o próprio meio (fora do caminho do portão).
+      after(() => abrirNovoBlocoDoMeio({ ...p, pausaId: pausa.id as string }).catch(e => console.error('[meio por bloco]', e)))
     }
   } catch (e) {
     console.error('[pausas_turno] falhou', e)
+  }
+}
+
+/**
+ * MEIO POR BLOCO (pedido do Juan, 12/10/2026: "credencia, bate meio, descredencia e volta no mesmo dia para trabalhar
+ * de novo — quando ela voltar, precisa pedir o meio também").
+ *
+ * Só quando a pausa foi de verdade (`pausaAbreNovoBloco`, 30 min — leitura dupla no portão não conta) e o setor/dia
+ * pede o meio. O meio do bloco que acabou (antes da saída) vai INTEIRO pra pausa (`meio_em` + `meio_registro`) e sai de
+ * `registros` — o banco só aceita um meio por dia — e continua no histórico e no relatório; a cópia também fica em
+ * `registros_apagados`. Sem a migração (upgrade-meio-por-bloco.sql) o update falha e NADA é apagado: o dia segue com
+ * um meio só, como antes. Depois, lembrete e reforço do meio contados da VOLTA.
+ */
+async function abrirNovoBlocoDoMeio(p: {
+  funcionarioId: string; eventoId: string; dataRef: string; saiuEm: string; voltouEm: string; pausaId: string
+}) {
+  if (!pausaAbreNovoBloco(p.saiuEm, p.voltouEm)) return
+  if (!(await pedeMeio(p.funcionarioId, p.eventoId, p.dataRef))) return
+
+  const { data: meios } = await supabaseAdmin
+    .from('registros').select('*')
+    .eq('funcionario_id', p.funcionarioId).eq('evento_id', p.eventoId).eq('tipo', 'meio').eq('data_ref', p.dataRef)
+    .lt('created_at', p.saiuEm)
+    .limit(1)
+  const meioAnterior = meios?.[0]
+  if (meioAnterior) {
+    const { error: erroGuardar } = await supabaseAdmin.from('pausas_turno')
+      .update({ meio_em: meioAnterior.created_at, meio_registro: meioAnterior })
+      .eq('id', p.pausaId)
+    if (erroGuardar) return   // sem a migração: o meio fica onde está — nada é apagado
+    await supabaseAdmin.from('registros').delete().eq('id', meioAnterior.id as string)
+  }
+
+  const { data: f } = await supabaseAdmin.from('funcionarios').select('telefone').eq('id', p.funcionarioId).maybeSingle()
+  if (f?.telefone) {
+    await agendarMeioAposEntrada({
+      eventoId: p.eventoId, funcionarioId: p.funcionarioId, telefone: f.telefone as string,
+      entradaEm: p.voltouEm, dataRef: p.dataRef, novoBloco: true,
+    })
   }
 }
 
@@ -10520,7 +10564,9 @@ export async function registrarPresencaAssistida(
    */
   if (momento === 'meio') {
     const entradaDoMeio = await entradaDoTurno(func.id, evento.id, new Date())
-    const janela = entradaDoMeio ? janelaMeio(entradaDoMeio.em) : null
+    // Do início do BLOCO (a volta de uma pausa longa, ou a entrada) — meio por bloco, 12/10/2026.
+    const inicioDoMeio = entradaDoMeio ? await inicioDoBlocoDe(func.id, evento.id, entradaDoMeio.dataRef, entradaDoMeio.em) : null
+    const janela = inicioDoMeio ? janelaMeio(inicioDoMeio) : null
     if (!janela) {
       return { error: 'Registre primeiro a entrada. O horário do meio é contado a partir dela.' }
     }
