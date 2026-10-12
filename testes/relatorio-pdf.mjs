@@ -38,5 +38,16 @@ ok(/from\('pausas_turno'\)[\s\S]{0,120}meio_em/.test(rota), 'os meios de blocos 
 ok(/export function montarAusentes/.test(presenca) && /q\.quem === 'ausentes'/.test(rota), 'e o avesso: quem não credenciou')
 ok(/abrirPresencaPdf\(\)/.test(tela) && /abrirPresencaPdf\(setorId\)/.test(tela) && /Exportar relatório completo/.test(tela), 'na tela: PDF no completo e no por fornecedor — e a planilha continua')
 
+console.log('\nTodos os outros relatórios também em PDF (as planilhas continuam)')
+const extra = ler('lib/relatorio-doc-extra.ts'), outros = ler('lib/relatorio-doc-outros.ts'), cards = ler('app/admin/eventos/[id]/relatorios/OutrosRelatorios.tsx')
+ok(/export function montarExtra/.test(extra) && /const MAX_COLUNAS = 9/.test(extra), 'Credenciados hoje, Aguardando, Cadastros, Pedidos, Veículos, Subeventos, Bloqueios e Auditoria: cada aba vira uma seção (no máximo 9 colunas — o resto fica na planilha)')
+ok(/const paisagem = abas\.some\(a => a\.colunas\.length > 7\)/.test(extra) && /@page \{ size: A4 landscape; margin: 0; \}/.test(doc), 'tabela larga vai em A4 deitada')
+ok(/export function montarLimitesDoc/.test(outros) && /export function montarSubgrupoDoc/.test(outros), 'Limite por dia e Relatório do subgrupo')
+ok(/rotulo: 'Quem falta aprovar'/.test(outros) && /rotulo: 'Supervisores'/.test(outros) && /rotulo: 'Batidas do fornecedor'/.test(outros), 'subgrupo: resumo, quem falta aprovar, supervisores e as batidas de cada fornecedor (com meio)')
+ok(/export function secaoForaDoLocal/.test(ler('lib/relatorio-doc-presenca.ts')), 'Fora do local sozinho usa a mesma seção (só com prova)')
+ok(Object.keys({ hoje: 1, aguardando: 1, cadastros: 1, fora_local: 1, limites: 1, pedidos_setor: 1, veiculos: 1, subeventos: 1, bloqueios: 1, auditoria: 1 }).every(k => new RegExp(`${k}: '`).test(cards)) && /> PDF/.test(cards) && /> Planilha/.test(cards),
+  'cada cartão de "Outros relatórios" tem Planilha e PDF')
+ok(/PDF do subgrupo/.test(tela), 'o cartão do subgrupo também')
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

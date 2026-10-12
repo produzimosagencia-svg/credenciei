@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import {
   Download, AlertTriangle, UserCheck, Clock, UserPlus, MapPin, ShieldAlert, Building2, Truck, Layers, ShieldBan,
-  ClipboardList, FolderOpen,
+  ClipboardList, FolderOpen, FileText,
 } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { Secao } from '@/components/ui/Superficie'
@@ -32,6 +32,13 @@ const RELATORIOS: { chave: Chave; titulo: string; descricao: string; Icone: Reac
  * sistema esteja dentro desse campo". Busca os dados e monta o .xlsx só no clique. O supervisor vê só os
  * relatórios que têm recorte por setor (e o servidor só manda as linhas dos setores dele).
  */
+/** Onde mora o PDF de cada relatório (app/relatorios-pdf/[eventoId]/...). */
+const ROTA_PDF: Record<Chave, string> = {
+  hoje: 'extra/hoje', aguardando: 'extra/aguardando', cadastros: 'extra/cadastros', fora_local: 'fora-do-local',
+  limites: 'limites', pedidos_setor: 'extra/pedidos_setor', veiculos: 'extra/veiculos', subeventos: 'extra/subeventos',
+  bloqueios: 'extra/bloqueios', auditoria: 'extra/auditoria',
+}
+
 export default function OutrosRelatorios({ eventoId, eventoInteiro }: { eventoId: string; eventoInteiro: boolean }) {
   const [gerando, setGerando] = useState<Chave | null>(null)
   const [erro, setErro] = useState<{ chave: Chave; texto: string } | null>(null)
@@ -66,7 +73,7 @@ export default function OutrosRelatorios({ eventoId, eventoInteiro }: { eventoId
     <Secao
       icone={<FolderOpen className="w-3.5 h-3.5" />}
       titulo="Outros relatórios do evento"
-      descricao="Cada um baixa uma planilha (.xlsx) com os dados de agora"
+      descricao="Cada um em planilha (.xlsx) ou em PDF no padrão novo, com os dados de agora"
       corpoClassName="p-4"
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -86,14 +93,23 @@ export default function OutrosRelatorios({ eventoId, eventoInteiro }: { eventoId
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro.texto}
               </p>
             )}
-            <button
-              type="button" onClick={() => baixar(chave)} disabled={gerando !== null}
-              className="btn btn-secundario btn-sm w-full mt-auto disabled:opacity-60"
-            >
-              {gerando === chave
-                ? <><LogoLoading tamanho="xs" /> Gerando...</>
-                : <><Download className="w-3.5 h-3.5" /> Baixar planilha</>}
-            </button>
+            <div className="grid grid-cols-2 gap-2 mt-auto">
+              <button
+                type="button" onClick={() => baixar(chave)} disabled={gerando !== null}
+                className="btn btn-secundario btn-sm w-full disabled:opacity-60"
+              >
+                {gerando === chave
+                  ? <><LogoLoading tamanho="xs" /> Gerando...</>
+                  : <><Download className="w-3.5 h-3.5" /> Planilha</>}
+              </button>
+              {/* O PDF no padrão novo (docs/modelo de relatorio .pdf) — abre numa aba, com "Baixar PDF". */}
+              <a
+                href={`/relatorios-pdf/${eventoId}/${ROTA_PDF[chave]}`} target="_blank" rel="noopener"
+                className="btn btn-secundario btn-sm w-full"
+              >
+                <FileText className="w-3.5 h-3.5" /> PDF
+              </a>
+            </div>
           </div>
         ))}
       </div>

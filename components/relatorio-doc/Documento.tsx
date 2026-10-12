@@ -7,12 +7,17 @@ import { Download, X } from 'lucide-react'
  * mostra as folhas A4 empilhadas; "Baixar PDF" abre a impressão do navegador ("Salvar como PDF") — exatamente como o
  * modelo foi feito. O nome do arquivo sai do título da página.
  */
-export default function Documento({ nomeArquivo, children }: { nomeArquivo: string; children: ReactNode }) {
+export default function Documento({ nomeArquivo, paisagem = false, children }: {
+  nomeArquivo: string
+  /** A4 deitada — pras tabelas largas (cadastros, veículos, auditoria). */
+  paisagem?: boolean
+  children: ReactNode
+}) {
   useEffect(() => { document.title = nomeArquivo }, [nomeArquivo])
 
   return (
-    <div className="rd-raiz">
-      <style>{CSS}</style>
+    <div className={paisagem ? 'rd-raiz rd-paisagem' : 'rd-raiz'}>
+      <style>{CSS + (paisagem ? CSS_PAISAGEM : '')}</style>
       <div className="rd-ferramentas">
         <button type="button" onClick={() => window.print()} className="rd-botao rd-botao-primario">
           <Download size={16} /> Baixar PDF
@@ -48,7 +53,7 @@ const CSS = `
   .rd-aviso b { color: ${LARANJA}; font-weight: 800; }
   .rd-tabela { width: 100%; border-collapse: collapse; margin-top: 6mm; table-layout: fixed; }
   .rd-tabela th { font-size: 8pt; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; text-align: left;
-    padding: 0 2mm 2.6mm 0; border-bottom: .6mm solid #1F1E1D; white-space: nowrap; }
+    padding: 0 2mm 2.6mm 0; border-bottom: .6mm solid #1F1E1D; white-space: normal; vertical-align: bottom; line-height: 1.25; }
   .rd-tabela td { height: 7.4mm; border-bottom: .25mm solid #E3DFDA; font-size: 10.5pt; padding: 0 2mm 0 0; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
   .rd-tabela td:last-child, .rd-tabela th:last-child { padding-right: 0; }
@@ -73,4 +78,16 @@ const CSS = `
     .rd-folha { margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
     .rd-folha:last-child { break-after: auto; page-break-after: auto; }
   }
+`
+
+/** A4 deitada: a folha, a página da impressão e uma letra um pouco menor nas tabelas largas. */
+const CSS_PAISAGEM = `
+  .rd-paisagem .rd-folha { width: 297mm; height: 210mm; padding: 11mm 14mm 11mm; }
+  .rd-paisagem .rd-titulo { font-size: 22pt; margin-bottom: 3.5mm; }
+  .rd-paisagem .rd-rotulo { margin-top: 4mm; }
+  .rd-paisagem .rd-tabela { margin-top: 4mm; }
+  .rd-paisagem .rd-tabela td { font-size: 9pt; height: 6.8mm; }
+  .rd-paisagem .rd-tabela th { font-size: 7pt; letter-spacing: .14em; }
+  .rd-paisagem .rd-rodape { bottom: 7mm; }
+  @page { size: A4 landscape; margin: 0; }
 `

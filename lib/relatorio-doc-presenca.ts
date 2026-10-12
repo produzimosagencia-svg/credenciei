@@ -103,31 +103,7 @@ export function montarPresenca(dados: DadosRelatorioEvento, x: ExtrasDaPresenca)
   }
 
   // ── 3. Fora do local ──────────────────────────────────────────────────────────────────────────────────────────
-  secoes.push({
-    rotulo: 'Batidas fora do local',
-    titulo: x.foraDoLocal == null ? 'O evento não tem local marcado no mapa.'
-      : fora.length ? `${plural(fora.length, 'batida')} fora do local.` : 'Nenhuma batida fora do local.',
-    aviso: {
-      destaque: 'Só entra o que tem prova.',
-      texto: `Posição do aparelho com precisão de até 100 m, fora do raio${x.raioM ? ` de ${x.raioM.toLocaleString('pt-BR')} m` : ''} do evento. Localização aproximada não conta.`,
-    },
-    colunas: [
-      { titulo: 'Quando', tipo: 'texto', largura: '13%' },
-      { titulo: 'Pessoa', tipo: 'nome', largura: '23%' },
-      { titulo: 'Equipe', tipo: 'texto', largura: '18%' },
-      { titulo: 'Etapa', tipo: 'texto', largura: '9%' },
-      { titulo: 'Distância', tipo: 'numero', largura: '12%' },
-      { titulo: 'Batida', tipo: 'destaque', largura: '11%' },
-      { titulo: 'Registrou', tipo: 'texto', largura: '14%' },
-    ],
-    linhas: [...fora].sort((a, b) => a.quando.localeCompare(b.quando)).map((l): LinhaDoc => [
-      diaEHora(l.quando), l.funcionarioNome, nomeBonito(l.setorNome ?? ''), l.tipo ? ETAPA[l.tipo] : '—',
-      l.distanciaM != null ? (l.distanciaM >= 1000 ? `${(l.distanciaM / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : `${l.distanciaM} m`) : '—',
-      l.situacao === 'registrada' ? 'valeu' : 'recusada', l.quemRegistrou,
-    ]),
-    vazio: x.foraDoLocal == null ? 'Marque o local do evento no mapa (Editar evento) para conferir.' : 'Nenhuma batida com GPS fora do raio no período.',
-    novaFolha: true,
-  })
+  secoes.push(secaoForaDoLocal(x.foraDoLocal, x.raioM))
 
   // ── 4. Cada equipe: cada pessoa, cada dia ─────────────────────────────────────────────────────────────────────
   let primeiraEquipe = true
@@ -217,4 +193,35 @@ export function montarAusentes(dados: DadosRelatorioEvento, areaDoSetor: Map<str
     })
   }
   return secoes
+}
+
+/** As batidas fora do local com prova — a mesma seção no relatório de presença e no "Fora do local" sozinho. */
+export function secaoForaDoLocal(foraDoLocal: LinhaForaDoLocal[] | null, raioM: number | null): SecaoDoc {
+  const fora = foraDoLocal ?? []
+  const x = { foraDoLocal, raioM }
+  return {
+    rotulo: 'Batidas fora do local',
+    titulo: x.foraDoLocal == null ? 'O evento não tem local marcado no mapa.'
+      : fora.length ? `${plural(fora.length, 'batida')} fora do local.` : 'Nenhuma batida fora do local.',
+    aviso: {
+      destaque: 'Só entra o que tem prova.',
+      texto: `Posição do aparelho com precisão de até 100 m, fora do raio${x.raioM ? ` de ${x.raioM.toLocaleString('pt-BR')} m` : ''} do evento. Localização aproximada não conta.`,
+    },
+    colunas: [
+      { titulo: 'Quando', tipo: 'texto', largura: '13%' },
+      { titulo: 'Pessoa', tipo: 'nome', largura: '23%' },
+      { titulo: 'Equipe', tipo: 'texto', largura: '18%' },
+      { titulo: 'Etapa', tipo: 'texto', largura: '9%' },
+      { titulo: 'Distância', tipo: 'numero', largura: '12%' },
+      { titulo: 'Batida', tipo: 'destaque', largura: '11%' },
+      { titulo: 'Registrou', tipo: 'texto', largura: '14%' },
+    ],
+    linhas: [...fora].sort((a, b) => a.quando.localeCompare(b.quando)).map((l): LinhaDoc => [
+      diaEHora(l.quando), l.funcionarioNome, nomeBonito(l.setorNome ?? ''), l.tipo ? ETAPA[l.tipo] : '—',
+      l.distanciaM != null ? (l.distanciaM >= 1000 ? `${(l.distanciaM / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km` : `${l.distanciaM} m`) : '—',
+      l.situacao === 'registrada' ? 'valeu' : 'recusada', l.quemRegistrou,
+    ]),
+    vazio: x.foraDoLocal == null ? 'Marque o local do evento no mapa (Editar evento) para conferir.' : 'Nenhuma batida com GPS fora do raio no período.',
+    novaFolha: true,
+  }
 }

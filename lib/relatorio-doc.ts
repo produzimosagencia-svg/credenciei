@@ -61,6 +61,8 @@ export type FolhaDoc = { blocos: BlocoDoc[] }
  * folha, 2 de respiro. Uma seção só começa numa folha se couberem pelo menos 3 linhas dela depois da abertura.
  */
 const CORPO = 33
+/** A4 deitada (tabelas largas): o corpo cabe menos linhas. */
+const CORPO_PAISAGEM = 24
 const ABERTURA_CONTINUACAO = 3
 const RESPIRO = 2
 const MINIMO_DE_LINHAS = 3
@@ -69,10 +71,11 @@ function custoDaAbertura(secao: SecaoDoc): number {
   return 5 + (secao.aviso ? 2 : 0) + (secao.titulo.length > 38 ? 2 : 0)
 }
 
-export function paginar(secoes: SecaoDoc[]): FolhaDoc[] {
+export function paginar(secoes: SecaoDoc[], opcoes: { paisagem?: boolean } = {}): FolhaDoc[] {
   const folhas: FolhaDoc[] = []
+  const corpo = opcoes.paisagem ? CORPO_PAISAGEM : CORPO
   let livre = 0
-  const abrirFolha = (): FolhaDoc => { const f: FolhaDoc = { blocos: [] }; folhas.push(f); livre = CORPO; return f }
+  const abrirFolha = (): FolhaDoc => { const f: FolhaDoc = { blocos: [] }; folhas.push(f); livre = corpo; return f }
   let atual: FolhaDoc | undefined
 
   for (const secao of secoes) {

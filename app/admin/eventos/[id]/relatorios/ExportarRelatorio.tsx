@@ -354,6 +354,13 @@ export default function ExportarRelatorio({
                 ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> Exportar subgrupo</>}
             </button>
+            <button
+              onClick={() => window.open(`/relatorios-pdf/${eventoId}/subgrupo/${subgrupoId}?de=${periodo.de}&ate=${periodo.ate}`, '_blank', 'noopener')}
+              disabled={!subgrupoId || !periodoValido}
+              className="btn btn-secundario w-full disabled:opacity-60"
+            >
+              <FileText className="w-4 h-4" /> PDF do subgrupo
+            </button>
           </Secao>
         )}
 
