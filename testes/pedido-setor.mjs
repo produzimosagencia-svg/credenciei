@@ -188,5 +188,17 @@ ok(formatTelefone('27999995959') === '(27) 99999-5959', 'sem 55, como sempre')
 ok(formatTelefone('2733334444') === '(27) 3333-4444', 'fixo de 10 dígitos, como sempre')
 ok(formatTelefone('55279') === '(55) 279', 'enquanto digita (até 11 dígitos) nada é cortado')
 
+// Juan, 13/10/2026: um serviço por pedido e o modelo da planilha obrigatório antes de enviar.
+{
+  const { readFileSync: lerArq } = await import('node:fs')
+  const raizP = new URL('..', import.meta.url).pathname
+  const form = lerArq(raizP + 'app/pedido-setor/[token]/FormularioPedidoSetor.tsx', 'utf8')
+  const rotaModelo = lerArq(raizP + 'app/pedido-setor/[token]/modelo/route.ts', 'utf8')
+  ok(!/Incluir outro serviço/.test(form), 'sem o botão "Incluir outro serviço / fornecedor neste pedido"')
+  ok(/if \(!baixouModelo\) \{ setErro\(/.test(form) && /disabled=\{enviando \|\| !baixouModelo/.test(form), 'só envia depois de baixar o modelo da planilha')
+  ok(/Para que serve esta planilha/.test(form) && /href=\{`\/pedido-setor\/\$\{token\}\/modelo`\}/.test(form), 'ao baixar, aparece a explicação de para que serve')
+  ok(/eq\('pedido_setor_token', token\)/.test(rotaModelo) && /montarModeloDeEquipe\(/.test(rotaModelo), 'o modelo sai pelo token do link (sem login), o mesmo da tela da equipe')
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

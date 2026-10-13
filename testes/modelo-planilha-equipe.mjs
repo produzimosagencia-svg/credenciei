@@ -13,7 +13,8 @@ const ler = caminho => readFileSync(raiz + caminho, 'utf8')
 let falhas = 0
 const ok = (c, m) => { if (!c) falhas++; console.log(`  ${c ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m ${m}`) }
 
-const rota = ler('app/api/import/modelo/route.ts')
+// O modelo mora em lib/modelo-equipe.ts desde 13/10/2026 (a rota da equipe e o link público do pedido usam o mesmo).
+const rota = ler('app/api/import/modelo/route.ts') + ler('lib/modelo-equipe.ts')
 const planilha = ler('lib/planilha.ts')
 const importacao = ler('lib/importacao.ts')
 const tela = ler('app/admin/eventos/[id]/ImportarFuncionarios.tsx')

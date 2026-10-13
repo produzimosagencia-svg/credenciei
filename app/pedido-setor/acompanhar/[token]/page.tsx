@@ -8,7 +8,7 @@ export const revalidate = 0
 
 const TITULO = {
   pendente: { texto: 'Aguardando análise', explicacao: 'O administrador do evento ainda vai analisar o seu pedido. Guarde este endereço: é por aqui que você acompanha a resposta.' },
-  aprovado: { texto: 'Pedido aprovado', explicacao: 'O supervisor recebe o acesso no WhatsApp cadastrado. Se a mensagem não chegar, fale com a organização do evento.' },
+  aprovado: { texto: 'Pedido aprovado', explicacao: 'O supervisor recebe o acesso no WhatsApp cadastrado. Entre no Credenciei, abra a equipe e use "Importar planilha" com o modelo preenchido: cada colaborador recebe a própria credencial. Se a mensagem não chegar, fale com a organização do evento.' },
   negado: { texto: 'Pedido não aprovado', explicacao: 'Veja o motivo abaixo. Em caso de dúvida, fale com a organização do evento.' },
   parcial: { texto: 'Pedido analisado', explicacao: 'Alguns setores foram aprovados e outros não. Veja abaixo.' },
 } as const

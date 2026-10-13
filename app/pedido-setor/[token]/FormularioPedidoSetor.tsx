@@ -2,9 +2,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
-import { Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Download, FileSpreadsheet, CheckCircle2 } from 'lucide-react'
 import { enviarPedidoDeSetor } from '@/lib/actions-pedidos-setor'
-import { normalizarPedidoPublico, MAX_SETORES_POR_PEDIDO, type ContextoDoPedido } from '@/lib/pedido-setor-regras'
+import { normalizarPedidoPublico, type ContextoDoPedido } from '@/lib/pedido-setor-regras'
 import type { DiaDaEscala } from '@/lib/escala-regras'
 import { CpfInput, TelefoneInput, NomeInput, NomeMaiusculoInput } from '@/components/inputs'
 import SeletorLista from '@/components/SeletorLista'
@@ -45,11 +45,18 @@ export default function FormularioPedidoSetor({
 }) {
   const router = useRouter()
   const [contato, setContato] = useState<Pessoa>({ ...vazia })
-  const [setores, setSetores] = useState<SetorForm[]>(() => [novoSetor()])
+  const [setores, setSetores] = useState<SetorForm[]>(() => [novoSetor()])  // um serviço por pedido
   const [observacao, setObservacao] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  /*
+   * O modelo da planilha é OBRIGATÓRIO antes de enviar (Juan, 13/10/2026): o fornecedor baixa, preenche a equipe (nome,
+   * CPF, telefone…) e, depois de aprovado, o supervisor importa a planilha na equipe dele. Ao tocar em baixar, abre
+   * primeiro a explicação de para que serve.
+   */
+  const [explicandoModelo, setExplicandoModelo] = useState(false)
+  const [baixouModelo, setBaixouModelo] = useState(false)
 
   useEffect(() => {
     (window as unknown as { onTurnstileSuccess?: (t: string) => void }).onTurnstileSuccess = setTurnstileToken
@@ -74,6 +81,7 @@ export default function FormularioPedidoSetor({
   const enviar = async (e: React.FormEvent) => {
     e.preventDefault()
     if (enviando) return
+    if (!baixouModelo) { setErro('Antes de enviar, baixe o modelo da planilha da equipe (o botão logo acima).'); return }
     const pedido = montarPedido()
     const conferido = normalizarPedidoPublico(pedido, ctx)
     if (!conferido.ok) { setErro(conferido.erro); return }
@@ -98,15 +106,10 @@ export default function FormularioPedidoSetor({
         </Campo>
       </Bloco>
 
-      {setores.map((s, i) => (
+      {setores.map(s => (
         <Bloco
           key={s.chave}
-          titulo={setores.length > 1 ? `Serviço / Fornecedor ${i + 1}` : 'Serviço / Fornecedor'}
-          acao={setores.length > 1 && (
-            <button type="button" onClick={() => setSetores(l => l.filter(x => x.chave !== s.chave))} className="text-red-500 text-xs font-medium inline-flex items-center gap-1 hover:underline">
-              <Trash2 className="w-3.5 h-3.5" /> Remover
-            </button>
-          )}
+          titulo="Serviço / Fornecedor"
         >
           {/* "Setor" virou "Serviço / Fornecedor" (pedido do Juan, 09/10/2026): quem preenche diz a FUNÇÃO que vai
               desempenhar no evento. O que ele escreve continua sendo o nome do setor no sistema. */}
@@ -164,15 +167,51 @@ export default function FormularioPedidoSetor({
         </Bloco>
       ))}
 
-      {setores.length < MAX_SETORES_POR_PEDIDO && (
-        <button type="button" onClick={() => setSetores(l => [...l, novoSetor()])} className="btn btn-secundario w-full">
-          <Plus className="w-4 h-4" /> Incluir outro serviço / fornecedor neste pedido
+      {/* Um serviço / fornecedor por pedido (Juan, 13/10/2026: "pode tirar o botão de incluir outro serviço"). */}
+      <Bloco titulo="Planilha da equipe *" ajuda="Obrigatório antes de enviar o pedido.">
+        <button
+          type="button"
+          onClick={() => setExplicandoModelo(true)}
+          className={`w-full btn ${baixouModelo ? 'btn-secundario' : 'btn-primario'}`}
+        >
+          {baixouModelo ? <CheckCircle2 className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+          {baixouModelo ? 'Modelo baixado · baixar de novo' : 'Baixar o modelo da planilha'}
         </button>
-      )}
+        <p className="text-slate-500 text-xs">
+          Preencha um colaborador por linha: nome, CPF, telefone com DDD, cidade{dias.length ? ' e os dias em que cada um trabalha' : ''}.
+          Depois que o pedido for aprovado, o supervisor envia essa planilha pelo Credenciei.
+        </p>
+      </Bloco>
 
       <Campo rotulo="Observação (opcional)">
         <textarea rows={3} maxLength={500} value={observacao} onChange={e => setObservacao(e.target.value)} className="input" placeholder="Algo que o administrador precisa saber?" />
       </Campo>
+
+      {explicandoModelo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setExplicandoModelo(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center mb-4">
+              <FileSpreadsheet className="w-6 h-6 text-brand-500" />
+            </div>
+            <h3 className="text-slate-800 font-bold text-lg">Para que serve esta planilha</h3>
+            <ol className="mt-3 space-y-2 text-sm text-slate-600 list-decimal pl-5">
+              <li>É nela que você cadastra a <strong>equipe inteira</strong> de uma vez: uma pessoa por linha, com nome, CPF, telefone com DDD e cidade (cargo e chave PIX são opcionais){dias.length ? ', e um X nos dias em que cada um trabalha' : ''}.</li>
+              <li>Preencha agora, enquanto o pedido é analisado. Não mude o nome das colunas.</li>
+              <li>Quando o pedido for <strong>aprovado</strong>, o supervisor recebe o acesso no WhatsApp, entra no Credenciei, abre a equipe e usa <strong>Importar planilha</strong> com este arquivo.</li>
+              <li>Cada colaborador cadastrado recebe a <strong>própria credencial</strong> no WhatsApp.</li>
+            </ol>
+            <a
+              href={`/pedido-setor/${token}/modelo`}
+              download
+              onClick={() => { setBaixouModelo(true); setExplicandoModelo(false) }}
+              className="mt-5 w-full btn btn-primario"
+            >
+              <Download className="w-4 h-4" /> Entendi, baixar o modelo
+            </a>
+            <button type="button" onClick={() => setExplicandoModelo(false)} className="mt-2 w-full btn btn-secundario">Agora não</button>
+          </div>
+        </div>
+      )}
 
       {erro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setErro(null)}>
@@ -193,9 +232,10 @@ export default function FormularioPedidoSetor({
         </>
       )}
 
-      <button type="submit" disabled={enviando || (!!TURNSTILE_SITE_KEY && !turnstileToken)} className="w-full btn btn-primario btn-lg">
+      <button type="submit" disabled={enviando || !baixouModelo || (!!TURNSTILE_SITE_KEY && !turnstileToken)} className="w-full btn btn-primario btn-lg disabled:opacity-60">
         {enviando ? 'Enviando…' : 'Enviar pedido →'}
       </button>
+      {!baixouModelo && <p className="text-center text-slate-500 text-xs -mt-2">Baixe o modelo da planilha para liberar o envio.</p>}
     </form>
   )
 }
