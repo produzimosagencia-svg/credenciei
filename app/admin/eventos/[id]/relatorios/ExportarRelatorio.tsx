@@ -63,11 +63,18 @@ export default function ExportarRelatorio({
     }
     return lista
   })()
-  // O dia de hoje (Brasília) se estiver no período; senão, o último dia do período.
-  const [diaTurno, setDiaTurno] = useState(() => {
+  // O dia de hoje (Brasília) se estiver no período; senão, o último dia do período. "De" e "até" começam nele (um turno).
+  const [turnoDe, setTurnoDe] = useState(() => {
     const hojeBRT = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
     return diasDoPeriodo.includes(hojeBRT) ? hojeBRT : (diasDoPeriodo.at(-1) ?? hojeBRT)
   })
+  /* Vários dias no mesmo PDF (Juan, 13/10/2026: "preciso poder filtrar mais dias, por exemplo dia 10/10 a 12/10"). */
+  const [turnoAte, setTurnoAte] = useState(turnoDe)
+  const rotuloDia = (d: string) => {
+    const semana = new Date(`${d}T12:00:00-03:00`).toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'America/Sao_Paulo' }).replace('.', '')
+    return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)} · ${semana}`
+  }
+  const opcoesDia = diasDoPeriodo.map(d => ({ valor: d, rotulo: rotuloDia(d) }))
   const [soPagas, setSoPagas] = useState(true)
   // Presença em PDF (completo ou de um fornecedor), no mesmo período e no mesmo recorte de "quem entra".
   const abrirPresencaPdf = (setor?: string) => {
@@ -77,7 +84,7 @@ export default function ExportarRelatorio({
     window.open(`/relatorios-pdf/${eventoId}/presenca?${q.toString()}`, '_blank', 'noopener')
   }
   const abrirFechamento = () => {
-    window.open(`/relatorios-pdf/${eventoId}/turno?dia=${diaTurno}${soPagas ? '' : '&escopo=todas'}`, '_blank', 'noopener')
+    window.open(`/relatorios-pdf/${eventoId}/turno?de=${turnoDe}&ate=${turnoAte}${soPagas ? '' : '&escopo=todas'}`, '_blank', 'noopener')
   }
   const [subgrupoId, setSubgrupoId] = useState(subgrupos[0]?.id ?? '')
   const [erroSubgrupo, setErroSubgrupo] = useState<string | null>(null)
@@ -192,17 +199,26 @@ export default function ExportarRelatorio({
         tom="acento"
         icone={<FileText className="w-3.5 h-3.5" />}
         titulo="Fechamento do turno · PDF"
-        descricao="Por equipe: quem entrou e quem ainda está sem saída no dia — no padrão novo dos relatórios"
+        descricao="Por equipe: quem entrou e quem ainda está sem saída — num dia ou em vários — no padrão novo dos relatórios"
         corpoClassName="p-5 space-y-4"
       >
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-slate-500 text-xs font-medium block mb-1.5">Dia</label>
+            <label className="text-slate-500 text-xs font-medium block mb-1.5">De</label>
             <SeletorLista
-              valor={diaTurno}
-              onChange={setDiaTurno}
-              titulo="Escolha o dia"
-              opcoes={diasDoPeriodo.map(d => ({ valor: d, rotulo: `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` }))}
+              valor={turnoDe}
+              onChange={d => { setTurnoDe(d); if (d > turnoAte) setTurnoAte(d) }}
+              titulo="Primeiro dia"
+              opcoes={opcoesDia}
+            />
+          </div>
+          <div>
+            <label className="text-slate-500 text-xs font-medium block mb-1.5">Até</label>
+            <SeletorLista
+              valor={turnoAte}
+              onChange={d => { setTurnoAte(d); if (d < turnoDe) setTurnoDe(d) }}
+              titulo="Último dia"
+              opcoes={opcoesDia}
             />
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-600 pb-2">
