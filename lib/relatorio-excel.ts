@@ -723,7 +723,7 @@ function escreverAbaAusentes(
  * hoje ela só tinha resposta subtraindo a planilha da lista da equipe na
  * mão. Pedido do Juan em 03/09/2026.
  */
-export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento): Promise<void> {
+export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento, sufixo = 'Nao_credenciaram'): Promise<void> {
   const [wb, bufferLogo] = await Promise.all([novaPlanilha(), carregarLogoBuffer()])
   const umSetorSo = dados.setores.length === 1 ? dados.setores[0] : null
   const ws = wb.addWorksheet(nomeDaAba(umSetorSo ? umSetorSo.nome : 'Nao credenciaram', new Set()))
@@ -731,7 +731,7 @@ export async function gerarRelatorioAusentes(dados: DadosRelatorioEvento): Promi
     wb, ws, bufferLogo, dados, dados.setores,
     `NÃO CREDENCIARAM${umSetorSo ? ` — ${nomeComArea(umSetorSo).toUpperCase()}` : ''}`,
   )
-  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, umSetorSo ? `${nomeComArea(umSetorSo)}_nao_credenciaram` : 'Nao_credenciaram'))
+  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, umSetorSo ? `${nomeComArea(umSetorSo)}_nao_credenciaram` : sufixo))
 }
 
 /** A planilha de UM fornecedor (sem baixar): a aba dele e a aba "Pagamento". Separada pro teste montar no Node. */
@@ -814,9 +814,9 @@ export async function montarPlanilhaCompleta(dados: DadosRelatorioEvento, logo: 
 }
 
 /** Relatório completo do evento — baixa direto no navegador. */
-export async function gerarRelatorioCompleto(dados: DadosRelatorioEvento): Promise<void> {
+export async function gerarRelatorioCompleto(dados: DadosRelatorioEvento, sufixo = 'Completo'): Promise<void> {
   const wb = await montarPlanilhaCompleta(dados, await carregarLogoBuffer())
-  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, 'Completo'))
+  await baixarWorkbook(wb, nomeDoArquivo(dados.eventoNome, sufixo))
 }
 
 

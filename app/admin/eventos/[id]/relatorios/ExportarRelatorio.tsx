@@ -121,6 +121,26 @@ export default function ExportarRelatorio({
     })
   }
 
+  /*
+   * Só as equipes com batida de meio (Juan, 13/10/2026) — as pagas por pessoa (segurança, limpeza, bar, caixa…). O mesmo
+   * relatório completo, recortado nos fornecedores que pedem o meio.
+   */
+  const [erroMeio, setErroMeio] = useState<string | null>(null)
+  const [gerandoMeio, startMeio] = useTransition()
+  const exportarSoComMeio = () => {
+    setErroMeio(null)
+    startMeio(async () => {
+      try {
+        const r = await obterDadosRelatorioEvento(eventoId, periodo, { soComMeio: true })
+        if ('erro' in r) { setErroMeio(r.erro); return }
+        if (ausentes) await gerarRelatorioAusentes(r.dados, 'Equipes_com_meio_nao_credenciaram')
+        else await gerarRelatorioCompleto(r.dados, 'Equipes_com_meio')
+      } catch (e: unknown) {
+        setErroMeio(mensagemAmigavel(e))
+      }
+    })
+  }
+
   const exportarSetor = () => {
     if (!setorId) return
     setErroSetor(null)
@@ -266,6 +286,21 @@ export default function ExportarRelatorio({
               {gerandoCompleto
                 ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
                 : <><Download className="w-4 h-4" /> {ausentes ? 'Exportar quem NÃO credenciou' : 'Exportar relatório completo'}</>}
+            </button>
+            {erroMeio && (
+              <p className="flex items-start gap-1.5 text-red-600 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                {erroMeio}
+              </p>
+            )}
+            <button
+              onClick={exportarSoComMeio}
+              disabled={gerandoMeio || !periodoValido}
+              className="btn btn-secundario w-full disabled:opacity-60"
+            >
+              {gerandoMeio
+                ? <><LogoLoading tamanho="xs" /> Gerando planilha...</>
+                : <><Download className="w-4 h-4" /> {ausentes ? 'Quem NÃO credenciou · só equipes com batida de meio' : 'Exportar só equipes com batida de meio'}</>}
             </button>
             {/* O PDF no padrão novo — a versão resumida (as planilhas continuam). */}
             <button onClick={() => abrirPresencaPdf()} disabled={!periodoValido} className="btn btn-secundario w-full disabled:opacity-60">

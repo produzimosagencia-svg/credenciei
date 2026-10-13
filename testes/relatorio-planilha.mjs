@@ -180,6 +180,10 @@ const srv = lib('relatorios.ts')
 ok(/\.in\('tipo', \['entrada', 'meio', 'fim'\]\)/.test(srv) && /carregarSetores\(eventoId, idsSetores, periodo\)/.test(srv), 'o servidor busca o meio e monta o subgrupo com as mesmas linhas')
 ok(/comColunasTolerantes\(COLUNAS_PAUSA/.test(srv) && /meio_em/.test(srv), 'tolerante: sem a coluna nova (meio por bloco), a pausa é lida sem ela')
 
+const tela = readFileSync(join(aqui, '..', 'app/admin/eventos/[id]/relatorios/ExportarRelatorio.tsx'), 'utf8')
+ok(/obterDadosRelatorioEvento\(eventoId, periodo, \{ soComMeio: true \}\)/.test(tela) && /Exportar só equipes com batida de meio/.test(tela) && /if \(opcoes\.soComMeio\) consulta = consulta\.eq\('exige_meio', true\)/.test(srv),
+  'botão "Exportar só equipes com batida de meio": o completo recortado nos fornecedores que pedem o meio (Juan, 13/10/2026)')
+
 rmSync(pasta, { recursive: true, force: true })
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

@@ -366,14 +366,19 @@ export async function obterDadosRelatorioSetor(
  */
 export async function obterDadosRelatorioEvento(
   eventoId: string, periodoPedido?: Periodo,
+  /** `soComMeio`: só os fornecedores que pedem a batida do meio (Juan, 13/10/2026 — as equipes pagas por pessoa). */
+  opcoes: { soComMeio?: boolean } = {},
 ): Promise<{ dados: DadosRelatorioEvento } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
   if (acesso.setoresPermitidos) return { erro: 'O relatório completo é só para quem gerencia o evento inteiro.' }
 
   const periodo = await resolverPeriodo(eventoId, periodoPedido)
-  const { data: fornecedores } = await supabaseAdmin
-    .from('fornecedores').select('id').eq('evento_id', eventoId).order('created_at')
+  let consulta = supabaseAdmin.from('fornecedores').select('id').eq('evento_id', eventoId)
+  if (opcoes.soComMeio) consulta = consulta.eq('exige_meio', true)
+  const { data: fornecedores, error } = await consulta.order('created_at')
+  if (error) return { erro: 'Não foi possível ler os fornecedores do evento.' }
+  if (opcoes.soComMeio && !fornecedores?.length) return { erro: 'Nenhum fornecedor deste evento pede a batida do meio.' }
   const setores = await carregarSetores(eventoId, (fornecedores ?? []).map(f => f.id as string), periodo)
 
   return {
