@@ -21,7 +21,30 @@ export function montarEntregaValorDoc(d: DadosEntregaValor): SecaoDoc[] {
   const turnos = p.completos + p.soEntrada + p.saidaSemEntrada
   const periodo = d.periodo ? (d.periodo.de === d.periodo.ate ? dia(d.periodo.de) : `${dia(d.periodo.de)} a ${dia(d.periodo.ate)}`) : null
 
+  const e = d.economia
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+  // A primeira página: quanto o controle de ponto economizou (Juan, 13/10/2026).
+  const economia: SecaoDoc[] = e ? [{
+    rotulo: 'Economia com o Credenciei',
+    titulo: `Com o Credenciei, você economizou ${brl(e.valor)}.`,
+    aviso: {
+      destaque: `${brl(e.valorDiaria)} por diária, o valor médio.`,
+      texto: `Nas ${plural(e.equipesComMeio, 'equipe paga', 'equipes pagas')} por pessoa (as que batem o meio), ${plural(e.diariasSemComparecer, 'diária aprovada', 'diárias aprovadas')} na escala ficaram sem ninguém batendo o ponto. Sem o controle, elas seriam cobradas pela lista.`,
+    },
+    colunas,
+    linhas: [
+      ['Equipes pagas por pessoa (com batida de meio)', e.equipesComMeio, null],
+      ['Diárias aprovadas na escala', e.diariasEscaladas, 1],
+      ['Diárias trabalhadas (com entrada no portão)', e.diariasTrabalhadas, pct(e.diariasTrabalhadas, e.diariasEscaladas)],
+      ['Diárias aprovadas sem comparecimento', e.diariasSemComparecer, pct(e.diariasSemComparecer, e.diariasEscaladas)],
+      ['Valor médio da diária', brl(e.valorDiaria), null],
+      ['Economia', brl(e.valor), null],
+    ] as LinhaDoc[],
+    novaFolha: true,
+  }] : []
+
   return [
+    ...economia,
     {
       rotulo: 'Entrega de valor',
       titulo: `${plural(d.cadastros.total, 'pessoa cadastrada', 'pessoas cadastradas')}, ${n(p.pessoasQueTrabalharam)} trabalharam.`,
@@ -37,7 +60,7 @@ export function montarEntregaValorDoc(d: DadosEntregaValor): SecaoDoc[] {
         ['Turnos com entrada e saída corretas', `${p.percentualCompletos.toLocaleString('pt-BR')}%`, p.percentualCompletos / 100],
         ['Acessos barrados no portão', s.barradasNoPortao, pct(s.barradasNoPortao, s.leiturasNoPortao)],
       ] as LinhaDoc[],
-      novaFolha: true,
+      novaFolha: !e,
     },
     {
       rotulo: 'Presença sob controle',
@@ -87,7 +110,7 @@ export function montarEntregaValorDoc(d: DadosEntregaValor): SecaoDoc[] {
       titulo: 'Controle total do que acontece no evento.',
       aviso: {
         destaque: `Com o Credenciei, o ${d.eventoNome} teve controle sobre ${plural(d.cadastros.total, 'pessoa cadastrada', 'pessoas cadastradas')} e ${n(p.pessoasQueTrabalharam)} que trabalharam.`,
-        texto: `${p.percentualCompletos.toLocaleString('pt-BR')}% dos turnos tiveram entrada e saída registradas corretamente. O sistema barrou ${n(s.barradasNoPortao)} acessos no portão e ${n(s.tentativasForaDoLocal)} tentativas de registro fora do local, evitando fraudes e garantindo que quem entrou no evento foi para trabalhar. O foco do Credenciei é dar controle total do que acontece no seu evento: quem entrou, por onde, a que hora e por quanto tempo ficou.`,
+        texto: `${e ? `O controle de ponto evitou o pagamento de ${plural(e.diariasSemComparecer, 'diária', 'diárias')} sem comparecimento, uma economia de ${brl(e.valor)}. ` : ''}${p.percentualCompletos.toLocaleString('pt-BR')}% dos turnos tiveram entrada e saída registradas corretamente. O sistema barrou ${n(s.barradasNoPortao)} acessos no portão e ${n(s.tentativasForaDoLocal)} tentativas de registro fora do local, evitando fraudes e garantindo que quem entrou no evento foi para trabalhar. O foco do Credenciei é dar controle total do que acontece no seu evento: quem entrou, por onde, a que hora e por quanto tempo ficou.`,
       },
       colunas: [],
       linhas: [],

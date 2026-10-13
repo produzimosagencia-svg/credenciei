@@ -86,5 +86,13 @@ ok(/rotulo: 'Presença sob controle'/.test(entrega) && /rotulo: 'Segurança e co
 ok(/href=\{`\/relatorios-pdf\/\$\{encodeURIComponent\(eventoId\)\}\/entrega-valor`\}/.test(botao), 'o botão abre a versão nova')
 ok(/total: funcs\.length \+ await cadastrosSoNaLixeira\(eventoId\)/.test(ler('lib/entrega-valor.ts')), '"pessoas cadastradas" = o mesmo número do cartão "Funcionários do evento"')
 
+console.log('\nEconomia na primeira página da entrega de valor (Juan, 13/10/2026)')
+{
+  const ev = ler('lib/entrega-valor.ts'), doc = ler('lib/relatorio-doc-entrega.ts')
+  ok(/VALOR_MEDIO_DIARIA = 200/.test(ev) && /valor: semComparecer \* VALOR_MEDIO_DIARIA/.test(ev), 'economia = diárias aprovadas sem comparecimento × R$ 200')
+  ok(/filter\(f => \(f as \{ exige_meio\?: boolean \| null \}\)\.exige_meio === true\)/.test(ev) && /\.eq\('aprovado', true\)/.test(ev) && /d <= hoje/.test(ev), 'só nas equipes com meio, só diárias aprovadas, só dias que já passaram')
+  ok(/titulo: `Com o Credenciei, você economizou \$\{brl\(e\.valor\)\}\.`/.test(doc) && /return \[\n    \.\.\.economia,/.test(doc), 'é a primeira seção do PDF')
+}
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
