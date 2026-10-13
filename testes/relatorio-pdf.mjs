@@ -20,6 +20,8 @@ ok(/'nome'[\s\S]*'texto'[\s\S]*'numero'[\s\S]*'destaque'[\s\S]*'barra'/.test(mol
 ok(/export function paginar/.test(molde) && /continuacao: !primeira/.test(molde), 'paginação em A4: cada seção numa folha nova, a tabela continua com o cabeçalho')
 ok(/página \{i \+ 1\} de \{folhas\.length\}/.test(folhas) && /logo-preto\.png/.test(folhas), 'logo no topo e "página X de Y" no rodapé')
 ok(/@page \{ size: A4; margin: 0; \}/.test(doc) && /print-color-adjust: exact/.test(doc) && /window\.print\(\)/.test(doc), 'A4 de verdade, cores mantidas na impressão, "Baixar PDF" pela impressão do navegador')
+ok(/\.rd-raiz, \.rd-raiz \* \{ visibility: visible !important; \}/.test(doc) && /body \* \{ visibility: hidden; \}/.test(ler('app/globals.css')),
+  'o PDF não sai em branco: a regra do crachá esconde tudo na impressão, o relatório volta a aparecer (Juan, 13/10/2026)')
 
 console.log('\nFechamento do turno (o modelo)')
 ok(/rotulo: 'Pendentes por equipe'/.test(fechamento) && /rotulo: 'Equipes zeradas'/.test(fechamento), 'as duas seções do modelo')

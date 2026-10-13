@@ -71,6 +71,9 @@ const CSS = `
 
   @page { size: A4; margin: 0; }
   @media print {
+    /* O globals.css esconde tudo na impressão pra só o crachá sair no papel (body * { visibility: hidden }) — sem
+       isto o PDF do relatório saía com as páginas em branco (Juan, 13/10/2026). */
+    .rd-raiz, .rd-raiz * { visibility: visible !important; }
     html, body { background: none !important; }
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rd-raiz { padding: 0; }
