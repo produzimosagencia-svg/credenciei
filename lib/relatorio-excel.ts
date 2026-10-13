@@ -89,7 +89,7 @@ function escreverInfo(ws: import('exceljs').Worksheet, linha: number, rotulo: st
   rot.font = { bold: true, color: { argb: COR_TEXTO } }
   ws.mergeCells(linha, 2, linha, nCol)
   const val = ws.getCell(linha, 2)
-  val.value = valor
+  val.value = valorDaCelula(valor)
   val.font = { color: { argb: COR_TEXTO } }
 }
 
@@ -109,6 +109,15 @@ function dataRefParaExcel(dataRef: string): Date | null {
 /** Mesma data, como ISO meio-dia — só pra reaproveitar `formatarBR`, que espera um instante. */
 function dataRefParaISO(dataRef: string): string {
   return `${dataRef}T12:00:00-03:00`
+}
+
+/**
+ * Texto vazio NUNCA vai pra célula: o exceljs grava '' como uma "string compartilhada" vazia, e alguns leitores (o
+ * visualizador de planilhas do ChatGPT, no caso do Juan em 12/10/2026) mostram o NÚMERO dela no lugar — a função
+ * aparecia como "16" e o meio vazio como "128". Célula sem dado fica vazia de verdade (null).
+ */
+function valorDaCelula<T>(v: T): T | null {
+  return v === '' || v === undefined ? null : v
 }
 
 function escreverCabecalho(ws: import('exceljs').Worksheet, linha: number, colunas: readonly { titulo: string }[]) {
@@ -192,14 +201,14 @@ function escreverAbaSetor(
   for (const l of ordenadas) {
     const valores: (string | number | Date | null)[] = [
       dataRefParaExcel(l.dataRef),
-      l.funcao,
+      l.funcao || '—',
       l.nome,
-      l.entradaISO ? formatarBR(l.entradaISO, 'hora') : '',
-      l.saidaISO ? formatarBR(l.saidaISO, 'hora') : '',
+      l.entradaISO ? formatarBR(l.entradaISO, 'hora') : null,
+      l.saidaISO ? formatarBR(l.saidaISO, 'hora') : null,
     ]
     valores.forEach((v, i) => {
       const cel = ws.getCell(linha, i + 1)
-      cel.value = v
+      cel.value = valorDaCelula(v)
       cel.border = BORDA_CELULA
       cel.alignment = { vertical: 'middle', horizontal: i === 2 ? 'left' : 'center' }
       if (i === 0 && v instanceof Date) cel.numFmt = 'dd/mm/yyyy'
@@ -243,7 +252,7 @@ function escreverAbaResumoGeral(
       const valores = [setor.nome, r.funcao, r.entradas, r.saidas]
       valores.forEach((v, i) => {
         const cel = ws.getCell(linha, i + 1)
-        cel.value = v
+        cel.value = valorDaCelula(v)
         cel.border = BORDA_CELULA
         cel.alignment = { vertical: 'middle', horizontal: i < 2 ? 'left' : 'center' }
       })
@@ -255,7 +264,7 @@ function escreverAbaResumoGeral(
   }
 
   const linhaTotal = linha
-  const valoresTotal = ['TOTAL GERAL', '', totalEntradas, totalSaidas]
+  const valoresTotal = ['TOTAL GERAL', null, totalEntradas, totalSaidas]
   valoresTotal.forEach((v, i) => {
     const cel = ws.getCell(linhaTotal, i + 1)
     cel.value = v
@@ -370,7 +379,7 @@ function escreverAbaAusentes(
 
   for (const p of ordenados) {
     ws.getCell(linha, 1).value = p.setor
-    ws.getCell(linha, 2).value = p.funcao
+    ws.getCell(linha, 2).value = p.funcao || '—'
     ws.getCell(linha, 3).value = p.nome
     for (let c = 1; c <= nCol; c++) {
       const cel = ws.getCell(linha, c)
@@ -507,7 +516,7 @@ function escreverTabela(
   for (const valores of linhas) {
     valores.forEach((v, i) => {
       const cel = ws.getCell(linha, i + 1)
-      cel.value = v
+      cel.value = valorDaCelula(v)
       cel.border = BORDA_CELULA
       cel.alignment = { vertical: 'middle', horizontal: colunas[i]?.esquerda ? 'left' : 'center', wrapText: colunas[i]?.esquerda }
     })

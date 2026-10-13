@@ -342,7 +342,7 @@ export async function obterDadosRelatorioEvento(
 export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise<{
   eventoNome: string
   periodoCompleto: Periodo
-  setores: { id: string; nome: string }[]
+  setores: { id: string; nome: string; area: string | null }[]
   totalFuncionarios: number
   /** Quem gerencia o evento inteiro (não só setores dele) — vê o PDF de entrega de valor e todos os relatórios. */
   eventoInteiro: boolean
@@ -352,14 +352,20 @@ export async function obterResumoParaTelaDeRelatorios(eventoId: string): Promise
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
 
-  let query = supabaseAdmin.from('fornecedores').select('id, nome, subevento_id, funcionarios(count)').eq('evento_id', eventoId)
+  let query = supabaseAdmin.from('fornecedores').select('id, nome, subevento_id, subeventos(nome), funcionarios(count)').eq('evento_id', eventoId)
   if (acesso.setoresPermitidos) query = query.in('id', [...acesso.setoresPermitidos])
   const [{ data: fornecedores }, periodoCompleto] = await Promise.all([
     query.order('nome'),
     resolverPeriodo(eventoId),
   ])
 
-  const setores = (fornecedores ?? []).map(f => ({ id: f.id as string, nome: f.nome as string }))
+  /*
+   * Com o subgrupo junto (Juan, 13/10/2026: "preciso que apareça aqui o subgrupo junto com nome do setor") — no VITAL
+   * há três "NASCIMENTO" (Empresariais, Muvuka e Geral) e a lista mostrava os três iguais.
+   */
+  const setores = (fornecedores ?? [])
+    .map(f => ({ id: f.id as string, nome: (f.nome as string).trim(), area: (f.subeventos as unknown as { nome?: string } | null)?.nome?.trim() || null }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR') || (a.area ?? '').localeCompare(b.area ?? '', 'pt-BR'))
   const totalFuncionarios = (fornecedores ?? []).reduce((acc, f) => acc + (f.funcionarios?.[0]?.count ?? 0), 0)
 
   /*

@@ -10,7 +10,8 @@ import SeletorLista from '@/components/SeletorLista'
 import { Secao } from '@/components/ui/Superficie'
 import SeletorDePeriodo from '@/components/SeletorDePeriodo'
 
-type Setor = { id: string; nome: string }
+/** `area` = o subgrupo do fornecedor — vai junto do nome na lista (há fornecedores com o mesmo nome em subgrupos diferentes). */
+type Setor = { id: string; nome: string; area?: string | null }
 
 /**
  * Os dois cartões de exportação — "relatório completo" e "relatório por
@@ -272,7 +273,7 @@ export default function ExportarRelatorio({
                 onChange={setSetorId}
                 titulo="Escolha o fornecedor"
                 busca
-                opcoes={setores.map(s => ({ valor: s.id, rotulo: s.nome }))}
+                opcoes={setores.map(s => ({ valor: s.id, rotulo: s.area ? `${s.nome} · ${s.area}` : s.nome }))}
               />
             </div>
             {erroSetor && (

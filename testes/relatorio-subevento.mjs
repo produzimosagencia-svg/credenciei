@@ -60,6 +60,12 @@ ok(/10\/10, 11\/10/.test(faltam), 'mostra os dias que a pessoa pediu')
 const batidas = texto(lido.getWorksheet('Batidas'))
 ok(/Ana Lima/.test(batidas) && /20:05/.test(batidas) && /04:10/.test(batidas), 'a aba de batidas traz os horários de entrada e saída')
 
+// Célula vazia é vazia de verdade: '' virava uma "string compartilhada" vazia, que o visualizador do ChatGPT mostrava
+// como o número dela ("128" no meio, "16" na função — Juan, 12/10/2026).
+let textosVazios = 0
+for (const w of lido.worksheets) w.eachRow(r => r.eachCell(c => { if (c.value === '') textosVazios++ }))
+ok(textosVazios === 0, `nenhuma célula com texto vazio (meio sem batida fica vazio, não "128") — achadas: ${textosVazios}`)
+
 const equipe = texto(lido.getWorksheet('Equipe'))
 ok(/Autorizado/.test(equipe) && /Pré-autorizado/.test(equipe) && /Negado/.test(equipe), 'a equipe mostra a situação de cada um')
 ok(/Lucy Santos/.test(texto(lido.getWorksheet('Supervisores'))), 'a aba de supervisores lista a Lucy')
