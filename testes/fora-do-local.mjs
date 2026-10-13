@@ -22,7 +22,7 @@ function ok(cond, nome) {
 
 console.log('1 · o que entra no relatório')
 ok(/\.or\('fora_do_local\.eq\.true,latitude\.not\.is\.null'\)/.test(lib), 'batidas marcadas E toda batida com localização (recalcula as antigas, nunca comparadas)')
-ok(/const fora = r\.fora_do_local === true \|\| calculado\.foraDoLocal === true/.test(lib), 'fora = marcada ou fora do raio atual')
+ok(/const fora = provaDeLocal\(pos\?\.precisao\) && \(r\.fora_do_local === true \|\| calculado\.foraDoLocal === true\)/.test(lib), 'fora = (marcada ou fora do raio atual) E com prova de GPS — localização aproximada não conta (12/10/2026)')
 ok(/\.eq\('resultado', 'fora_do_local'\)/.test(lib), 'inclui as tentativas recusadas (leituras_qr)')
 ok(/'Celular da própria pessoa'/.test(lib), 'diz quem registrou: o operador ou o celular da própria pessoa')
 

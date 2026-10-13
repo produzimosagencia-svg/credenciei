@@ -18,7 +18,7 @@ ok(/d\?\.aprovados\.length\s*\? \{ diasEscala: \[\.\.\.d\.aprovados\]/.test(pagi
 ok(/diasDaEscala=\{diasDaEscala\}/.test(pagina), 'a tabela recebe os dias do evento')
 
 const tabela = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioTable.tsx')
-ok(/if \(diaFiltro && !\(f\.diasEscala \?\? \[\]\)\.includes\(diaFiltro\)\) return false/.test(tabela), 'escolher um dia filtra a equipe')
+ok(/if \(diaFiltro && !\(f\.diasEscala \?\? \[\]\)\.includes\(diaFiltro\) && !\(diaFiltro === diaSelecionado && \(f\.entrada \|\| f\.meio \|\| f\.fim\)\)\) return false/.test(tabela), 'escolher um dia filtra a equipe (e mostra quem bateu ponto naquele dia, mesmo fora da escala — 12/10/2026)')
 ok(/Escala por dia/.test(tabela) && /porDia\.get\(data\)/.test(tabela), 'fileira de dias com quantas pessoas em cada um')
 ok(/f\.descredenciadoEm \|\| f\.statusCredenciamento === 'negado'\) continue/.test(tabela), 'a contagem do dia ignora quem saiu do evento ou foi negado')
 ok((tabela.match(/<DiasDaPessoa f=\{f\} \/>/g) ?? []).length === 2, 'os dias de cada pessoa aparecem no celular e no computador')

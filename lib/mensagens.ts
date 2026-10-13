@@ -29,7 +29,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const ANTECEDENCIA_REFORCO_MINUTOS = 2
+/*
+ * UMA mensagem por etapa, só para quem ainda não bateu, com tempo de agir (Juan, 13/10/2026, depois do VITAL: "só era
+ * pra ter recebido a mensagem quem não bateu o ponto dentro do horário... falta tanto tempo pra isso encerrar"). Antes:
+ * lembrete na abertura da janela (para todo mundo, inclusive quem já ia bater) + reforço 2 MINUTOS antes de fechar
+ * (tarde demais) — e na entrada ainda vinha junto do aviso do dia. No VITAL foram 2.357 lembretes de entrada (2.356 no
+ * mesmo dia do aviso) e 1.319 do meio. Agora: o aviso do dia de manhã continua; entrada, meio e saída têm só o reforço
+ * condicional ('sem_registro'), 30 min antes do fim da janela (o meio, 1h antes — a janela dele é de 2h).
+ */
+const ANTECEDENCIA_REFORCO_MINUTOS = 30
+const ANTECEDENCIA_REFORCO_MEIO_MINUTOS = 60
 
 /**
  * Quanto uma mensagem pode atrasar e ainda valer a pena enviar.
@@ -782,18 +791,12 @@ export async function sincronizarAgendamentos(eventoId: string, opcoes: { funcio
        * receberam às 17h "registro pendente, prazo 12:00". Janela aberta,
        * sem fim, não tem lembrete de prazo — nem reforço.
        */
-      if (diaComTrava && prazoEntradaReal && !desligado(fluxos, 'lembrete')) {
-        agendarFunc(func.id, func.telefone, 'lembrete_entrada', dia.data, esperado.entrada)
-      }
       if (diaComTrava && esperado.entrada && prazoEntradaReal && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_entrada', dia.data,
           new Date(new Date(esperado.entradaLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
           'sem_registro')
       }
 
-      if (diaComTrava && prazoSaidaReal && !desligado(fluxos, 'lembrete')) {
-        agendarFunc(func.id, func.telefone, 'lembrete_fim', dia.data, esperado.fim)
-      }
       if (diaComTrava && esperado.fim && prazoSaidaReal && !desligado(fluxos, 'reforco')) {
         agendarFunc(func.id, func.telefone, 'reforco_fim', dia.data,
           new Date(new Date(esperado.fimLimite).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString(),
@@ -1078,10 +1081,10 @@ export async function agendarMeioAposEntrada(params: {
   if (!(await pedeMeio(params.funcionarioId, params.eventoId, params.dataRef))) return
 
   const janela = janelaMeio(params.entradaEm)
-  const reforco = new Date(new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MINUTOS * 60_000).toISOString()
+  // Só o reforço, 1h antes de fechar e só para quem não bateu (sem o lembrete da abertura — ver ANTECEDENCIA_REFORCO_MINUTOS).
+  const reforco = new Date(Math.max(new Date(janela.inicio).getTime(), new Date(janela.fim).getTime() - ANTECEDENCIA_REFORCO_MEIO_MINUTOS * 60_000)).toISOString()
 
   const linhas = [
-    { tipo: 'lembrete_meio' as TipoMensagem, agendado_para: janela.inicio, condicao: null },
     { tipo: 'reforco_meio' as TipoMensagem, agendado_para: reforco, condicao: 'sem_registro' },
   ].map(l => ({
     evento_id: params.eventoId,
