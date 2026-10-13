@@ -1,7 +1,7 @@
 'use server'
 /**
  * Dados para o relatório de credenciamento — a fonte que alimenta a planilha
- * Excel em `lib/relatorio-excel.ts`.
+ * Excel em `lib/relatorio-excel.ts` (e o PDF de presença).
  *
  * `'use server'`: cada função exportada vira um endpoint próprio (o mesmo
  * detalhe que causou o achado de segurança 01 da auditoria — ver histórico
@@ -9,16 +9,15 @@
  * permissão via `exigirAcessoAoEvento`, nunca confiando em quem as chamou
  * pela tela.
  *
- * ─── SIMPLIFICADO A PEDIDO DO JUAN ───────────────────────────────────────
+ * ─── DE ENXUTO A COMPLETO (12–13/10/2026) ────────────────────────────────
  *
- * A primeira versão respondia tudo — meio, método de cada batida, status,
- * justificativa — e virou o problema que ela tentava resolver: "ficou muito
- * poluído e com excesso de informações". O pedido foi explícito: um gestor
- * administrativo precisa responder rápido só a oito perguntas (quem entrou,
- * quem saiu, quando, em qual setor, em qual função, quantos entraram, quantos
- * saíram, qual período) — o resto foi cortado, não escondido atrás de uma
- * aba extra. Meio saiu inteiro: não é credenciamento de entrada/saída, que é
- * o que este relatório existe pra mostrar.
+ * Em 2025 a primeira versão foi cortada a pedido do Juan ("ficou muito
+ * poluído") e ficou só com entrada e saída. No fechamento do VITAL o pedido
+ * se inverteu: a planilha é o que fecha o PAGAMENTO, e precisa do meio, das
+ * horas, do dia da semana, do CPF, da área (subgrupo), de quem lançou cada
+ * batida à mão e por quê, do que foi batido fora do local (com prova) e de
+ * quem está com baixa — sem perder nada. Os sete itens aprovados em
+ * 12/10/2026 mais "senti falta do meio" e "o dia da semana na linha" (13/10).
  *
  * NADA aqui inventa informação. Cada campo vem de uma coluna real; quando o
  * dado não existe, o campo fica vazio — nunca um valor calculado que pareça
@@ -28,10 +27,19 @@ import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { emLotes } from './lotes'
 import { diaBRT } from './janelas'
 import { exigirAcessoAoEvento } from './relatorios-acesso'
+import { linhasDoSetor, textoDoLancamento, type RegistroBruto, type PausaBruta, type FuncionarioBruto, type ContextoDoRelatorio, type LinhaEmMontagem } from './relatorio-linhas'
+import { setoresComMeio, diasComMeio } from './meio'
 
 export type Periodo = { de: string; ate: string }
 
-/** Uma linha do relatório detalhado: uma pessoa, num dia, com entrada e saída. */
+/**
+ * De onde veio a batida: o resumo da linha. 'normal' = leitor do portão (QR ou CPF) ou o celular da própria pessoa;
+ * 'registrar' = "Registrar ponto" com foto (supervisor/operador); 'manual' = lançada à mão (Lançar ponto, correção no
+ * histórico, saídas lançadas pelo suporte).
+ */
+export type OrigemDaLinha = 'normal' | 'registrar' | 'manual'
+
+/** Uma linha do relatório detalhado: uma pessoa, num dia (um bloco do dia, se saiu e voltou), com as batidas. */
 export type LinhaRelatorio = {
   funcionarioId: string
   nome: string
@@ -41,6 +49,18 @@ export type LinhaRelatorio = {
   dataRef: string
   entradaISO: string | null
   saidaISO: string | null
+  cpf?: string | null
+  /** O(s) meio(s) deste bloco, em ordem (meio por bloco: quem saiu e voltou bate de novo). */
+  meiosISO?: string[]
+  /** O setor e o dia pedem o meio e a pessoa não bateu nenhum no dia — marcado na primeira linha do dia. */
+  semMeio?: boolean
+  origem?: OrigemDaLinha
+  /** As batidas da linha que não vieram do leitor nem do celular: etapa, como, quem lançou e o motivo. */
+  lancamentos?: string[]
+  /** As batidas da linha fora do local, com prova de GPS (precisão até 100 m): "Entrada a 1,2 km". */
+  foraDoLocal?: string[]
+  /** A pessoa está com baixa (saiu da equipe) — as batidas continuam no relatório. */
+  baixaEm?: string | null
 }
 
 /** Alguém da equipe que NÃO registrou nada no período — o avesso do relatório. */
@@ -49,11 +69,28 @@ export type AusenteRelatorio = {
   nome: string
   setor: string
   funcao: string
+  cpf?: string | null
+  baixaEm?: string | null
+}
+
+/** A equipe inteira, com os dados de pagamento do cadastro — a aba "Pagamento". */
+export type PessoaRelatorio = {
+  funcionarioId: string
+  nome: string
+  cpf: string | null
+  funcao: string
+  chavePix: string | null
+  valorReceber: number | null
+  pago: boolean
+  pagoEm: string | null
+  baixaEm: string | null
 }
 
 export type SetorRelatorio = {
   id: string
   nome: string
+  /** O subgrupo (subevento) do fornecedor — no VITAL há três "NASCIMENTO", um em cada subgrupo. */
+  area?: string | null
   linhas: LinhaRelatorio[]
   /*
    * Quem estava escalado no setor e não bateu NADA no período.
@@ -65,6 +102,7 @@ export type SetorRelatorio = {
    * no meio do caminho.
    */
   ausentes: AusenteRelatorio[]
+  pessoas?: PessoaRelatorio[]
 }
 
 export type DadosRelatorioEvento = {
@@ -113,83 +151,52 @@ async function resolverPeriodo(eventoId: string, pedido?: Periodo): Promise<Peri
   return de <= ate ? { de, ate } : teto
 }
 
-type RegistroBruto = { funcionario_id: string; tipo: string; data_ref: string | null; created_at: string }
-type PausaBruta = { funcionario_id: string; data_ref: string; saiu_em: string; voltou_em: string }
-
-/**
- * Monta as linhas de um setor, já dentro do período: uma por (funcionário,
- * dia) em que houve entrada OU saída — ou MAIS de uma, se houve pausa (ver
- * abaixo). Quem não registrou nada no período simplesmente não aparece — é
- * o que mantém a tabela enxuta (o pedido: "evitar transformar isso numa
- * tabela gigantesca e confusa"). O resumo por setor/função, calculado à
- * parte, é quem responde "quantos faltam".
- *
- * ─── PAUSA VIRA LINHA A MAIS (29/09/2026) ────────────────────────────────
- *
- * Sair e voltar no mesmo dia (ex.: duas diárias, tarde e noite) REABRE o
- * turno em vez de criar uma segunda entrada — o banco não aceita duas
- * entradas no mesmo `data_ref` (ver `inferirMomentoQR`). A saída do meio é
- * APAGADA de `registros` e sobrevive só em `pausas_turno`. Achado real do
- * Juan: o relatório de credenciamento só lia `registros`, então mostrava
- * uma pessoa "entrando" de tarde e "saindo" de madrugada, sem rastro
- * nenhum da volta pro trabalho à noite — como se tivesse sido um turno
- * único de 20h, quando na verdade foram duas diárias separadas.
- *
- * A correção: cada pausa do dia parte a linha em duas — a entrada original
- * até o horário em que saiu, e de quando voltou até a saída final (ou até
- * a pausa seguinte, se houve mais de uma). `historico.ts` já faz o mesmo
- * cálculo pro modal de uma pessoa; aqui é a versão pro relatório de todos.
- */
-function linhasDoSetor(
-  funcionarios: { id: string; nome: string; cargo: string | null }[],
-  registrosPorFuncionario: Map<string, RegistroBruto[]>,
-  pausasPorFuncionario: Map<string, PausaBruta[]>,
-  nomeSetor: string,
-): LinhaRelatorio[] {
-  const linhas: LinhaRelatorio[] = []
-
-  for (const f of funcionarios) {
-    const registros = registrosPorFuncionario.get(f.id) ?? []
-    if (!registros.length) continue
-
-    const porDia = new Map<string, RegistroBruto[]>()
-    for (const r of registros) {
-      if (!r.data_ref) continue
-      const grupo = porDia.get(r.data_ref) ?? []
-      grupo.push(r)
-      porDia.set(r.data_ref, grupo)
-    }
-
-    const pausas = pausasPorFuncionario.get(f.id) ?? []
-
-    for (const [dia, doDia] of [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const entradaOriginal = doDia.find(r => r.tipo === 'entrada')?.created_at ?? null
-      const saidaFinal = doDia.find(r => r.tipo === 'fim')?.created_at ?? null
-      const pausasDoDia = pausas.filter(p => p.data_ref === dia).sort((a, b) => a.saiu_em.localeCompare(b.saiu_em))
-
-      let entradaDaVez = entradaOriginal
-      for (const p of pausasDoDia) {
-        linhas.push({
-          funcionarioId: f.id, nome: f.nome, setor: nomeSetor, funcao: f.cargo ?? '',
-          dataRef: dia, entradaISO: entradaDaVez, saidaISO: p.saiu_em,
-        })
-        entradaDaVez = p.voltou_em
-      }
-      linhas.push({
-        funcionarioId: f.id, nome: f.nome, setor: nomeSetor, funcao: f.cargo ?? '',
-        dataRef: dia, entradaISO: entradaDaVez, saidaISO: saidaFinal,
-      })
-    }
-  }
-
-  return linhas
+async function contextoDoRelatorio(eventoId: string, fornecedorIds: string[]): Promise<ContextoDoRelatorio> {
+  const [{ data: ev }, comMeio, diasMeio] = await Promise.all([
+    supabaseAdmin.from('eventos').select('local_latitude, local_longitude, local_raio_m').eq('id', eventoId).maybeSingle(),
+    setoresComMeio(fornecedorIds).catch(() => new Set<string>()),
+    diasComMeio(eventoId).catch(() => ({ ok: false, dias: new Set<string>() })),
+  ])
+  const local = ev?.local_latitude != null && ev?.local_longitude != null
+    ? { latitude: Number(ev.local_latitude), longitude: Number(ev.local_longitude), raioM: Number(ev.local_raio_m ?? 800) }
+    : null
+  return { local, comMeio, diasMeio }
 }
 
+/** Uma consulta com colunas novas que pode falhar antes da migração: tenta da mais completa para a mais simples. */
+async function comColunasTolerantes<T>(opcoes: string[], buscar: (colunas: string) => Promise<T>): Promise<T> {
+  let ultimoErro: unknown
+  for (const colunas of opcoes) {
+    try { return await buscar(colunas) } catch (e) { ultimoErro = e }
+  }
+  throw ultimoErro
+}
+
+const COLUNAS_REGISTRO = [
+  'id, funcionario_id, tipo, data_ref, created_at, registro_manual, justificativa, criado_por_perfil_id, foto_url, latitude, longitude, precisao_m, distancia_m, fora_do_local',
+  'id, funcionario_id, tipo, data_ref, created_at, registro_manual, justificativa, criado_por_perfil_id, foto_url',
+  'funcionario_id, tipo, data_ref, created_at',
+]
+// `meio_em` só existe depois de supabase/upgrade-meio-por-bloco.sql.
+const COLUNAS_PAUSA = [
+  'funcionario_id, data_ref, saiu_em, voltou_em, origem, registrado_por, meio_em',
+  'funcionario_id, data_ref, saiu_em, voltou_em, origem, registrado_por',
+  'funcionario_id, data_ref, saiu_em, voltou_em',
+]
+const COLUNAS_FUNCIONARIO = [
+  'id, nome, cargo, cpf, chave_pix, valor_receber, pago, pago_em, descredenciado_em',
+  'id, nome, cargo, cpf, descredenciado_em',
+  'id, nome, cargo',
+]
+
 /** Carrega os dados de UM setor, dentro do período — o setor individual ou uma aba do completo. */
-async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<SetorRelatorio | null> {
+async function carregarSetor(
+  fornecedorId: string, periodo: Periodo, ctx: ContextoDoRelatorio,
+): Promise<{ setor: SetorRelatorio; emMontagem: LinhaEmMontagem[] } | null> {
   const { data: fornecedor } = await supabaseAdmin
-    .from('fornecedores').select('id, nome').eq('id', fornecedorId).single()
+    .from('fornecedores').select('id, nome, subeventos(nome)').eq('id', fornecedorId).single()
   if (!fornecedor) return null
+  const area = (fornecedor.subeventos as unknown as { nome?: string } | null)?.nome?.trim() || null
 
   /*
    * PAGINADO (`buscarTudo`): o Supabase corta em 1000 linhas por resposta sem
@@ -197,10 +204,12 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
    * planilha (nem nas linhas, nem nos ausentes). `id` desempata nomes iguais
    * pra as páginas não se sobreporem. Tolerante como antes: falhou, vem vazio.
    */
-  const funcionarios = await buscarTudo<{ id: string; nome: string; cargo: string | null }>((de, ate) =>
-    supabaseAdmin
-      .from('funcionarios').select('id, nome, cargo').eq('fornecedor_id', fornecedorId)
-      .order('nome').order('id').range(de, ate),
+  const funcionarios = await comColunasTolerantes(COLUNAS_FUNCIONARIO, colunas =>
+    buscarTudo<FuncionarioBruto>((de, ate) =>
+      supabaseAdmin
+        .from('funcionarios').select(colunas).eq('fornecedor_id', fornecedorId)
+        .order('nome').order('id').range(de, ate) as unknown as PromiseLike<{ data: FuncionarioBruto[] | null; error: { message: string } | null }>,
+    ),
   ).catch(() => null)
 
   /*
@@ -217,31 +226,34 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
   const lotes = emLotes(ids)
   const [registros, pausasBrutas] = ids.length
     ? await Promise.all([
-        Promise.all(lotes.map(lote =>
-          buscarTudo<RegistroBruto>((de, ate) =>
-            supabaseAdmin.from('registros')
-              .select('funcionario_id, tipo, data_ref, created_at')
-              .in('funcionario_id', lote)
-              .in('tipo', ['entrada', 'fim'])
-              .gte('data_ref', periodo.de)
-              .lte('data_ref', periodo.ate)
-              .order('id')
-              .range(de, ate),
-          ),
-        )).then(partes => partes.flat(), () => null),
-        // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio —
-        // mesmo padrão de `historico.ts`.
-        Promise.all(lotes.map(lote =>
-          buscarTudo<PausaBruta>((de, ate) =>
-            supabaseAdmin.from('pausas_turno')
-              .select('funcionario_id, data_ref, saiu_em, voltou_em')
-              .in('funcionario_id', lote)
-              .gte('data_ref', periodo.de)
-              .lte('data_ref', periodo.ate)
-              .order('id')
-              .range(de, ate),
-          ),
-        )).then(partes => partes.flat(), () => [] as PausaBruta[]),
+        comColunasTolerantes(COLUNAS_REGISTRO, colunas =>
+          Promise.all(lotes.map(lote =>
+            buscarTudo<RegistroBruto>((de, ate) =>
+              supabaseAdmin.from('registros')
+                .select(colunas)
+                .in('funcionario_id', lote)
+                .in('tipo', ['entrada', 'meio', 'fim'])
+                .gte('data_ref', periodo.de)
+                .lte('data_ref', periodo.ate)
+                .order('id')
+                .range(de, ate) as unknown as PromiseLike<{ data: RegistroBruto[] | null; error: { message: string } | null }>,
+            ),
+          )).then(partes => partes.flat()),
+        ).catch(() => null),
+        // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio — mesmo padrão de `historico.ts`.
+        comColunasTolerantes(COLUNAS_PAUSA, colunas =>
+          Promise.all(lotes.map(lote =>
+            buscarTudo<PausaBruta>((de, ate) =>
+              supabaseAdmin.from('pausas_turno')
+                .select(colunas)
+                .in('funcionario_id', lote)
+                .gte('data_ref', periodo.de)
+                .lte('data_ref', periodo.ate)
+                .order('id')
+                .range(de, ate) as unknown as PromiseLike<{ data: PausaBruta[] | null; error: { message: string } | null }>,
+            ),
+          )).then(partes => partes.flat()),
+        ).catch(() => [] as PausaBruta[]),
       ])
     : [[] as RegistroBruto[], [] as PausaBruta[]]
 
@@ -260,20 +272,62 @@ async function carregarSetor(fornecedorId: string, periodo: Periodo): Promise<Se
   }
 
   const equipe = funcionarios ?? []
+  const emMontagem = linhasDoSetor(equipe, porFuncionario, pausasPorFuncionario, { id: fornecedor.id, nome: fornecedor.nome }, ctx)
   return {
-    id: fornecedor.id,
-    nome: fornecedor.nome,
-    linhas: linhasDoSetor(equipe, porFuncionario, pausasPorFuncionario, fornecedor.nome),
-    // O avesso, da mesma fonte: quem não tem nenhum registro no período.
-    ausentes: equipe
-      .filter(f => !(porFuncionario.get(f.id) ?? []).length)
-      .map(f => ({
+    emMontagem,
+    setor: {
+      id: fornecedor.id,
+      nome: fornecedor.nome,
+      area,
+      linhas: emMontagem.map(x => x.linha),
+      // O avesso, da mesma fonte: quem não tem nenhum registro no período.
+      ausentes: equipe
+        .filter(f => !(porFuncionario.get(f.id) ?? []).length)
+        .map(f => ({
+          funcionarioId: f.id,
+          nome: f.nome,
+          setor: fornecedor.nome,
+          funcao: f.cargo ?? '',
+          cpf: f.cpf ?? null,
+          baixaEm: f.descredenciado_em ?? null,
+        })),
+      pessoas: equipe.map(f => ({
         funcionarioId: f.id,
         nome: f.nome,
-        setor: fornecedor.nome,
+        cpf: f.cpf ?? null,
         funcao: f.cargo ?? '',
+        chavePix: (f.chave_pix ?? '').trim() || null,
+        // 0 é o padrão da coluna ("não informado"), não um valor combinado: fica vazio na planilha, não "R$ 0,00".
+        valorReceber: Number(f.valor_receber) > 0 ? Number(f.valor_receber) : null,
+        pago: f.pago === true,
+        pagoEm: f.pago_em ?? null,
+        baixaEm: f.descredenciado_em ?? null,
       })),
+    },
   }
+}
+
+/**
+ * Fecha as linhas: troca o id de quem lançou cada batida pelo nome (UMA consulta para o relatório inteiro, não uma por
+ * setor) e escreve o lançamento por extenso — "Saída: lançada à mão por Juan Muzy — esqueceu de bater".
+ */
+async function escreverLancamentos(emMontagem: LinhaEmMontagem[]): Promise<void> {
+  const ids = [...new Set(emMontagem.flatMap(x => x.lancamentos.map(l => l.perfilId)).filter((v): v is string => !!v))]
+  const nomes = new Map<string, string>()
+  for (const lote of emLotes(ids)) {
+    const { data } = await supabaseAdmin.from('perfis').select('id, nome').in('id', lote)
+    for (const p of data ?? []) nomes.set(p.id as string, p.nome as string)
+  }
+  for (const x of emMontagem) x.linha.lancamentos = x.lancamentos.map(l => textoDoLancamento(l, nomes))
+}
+
+/** Carrega os setores pedidos com o contexto do evento (buscado uma vez) e os nomes de quem lançou (uma consulta). */
+async function carregarSetores(eventoId: string, fornecedorIds: string[], periodo: Periodo): Promise<SetorRelatorio[]> {
+  const ctx = await contextoDoRelatorio(eventoId, fornecedorIds)
+  const carregados = (await Promise.all(fornecedorIds.map(id => carregarSetor(id, periodo, ctx))))
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+  await escreverLancamentos(carregados.flatMap(c => c.emMontagem))
+  return carregados.map(c => c.setor)
 }
 
 /** Dados do relatório de UM setor. */
@@ -286,11 +340,13 @@ export async function obterDadosRelatorioSetor(
     return { erro: 'Sem permissão sobre este fornecedor.' }
   }
 
+  const { data: confere } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).maybeSingle()
+  if (!confere) return { erro: 'Fornecedor não encontrado.' }
+  if (confere.evento_id !== eventoId) return { erro: 'Este fornecedor não pertence a este evento.' }
+
   const periodo = await resolverPeriodo(eventoId, periodoPedido)
-  const setor = await carregarSetor(fornecedorId, periodo)
+  const [setor] = await carregarSetores(eventoId, [fornecedorId], periodo)
   if (!setor) return { erro: 'Fornecedor não encontrado.' }
-  const { data: confere } = await supabaseAdmin.from('fornecedores').select('evento_id').eq('id', fornecedorId).single()
-  if (confere?.evento_id !== eventoId) return { erro: 'Este fornecedor não pertence a este evento.' }
 
   return {
     dados: {
@@ -318,9 +374,7 @@ export async function obterDadosRelatorioEvento(
   const periodo = await resolverPeriodo(eventoId, periodoPedido)
   const { data: fornecedores } = await supabaseAdmin
     .from('fornecedores').select('id').eq('evento_id', eventoId).order('created_at')
-  const setores = (
-    await Promise.all((fornecedores ?? []).map(f => carregarSetor(f.id, periodo)))
-  ).filter((s): s is SetorRelatorio => s !== null)
+  const setores = await carregarSetores(eventoId, (fornecedores ?? []).map(f => f.id as string), periodo)
 
   return {
     dados: {
@@ -440,6 +494,11 @@ export type DadosRelatorioSubevento = {
   subeventoNome: string
   periodo: Periodo
   setores: SetorDoSubevento[]
+  /**
+   * As mesmas linhas do relatório completo (por bloco, com meio, horas, origem, fora do local e os dados de pagamento),
+   * pras abas "Batidas" e "Pagamento" do subgrupo saírem iguais às do completo (Juan, 13/10/2026).
+   */
+  setoresRelatorio?: SetorRelatorio[]
 }
 
 /**
@@ -543,6 +602,9 @@ export async function obterDadosRelatorioSubevento(
       } catch { /* migração dos dias por pessoa pendente */ }
     }
 
+    // As linhas completas (as mesmas do relatório completo) pras abas "Batidas" e "Pagamento".
+    const setoresRelatorio = await carregarSetores(eventoId, idsSetores, periodo)
+
     const situacaoDe = (f: Func): SituacaoNoRelatorio => {
       if (f.descredenciado_em) return 'descredenciado'
       const s = f.status_credenciamento
@@ -578,6 +640,7 @@ export async function obterDadosRelatorioSubevento(
         subeventoNome: sub.nome as string,
         periodo,
         setores,
+        setoresRelatorio,
       },
     }
   } catch (e) {

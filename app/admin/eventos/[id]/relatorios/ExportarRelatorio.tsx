@@ -189,7 +189,7 @@ export default function ExportarRelatorio({
           <p className="text-slate-400 text-xs mt-2">
             {ausentes
               ? 'A planilha lista quem está na equipe e não bateu nenhuma batida no período — sem data, entrada ou saída, porque não existem.'
-              : 'A planilha lista quem bateu ponto no período, dia a dia, com entrada e saída.'}
+              : 'A planilha lista quem bateu ponto no período, dia a dia: dia da semana, entrada, meio, saída, horas, o que falta (em laranja), quem lançou à mão e por quê — e uma aba de Pagamento, uma linha por pessoa, com a chave PIX.'}
           </p>
         </div>
       </Secao>
@@ -239,7 +239,7 @@ export default function ExportarRelatorio({
             tom="acento"
             icone={<FileSpreadsheet className="w-3.5 h-3.5" />}
             titulo="Relatório completo"
-            descricao="Todos os fornecedores, numa planilha só — uma aba por fornecedor"
+            descricao="Todos os fornecedores numa planilha só: resumo, pagamento, todas as batidas e uma aba por fornecedor"
             corpoClassName="p-5 space-y-4"
           >
             <div className="flex items-center gap-4 text-sm text-slate-600">
@@ -279,7 +279,7 @@ export default function ExportarRelatorio({
           <Secao
             icone={<Building2 className="w-3.5 h-3.5" />}
             titulo="Relatório por fornecedor"
-            descricao="Uma planilha só com a equipe do fornecedor escolhido"
+            descricao="Uma planilha só com a equipe do fornecedor escolhido, com a aba de pagamento"
             corpoClassName="p-5 space-y-4"
           >
             <div>

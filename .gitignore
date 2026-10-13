@@ -52,3 +52,5 @@ _tmp*
 
 # pasta temporária do teste do relatório do subevento
 /.tmp-teste-relatorio-subevento/
+/.tmp-teste-relatorio-planilha/
+/.tmp-teste-fechamento/

@@ -16,6 +16,8 @@ import type { LinhaForaDoLocal } from './alertas-local'
 const fuso = { timeZone: 'America/Sao_Paulo' } as const
 const hora = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { ...fuso, hour: '2-digit', minute: '2-digit' })
 const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`
+/** "Sáb 10/10" — o dia da semana junto da data na linha (Juan, 13/10/2026). */
+const diaComSemana = (d: string) => `${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][new Date(`${d}T12:00:00Z`).getUTCDay()]} ${diaCurto(d)}`
 const diaEHora = (iso: string) => `${new Date(iso).toLocaleDateString('pt-BR', { ...fuso, day: '2-digit', month: '2-digit' })} ${hora(iso)}`
 const duracao = (ms: number) => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60).toLocaleString('pt-BR')}h${String(m % 60).padStart(2, '0')}` }
 const ETAPA: Record<string, string> = { entrada: 'Entrada', meio: 'Meio', fim: 'Saída' }
@@ -127,9 +129,9 @@ export function montarPresenca(dados: DadosRelatorioEvento, x: ExtrasDaPresenca)
       titulo: `${s.nomeBonito}: ${plural(s.pessoas, 'pessoa')}, ${plural(s.diarias, 'diária')}, ${duracao(s.horasMs)}.`,
       aviso: faltas ? { destaque: `Faltando: ${faltas}.`, texto: 'Em laranja na tabela — corrija em Lançar ponto antes de fechar o pagamento.' } : undefined,
       colunas: [
-        { titulo: 'Dia', tipo: 'texto', largura: '8%' },
-        { titulo: 'Pessoa', tipo: 'nome', largura: '31%' },
-        { titulo: 'Função', tipo: 'texto', largura: '15%' },
+        { titulo: 'Dia', tipo: 'texto', largura: '11%' },
+        { titulo: 'Pessoa', tipo: 'nome', largura: '29%' },
+        { titulo: 'Função', tipo: 'texto', largura: '14%' },
         { titulo: 'Entrada', tipo: 'numero', largura: '11%' },
         { titulo: 'Meio', tipo: 'numero', largura: '12%' },
         { titulo: 'Saída', tipo: 'numero', largura: '12%' },
@@ -141,7 +143,7 @@ export function montarPresenca(dados: DadosRelatorioEvento, x: ExtrasDaPresenca)
         const meio: CelulaDoc = meios?.length ? meios.sort().map(hora).join(' · ')
           : (l.entradaISO && x.pedeMeio(s.id, l.dataRef) && irmas.every(j => !meioDaLinha.has(j)) && irmas[0] === i) ? { valor: 'sem meio', destaque: true } : null
         return [
-          diaCurto(l.dataRef),
+          diaComSemana(l.dataRef),
           l.nome,
           l.funcao || '—',
           l.entradaISO ? hora(l.entradaISO) : { valor: 'sem entrada', destaque: true },
