@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowLeft, SearchX } from 'lucide-react'
-import { conversaCompartilhada, lerCompartilhamento } from '@/lib/respostas-compartilhadas'
+import { conversaCompartilhada, lerCompartilhamento, marcarConversaVista } from '@/lib/respostas-compartilhadas'
 import estilos from '../chat.module.css'
 import Chat from './Chat'
 
@@ -35,6 +35,9 @@ export default async function ConversaCompartilhadaPage({
       </div>
     )
   }
+
+  // Abrir a conversa é vê-la: tira o destaque dela na lista para todo o time.
+  await marcarConversaVista(leitura.chave, telefone)
 
   return (
     <Chat

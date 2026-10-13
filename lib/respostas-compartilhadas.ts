@@ -17,6 +17,16 @@ import { supabaseAdmin } from './supabase-server'
  */
 const PREFIXO = 'respostas_compartilhadas:'
 const JANELA_H = 24
+/**
+ * Conversa que alguém do atendimento já abriu.
+ *
+ * O link não tem usuário, então "vista" vale para todos que o usam: quem
+ * atende é um time só, e o destaque existe para dizer o que ninguém olhou
+ * ainda. Uma linha por conversa (e não uma lista dentro do estado do link)
+ * porque dois atendentes abrindo conversas ao mesmo tempo sobrescreveriam a
+ * marca um do outro.
+ */
+const PREFIXO_VISTAS = 'respostas_vistas:'
 
 export type EstadoCompartilhamento = {
   titulo: string
@@ -36,7 +46,7 @@ export type ConversaCompartilhada = {
   ultimoTexto: string | null
   ultimoTipo: string
   ultimaDirecao: 'recebida' | 'enviada'
-  /** A última palavra foi da pessoa: ainda espera uma resposta. */
+  /** A última palavra foi da pessoa e ninguém do atendimento abriu a conversa depois dela. */
   aguardando: boolean
   /** Dá para responder com texto livre? Só dentro de 24h da última recebida. */
   janelaAberta: boolean
@@ -96,6 +106,35 @@ async function lerTudo<T>(consulta: (de: number, ate: number) => PromiseLike<{ d
     if ((data ?? []).length < 1000) break
   }
   return linhas
+}
+
+function chaveDeVista(chaveDoLink: string, telefone: string): string {
+  return `${PREFIXO_VISTAS}${chaveDoLink.slice(PREFIXO.length)}:${chaveTelefone(telefone)}`
+}
+
+/**
+ * Marca a conversa como vista agora. Mensagem que chegar depois disto volta a
+ * destacar a conversa na lista.
+ */
+export async function marcarConversaVista(chaveDoLink: string, telefone: string): Promise<void> {
+  const agora = new Date().toISOString()
+  await supabaseAdmin
+    .from('sistema_estado')
+    .upsert({ chave: chaveDeVista(chaveDoLink, telefone), valor: { em: agora }, atualizado_em: agora }, { onConflict: 'chave' })
+}
+
+/** Quando cada conversa do link foi aberta pela última vez, pela chave do telefone. */
+async function conversasVistas(chaveDoLink: string): Promise<Map<string, string>> {
+  const prefixo = `${PREFIXO_VISTAS}${chaveDoLink.slice(PREFIXO.length)}:`
+  const linhas = await lerTudo<{ chave: string; valor: { em?: string } | null }>((de, ate) => supabaseAdmin
+    .from('sistema_estado')
+    .select('chave, valor')
+    .like('chave', `${prefixo}%`)
+    .order('chave')
+    .range(de, ate))
+  const vistas = new Map<string, string>()
+  for (const linha of linhas) if (linha.valor?.em) vistas.set(linha.chave.slice(prefixo.length), linha.valor.em)
+  return vistas
 }
 
 /** Cria o link e devolve o código. É a única hora em que o código existe em claro. */
@@ -163,6 +202,7 @@ export async function conversasCompartilhadas(token: string): Promise<Compartilh
   const leitura = await lerCompartilhamento(token)
   if (!leitura.valido) return leitura
   const { estado } = leitura
+  const vistas = await conversasVistas(leitura.chave)
 
   /*
    * Parte das respostas, não da lista do disparo: quem respondeu são centenas,
@@ -217,9 +257,12 @@ export async function conversasCompartilhadas(token: string): Promise<Compartilh
   }
 
   const limiteDaJanela = Date.now() - JANELA_H * 60 * 60 * 1000
-  const lista = [...porPessoa.values()]
-    .map(({ ultimaRecebida, ...conversa }) => ({
+  const lista = [...porPessoa.entries()]
+    .map(([chaveTel, { ultimaRecebida, ...conversa }]) => ({
       ...conversa,
+      // Aberta depois da última mensagem da pessoa: alguém já viu, sai do
+      // destaque até chegar mensagem nova.
+      aguardando: conversa.aguardando && !(new Date(vistas.get(chaveTel) ?? 0).getTime() >= new Date(ultimaRecebida).getTime()),
       janelaAberta: new Date(ultimaRecebida).getTime() > limiteDaJanela,
     }))
     .sort((a, b) => b.ultimaEm.localeCompare(a.ultimaEm))
