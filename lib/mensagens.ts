@@ -65,7 +65,7 @@ const BATCH_SIZE_PADRAO = 10
  * espera artificial — ~100 por rodada em poucos segundos.
  */
 const BATCH_SIZE_META = 100
-const PARALELO_META = 5
+const PARALELO_META = 20
 const PACING_MS_MIN = 1000
 const PACING_MS_MAX = 2000
 const pacingAleatorio = () => PACING_MS_MIN + Math.floor(Math.random() * (PACING_MS_MAX - PACING_MS_MIN))
