@@ -88,6 +88,6 @@ export async function responderConversa(numero: string, texto: string): Promise<
 }
 
 /** O canal está saudável? Alimenta a faixa de alerta do Painel. */
-export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string }> {
+export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string; aviso?: string | null }> {
   return provedor() === 'meta' ? estadoMeta() : estadoEvolution()
 }

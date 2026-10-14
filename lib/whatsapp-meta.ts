@@ -234,7 +234,7 @@ export async function enviarTextoLivre(numero: string, texto: string): Promise<R
  * sozinho. O que existe e derruba o envio é a QUALIDADE cair para vermelho ou
  * o número ser bloqueado, e é isso que esta checagem enxerga.
  */
-export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string }> {
+export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado: string; aviso?: string | null }> {
   const cfg = configuracao()
   if (!cfg.ok) return { conectada: false, estado: cfg.erro }
 
@@ -252,12 +252,20 @@ export async function estadoDaInstancia(): Promise<{ conectada: boolean; estado:
 
     const qualidade = corpo?.quality_rating ?? 'UNKNOWN'
     const situacao = corpo?.status ?? 'UNKNOWN'
-    // RED ainda entrega, mas é o degrau antes do bloqueio: melhor a faixa
-    // vermelha no Painel aparecer aí do que depois de o número cair.
-    const saudavel = situacao !== 'BANNED' && situacao !== 'RESTRICTED' && qualidade !== 'RED'
+    /*
+     * Qualidade RED ainda ENTREGA — é o degrau antes de a Meta limitar ou bloquear, não queda. Antes, RED contava
+     * como "fora do ar" e a fila PARAVA (Juan, 14/10/2026: duas campanhas de marketing com 12 mil mensagens deixaram
+     * o número RED às 13h52 e as mensagens do evento do Luan ficaram presas). Agora RED é aviso (Painel, WhatsApp,
+     * Performance), e a fila só para com o número restrito ou banido de verdade.
+     */
+    const bloqueado = situacao === 'BANNED' || situacao === 'RESTRICTED'
+    const aviso = qualidade === 'RED'
+      ? 'Qualidade do número VERMELHA na Meta: ainda entrega, mas é o passo antes de a Meta limitar ou bloquear. Segure disparos de marketing até voltar a amarela/verde.'
+      : qualidade === 'YELLOW' ? 'Qualidade do número AMARELA na Meta: evite disparos de marketing em massa.' : null
     return {
-      conectada: saudavel,
+      conectada: !bloqueado,
       estado: `${situacao} · qualidade ${qualidade} · limite ${corpo?.messaging_limit_tier ?? '?'}`,
+      aviso,
     }
   } catch (e: unknown) {
     return { conectada: false, estado: e instanceof Error ? e.message : 'sem resposta' }

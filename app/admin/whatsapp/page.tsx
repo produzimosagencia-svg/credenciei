@@ -54,6 +54,11 @@ export default async function WhatsAppPage() {
           <strong>Canal fora do ar.</strong> {canal.estado}
         </Aviso>
       )}
+      {canal.conectada && canal.aviso && (
+        <Aviso tom="atencao" icone={<AlertTriangle className="w-3.5 h-3.5" />}>
+          <strong>No ar, com qualidade baixa.</strong> {canal.aviso}
+        </Aviso>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Enviadas hoje" value={enviadasHoje ?? 0} icon={Send} tom="sucesso" />

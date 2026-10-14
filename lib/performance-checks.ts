@@ -121,8 +121,9 @@ export async function checarDominioSsl(): Promise<ResultadoCheck> {
 export async function checarWhatsApp(): Promise<ResultadoCheck> {
   const r = await medir(() => estadoDaInstancia())
   if (r.erro) return { ok: false, latenciaMs: r.ms, erro: mensagemDeErro(r.erro) }
-  const { conectada, estado } = r.valor!
-  return { ok: conectada, latenciaMs: r.ms, erro: conectada ? null : mascarar(estado) }
+  const { conectada, estado, aviso } = r.valor!
+  // Qualidade baixa (RED/YELLOW) é ATENÇÃO, não queda — o número continua entregando.
+  return { ok: conectada, latenciaMs: r.ms, erro: conectada ? null : mascarar(estado), aviso: conectada ? (aviso ?? null) : null }
 }
 
 // ─── Fila de mensagens (worker VPS + cron Vercel) ─────────────────────────────
