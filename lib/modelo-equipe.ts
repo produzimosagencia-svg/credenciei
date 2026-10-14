@@ -6,8 +6,7 @@ import { rotuloDoDia, ROTULO_FASE } from './escala-regras'
 /**
  * O MODELO da planilha de equipe (pedido do Juan, 09/10/2026): Nome, CPF, Telefone, Cargo, Cidade, Chave PIX e, em
  * evento com escala por dia, UMA COLUNA POR DIA DO EVENTO. Os nomes batem com o que `lerPlanilhaDeEquipe`
- * (lib/planilha.ts) reconhece. Usado na tela da equipe (app/api/import/modelo) e no link público do pedido de setor
- * (app/pedido-setor/[token]/modelo), onde o fornecedor ainda não tem setor — aí sai sem o nome dele.
+ * (lib/planilha.ts) reconhece. Usado na tela da equipe (app/api/import/modelo); sem `setorNome`, sai sem o fornecedor.
  */
 export async function montarModeloDeEquipe(p: { eventoId: string; eventoNome: string; setorNome: string | null }): Promise<Buffer> {
   const eventoId = p.eventoId
