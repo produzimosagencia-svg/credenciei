@@ -9,6 +9,7 @@ import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../
 import FecharDiaBotao from '@/components/FecharDiaBotao'
 import { listarSemSaida } from '@/lib/actions-fechar-dia'
 import { pendenciasDoDia } from '@/lib/pendencias'
+import { podeUsarFecharDia } from '@/lib/fechar-dia-regras'
 
 export const revalidate = 0
 
@@ -80,7 +81,7 @@ export default async function PendenciasDoTurnoPage({ searchParams }: { searchPa
         icone={<LogOut className="w-3.5 h-3.5" />}
         titulo={`Sem saída · ${pessoas.length}`}
         descricao="Entraram neste dia e ainda não têm saída."
-        acoes={pessoas.length ? <FecharDiaBotao eventoId={eventoId} dataRef={dia} rotuloDia={ddmm(dia)} compacto /> : undefined}
+        acoes={pessoas.length && podeUsarFecharDia(perfil.role) ? <FecharDiaBotao eventoId={eventoId} dataRef={dia} rotuloDia={ddmm(dia)} compacto /> : undefined}
         corpoClassName={pessoas.length ? '' : 'p-4'}
       >
         {'erro' in semSaida ? (

@@ -7,6 +7,7 @@ import { ehMaster, podeGerenciarEventos } from './permissions'
 import { suporteTemEscopo } from './suporte'
 import { registrarAuditoria } from './auditoria'
 import { emLotes } from './lotes'
+import { podeUsarFecharDia } from './fechar-dia-regras'
 
 /**
  * FECHAR O DIA DA EQUIPE (Juan, 14/10/2026 — a maior dor do VITAL: 602 turnos sem saída, e as 459 saídas das 12h
@@ -115,6 +116,7 @@ export async function fecharDiaDaEquipe(p: {
     return { erro: `O horário precisa estar entre o dia ${p.dataRef.split('-').reverse().join('/')} e a madrugada seguinte.` }
   }
   if (!p.funcionarioIds?.length) return { erro: 'Escolha pelo menos uma pessoa.' }
+  if (!podeUsarFecharDia((await getPerfil())?.role)) return { erro: 'Por enquanto, só o master fecha o dia da equipe.' }
 
   const escopo = await escopoDoFechamento(p.eventoId)
   if (!escopo.ok) return { erro: escopo.erro }

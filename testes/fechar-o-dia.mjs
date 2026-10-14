@@ -25,7 +25,9 @@ ok(/Lançar a saída de \$\{marcadas\.size\} pessoa\(s\)/.test(botao) && /type="
 ok(/href: '\/admin\/pendencias-turno', label: 'Pendências do turno'/.test(menu), '"Pendências do turno" no menu do supervisor (e de quem gerencia)')
 ok(/listarSemSaida\(eventoId, dia\)/.test(tela) && /pendenciasDoDia\(\{ eventoId, data: dia, fornecedorId, etapas: \['meio'\], meioJaAberto: true \}\)/.test(tela) && /<FecharDiaBotao/.test(tela), 'a tela: sem saída e sem meio do turno de agora, com o Fechar o dia')
 ok(/eventosAindaVigentes/.test(tela), 'só os eventos que ainda estão acontecendo')
-ok(/visao === 'sem_saida' && linhas\.length > 0 && <FecharDiaBotao/.test(presenca), 'na Presença "sem saída" (onde o aviso ao supervisor leva) também tem o botão')
+ok(/visao === 'sem_saida' && linhas\.length > 0 && podeUsarFecharDia\(perfil\.role\) && <FecharDiaBotao/.test(presenca), 'na Presença "sem saída" (onde o aviso ao supervisor leva) também tem o botão')
+const regra = ler('lib/fechar-dia-regras.ts')
+ok(/export const FECHAR_DIA_SO_MASTER = true/.test(regra) && /if \(!podeUsarFecharDia\(\(await getPerfil\(\)\)\?\.role\)\)/.test(acao) && /pessoas\.length && podeUsarFecharDia\(perfil\.role\)/.test(tela), 'por enquanto SÓ O MASTER fecha o dia (servidor e telas) — Juan, 14/10/2026')
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
