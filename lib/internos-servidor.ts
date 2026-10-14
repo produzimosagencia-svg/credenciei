@@ -368,7 +368,12 @@ export async function garantirFuncaoExtra(
   const mesmaFuncaoDeBase = perfil.role === role
     && (role !== 'operador_portao' || ((perfil.organizacao_id as string | null) ?? null) === organizacaoId)
   if (mesmaFuncaoDeBase) return { ok: true, jaTinha: true }
-  if (!podeReceberFuncaoExtra(perfil.role as string)) return { ok: false, erro: MSG_FUNCAO_NAO_COMBINA }
+  /*
+   * O master também pode ser Encarregado (Juan, 14/10/2026: "como que com meu perfil, eu sou master, supervisor e
+   * operador de portão?") — mesma exceção que ele já tinha pra supervisor (lib/actions.ts, `definirFuncaoNaEquipe`).
+   */
+  const masterVirandoEncarregado = perfil.role === 'master' && role === 'encarregado'
+  if (!podeReceberFuncaoExtra(perfil.role as string) && !masterVirandoEncarregado) return { ok: false, erro: MSG_FUNCAO_NAO_COMBINA }
 
   /*
    * Gestor de credenciamento é POR ORGANIZAÇÃO: quem já é Gestor na Navista e ganha o papel na

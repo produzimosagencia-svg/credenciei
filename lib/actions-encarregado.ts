@@ -155,7 +155,8 @@ export async function listarCandidatosEncarregado(eventoId: string): Promise<
       const { data: perfis } = await supabaseAdmin.from('perfis').select('cpf, role').in('cpf', lote)
       for (const p of perfis ?? []) {
         // Só as identidades próprias (master, suporte, produtor) não podem ser Encarregadas; as demais funções se combinam.
-        if (!podeReceberFuncaoExtra(p.role as string)) funcaoPorCpf.set(p.cpf as string, ROLE_LABELS[p.role as Role] ?? (p.role as string))
+        // O master pode (mesma exceção de `garantirFuncaoExtra`); suporte e produtor, não.
+        if (!podeReceberFuncaoExtra(p.role as string) && p.role !== 'master') funcaoPorCpf.set(p.cpf as string, ROLE_LABELS[p.role as Role] ?? (p.role as string))
       }
     }
 

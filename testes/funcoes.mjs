@@ -16,6 +16,7 @@ grupo('1 · Quem pode combinar')
 ok(['supervisor', 'operador_portao', 'encarregado'].every(r => FUNCOES_EXTRAS.includes(r)) && FUNCOES_EXTRAS.length === 3, 'só supervisor, Gestor de credenciamento e Encarregado podem ser função EXTRA')
 ok(['supervisor', 'operador_portao', 'encarregado', 'admin', 'gerente', 'cliente'].every(podeReceberFuncaoExtra), 'quem tem uma dessas funções (ou é administrador) pode receber uma extra')
 ok(!podeReceberFuncaoExtra('master') && !podeReceberFuncaoExtra('suporte') && !podeReceberFuncaoExtra('produtor') && !podeReceberFuncaoExtra(null), 'master, suporte e produtor são identidades próprias: não recebem nem se misturam')
+ok(/const masterVirandoEncarregado = perfil\.role === 'master' && role === 'encarregado'/.test(ler('lib/internos-servidor.ts')) && /p\.role !== 'master'/.test(ler('lib/actions-encarregado.ts')), 'o master também pode ser Encarregado (como já podia ser supervisor) — Juan, 14/10/2026')
 ok(destinoDaFuncao('encarregado') === '/encarregado' && destinoDaFuncao('supervisor') === '/admin' && destinoDaFuncao('operador_portao') === '/admin', 'trocar leva pra casca certa de cada função')
 
 grupo('2 · O servidor vale UMA função por vez, e só a que a pessoa tem')

@@ -2559,7 +2559,7 @@ export async function definirFuncaoNaEquipe(
         return { erro: 'Esta pessoa não tem um WhatsApp válido no cadastro. É por ele que o acesso é enviado.' }
       }
       const combina = !conta || conta.role === 'supervisor' || conta.role === 'encarregado'
-        || (funcao === 'supervisor' && conta.role === 'master') || podeReceberFuncaoExtra(conta.role)
+        || ((funcao === 'supervisor' || funcao === 'encarregado') && conta.role === 'master') || podeReceberFuncaoExtra(conta.role)
       if (!combina) return { erro: MSG_FUNCAO_NAO_COMBINA }
       if (conta && conta.ativo === false && conta.role !== 'supervisor' && conta.role !== 'encarregado') {
         return { erro: 'O acesso desta pessoa está bloqueado em Acessos. Fale com o master.' }
