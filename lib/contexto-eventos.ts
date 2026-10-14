@@ -1,5 +1,5 @@
 import 'server-only'
-import { supabaseAdmin } from './supabase-server'
+import { supabaseAdmin, eventosAindaVigentes } from './supabase-server'
 import { vinculosDoEncarregado } from './encarregado-consulta'
 import type { ContextoDeEventos, NoEvento, NoSubevento } from './contexto-eventos-tipos'
 
@@ -116,7 +116,12 @@ async function daOrganizacao(organizacaoIds: string[], soEventos: boolean): Prom
   const { data } = await supabaseAdmin
     .from('eventos').select('id, nome, ativo, data_inicio')
     .in('organizacao_id', organizacaoIds).order('data_inicio', { ascending: false }).limit(200)
-  const base = (data ?? []) as { id: string; nome: string; ativo: boolean | null; data_inicio: string | null }[]
+  let base = (data ?? []) as { id: string; nome: string; ativo: boolean | null; data_inicio: string | null }[]
+  // Seletor do operador de portão (`soEventos`): só os eventos que ainda valem — nada de evento passado ou inativo.
+  if (soEventos) {
+    const vigentes = await eventosAindaVigentes(base.map(e => e.id))
+    base = base.filter(e => vigentes.has(e.id))
+  }
   if (!base.length) return null
 
   const subPorEvento = new Map<string, NoSubevento[]>()

@@ -403,7 +403,10 @@ export async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: stri
     .eq('ativo', true)
     .in('organizacao_id', orgs)
     .order('data_inicio', { ascending: false })
-  return data ?? []
+  // Operador de portão: só o que ainda não terminou (ver `eventosAindaVigentes`).
+  if (perfil.role !== 'operador_portao') return data ?? []
+  const vigentes = await eventosAindaVigentes((data ?? []).map(e => e.id as string))
+  return (data ?? []).filter(e => vigentes.has(e.id as string))
 }
 
 /** Este usuário pode escanear ESTE evento? (checa o setor do supervisor / org do admin) */
@@ -435,6 +438,32 @@ export async function eventosAcontecendoHoje(eventoIds: string[]): Promise<Set<s
     if (noPeriodo || comDiaHoje.has(e.id as string)) acontecendo.add(e.id as string)
   }
   return acontecendo
+}
+
+/**
+ * Os eventos que AINDA VALEM pro operador de portão: ativos e que não terminaram (o último dia de operação — da
+ * escala, ou o `data_fim` — é hoje ou depois). Achado do Juan (14/10/2026): o operador que trabalhou no VITAL
+ * continuava vendo o VITAL (acabou 13/10, mas segue "ativo" no cadastro) e, em Registrar ponto e no seletor do topo,
+ * até eventos inativos. Até as 6h, o dia de ontem ainda vale — o turno da última noite vira a madrugada (e o scanner
+ * usa esta mesma lista: quem sai às 3h da manhã do último show ainda precisa do evento).
+ */
+export async function eventosAindaVigentes(eventoIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(eventoIds.filter(Boolean))]
+  if (!ids.length) return new Set()
+  const agoraBRT = new Date(Date.now() - 3 * 3600_000)
+  const limite = agoraBRT.getUTCHours() < 6 ? new Date(agoraBRT.getTime() - 24 * 3600_000).toISOString().slice(0, 10) : diaBRT()
+  const [{ data: eventos }, { data: dias }] = await Promise.all([
+    admin.from('eventos').select('id, ativo, data_inicio, data_fim').in('id', ids),
+    admin.from('jornada_dias').select('evento_id').in('evento_id', ids).gte('data', limite).eq('cancelado', false),
+  ])
+  const comDiaPelaFrente = new Set((dias ?? []).map(d => d.evento_id as string))
+  const vigentes = new Set<string>()
+  for (const e of eventos ?? []) {
+    if (e.ativo === false) continue
+    const periodo = periodoDoEvento(e as { data_inicio: string | null; data_fim: string | null })
+    if (comDiaPelaFrente.has(e.id as string) || (!!periodo && periodo.ultimo >= limite)) vigentes.add(e.id as string)
+  }
+  return vigentes
 }
 
 /**

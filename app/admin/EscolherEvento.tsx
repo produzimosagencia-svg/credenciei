@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
-import { getPerfil, meusSetores, organizacoesDoOperador, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, organizacoesDoOperador, eventosAindaVigentes, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -65,7 +65,10 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
     }
   }
 
-  const { data } = await consulta
+  const { data: todos } = await consulta
+  // Operador de portão não vê evento que já acabou nem evento inativo (Juan, 14/10/2026) — ver `eventosAindaVigentes`.
+  const vigentes = perfil.role === 'operador_portao' ? await eventosAindaVigentes((todos ?? []).map(e => e.id as string)) : null
+  const data = vigentes ? (todos ?? []).filter(e => vigentes.has(e.id as string)) : todos
   return (data ?? []).map(e => ({
     id: e.id as string,
     nome: e.nome as string,
