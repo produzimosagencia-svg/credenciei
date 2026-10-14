@@ -63,7 +63,7 @@ export default async function LocalizarPage({
       : await eventosDosMeusSetores(meusVinculos)
     return (
       <div className="max-w-xl mx-auto space-y-5">
-        <PageHeader titulo="Registrar ponto" descricao="Escolha o evento — a busca é só dentro dele" />
+        <PageHeader titulo={soBateMeio(perfil.role) ? 'Registrar meio' : 'Registrar ponto'} descricao="Escolha o evento — a busca é só dentro dele" />
         <EscolherEvento
           eventos={eventos}
           href={id => `/admin/localizar?evento=${id}`}
@@ -107,7 +107,7 @@ export default async function LocalizarPage({
       */}
       <div className="max-w-xl mx-auto space-y-5">
         <PageHeader
-          titulo="Registrar ponto"
+          titulo={soBateMeio(perfil.role) ? 'Registrar meio' : 'Registrar ponto'}
           descricao={`${evento.nome} — busca por CPF ou nome, com foto na hora`}
           acoes={
             <>

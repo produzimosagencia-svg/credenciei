@@ -13,6 +13,7 @@ import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
   podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
   podeVerPerformance, type Role,
+  soBateMeio,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
@@ -181,7 +182,8 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.
   if (podeAcompanhar(perfil)) {
-    doEvento.push({ href: '/admin/localizar', label: 'Registro de ponto', icon: ClipboardCheck })
+    // Supervisor só bate o meio: pra ele o item se chama "Registro de meio" (Juan, 14/10/2026).
+    doEvento.push({ href: '/admin/localizar', label: soBateMeio(role) ? 'Registro de meio' : 'Registro de ponto', icon: ClipboardCheck })
     doEvento.push({ href: '/admin/atividades', label: 'Atividades do evento', icon: Activity })
   }
   grupos.push({ titulo: 'Evento', itens: doEvento })
