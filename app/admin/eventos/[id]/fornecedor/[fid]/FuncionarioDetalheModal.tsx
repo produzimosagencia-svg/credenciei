@@ -113,6 +113,14 @@ export default function FuncionarioDetalheModal({
     }
   }
   const [aba, setAba] = useState<Aba>('dados')
+  // A foto de perfil em tamanho grande (Juan, 14/10/2026: "preciso que a foto de perfil seja clicável, pra ver de mais perto").
+  const [fotoAmpliada, setFotoAmpliada] = useState(false)
+  useEffect(() => {
+    if (!fotoAmpliada) return
+    const fechar = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setFotoAmpliada(false) } }
+    window.addEventListener('keydown', fechar, true)
+    return () => window.removeEventListener('keydown', fechar, true)
+  }, [fotoAmpliada])
   const [valor, setValor] = useState(String(f.valorReceber))
   const [erro, setErro] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -471,11 +479,26 @@ export default function FuncionarioDetalheModal({
                         sm:max-h-[90vh] overflow-y-auto transition-[max-width] duration-200`}
             onClick={e => e.stopPropagation()}
           >
+            {fotoAmpliada && f.fotoUrl && (
+              <div
+                className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 cursor-zoom-out"
+                onClick={e => { e.stopPropagation(); setFotoAmpliada(false) }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={f.fotoUrl} alt={f.nome} className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl" />
+                <button type="button" onClick={e => { e.stopPropagation(); setFotoAmpliada(false) }} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20" aria-label="Fechar a foto">
+                  <X className="w-5 h-5" />
+                </button>
+                <p className="absolute bottom-6 left-0 right-0 text-center text-white/80 text-sm font-medium">{f.nome}</p>
+              </div>
+            )}
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3 min-w-0">
                 {f.fotoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={f.fotoUrl} alt={f.nome} className="w-12 h-12 rounded-full object-cover border border-slate-200 shrink-0" />
+                  <button type="button" onClick={() => setFotoAmpliada(true)} className="shrink-0 rounded-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-brand-500" title="Ver a foto maior" aria-label="Ver a foto maior">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={f.fotoUrl} alt={f.nome} className="w-12 h-12 rounded-full object-cover border border-slate-200 hover:opacity-90" />
+                  </button>
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                     <User className="w-6 h-6 text-slate-300" />
