@@ -28,6 +28,18 @@ export async function GET(request: NextRequest) {
     console.error('[cron] agendarAlertasSupervisorCredenciamento falhou:', e)
   }
 
-  const resultado = await processarFilaMensagens()
-  return NextResponse.json(resultado)
+  /*
+   * Um lote de 100 na Meta sai em poucos segundos, mas o cron só bate 1x por
+   * minuto: a fila ficava presa em ~100 mensagens/minuto num disparo grande.
+   * Enquanto houver fila e sobrar tempo, puxa o próximo lote na mesma
+   * chamada. Para com folga antes do maxDuration.
+   */
+  const inicio = Date.now()
+  let processadas = 0
+  for (;;) {
+    const { processadas: n } = await processarFilaMensagens()
+    processadas += n
+    if (n === 0 || Date.now() - inicio > 40_000) break
+  }
+  return NextResponse.json({ processadas })
 }
