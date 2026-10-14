@@ -36,8 +36,10 @@ const ehTotem = (o: Operador) => /^totem\d+@/.test(o.email)
  * consulta, em page.tsx.
  */
 export default function OperadorPortariaCard({
-  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false, metodoIdentificacao = 'qr', completo = false,
+  eventoId, operadores, funcionariosDoEvento = [], podeExcluir = false, metodoIdentificacao = 'qr', completo = false, podeEditarFuncaoExtra = false,
 }: {
+  /** Master: edita também quem é operador por função extra (a conta é de outra organização) — Juan, 14/10/2026. */
+  podeEditarFuncaoExtra?: boolean
   eventoId: string
   operadores: Operador[]
   /**
@@ -127,12 +129,23 @@ export default function OperadorPortariaCard({
             {visiveis.map(o => o.funcaoExtra ? (
               /*
                * Operador por FUNÇÃO EXTRA (também é supervisor, por exemplo): a conta é dele, não
-               * daqui — nada de editar nem excluir a pessoa, só tirar o papel de operador.
+               * daqui — só tirar o papel de operador. Editar a conta, só o master (que edita de qualquer organização).
                */
               <div key={o.id} className="w-full flex items-center gap-1.5 text-sm px-2 py-1.5 rounded-lg text-slate-700">
                 <span className="truncate flex-1">{o.nome}</span>
                 {completo && o.cpf && <span className="text-slate-400 text-2xs tabular-nums shrink-0 hidden sm:inline">{formatCpf(o.cpf)}</span>}
                 <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-semibold shrink-0">também {o.funcaoExtra}</span>
+                {podeEditarFuncaoExtra && (
+                  <button
+                    type="button"
+                    onClick={() => setModalAberto(o)}
+                    className="btn-press w-6 h-6 flex items-center justify-center rounded-md text-slate-300 hover:text-brand-500 hover:bg-slate-50 shrink-0"
+                    title="Editar (nome, telefone, senha)"
+                    aria-label={`Editar ${o.nome}`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setRemovendoFuncao(o)}

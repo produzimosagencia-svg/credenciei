@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ShieldCheck, CalendarDays, ScanLine, ClipboardCheck, KeyRound } from 'lucide-react'
 import { getPerfil, supabaseAdmin as supabase, buscarTudo } from '@/lib/supabase-server'
 import { emLotes } from '@/lib/lotes'
-import { veTodosEventos, podeGerenciarUsuarios, podeExcluirOperadorPortao } from '@/lib/permissions'
+import { veTodosEventos, podeGerenciarUsuarios, podeExcluirOperadorPortao, ehMaster } from '@/lib/permissions'
 import { PageHeader, Secao } from '@/components/ui/Superficie'
 import EscolherEvento, { eventosQuePossoAbrir } from '../EscolherEvento'
 import OperadorPortariaCard from '../eventos/[id]/OperadorPortariaCard'
@@ -105,6 +105,7 @@ export default async function CriarPorteiroPage({
         operadores={operadores ?? []}
         funcionariosDoEvento={(funcionarios ?? []) as { id: string; nome: string; cpf: string; telefone: string }[]}
         podeExcluir={podeExcluirOperadorPortao(perfil.role)}
+        podeEditarFuncaoExtra={ehMaster(perfil.role as string)}
         metodoIdentificacao={metodoIdentificacao}
         completo
       />

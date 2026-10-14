@@ -644,6 +644,7 @@ export default async function EventoPage({
                   operadores={operadoresRows ?? []}
                   funcionariosDoEvento={funcionariosDoEventoRows ?? []}
                   podeExcluir={podeExcluirOperadorPortao(perfil?.role)}
+                  podeEditarFuncaoExtra={ehMaster(perfil?.role as string)}
                   metodoIdentificacao={(evento as { metodo_identificacao?: string } | null)?.metodo_identificacao ?? 'qr'}
                 />
               )}
