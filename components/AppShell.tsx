@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin, DoorClosed,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
@@ -93,6 +93,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (role === 'supervisor' || temVinculoSupervisor) {
     doEvento.push({ href: '/admin/meus-eventos', label: 'Meus eventos', icon: CalendarDays })
+  }
+  /*
+   * "Pendências do turno" (Juan, 14/10/2026): quem da equipe está sem saída e sem meio no turno de agora, com o
+   * "Fechar o dia" ali mesmo. Também pra quem gerencia o evento (escolhe o evento antes).
+   */
+  if (role === 'supervisor' || temVinculoSupervisor || podeGerenciarEventos(perfil) || role === 'suporte') {
+    doEvento.push({ href: '/admin/pendencias-turno', label: 'Pendências do turno', icon: DoorClosed })
   }
   /*
    * O scanner fica com quem credencia. O supervisor só tem se for ligado em

@@ -20,6 +20,7 @@ export const ACAO_LABELS: Record<string, string> = {
   REGISTRO_ENTRADA_ASSISTIDA: 'Entrada assistida',
   REGISTRO_SAIDA_ASSISTIDA: 'Saída assistida',
   CORRECAO_PONTO: 'Correção de ponto',
+  FECHAMENTO_DO_DIA: 'Fechar o dia (saída lançada pela equipe)',
   DESCREDENCIAMENTO: 'Descredenciamento',
   EXCLUSAO_FUNCIONARIO: 'Funcionário excluído',
   BLOQUEIO_CPF: 'CPF bloqueado',

@@ -7,6 +7,7 @@ import { VISOES, ehVisao, linhasDaVisao, type Visao } from '@/lib/presenca-visoe
 import { PageHeader } from '@/components/ui/Superficie'
 import SeletorDeDia from '@/components/SeletorDeDia'
 import TabelaPresenca from './TabelaPresenca'
+import FecharDiaBotao from '@/components/FecharDiaBotao'
 
 export const revalidate = 0
 
@@ -93,9 +94,13 @@ export default async function PresencaPage({
         titulo={VISOES[visao].titulo}
         descricao={`${evento.nome} · ${rotuloDia(diaEscolhido)}${diaEscolhido === hoje ? ' (hoje)' : ''}`}
         acoes={
-          <Link href={`/admin/eventos/${eventoId}`} className="btn btn-secundario btn-sm">
-            <ArrowLeft className="w-3.5 h-3.5" /> Voltar ao evento
-          </Link>
+          <>
+            {/* Na lista de quem está sem saída: o "Fechar o dia" ali mesmo (é para cá que o aviso ao supervisor leva). */}
+            {visao === 'sem_saida' && linhas.length > 0 && <FecharDiaBotao eventoId={eventoId} dataRef={diaEscolhido} rotuloDia={rotuloDia(diaEscolhido)} compacto />}
+            <Link href={`/admin/eventos/${eventoId}`} className="btn btn-secundario btn-sm">
+              <ArrowLeft className="w-3.5 h-3.5" /> Voltar ao evento
+            </Link>
+          </>
         }
       />
 
