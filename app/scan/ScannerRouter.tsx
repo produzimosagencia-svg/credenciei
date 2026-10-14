@@ -173,7 +173,8 @@ export default function ScannerRouter({
 
   return (
     <div className="flex-1 flex flex-col">
-      {!!eventoAtivo && <AutoatendimentoBotao eventoId={eventoAtivo} />}
+      {/* No painel (fundo claro), o botão vem no cartão claro; no /scan (tela cheia escura), como sempre. */}
+      {!!eventoAtivo && (noPainel ? <AutoatendimentoBotao eventoId={eventoAtivo} tema="claro" cartao /> : <AutoatendimentoBotao eventoId={eventoAtivo} />)}
       {chaveDeModoMaster}
       <ScannerView
         key={eventoAtivo}

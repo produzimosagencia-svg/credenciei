@@ -21,7 +21,15 @@ const INTERVALO_MS = 20_000
  * `tema`: o /scan (tela cheia escura) e o "Bem-vindo" do operador (card branco) pedem cores opostas — mesmo
  * componente, duas paletas.
  */
-export default function AutoatendimentoBotao({ eventoId, tema = 'escuro' }: { eventoId: string; tema?: 'claro' | 'escuro' }) {
+export default function AutoatendimentoBotao({ eventoId, tema = 'escuro', cartao = false }: {
+  eventoId: string
+  tema?: 'claro' | 'escuro'
+  /**
+   * Num cartão com título — o scanner DENTRO do painel (/admin/scanner, onde o master escaneia). Antes ele aparecia lá
+   * com as cores da tela escura do portão, branco sobre o painel claro: o master não via o botão (Juan, 13/10/2026).
+   */
+  cartao?: boolean
+}) {
   const [status, setStatus] = useState<{
     habilitado: boolean; liberadoAgora: boolean; aguardandoInicio: string | null; janelaTexto: string | null; ativadoPorNome: string | null
   } | null>(null)
@@ -55,7 +63,8 @@ export default function AutoatendimentoBotao({ eventoId, tema = 'escuro' }: { ev
   const corErro = claro ? 'text-red-600' : 'text-red-400'
 
   return (
-    <div className={claro ? 'space-y-2' : 'px-4 pt-3 space-y-2'}>
+    <div className={cartao ? 'rounded-2xl border border-slate-200 bg-white p-4 space-y-2 mb-4' : claro ? 'space-y-2' : 'px-4 pt-3 space-y-2'}>
+      {cartao && <p className="text-slate-800 text-sm font-bold">Autoatendimento fora do horário da portaria</p>}
       {status.liberadoAgora || status.aguardandoInicio ? (
         <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${claro ? 'border-amber-200 bg-amber-50' : 'border-amber-400/40 bg-amber-400/10'}`}>
           <p className={`text-xs leading-snug ${claro ? 'text-amber-800' : 'text-amber-200'}`}>

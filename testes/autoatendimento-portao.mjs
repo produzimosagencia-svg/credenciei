@@ -144,5 +144,14 @@ confere('a regra diz quando a janela começa, se a ativação vale pra ela', /ex
 confere('o status leva isso pra tela', /aguardandoInicio: ativacaoAguardandoJanela\(cfg\)\?\.toISOString\(\) \?\? null/.test(actions), true)
 confere('o botão mostra "Autoatendimento ativado — começa às…" com o "Cheguei" pra desfazer', /status\.liberadoAgora \|\| status\.aguardandoInicio \?/.test(botaoAuto) && /Autoatendimento ativado<\/b> — começa às/.test(botaoAuto), true)
 
+console.log('\n13/10/2026 · o master também ativa, pelo scanner do painel')
+{
+  const { readFileSync: lerArq } = await import('node:fs')
+  const raizA = new URL('..', import.meta.url).pathname
+  const roteador = lerArq(raizA + 'app/scan/ScannerRouter.tsx', 'utf8'), botao = lerArq(raizA + 'components/AutoatendimentoBotao.tsx', 'utf8')
+  confere('no scanner do painel (/admin/scanner) o botão vem no cartão claro, visível', /noPainel \? <AutoatendimentoBotao eventoId=\{eventoAtivo\} tema="claro" cartao \/>/.test(roteador), true)
+  confere('só nos eventos com a função ligada (o botão some sem ela)', /if \(!status\?\.habilitado\) return null/.test(botao), true)
+}
+
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
