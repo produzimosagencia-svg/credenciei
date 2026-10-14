@@ -9,6 +9,7 @@ import EscolherEvento, { eventosQuePossoAbrir, eventosDosMeusSetores } from '../
 import ExportarRelatorio from '../eventos/[id]/relatorios/ExportarRelatorio'
 import OutrosRelatorios from '../eventos/[id]/relatorios/OutrosRelatorios'
 import BotaoEntregaValor from '../eventos/[id]/relatorios/BotaoEntregaValor'
+import BotaoEconomiaFaltas from '../eventos/[id]/relatorios/BotaoEconomiaFaltas'
 
 export const revalidate = 0
 
@@ -53,6 +54,7 @@ export default async function RelatoriosPage({
         />
         {/* O PDF de entrega de valor — só para quem gerencia o evento inteiro (pedido do Juan, 09/10/2026). */}
         {resumo.eventoInteiro && <BotaoEntregaValor eventoId={eventoParam} />}
+        {resumo.eventoInteiro && <BotaoEconomiaFaltas eventoId={eventoParam} />}
         <ExportarRelatorio
           eventoId={eventoParam}
           periodoCompleto={resumo.periodoCompleto}

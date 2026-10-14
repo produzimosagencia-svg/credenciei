@@ -18,7 +18,7 @@ console.log('O molde')
 ok(/rotulo: string[\s\S]*titulo: string[\s\S]*aviso\?: \{ destaque: string; texto: string \}/.test(molde), 'seção = rótulo laranja + frase-resumo + aviso + tabela')
 ok(/'nome'[\s\S]*'texto'[\s\S]*'numero'[\s\S]*'destaque'[\s\S]*'barra'/.test(molde), 'colunas: nome, texto, número, destaque laranja e barra de proporção')
 ok(/export function paginar/.test(molde) && /continuacao: !primeira/.test(molde), 'paginação em A4: cada seção numa folha nova, a tabela continua com o cabeçalho')
-ok(/página \{i \+ 1\} de \{folhas\.length\}/.test(folhas) && /logo-preto\.png/.test(folhas), 'logo no topo e "página X de Y" no rodapé')
+ok(/página \{paginasAntes \+ i \+ 1\} de \{paginasAntes \+ folhas\.length\}/.test(folhas) && /logo-preto\.png/.test(folhas), 'logo no topo e "página X de Y" no rodapé')
 ok(/@page \{ size: A4; margin: 0; \}/.test(doc) && /print-color-adjust: exact/.test(doc) && /window\.print\(\)/.test(doc), 'A4 de verdade, cores mantidas na impressão, "Baixar PDF" pela impressão do navegador')
 ok(/\.rd-raiz, \.rd-raiz \* \{ visibility: visible !important; \}/.test(doc) && /body \* \{ visibility: hidden; \}/.test(ler('app/globals.css')),
   'o PDF não sai em branco: a regra do crachá esconde tudo na impressão, o relatório volta a aparecer (Juan, 13/10/2026)')
@@ -86,12 +86,30 @@ ok(/rotulo: 'Presença sob controle'/.test(entrega) && /rotulo: 'Segurança e co
 ok(/href=\{`\/relatorios-pdf\/\$\{encodeURIComponent\(eventoId\)\}\/entrega-valor`\}/.test(botao), 'o botão abre a versão nova')
 ok(/total: funcs\.length \+ await cadastrosSoNaLixeira\(eventoId\)/.test(ler('lib/entrega-valor.ts')), '"pessoas cadastradas" = o mesmo número do cartão "Funcionários do evento"')
 
-console.log('\nEconomia na primeira página da entrega de valor (Juan, 13/10/2026)')
+console.log('\nEconomia com faltas (Juan, 14/10/2026 — docs/economia-faltas-vital.pdf) e a mesma conta na Entrega de valor')
 {
-  const ev = ler('lib/entrega-valor.ts'), doc = ler('lib/relatorio-doc-entrega.ts')
-  ok(/VALOR_MEDIO_DIARIA = 200/.test(ev) && /valor: semComparecer \* VALOR_MEDIO_DIARIA/.test(ev), 'economia = diárias aprovadas sem comparecimento × R$ 200')
-  ok(/filter\(f => \(f as \{ exige_meio\?: boolean \| null \}\)\.exige_meio === true\)/.test(ev) && /\.eq\('aprovado', true\)/.test(ev) && /d <= hoje/.test(ev), 'só nas equipes com meio, só diárias aprovadas, só dias que já passaram')
-  ok(/titulo: `Com o Credenciei, você economizou \$\{brl\(e\.valor\)\}\.`/.test(doc) && /return \[\n    \.\.\.economia,/.test(doc), 'é a primeira seção do PDF')
+  const eco = ler('lib/economia-faltas.ts'), ev = ler('lib/entrega-valor.ts'), docE = ler('lib/relatorio-doc-entrega.ts')
+  const capa = ler('components/relatorio-doc/CapaEconomia.tsx'), botao = ler('app/admin/eventos/[id]/relatorios/BotaoEconomiaFaltas.tsx')
+  ok(/VALOR_MEDIO_DIARIA = 200/.test(eco) && /economia: faltaram \* VALOR_MEDIO_DIARIA/.test(eco), 'economia = pessoas cadastradas que não bateram entrada × R$ 200 (a regra do modelo)')
+  ok(/exige_meio === true/.test(eco) && /status_credenciamento !== 'negado'/.test(eco) && /d <= hoje/.test(eco), 'só equipes com meio, só aprovados, só dias que já passaram')
+  ok(/dadosEconomiaFaltas\(eventoId\)/.test(ev) && /return \[\n    \.\.\.economia,/.test(docE), 'a Entrega de valor usa a MESMA conta (nunca dois números diferentes pro cliente)')
+  ok(/iso-3d\.png/.test(capa) && /Economia gerada pelo Credenciei/.test(capa) && /Não compareceram/.test(capa), 'capa escura: símbolo 3D, o valor e os três números')
+  ok(/CHAVE_LOGO_ECONOMIA/.test(capa) && /Gerar PDF com esta logo/.test(botao) && /Gerar sem a logo/.test(botao), 'a logo do evento é pedida a cada geração e vai no canto da capa')
+  const pasta = raiz + '.tmp-teste-economia'
+  const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+  rmSync(pasta, { recursive: true, force: true }); mkdirSync(pasta, { recursive: true })
+  writeFileSync(pasta + '/relatorio-doc.ts', molde)
+  writeFileSync(pasta + '/relatorio-doc-economia.ts', ler('lib/relatorio-doc-economia.ts').replace("from './relatorio-doc'", "from './relatorio-doc.ts'"))
+  const { montarEconomiaDoc } = await import(pasta + '/relatorio-doc-economia.ts')
+  rmSync(pasta, { recursive: true, force: true })
+  const secoes = montarEconomiaDoc({ eventoNome: 'VITAL', periodo: { de: '2026-10-08', ate: '2026-10-13' }, valorDiaria: 200, cadastrados: 10, foram: 7, faltaram: 3, economia: 600,
+    equipes: [{ nome: 'Gatti - Segurança', cadastrados: 6, foram: 4, faltaram: 2, economia: 400, ausentes: [{ nome: 'Ana', area: 'Bloco' }, { nome: 'Bia', area: 'Camarote' }] },
+      { nome: 'Gote - Limpeza', cadastrados: 3, foram: 2, faltaram: 1, economia: 200, ausentes: [{ nome: 'Caio', area: 'Geral' }] },
+      { nome: 'Time Kiki', cadastrados: 1, foram: 1, faltaram: 0, economia: 0, ausentes: [] }] })
+  ok(secoes[0].rotulo === 'Faltas e economia por equipe' && secoes[0].linhas.length === 4, 'por equipe: todas as equipes + a linha de total')
+  ok(secoes.some(x => x.titulo === 'Gatti - Segurança · 2 faltas · R$ 200'.replace('R$ 200', 'R$\u00a0400')) || secoes.some(x => /^Gatti - Segurança · 2 faltas · R\$\s400$/.test(x.titulo)), 'quem não foi: uma lista por equipe, com faltas e o valor')
+  const fim = secoes.at(-1)
+  ok(fim.rotulo === 'Economia com o Credenciei' && /^3 pessoas × R\$\s200$/.test(fim.titulo) && /R\$\s600/.test(fim.valorGrande), 'fechamento: "3 pessoas × R$ 200" e o valor grande')
 }
 
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')

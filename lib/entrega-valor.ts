@@ -3,6 +3,7 @@ import { supabaseAdmin, buscarTudo } from './supabase-server'
 import { emLotes } from './lotes'
 import { relatorioForaDoLocal } from './alertas-local'
 import { cadastrosSoNaLixeira } from './lixeira'
+import { dadosEconomiaFaltas } from './economia-faltas'
 
 /**
  * Os números do "PDF de entrega de valor" (pedido do Juan, 09/10/2026): o que o Credenciei entregou no evento do
@@ -41,22 +42,12 @@ export type DadosEntregaValor = {
   }
   alteracoesAuditadas: number
   /**
-   * "Com o Credenciei você economizou R$ X" (Juan, 13/10/2026): nas equipes pagas por pessoa (as que batem o meio), as
-   * diárias APROVADAS na escala em que ninguém bateu a entrada × o valor médio da diária. Sem o controle de ponto, o
-   * fornecedor cobraria pela lista. Só dias que já passaram. `null` se o evento não tem equipe com meio.
+   * "Com o Credenciei você economizou R$ X": a MESMA conta do PDF de economia com faltas (lib/economia-faltas.ts —
+   * pessoa cadastrada em equipe paga por pessoa que não bateu nenhuma entrada × R$ 200). `null` sem equipe com meio.
    */
-  economia: {
-    equipesComMeio: number
-    diariasEscaladas: number
-    diariasTrabalhadas: number
-    diariasSemComparecer: number
-    valorDiaria: number
-    valor: number
-  } | null
+  economia: { equipesComFalta: number; cadastrados: number; foram: number; faltaram: number; valorDiaria: number; valor: number } | null
 }
 
-/** O valor médio da diária usado na conta da economia (Juan, 13/10/2026). */
-export const VALOR_MEDIO_DIARIA = 200
 
 export async function dadosEntregaValor(eventoId: string): Promise<DadosEntregaValor | null> {
   const { data: evento } = await supabaseAdmin
@@ -65,7 +56,7 @@ export async function dadosEntregaValor(eventoId: string): Promise<DadosEntregaV
 
   const [{ data: dias }, { data: forns }] = await Promise.all([
     supabaseAdmin.from('jornada_dias').select('data').eq('evento_id', eventoId).eq('cancelado', false).order('data'),
-    supabaseAdmin.from('fornecedores').select('id, exige_meio').eq('evento_id', eventoId),
+    supabaseAdmin.from('fornecedores').select('id').eq('evento_id', eventoId),
   ])
   const datas = [...new Set((dias ?? []).map(d => d.data as string))].sort()
   const setorIds = (forns ?? []).map(f => f.id as string)
@@ -123,33 +114,18 @@ export async function dadosEntregaValor(eventoId: string): Promise<DadosEntregaV
     relatorioForaDoLocal(eventoId).catch(() => null),
   ])
 
-  // Economia: diárias aprovadas na escala, nas equipes com meio, em dias que já passaram, sem entrada batida.
+  // Economia: a mesma conta do PDF de economia com faltas.
   let economia: DadosEntregaValor['economia'] = null
-  const setoresComMeio = new Set((forns ?? []).filter(f => (f as { exige_meio?: boolean | null }).exige_meio === true).map(f => f.id as string))
-  if (setoresComMeio.size) {
-    try {
-      const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10)
-      const diasDoEvento = new Set(datas.filter(d => d <= hoje))
-      const daEquipe = funcs.filter(f => setoresComMeio.has(f.fornecedor_id)).map(f => f.id)
-      const escaladas = new Set<string>()
-      for (const lote of emLotes(daEquipe, 150)) {
-        const linhas = await buscarTudo<{ funcionario_id: string; data: string }>((de, ate) => supabaseAdmin.from('funcionario_dias')
-          .select('funcionario_id, data').in('funcionario_id', lote).eq('aprovado', true).order('funcionario_id').order('data').range(de, ate))
-        for (const l of linhas) if (diasDoEvento.has(l.data)) escaladas.add(`${l.funcionario_id}|${l.data}`)
-      }
-      const ids = new Set(daEquipe)
-      const trabalhadas = new Set([...turnos].filter(([k, t]) => t.entrada && ids.has(k.split('|')[0])).map(([k]) => k))
-      const semComparecer = [...escaladas].filter(k => !trabalhadas.has(k)).length
+  try {
+    const eco = await dadosEconomiaFaltas(eventoId)
+    if (eco && eco.equipes.length) {
       economia = {
-        equipesComMeio: setoresComMeio.size,
-        diariasEscaladas: escaladas.size,
-        diariasTrabalhadas: trabalhadas.size,
-        diariasSemComparecer: semComparecer,
-        valorDiaria: VALOR_MEDIO_DIARIA,
-        valor: semComparecer * VALOR_MEDIO_DIARIA,
+        equipesComFalta: eco.equipes.filter(x => x.faltaram > 0).length,
+        cadastrados: eco.cadastrados, foram: eco.foram, faltaram: eco.faltaram,
+        valorDiaria: eco.valorDiaria, valor: eco.economia,
       }
-    } catch { /* sem a escala por dia, a página da economia não sai */ }
-  }
+    }
+  } catch { /* sem a conta, a página da economia não sai */ }
 
   const ativos = funcs.filter(f => !f.descredenciado_em)
   return {

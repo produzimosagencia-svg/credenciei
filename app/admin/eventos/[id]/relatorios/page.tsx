@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/Superficie'
 import ExportarRelatorio from './ExportarRelatorio'
 import OutrosRelatorios from './OutrosRelatorios'
 import BotaoEntregaValor from './BotaoEntregaValor'
+import BotaoEconomiaFaltas from './BotaoEconomiaFaltas'
 
 export const revalidate = 0
 
@@ -46,6 +47,7 @@ export default async function RelatoriosPage({ params }: { params: Promise<{ id:
       />
       {/* O PDF de entrega de valor — só para quem gerencia o evento inteiro (pedido do Juan, 09/10/2026). */}
       {resumo.eventoInteiro && <BotaoEntregaValor eventoId={eventoId} />}
+        {resumo.eventoInteiro && <BotaoEconomiaFaltas eventoId={eventoId} />}
       <ExportarRelatorio
         eventoId={eventoId}
         periodoCompleto={resumo.periodoCompleto}

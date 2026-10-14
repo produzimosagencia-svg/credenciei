@@ -48,6 +48,8 @@ const CSS = `
   .rd-rotulo { margin: 6mm 0 0; color: ${LARANJA}; font-size: 9pt; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
   .rd-rotulo-continua { margin-bottom: 2mm; }
   .rd-titulo { margin: 2.5mm 0 5mm; font-size: 26pt; font-weight: 800; letter-spacing: -.04em; line-height: 1.05; color: #141312; }
+  .rd-subtitulo { margin: 0 0 1mm; font-size: 14pt; font-weight: 800; letter-spacing: -.02em; color: #141312; }
+  .rd-valor-grande { margin: -1mm 0 4mm; font-size: 40pt; font-weight: 800; letter-spacing: -.04em; line-height: 1; color: ${LARANJA}; }
   .rd-aviso { margin: 0 0 1mm; padding: 3.2mm 5mm; border: 1px solid #F0B9A6; border-left: 4px solid #F25C2A; border-radius: 3.5mm;
     background: #F8E4DC; font-size: 10pt; line-height: 1.4; }
   .rd-aviso b { color: ${LARANJA}; font-weight: 800; }
@@ -66,6 +68,7 @@ const CSS = `
   .rd-barra-cheia { display: block; height: 100%; background: #F25C2A; border-radius: 1mm; }
   .rd-vazio { margin-top: 6mm; color: #6F6A64; font-size: 11pt; }
   .rd-bloco-seguinte { margin-top: 10mm; }
+  .rd-celula-verde { color: #1E8A4C !important; font-weight: 800; }
   .rd-celula-destaque { color: ${LARANJA} !important; font-weight: 800; }
   .rd-rodape { position: absolute; left: 14mm; bottom: 10mm; font-size: 9pt; color: #6F6A64; }
 

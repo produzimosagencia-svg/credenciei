@@ -26,7 +26,7 @@ export type ColunaDoc = {
  * Uma célula: o valor, ou `{ valor, destaque }` pra pintar de laranja só ela (ex.: a saída que falta). Na coluna
  * 'barra', o valor é a proporção (0 a 1).
  */
-export type CelulaDoc = string | number | null | { valor: string | number | null; destaque?: boolean }
+export type CelulaDoc = string | number | null | { valor: string | number | null; destaque?: boolean; verde?: boolean }
 /** Uma linha: uma célula por coluna, na mesma ordem. */
 export type LinhaDoc = CelulaDoc[]
 
@@ -45,6 +45,10 @@ export type SecaoDoc = {
   novaFolha?: boolean
   /** Só rótulo, título e aviso — sem tabela (o fechamento da entrega de valor). */
   semTabela?: boolean
+  /** Título menor, de subtítulo — uma equipe dentro de uma lista ("Gatti - Segurança · 28 faltas · R$ 5.600"). */
+  tituloPequeno?: boolean
+  /** Um número grande em laranja logo abaixo do título ("R$ 12.800" — economia com faltas). */
+  valorGrande?: string
 }
 
 /** Um pedaço de seção dentro de uma folha. */
@@ -70,7 +74,8 @@ const RESPIRO = 2
 const MINIMO_DE_LINHAS = 3
 
 function custoDaAbertura(secao: SecaoDoc): number {
-  return 5 + (secao.aviso ? 2 : 0) + (secao.titulo.length > 38 ? 2 : 0)
+  if (secao.tituloPequeno) return 3 + (secao.rotulo ? 1 : 0) + (secao.aviso ? 2 : 0)
+  return 5 + (secao.aviso ? 2 : 0) + (secao.titulo.length > 38 ? 2 : 0) + (secao.valorGrande ? 3 : 0)
 }
 
 export function paginar(secoes: SecaoDoc[], opcoes: { paisagem?: boolean } = {}): FolhaDoc[] {

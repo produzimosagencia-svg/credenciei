@@ -5,8 +5,10 @@ import { valorDaCelula, type FolhaDoc, type ColunaDoc, type LinhaDoc, type Celul
  * topo, rótulo laranja + frase-resumo + aviso + tabela, e o rodapé "Credenciei · dados do sistema em … · página X de Y".
  * O estilo está em `Documento` (CSS próprio, em milímetros, pra a impressão sair igual ao modelo).
  */
-export default function Folhas({ folhas, rotuloEvento, carimbo }: {
+export default function Folhas({ folhas, rotuloEvento, carimbo, paginasAntes = 0 }: {
   folhas: FolhaDoc[]
+  /** Folhas que vêm antes destas no mesmo PDF (a capa da economia com faltas) — entram na conta "página X de Y". */
+  paginasAntes?: number
   /** Canto superior direito: "VITAL · TURNO DE SÁBADO, 10/10". */
   rotuloEvento: string
   /** "dados do sistema em 11/10/2026 às 03h54". */
@@ -26,14 +28,17 @@ export default function Folhas({ folhas, rotuloEvento, carimbo }: {
             <div key={bi} className={bi ? 'rd-bloco rd-bloco-seguinte' : 'rd-bloco'}>
               {!b.continuacao ? (
                 <>
-                  <p className="rd-rotulo">{b.secao.rotulo}</p>
-                  <h1 className="rd-titulo">{b.secao.titulo}</h1>
+                  {!!b.secao.rotulo && <p className="rd-rotulo">{b.secao.rotulo}</p>}
+                  {b.secao.tituloPequeno
+                    ? <h2 className="rd-subtitulo">{b.secao.titulo}</h2>
+                    : <h1 className="rd-titulo">{b.secao.titulo}</h1>}
+                  {b.secao.valorGrande && <p className="rd-valor-grande">{b.secao.valorGrande}</p>}
                   {b.secao.aviso && (
                     <p className="rd-aviso"><b>{b.secao.aviso.destaque}</b> {b.secao.aviso.texto}</p>
                   )}
                 </>
               ) : (
-                <p className="rd-rotulo rd-rotulo-continua">{b.secao.rotulo} · continuação</p>
+                <p className="rd-rotulo rd-rotulo-continua">{b.secao.rotulo || b.secao.titulo} · continuação</p>
               )}
               {b.linhas.length ? (
                 <Tabela colunas={b.secao.colunas} linhas={b.linhas} />
@@ -43,7 +48,7 @@ export default function Folhas({ folhas, rotuloEvento, carimbo }: {
             </div>
           ))}
 
-          <footer className="rd-rodape">Credenciei · {carimbo} · página {i + 1} de {folhas.length}</footer>
+          <footer className="rd-rodape">Credenciei · {carimbo} · página {paginasAntes + i + 1} de {paginasAntes + folhas.length}</footer>
         </section>
       ))}
     </>
@@ -73,6 +78,8 @@ const alinhaDireita = (c: ColunaDoc) => c.tipo === 'numero' || c.tipo === 'desta
 function Celula({ coluna, valor: celula }: { coluna: ColunaDoc; valor: CelulaDoc }) {
   const valor = valorDaCelula(celula)
   const destacada = celula != null && typeof celula === 'object' && celula.destaque === true
+  // Verde = dinheiro economizado (economia com faltas, como no modelo).
+  const verde = celula != null && typeof celula === 'object' && celula.verde === true
   if (coluna.tipo === 'barra') {
     // Sem proporção (null): célula vazia, sem a trilha cinza.
     if (valor == null) return <td />
@@ -88,5 +95,5 @@ function Celula({ coluna, valor: celula }: { coluna: ColunaDoc; valor: CelulaDoc
     : coluna.tipo === 'texto' ? 'rd-texto'
       : coluna.tipo === 'destaque' ? 'rd-dir rd-destaque'
         : 'rd-dir rd-numero'
-  return <td className={destacada ? `${classe} rd-celula-destaque` : classe}>{texto}</td>
+  return <td className={verde ? `${classe} rd-celula-verde` : destacada ? `${classe} rd-celula-destaque` : classe}>{texto}</td>
 }
