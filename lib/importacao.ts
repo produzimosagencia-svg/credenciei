@@ -283,6 +283,20 @@ export async function importarFuncionarios(
       diasPorCpf.set(f.cpf, dias)
       return true
     })
+  } else {
+    /*
+     * Sem a "escala por dia" (o LUAN SANTANA: sem subgrupos), o modelo traz as colunas dos dias do evento do mesmo
+     * jeito (Juan, 15/10/2026). Os dias marcados ficam gravados na pessoa; linha sem dia entra normalmente — sem
+     * escala, o QR vale em todos os dias, como sempre. Ninguém fica de fora.
+     */
+    const diasDoEvento = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
+    const porDdmm = new Map(diasDoEvento.map(d => [`${d.slice(8, 10)}/${d.slice(5, 7)}`, d]))
+    for (const f of finalPayload) {
+      const dias = f.diasBrutos.includes('todos')
+        ? [...diasDoEvento]
+        : [...new Set(f.diasBrutos.map(b => porDdmm.get(b)).filter((d): d is string => !!d))].sort()
+      if (dias.length) diasPorCpf.set(f.cpf, dias)
+    }
   }
 
   if (finalPayload.length === 0) {
@@ -351,6 +365,16 @@ export async function importarFuncionarios(
           console.error('[importacao] dias não gravados — fica aguardando aprovação', ins.id, g.erro)
           await supabaseAdmin.from('funcionarios').update({ status_credenciamento: 'pendente' }).eq('id', ins.id as string)
         }
+      }))
+    }
+  } else if (inseridos?.length && diasPorCpf.size) {
+    // Sem escala por dia: os dias da planilha ficam gravados (informação); falhar aqui não trava ninguém.
+    for (const lote of emLotes(inseridos, 10)) {
+      await Promise.all(lote.map(async ins => {
+        const dias = diasPorCpf.get(ins.cpf as string)
+        if (!dias?.length) return
+        const g = await gravarEscalaAprovada({ funcionarioId: ins.id as string, eventoId, aprovados: dias, perfilId: perfil.id })
+        if (!g.ok) console.error('[importacao] dias (sem escala) não gravados', ins.id, g.erro)
       }))
     }
   }

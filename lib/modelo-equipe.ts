@@ -10,8 +10,13 @@ import { rotuloDoDia, ROTULO_FASE } from './escala-regras'
  */
 export async function montarModeloDeEquipe(p: { eventoId: string; eventoNome: string; setorNome: string | null }): Promise<Buffer> {
   const eventoId = p.eventoId
+  /*
+   * As colunas de dia são os dias marcados em Editar evento — SEMPRE (Juan, 15/10/2026: "as colunas de dias vão de
+   * acordo com os dias que o cliente selecionar lá em editar evento"). Antes só saíam com a "escala por dia" ligada,
+   * e no LUAN SANTANA (sem subgrupos, então sem escala) o modelo vinha sem dia nenhum.
+   */
   const usaEscala = await eventoUsaEscalaPorDia(eventoId)
-  const todosOsDias = usaEscala ? await diasDaEscalaDoEvento(eventoId) : []
+  const todosOsDias = await diasDaEscalaDoEvento(eventoId)
   // TODOS os dias do evento (Juan: "10 dias no evento, então vai ser 10 colunas").
   const dias = todosOsDias
   const colunasDeDia = dias.map(d => {
@@ -38,7 +43,9 @@ export async function montarModeloDeEquipe(p: { eventoId: string; eventoNome: st
           ['   X ou SIM na coluna do dia = a pessoa trabalha nesse dia.'],
           ['   Vazio = não trabalha nesse dia.'],
           ['   Todas as colunas marcadas = trabalha todos os dias.'],
-          ['Quem ficar sem nenhum dia marcado não é importado. Os dias marcados entram já aprovados, respeitando o limite de pessoas por dia do setor.'],
+          [usaEscala
+            ? 'Quem ficar sem nenhum dia marcado não é importado. Os dias marcados entram já aprovados, respeitando o limite de pessoas por dia do setor.'
+            : 'Os dias marcados ficam gravados na pessoa. Quem ficar sem nenhum dia marcado entra do mesmo jeito e pode trabalhar em todos os dias do evento.'],
         ]
       : []),
     [''],
