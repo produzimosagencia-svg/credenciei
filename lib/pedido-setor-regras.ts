@@ -81,6 +81,8 @@ function lerPessoa(entrada: unknown, quem: string): Resultado<Pessoa> {
   const nome = String(e.nome ?? '').replace(/\s+/g, ' ').trim()
   if (nome.length < 3) return falha(`Informe o nome completo ${quem}.`)
   if (nome.length > MAX_NOME) return falha(`O nome ${quem} está muito comprido.`)
+  // Achado em 15/10/2026: escreveram o CPF e o WhatsApp DENTRO do nome — e o nome aparece na página pública.
+  if (/\d/.test(nome)) return falha(`O nome ${quem} não pode ter números. O CPF e o WhatsApp vão nos campos de baixo.`)
   const cpf = String(e.cpf ?? '').replace(/\D/g, '')
   if (!validarCpf(cpf)) return falha(`O CPF ${quem} não é válido. Confira os números.`)
   const telefone = normalizarTelefone(e.telefone)

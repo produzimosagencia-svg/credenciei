@@ -197,5 +197,15 @@ ok(formatTelefone('55279') === '(55) 279', 'enquanto digita (até 11 dígitos) n
   ok(!/modelo/i.test(form) && !existsSync(raizP + 'app/pedido-setor/[token]/modelo/route.ts'), 'sem a planilha modelo no link do fornecedor (o envio não depende dela)')
 }
 
+// Juan, 15/10/2026: "Cadastrar outro setor" na tela de acompanhamento, e número nenhum no nome (aparece em público).
+{
+  const { readFileSync: lerArq } = await import('node:fs')
+  const raizP = new URL('..', import.meta.url).pathname
+  const acomp = lerArq(raizP + 'app/pedido-setor/acompanhar/[token]/page.tsx', 'utf8'), consulta = lerArq(raizP + 'lib/pedidos-setor-consulta.ts', 'utf8')
+  ok(/href=\{`\/pedido-setor\/\$\{pedido\.tokenDoFormulario\}`\}/.test(acomp) && /Cadastrar outro setor/.test(acomp), 'o acompanhamento tem "Cadastrar outro setor", de volta ao formulário do evento')
+  ok(/contatoNome: pedido\.contato\.nome\.replace\(/.test(consulta), 'a página pública nunca mostra número no nome (CPF/WhatsApp escritos dentro dele)')
+  erro(R.normalizarPedidoPublico({ contato: { ...sup, nome: 'Ana Lima 529.982.247-25 (27) 99999-1234' }, setores: [setor()] }, comDias), 'não pode ter números', 'o formulário recusa nome com número (CPF/WhatsApp escritos dentro do nome)')
+}
+
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)

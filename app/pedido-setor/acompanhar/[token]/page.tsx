@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
-import { Check, Clock, X, Building2 } from 'lucide-react'
+import Link from 'next/link'
+import { Check, Clock, X, Building2, Plus } from 'lucide-react'
 import { pedidoPublicoPorToken } from '@/lib/pedidos-setor-consulta'
 import { descreverDias, statusDoPedido } from '@/lib/pedido-setor-regras'
 import { formatarBR } from '@/lib/tz'
@@ -63,6 +64,16 @@ export default async function AcompanharPedidoPage({ params }: { params: Promise
             )}
           </section>
         ))}
+
+        {/*
+          * "Cadastrar outro setor" (Juan, 15/10/2026): quem supervisiona mais de um setor volta ao formulário do mesmo
+          * evento para pedir o próximo. Se o link estiver fechado, o formulário já explica.
+          */}
+        {pedido.tokenDoFormulario && (
+          <Link href={`/pedido-setor/${pedido.tokenDoFormulario}`} className="w-full btn btn-primario justify-center">
+            <Plus className="w-4 h-4" /> Cadastrar outro setor
+          </Link>
+        )}
       </div>
     </div>
   )

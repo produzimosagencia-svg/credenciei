@@ -96,6 +96,7 @@ export async function pedidosDoEvento(eventoId: string): Promise<PedidoCompleto[
 /** O que a página PÚBLICA de acompanhamento mostra: nada de CPF nem telefone de ninguém. */
 export type PedidoPublico = {
   eventoNome: string
+  tokenDoFormulario: string | null
   criadoEm: string
   contatoNome: string
   itens: { nome: string; subeventoNome: string | null; quantidade: number | null; porDia: Record<string, number>; status: StatusDoItem; motivoNegacao: string | null }[]
@@ -104,14 +105,17 @@ export type PedidoPublico = {
 export async function pedidoPublicoPorToken(token: string): Promise<PedidoPublico | null> {
   if (!/^[a-f0-9]{32}$/.test(token)) return null
   const { data, error } = await supabaseAdmin
-    .from('pedidos_setor').select(`${SELECT_PEDIDO}, eventos(nome)`).eq('token', token).maybeSingle()
+    .from('pedidos_setor').select(`${SELECT_PEDIDO}, eventos(nome, pedido_setor_token)`).eq('token', token).maybeSingle()
   if (error || !data) return null
-  const linha = data as unknown as LinhaPedido & { eventos: { nome: string } | null }
+  const linha = data as unknown as LinhaPedido & { eventos: { nome: string; pedido_setor_token?: string | null } | null }
   const [pedido] = await paraPedidoCompleto([linha])
   return {
     eventoNome: linha.eventos?.nome ?? '',
+    /** O formulário do mesmo evento — o botão "Cadastrar outro setor" (Juan, 15/10/2026). */
+    tokenDoFormulario: linha.eventos?.pedido_setor_token ?? null,
     criadoEm: pedido.criadoEm,
-    contatoNome: pedido.contato.nome,
+    // Página PÚBLICA: nunca número no nome (houve quem escrevesse o CPF e o WhatsApp dentro dele).
+    contatoNome: pedido.contato.nome.replace(/[\d().+\-/]+/g, ' ').replace(/\s+/g, ' ').trim(),
     itens: pedido.itens.map(i => ({
       nome: i.nome, subeventoNome: i.subeventoNome, quantidade: i.quantidade, porDia: i.porDia,
       status: i.status, motivoNegacao: i.motivoNegacao,
