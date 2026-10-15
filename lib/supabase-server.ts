@@ -394,15 +394,14 @@ export async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: stri
     return evento?.ativo ? [{ id: evento.id, nome: evento.nome }] : []
   }
 
-  // admin / gerente / cliente → eventos ativos da própria organização; operador → de todas em que opera o portão
-  const orgs = [...organizacoesDoOperador(perfil)]
-  if (!orgs.length) return []
-  const { data } = await admin
-    .from('eventos')
-    .select('id, nome')
-    .eq('ativo', true)
-    .in('organizacao_id', orgs)
-    .order('data_inicio', { ascending: false })
+  // admin / gerente / cliente → eventos ativos da própria organização; operador → de QUALQUER organização (15/10/2026)
+  let consulta = admin.from('eventos').select('id, nome').eq('ativo', true)
+  if (perfil.role !== 'operador_portao') {
+    const orgs = [...organizacoesDoOperador(perfil)]
+    if (!orgs.length) return []
+    consulta = consulta.in('organizacao_id', orgs)
+  }
+  const { data } = await consulta.order('data_inicio', { ascending: false })
   // Operador de portão: só o que ainda não terminou (ver `eventosAindaVigentes`).
   if (perfil.role !== 'operador_portao') return data ?? []
   const vigentes = await eventosAindaVigentes((data ?? []).map(e => e.id as string))
@@ -525,7 +524,13 @@ export function organizacoesDoOperador(perfil: any): Set<string> {
  */
 export function ehDaOrganizacaoDoPerfil(perfil: any, organizacaoId: string | null | undefined): boolean {
   if ((organizacaoId ?? null) === (perfil?.organizacao_id ?? null)) return true
-  return !!organizacaoId && perfil?.role === 'operador_portao' && organizacoesDoOperador(perfil).has(organizacaoId)
+  /*
+   * O operador de portão (Gestor de credenciamento) atua em QUALQUER organização (Juan, 15/10/2026: "operador de
+   * portão… tem que aparecer todos os eventos para eles selecionarem qual vão atuar") — o LUAN SANTANA é da Q2
+   * Ingressos e o time de portaria é da Navista, da Fatto, da Cit. Só vale pra portaria: os chamadores desta função
+   * são o scanner, o registro de ponto e o de veículos. Quem filtra o que ele vê é `eventosAindaVigentes`.
+   */
+  return !!organizacaoId && perfil?.role === 'operador_portao'
 }
 
 export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {

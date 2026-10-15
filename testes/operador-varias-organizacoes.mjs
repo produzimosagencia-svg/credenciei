@@ -20,8 +20,8 @@ ok(/role !== 'operador_portao' \|\| \(\(perfil\.organizacao_id as string \| null
 
 console.log('\n2 · usar o portão nas duas, sem trocar de perfil')
 ok(/export function organizacoesDoOperador/.test(servidor) && /f\.role === 'operador_portao' && f\.organizacaoId/.test(servidor), 'as organizações do operador: a de base + as extras')
-ok(/if \(\(organizacaoId \?\? null\) === \(perfil\?\.organizacao_id \?\? null\)\) return true/.test(servidor) && /perfil\?\.role === 'operador_portao' && organizacoesDoOperador\(perfil\)\.has/.test(servidor),
-  'pros outros papéis a régua é exatamente a de sempre; só o operador ganha as outras')
+ok(/if \(\(organizacaoId \?\? null\) === \(perfil\?\.organizacao_id \?\? null\)\) return true/.test(servidor) && /return !!organizacaoId && perfil\?\.role === 'operador_portao'\n\}/.test(servidor),
+  'pros outros papéis a régua é exatamente a de sempre; o operador atua em QUALQUER organização (15/10/2026)')
 ok(/return !!evento && !!evento\.organizacao_id && ehDaOrganizacaoDoPerfil\(perfil/.test(servidor), 'o leitor (QR e rosto) aceita evento de qualquer organização em que ele opera')
 ok(/const orgs = \[\.\.\.organizacoesDoOperador\(perfil\)\][\s\S]{0,200}\.in\('organizacao_id', orgs\)/.test(servidor), 'a lista de eventos do leitor traz os eventos de todas')
 ok((actions.match(/!ehMaster\(perfil\.role\) && !ehDaOrganizacaoDoPerfil\(perfil, evento\??\.organizacao_id\)/g) ?? []).length >= 5,
@@ -30,8 +30,8 @@ ok(/Gestor de credenciamento em mais de uma organização: os eventos de TODAS e
 
 console.log('\n3 · Registrar ponto (achado ao vivo, Livia no VITAL, 11/10/2026: só aparecia o evento da Fatto)')
 const escolher = ler('app/admin/EscolherEvento.tsx'), localizar = ler('app/admin/localizar/page.tsx'), veiculos = ler('app/admin/veiculos/page.tsx')
-ok(/perfil\.role === 'operador_portao'[\s\S]{0,600}const orgs = \[\.\.\.organizacoesDoOperador\(perfil\)\][\s\S]{0,120}\.in\('organizacao_id', orgs\)/.test(escolher),
-  'a lista "Em qual evento?" traz os eventos de todas as organizações do operador')
+ok(/Operador de portão: eventos de QUALQUER organização/.test(escolher) && /perfil\.role === 'operador_portao' \? await eventosAindaVigentes/.test(escolher),
+  'a lista "Em qual evento?" traz os eventos de todas as organizações (só os que ainda valem)')
 ok(/!veTodosEventos\(perfil\) && !ehDaOrganizacaoDoPerfil\(perfil, evento\.organizacao_id\)/.test(localizar), 'a tela do evento em Registrar ponto abre')
 ok(/!veTodosEventos\(perfil\) && !ehDaOrganizacaoDoPerfil\(perfil, evento\.organizacao_id\)/.test(veiculos), 'a tela de veículos do evento abre')
 ok(/return org === perfil\.organizacao_id \|\| \(!!org && ehDaOrganizacaoDoPerfil\(perfil, org\)\)/.test(actions), 'a busca por CPF/nome acha as pessoas do evento')
