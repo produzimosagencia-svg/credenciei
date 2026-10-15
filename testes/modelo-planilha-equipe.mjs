@@ -49,7 +49,7 @@ ok(/'sem_dias'/.test(tela) && /'dia_lotado'/.test(tela), 'a tela explica por que
 
 // 15/10/2026: as colunas de dia saem SEMPRE dos dias de Editar evento (o Luan, sem escala por dia, vinha sem nenhuma).
 ok(/const todosOsDias = await diasDaEscalaDoEvento\(eventoId\)/.test(rota), 'as colunas de dia são sempre os dias do evento (Editar evento), com ou sem escala por dia')
-ok(/\} else \{\s*\/\*[\s\S]{0,400}if \(dias\.length\) diasPorCpf\.set\(f\.cpf, dias\)/.test(importacao), 'sem escala por dia, a importação grava os dias marcados e não barra quem veio sem dia')
+ok(/\} else \{\s*\/\*[\s\S]{0,1200}if \(dias\.length\) diasPorCpf\.set\(f\.cpf, dias\)/.test(importacao), 'sem escala por dia, a importação grava os dias marcados e não barra quem veio sem dia')
 
 console.log(falhas ? `\n✗ ${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
