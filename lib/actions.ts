@@ -8973,15 +8973,24 @@ export async function registrarPresencaLivre(
   }
 
   /*
-   * Na janela de autoatendimento, o dia da batida é o dia em que a JANELA COMEÇOU (às 03:00 de uma janela das
-   * 18:00 às 09:00, é a noite de ontem) — e não o do calendário, que já pode ser o dia principal seguinte. A saída
-   * de quem tem entrada em aberto continua fechando o dia da própria entrada (`resolverRegistro`).
+   * O DIA da batida no autoatendimento:
+   *   - SAÍDA: o dia em que a janela COMEÇOU (às 03:00 de uma janela das 18:00 às 09:00 é a noite de ontem) — e a
+   *     saída de quem tem entrada em aberto fecha o dia da própria entrada (`resolverRegistro`);
+   *   - ENTRADA: o dia de trabalho de AGORA (`diaDoTurno`), como no portão. Antes a entrada também usava o dia em
+   *     que a janela começou, e quem CHEGOU de manhã antes das 09:00 (LUAN SANTANA, 15/10/2026: 38 pessoas entre
+   *     7h e 9h) ficou com a entrada gravada no DIA ANTERIOR. À noite, a saída fechava "o turno de ontem" e a
+   *     credencial pedia a chegada de novo — e quem apertava ficava 5 minutos sem conseguir sair (Juan: "tá pedindo
+   *     pra registrar a chegada… na saída não tá dando pra fazer, alguns já conseguiram, outros não").
    */
   const resolucao = await resolverRegistro(
     { ...evento, id: eventoId }, func.id, momento, undefined,
-    diaAutoatendimento ? { diaTurno: diaAutoatendimento } : undefined,
+    diaAutoatendimento && momento === 'fim' ? { diaTurno: diaAutoatendimento } : undefined,
   )
   if (!resolucao.ok) return { error: resolucao.erro }
+  // A entrada que cairia no DIA PRINCIPAL (a madrugada da janela da véspera) é no portão — regra do Juan, 08/10/2026.
+  if (momento === 'entrada' && resolucao.diaPrincipal) {
+    return { error: 'No dia do evento, a entrada é registrada no portão, pelo operador. Mostre o QR Code da sua credencial.' }
+  }
   /*
    * TRAVA DE 5 MINUTOS entre a entrada e a saída (pedido do Juan, 08/10/2026): no botão único da credencial, um
    * toque duplo sem querer registraria a entrada e, em seguida, a saída. A saída só vale 5 minutos depois da

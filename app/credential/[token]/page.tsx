@@ -578,12 +578,16 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * BOTÃO ÚNICO no lugar do QR (pedido do Juan, 08/10/2026): com o autoatendimento liberado, a pessoa vê só um
    * botão — o sistema decide se é entrada ou saída. Tem entrada sem saída → saída; senão → entrada.
    */
-  // A escala é conferida no dia da JANELA (o mesmo que o servidor usa na batida), não no do calendário.
-  const bloqueadoNoAutoatendimento = !!escala && !!diaAutoatendimento && (escala.pendente || !escala.aprovados.includes(diaAutoatendimento))
-  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoNoAutoatendimento
   const entradaFeita = momentos.some(m => m.momento === 'entrada' && m.status === 'feito')
   const saidaFeita = momentos.some(m => m.momento === 'fim' && m.status === 'feito')
   const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null
+  /*
+   * A escala é conferida no MESMO dia que o servidor usa na batida: a SAÍDA no dia da janela; a ENTRADA no dia de
+   * trabalho de agora (o servidor deixou de gravar a entrada da manhã no dia em que a janela começou — 15/10/2026).
+   */
+  const diaDaBatida = proximoRegistro === 'entrada' ? dataRef : diaAutoatendimento
+  const bloqueadoNoAutoatendimento = !!escala && !!diaDaBatida && (escala.pendente || !escala.aprovados.includes(diaDaBatida))
+  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoNoAutoatendimento
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>

@@ -61,11 +61,13 @@ confere('dia principal bloqueia incondicionalmente (exceto o checkin_autonomo an
 confere('a credencial some com o botão no dia principal, mesmo com a janela ligada',
   /const podeAutoRegistrar = diaAutoatendimento !== null/.test(credencial) && /diaDoAutoatendimentoLiberado\(evento\?\.id \?\? null\)/.test(credencial), true)
 
-confere('madrugada conta como a noite em que a janela começou: a batida usa o dia da janela (Juan, 09/10/2026)',
-  /diaAutoatendimento \? \{ diaTurno: diaAutoatendimento \} : undefined/.test(actions), true)
+confere('madrugada conta como a noite em que a janela começou: a SAÍDA usa o dia da janela (Juan, 09/10/2026)',
+  /diaAutoatendimento && momento === 'fim' \? \{ diaTurno: diaAutoatendimento \} : undefined/.test(actions), true)
+confere('a ENTRADA usa o dia de trabalho de agora — quem chega de manhã antes das 9h não cai no dia anterior (LUAN, 15/10/2026)',
+  /momento === 'fim' \? \{ diaTurno/.test(actions) && /if \(momento === 'entrada' && resolucao\.diaPrincipal\)/.test(actions), true)
 confere('janela que COMEÇA no dia principal nunca libera (diaPermiteAutoatendimento no dia de início)',
   /return \(await diaPermiteAutoatendimento\(eventoId, janela\.diaInicio\)\) \? janela\.diaInicio : null/.test(autoatendimentoLib), true)
-confere('a credencial confere a escala no dia da janela, não no do calendário', credencial.includes('escala.aprovados.includes(diaAutoatendimento)'), true)
+confere('a credencial confere a escala no mesmo dia que o servidor usa (saída: dia da janela; entrada: dia de agora)', credencial.includes("const diaDaBatida = proximoRegistro === 'entrada' ? dataRef : diaAutoatendimento") && credencial.includes('escala.aprovados.includes(diaDaBatida)'), true)
 
 console.log('\n5 · auditoria específica do registro feito nessa janela')
 confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",
