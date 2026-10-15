@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ChevronRight, CalendarDays, MapPin, Building2 } from 'lucide-react'
-import { getPerfil, meusSetores, eventosAindaVigentes, supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { getPerfil, meusSetores, organizacoesDoOperador, eventosAindaVigentes, supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { veTodosEventos } from '@/lib/permissions'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState, Badge } from '@/components/ui/Superficie'
@@ -53,9 +53,13 @@ export async function eventosQuePossoAbrir(): Promise<EventoEscolhivel[]> {
   } else if (!veTodosEventos(perfil)) {
     if (perfil.role === 'operador_portao') {
       /*
-       * Operador de portão: eventos de QUALQUER organização (Juan, 15/10/2026) — só os que ainda valem, filtrados
-       * logo abaixo por `eventosAindaVigentes`.
+       * Operador de portão de mais de uma organização (função extra, `perfil_funcoes`): os eventos de TODAS em que ele
+       * opera o portão, seja qual for a função ativa. Achado ao vivo (Livia, VITAL, 11/10/2026): em Registrar ponto só
+       * aparecia o evento da organização de origem dela.
        */
+      const orgs = [...organizacoesDoOperador(perfil)]
+      if (!orgs.length) return []
+      consulta = consulta.in('organizacao_id', orgs)
     } else {
       consulta = consulta.eq('organizacao_id', perfil.organizacao_id)
     }

@@ -32,8 +32,11 @@ export async function contextoDeEventos(
     if (perfil.role === 'operador_portao') {
       // Gestor de credenciamento em mais de uma organização: os eventos de TODAS entram na mesma lista —
       // ele escolhe o evento, não a organização (08/10/2026).
-      // Operador de portão atua em QUALQUER organização (15/10/2026): todos os eventos que ainda valem.
-      return await daOrganizacao(null, true)
+      const orgs = [...new Set([
+        ...(perfil.funcoes ?? []).filter(f => f.role === 'operador_portao').map(f => f.organizacaoId ?? null),
+        perfil.organizacao_id ?? null,
+      ].filter((o): o is string => !!o))]
+      return orgs.length ? await daOrganizacao(orgs, true) : null
     }
     if (['admin', 'gerente', 'cliente'].includes(perfil.role) && perfil.organizacao_id) {
       return await daOrganizacao([perfil.organizacao_id], false)
@@ -109,11 +112,10 @@ async function doSupervisor(
   return { modo: 'supervisor', eventos, atual: { eventoId: atual?.evento_id ?? null, setorId: atual?.id ?? null } }
 }
 
-/** `organizacaoIds` nulo = todas as organizações (o seletor do operador de portão). */
-async function daOrganizacao(organizacaoIds: string[] | null, soEventos: boolean): Promise<ContextoDeEventos | null> {
-  let consulta = supabaseAdmin.from('eventos').select('id, nome, ativo, data_inicio')
-  if (organizacaoIds) consulta = consulta.in('organizacao_id', organizacaoIds)
-  const { data } = await consulta.order('data_inicio', { ascending: false }).limit(200)
+async function daOrganizacao(organizacaoIds: string[], soEventos: boolean): Promise<ContextoDeEventos | null> {
+  const { data } = await supabaseAdmin
+    .from('eventos').select('id, nome, ativo, data_inicio')
+    .in('organizacao_id', organizacaoIds).order('data_inicio', { ascending: false }).limit(200)
   let base = (data ?? []) as { id: string; nome: string; ativo: boolean | null; data_inicio: string | null }[]
   // Seletor do operador de portão (`soEventos`): só os eventos que ainda valem — nada de evento passado ou inativo.
   if (soEventos) {
