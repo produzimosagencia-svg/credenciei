@@ -15,8 +15,8 @@ const bemVindo = ler('app/admin/bem-vindo/page.tsx')
 const localizar = ler('app/admin/localizar/page.tsx')
 
 ok(/Em qual evento você vai trabalhar\?/.test(bemVindo), 'a boas-vindas pergunta em qual evento o operador vai trabalhar')
-ok(/\/admin\/localizar\?evento=\$\{e\.id\}/.test(bemVindo), 'cada evento abre o Registro de ponto já dentro dele')
-ok(/\/scan\?evento=\$\{e\.id\}/.test(bemVindo) && /hoje\.has\(e\.id\)/.test(bemVindo), 'o Scanner abre o evento escolhido, só se acontece hoje')
+ok(/href=\{`\/admin\/bem-vindo\?evento=\$\{e\.id\}`\}/.test(bemVindo) && /\/admin\/localizar\?evento=\$\{escolhido\.id\}/.test(bemVindo), 'toca no evento e, dentro dele, o Registro de ponto (15/10/2026)')
+ok(/\/scan\?evento=\$\{escolhido\.id\}/.test(bemVindo) && /hoje\.has\(escolhido\.id\)/.test(bemVindo), 'dentro do evento, o Scanner — só se acontece hoje')
 ok(/perfil\.role === 'operador_portao'\)\s*\?\s*await eventosQuePossoAbrir\(\)/.test(localizar), 'Registro de ponto lista os eventos da organização para o operador')
 
 // ── Lista das pessoas do evento em "Registrar ponto": 30 por página, em ordem alfabética (08/10/2026) ──

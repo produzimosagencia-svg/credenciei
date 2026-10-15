@@ -99,7 +99,7 @@ console.log('\n7 · tela do operador: botão só aparece quando o evento tem a f
 confere('ScannerRouter renderiza o botão nos dois modos (qr e rosto)',
   (scannerRouter.match(/<AutoatendimentoBotao eventoId=\{eventoAtivo\} \/>/g) || []).length === 2, true)
 confere("tela 'Bem-vindo' do operador também mostra o botão, com a descrição embaixo (pedido do Juan, 08/10/2026)",
-  ler('app/admin/bem-vindo/page.tsx').includes('<AutoatendimentoBotao eventoId={e.id} tema="claro" />'), true)
+  ler('app/admin/bem-vindo/page.tsx').includes('<AutoatendimentoBotao eventoId={escolhido.id} tema="claro" />'), true)
 confere('o componente não renderiza nada sem status.habilitado (sem recurso = sem botão)',
   /if \(!status\?\.habilitado\) return null/.test(botao), true)
 confere('a descrição do que o botão faz fica sempre visível, não só depois de ativar',

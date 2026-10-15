@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, ClipboardCheck, CalendarDays } from 'lucide-react'
+import { ScanLine, ClipboardCheck, CalendarDays, ChevronRight } from 'lucide-react'
 import { getPerfil, eventosEscaneaveisSemData, eventosAcontecendoHoje } from '@/lib/supabase-server'
 import { podeAcompanhar } from '@/lib/permissions'
 import AutoatendimentoBotao from '@/components/AutoatendimentoBotao'
@@ -36,7 +36,8 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
   const ordenadosTodos = [...eventos].sort((a, b) => Number(hoje.has(b.id)) - Number(hoje.has(a.id)))
   // Vindo do seletor de evento do topo (`?evento=`): mostra só o escolhido, com um caminho de volta à lista.
   const { evento: eventoParam } = await searchParams
-  const escolhido = eventoParam ? ordenadosTodos.find(e => e.id === eventoParam) : undefined
+  // Com um evento só, já entra nele (nada pra escolher).
+  const escolhido = eventoParam ? ordenadosTodos.find(e => e.id === eventoParam) : ordenadosTodos.length === 1 ? ordenadosTodos[0] : undefined
   const ordenados = escolhido ? [escolhido] : ordenadosTodos
 
   return (
@@ -61,51 +62,75 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
           * a tela não dizia qual evento estava valendo, e o menu levava a telas sem evento. Cada
           * evento abre direto o Scanner ou o Registro de ponto JÁ dentro dele.
           */}
-        {ordenados.length > 0 && (
+        {/*
+          * Dois passos (Juan, 15/10/2026: "clica no evento… aí dentro do evento tem que ter essas opções"): primeiro a
+          * lista de eventos; tocando num deles, abre o evento com o Scanner, o Registrar ponto e o autoatendimento.
+          */}
+        {!escolhido && ordenados.length > 0 && (
           <div className="mt-5 text-left">
             <p className="text-slate-800 font-semibold text-sm flex items-center gap-1.5">
-              <CalendarDays className="w-4 h-4 text-brand-500" /> {escolhido ? 'Evento escolhido' : 'Em qual evento você vai trabalhar?'}
+              <CalendarDays className="w-4 h-4 text-brand-500" /> Em qual evento você vai trabalhar?
             </p>
             <div className="mt-3 space-y-3">
               {ordenados.map(e => (
-                <div key={e.id} className="bg-white border border-slate-200 rounded-2xl p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-slate-800 font-semibold text-sm min-w-0 break-words">{e.nome}</p>
+                <Link
+                  key={e.id}
+                  href={`/admin/bem-vindo?evento=${e.id}`}
+                  className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-2xl p-4 hover:border-brand-300 hover:shadow-sm transition"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-slate-800 font-semibold text-sm break-words">{e.nome}</span>
                     {hoje.has(e.id)
-                      ? <span className="indicador-selo selo-sucesso shrink-0">Acontecendo hoje</span>
-                      : <span className="indicador-selo selo-neutro shrink-0">Fora do dia</span>}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {/* O Scanner só lista evento que está acontecendo hoje: fora do dia o botão não levaria a lugar nenhum. */}
-                    {hoje.has(e.id) ? (
-                      <Link href={`/scan?evento=${e.id}`} className="btn btn-primario justify-center">
-                        <ScanLine className="w-4 h-4 shrink-0" /> Scanner
-                      </Link>
-                    ) : (
-                      <span className="btn btn-secundario justify-center opacity-50 cursor-not-allowed" aria-disabled="true">
-                        <ScanLine className="w-4 h-4 shrink-0" /> Scanner
-                      </span>
-                    )}
-                    <Link href={`/admin/localizar?evento=${e.id}`} className="btn btn-secundario justify-center">
-                      <ClipboardCheck className="w-4 h-4 shrink-0" /> Registrar ponto
-                    </Link>
-                  </div>
-                  {/*
-                    * "Estou indo embora" / "Cheguei" (pedido do Juan, 08/10/2026) — fica embaixo dos botões de
-                    * cima de propósito: não é o uso de todo dia, é o que o operador aperta uma vez, no fim do
-                    * turno. Só no evento de hoje, mesmo motivo do Scanner acima.
-                    */}
-                  {hoje.has(e.id) && (
-                    <div className="mt-3 pt-3 border-t border-slate-100">
-                      <AutoatendimentoBotao eventoId={e.id} tema="claro" />
-                    </div>
-                  )}
-                </div>
+                      ? <span className="indicador-selo selo-sucesso mt-1.5 inline-block">Acontecendo hoje</span>
+                      : <span className="indicador-selo selo-neutro mt-1.5 inline-block">Fora do dia</span>}
+                  </span>
+                  <ChevronRight className="w-5 h-5 text-slate-300 shrink-0" />
+                </Link>
               ))}
             </div>
-            {escolhido && ordenadosTodos.length > 1 && (
+          </div>
+        )}
+
+        {escolhido && (
+          <div className="mt-5 text-left">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-slate-800 font-bold text-base min-w-0 break-words">{escolhido.nome}</p>
+                {hoje.has(escolhido.id)
+                  ? <span className="indicador-selo selo-sucesso shrink-0">Acontecendo hoje</span>
+                  : <span className="indicador-selo selo-neutro shrink-0">Fora do dia</span>}
+              </div>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* O Scanner só lista evento que está acontecendo hoje: fora do dia o botão não levaria a lugar nenhum. */}
+                {hoje.has(escolhido.id) ? (
+                  <Link href={`/scan?evento=${escolhido.id}`} className="btn btn-primario justify-center py-3">
+                    <ScanLine className="w-4 h-4 shrink-0" /> Scanner
+                  </Link>
+                ) : (
+                  <span className="btn btn-secundario justify-center py-3 opacity-50 cursor-not-allowed" aria-disabled="true">
+                    <ScanLine className="w-4 h-4 shrink-0" /> Scanner
+                  </span>
+                )}
+                <Link href={`/admin/localizar?evento=${escolhido.id}`} className="btn btn-secundario justify-center py-3">
+                  <ClipboardCheck className="w-4 h-4 shrink-0" /> Registrar ponto
+                </Link>
+              </div>
+              {!hoje.has(escolhido.id) && (
+                <p className="text-slate-400 text-xs mt-2">O Scanner abre nos dias de operação do evento.</p>
+              )}
+              {/*
+                * "Estou indo embora" / "Cheguei" (pedido do Juan, 08/10/2026) — embaixo dos botões de cima de propósito:
+                * não é o uso de todo dia, é o que o operador aperta uma vez, no fim do turno. Só no dia do evento.
+                */}
+              {hoje.has(escolhido.id) && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <AutoatendimentoBotao eventoId={escolhido.id} tema="claro" />
+                </div>
+              )}
+            </div>
+            {ordenadosTodos.length > 1 && (
               <Link href="/admin/bem-vindo" className="block text-center text-brand-600 text-sm font-semibold hover:underline mt-3">
-                Ver todos os eventos
+                Trocar de evento
               </Link>
             )}
           </div>
