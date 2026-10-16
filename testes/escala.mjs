@@ -134,10 +134,10 @@ ok(cadastro.includes('conferirDiasPermitidos') && cadastro.includes('eventoUsaEs
   'cadastro público só aceita dias do período, e só em evento de subeventos')
 
 const escalaTs = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
-ok(/tem_subeventos !== true\) return false/.test(escalaTs) && /!flags\.subeventosHabilitado/.test(escalaTs),
-  'escala por dia exige evento com subeventos E subeventos liberado (no evento, ou na organização sem configuração própria)')
-ok(/\|\| !flags\.escalaPorDiaHabilitada\) return false/.test(escalaTs) && /obterFuncionalidadesDoEvento\(eventoId\)/.test(escalaTs),
-  'e a chave "Dias de trabalho" ligada (Configurações do evento ou Funcionalidades do Sistema; nasce desligada)')
+ok(!/tem_subeventos !== true\) return false/.test(escalaTs) && !/!flags\.subeventosHabilitado/.test(escalaTs),
+  'escala por dia NÃO depende mais de subeventos (Juan, 16/10/2026: o LUAN, sem subgrupos, não puxava a relação por dia)')
+ok(/if \(!flags\.escalaPorDiaHabilitada\) return false/.test(escalaTs) && /obterFuncionalidadesDoEvento\(eventoId\)/.test(escalaTs),
+  'basta a chave "Dias de trabalho" ligada (Configurações do evento ou Funcionalidades do Sistema; nasce desligada)')
 
 // ── A trava por dia está LIGADA de novo (Juan, 08/10/2026: "seja sábado ou domingo a trava tem que existir") ──
 {
@@ -146,6 +146,19 @@ ok(/\|\| !flags\.escalaPorDiaHabilitada\) return false/.test(escalaTs) && /obter
   ok(TRAVA_POR_DIA_ATIVA === true, 'a trava por dia está ligada')
   ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \[\]/.test(esc), 'desligada (fallback), nenhum dia aparece como lotado — mas hoje está ligada')
   ok(/if \(!TRAVA_POR_DIA_ATIVA\) return \{ ok: true \}/.test(esc), 'desligada (fallback), o portão não barraria por lotação — mas hoje está ligada')
+}
+
+// ── Escala ligada com gente que cadastrou ANTES, sem escolher dia (LUAN SANTANA, 16/10/2026: 201 pendentes) ──
+{
+  const acoes = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
+  const painel = readFileSync(new URL('../app/admin/eventos/[id]/aprovacoes/PainelAprovacoes.tsx', import.meta.url), 'utf8')
+  ok(/conferirDiasPermitidos\(diasAprovados \?\? \(pedidos\.length \? pedidos : diasSeNaoEscolheu\), disponiveis\)/.test(acoes),
+    'aprovação: quem escolheu fica com os dias dele; quem não escolheu leva os dias marcados no lote')
+  ok(/!souSupervisor && !diasAprovados && !pedidos\.length && !diasSeNaoEscolheu\?\.length\) \{\s*return \{ error: 'Sem dias escolhidos/.test(acoes),
+    'sem dia nenhum, a aprovação continua recusando (o QR não pode "valer todo dia" sem querer)')
+  ok(/aprovarCredenciamento\(it\.funcionarioId, it\.fornecedorId, eventoId, undefined, diasSeNaoEscolheu\)/.test(acoes), 'o lote repassa os dias para cada pessoa')
+  ok(/semDiasNaSelecao \? \[\.\.\.diasLote\]\.sort\(\) : undefined/.test(painel) && /disabled=\{aprovandoLote \|\| \(semDiasNaSelecao > 0 && !diasLote\.size\)\}/.test(painel),
+    '"Aprovar selecionados" pede os dias de quem não escolheu e não confirma sem nenhum marcado')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

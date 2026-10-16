@@ -15,7 +15,8 @@ const ler = f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')
 const acoes = ler('lib/actions.ts')
 const aprovar = acoes.slice(acoes.indexOf('export async function aprovarCredenciamento'), acoes.indexOf('export async function aprovarCredenciamentosEmLote'))
 ok(/if \(await eventoUsaEscalaPorDia\(eventoId\)\) \{/.test(aprovar) && !/escala\?\.status && await eventoUsaEscalaPorDia/.test(aprovar), 'aprovarCredenciamento confere os dias SEMPRE que o evento usa escala, não só quando já tinha escala.status')
-ok(/conferirDiasPermitidos\(diasAprovados \?\? pedidos, disponiveis\)/.test(aprovar), '… e recusa lista vazia pela mesma função que o formulário público usa')
+ok(/conferirDiasPermitidos\(diasAprovados \?\? \(pedidos\.length \? pedidos : diasSeNaoEscolheu\), disponiveis\)/.test(aprovar) && /!souSupervisor && !diasAprovados && !pedidos\.length && !diasSeNaoEscolheu\?\.length\)/.test(aprovar),
+  '… e recusa lista vazia (antes de tudo, e pela mesma função que o formulário público usa) — os dias do lote só valem para quem não escolheu')
 
 const regras = ler('lib/escala-regras.ts')
 ok(/if \(!dias\.length\) return \{ ok: false, erro: 'Selecione pelo menos um dia de trabalho\.' \}/.test(regras), 'a regra pura já recusava lista vazia (usada também no ajuste de escala)')

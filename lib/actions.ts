@@ -4876,6 +4876,11 @@ export async function aprovarCredenciamento(
    * que a pessoa escolheu. Ignorado para quem está fora da escala por dia.
    */
   diasAprovados?: string[],
+  /**
+   * "Aprovar selecionados": os dias para quem NÃO escolheu nenhum (cadastrou antes de o evento ligar a escala —
+   * LUAN SANTANA, 16/10/2026). Quem escolheu continua aprovado com os dias que pediu.
+   */
+  diasSeNaoEscolheu?: string[],
 ): Promise<
   { ok?: false; error: string } | { ok: true }
 > {
@@ -4908,9 +4913,12 @@ export async function aprovarCredenciamento(
       const disponiveis = (await diasDaEscalaDoEvento(eventoId)).map(d => d.data)
       const souSupervisor = await pessoaEhSupervisor(func.cpf as string | null, eventoId)
       const pedidos = (escala?.dias ?? []).filter(d => d.selecionado).map(d => d.data)
+      if (!souSupervisor && !diasAprovados && !pedidos.length && !diasSeNaoEscolheu?.length) {
+        return { error: 'Sem dias escolhidos: marque os dias de trabalho (pelo nome, ou nos dias do "Aprovar selecionados").' }
+      }
       const conferido = souSupervisor
         ? conferirDiasPermitidos(disponiveis, disponiveis)
-        : conferirDiasPermitidos(diasAprovados ?? pedidos, disponiveis)
+        : conferirDiasPermitidos(diasAprovados ?? (pedidos.length ? pedidos : diasSeNaoEscolheu), disponiveis)
       if (!conferido.ok) return { error: conferido.erro }
       const cheios = await diasAcimaDaTrava(fornecedorId, funcionarioId, conferido.dias, [])
       if (cheios) return { error: cheios }
@@ -4974,18 +4982,20 @@ async function diasAcimaDaTrava(
  * Não tem regra própria: cada pessoa passa pela MESMA `aprovarCredenciamento`
  * (permissão, auditoria, boas-vindas). Em evento com escala por dia, aprova
  * com os dias que a pessoa pediu — quem precisa de ajuste, o supervisor abre
- * pelo nome. Cinco em paralelo, até 200 por clique: rápido sem afogar o
+ * pelo nome; quem não pediu dia nenhum leva os dias marcados na própria barra. Cinco em paralelo, até 200 por clique: rápido sem afogar o
  * banco nem estourar o tempo da função.
  */
 export async function aprovarCredenciamentosEmLote(
   itens: { funcionarioId: string; fornecedorId: string }[], eventoId: string,
+  /** Evento com escala: os dias de quem não escolheu nenhum (ver `aprovarCredenciamento`). */
+  diasSeNaoEscolheu?: string[],
 ): Promise<{ aprovados: number; falhas: { funcionarioId: string; erro: string }[] }> {
   const lote = itens.slice(0, 200)
   let aprovados = 0
   const falhas: { funcionarioId: string; erro: string }[] = []
   for (let i = 0; i < lote.length; i += 5) {
     const resultados = await Promise.all(
-      lote.slice(i, i + 5).map(it => aprovarCredenciamento(it.funcionarioId, it.fornecedorId, eventoId)),
+      lote.slice(i, i + 5).map(it => aprovarCredenciamento(it.funcionarioId, it.fornecedorId, eventoId, undefined, diasSeNaoEscolheu)),
     )
     resultados.forEach((r, k) => {
       if (r.ok) aprovados++

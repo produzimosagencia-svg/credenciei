@@ -11,7 +11,7 @@ import {
   ROTULO_STATUS_CREDENCIAMENTO, TOM_STATUS_CREDENCIAMENTO, STATUS_CREDENCIAMENTO,
   type StatusCredenciamento,
 } from '@/lib/credenciamento-constantes'
-import { listarDias, type DiaDaEscala, type StatusEscala } from '@/lib/escala-regras'
+import { listarDias, rotuloDoDia, type DiaDaEscala, type StatusEscala } from '@/lib/escala-regras'
 import AcoesCredenciamento from './AcoesCredenciamento'
 import ModalCredenciamento from './ModalCredenciamento'
 
@@ -40,6 +40,13 @@ export type CredenciamentoLinha = {
     decididaEm: string | null
     decididaPor: string | null
   } | null
+}
+
+/** Os dias que ainda dá para marcar na aprovação em lote: de hoje (Brasília) em diante — ou todos, com o evento já no fim. */
+function diasParaMarcar(dias: DiaDaEscala[]): DiaDaEscala[] {
+  const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const futuros = dias.filter(d => d.data >= hoje)
+  return futuros.length ? futuros : dias
 }
 
 const ROTULO_ORIGEM: Record<string, string> = {
@@ -78,6 +85,21 @@ export default function PainelAprovacoes({
   const [progresso, setProgresso] = useState<string | null>(null)
   const [resultadoLote, setResultadoLote] = useState<string | null>(null)
   const [aprovandoLote, startLote] = useTransition()
+  /*
+   * Escala por dia ligada com gente que se cadastrou ANTES (sem escolher dia — LUAN SANTANA, 16/10/2026): sem dia, a
+   * aprovação recusa. Para não ter que abrir um por um, a própria barra pede os dias de quem não escolheu; quem
+   * escolheu continua com os dele.
+   */
+  const [diasLote, setDiasLote] = useState<Set<string>>(new Set())
+  const semDiasNaSelecao = diasDoEvento
+    ? linhas.filter(l => selecionados.has(l.id) && l.status === 'pendente' && !l.escala?.pedidos.length).length
+    : 0
+  const alternarDiaLote = (d: string) => setDiasLote(atual => {
+    const novo = new Set(atual)
+    if (novo.has(d)) novo.delete(d)
+    else novo.add(d)
+    return novo
+  })
 
   const contagens = useMemo(() => {
     const c: Record<StatusCredenciamento, number> = { pendente: 0, aprovado: 0, negado: 0 }
@@ -117,7 +139,7 @@ export default function PainelAprovacoes({
       try {
         for (let i = 0; i < itens.length; i += 200) {
           setProgresso(`Aprovando ${Math.min(i + 200, itens.length)} de ${itens.length}...`)
-          const r = await aprovarCredenciamentosEmLote(itens.slice(i, i + 200), eventoId)
+          const r = await aprovarCredenciamentosEmLote(itens.slice(i, i + 200), eventoId, semDiasNaSelecao ? [...diasLote].sort() : undefined)
           aprovados += r.aprovados
           falhas.push(...r.falhas.map(f => f.erro))
         }
@@ -127,6 +149,7 @@ export default function PainelAprovacoes({
       setProgresso(null)
       setConfirmandoLote(false)
       setSelecionados(new Set())
+      setDiasLote(new Set())
       setResultadoLote(
         `${aprovados} aprovado${aprovados === 1 ? '' : 's'}` +
         (falhas.length ? ` · ${falhas.length} não aprovado${falhas.length === 1 ? '' : 's'} (${[...new Set(falhas)].slice(0, 2).join(' / ')})` : ''),
@@ -201,9 +224,30 @@ export default function PainelAprovacoes({
                   {' '}Cada uma recebe a credencial no WhatsApp.</>}
               </p>
               <button type="button" onClick={() => setConfirmandoLote(false)} disabled={aprovandoLote} className="btn btn-secundario btn-sm">Cancelar</button>
-              <button type="button" onClick={aprovarSelecionados} disabled={aprovandoLote} className="btn btn-primario btn-sm">
+              <button type="button" onClick={aprovarSelecionados} disabled={aprovandoLote || (semDiasNaSelecao > 0 && !diasLote.size)} className="btn btn-primario btn-sm disabled:opacity-60">
                 {aprovandoLote ? 'Aprovando...' : 'Confirmar aprovação'}
               </button>
+              {semDiasNaSelecao > 0 && diasDoEvento && !progresso && (
+                <div className="w-full border-t border-slate-100 pt-2 mt-1">
+                  <p className="text-slate-600 text-xs mb-1.5">
+                    <strong>{semDiasNaSelecao}</strong> {semDiasNaSelecao === 1 ? 'pessoa não escolheu' : 'pessoas não escolheram'} os dias de trabalho. Marque em quais {semDiasNaSelecao === 1 ? 'ela vai' : 'elas vão'} trabalhar — o QR só vale nesses dias:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diasParaMarcar(diasDoEvento).map(({ data }) => {
+                      const r = rotuloDoDia(data)
+                      const marcado = diasLote.has(data)
+                      return (
+                        <button
+                          key={data} type="button" onClick={() => alternarDiaLote(data)} disabled={aprovandoLote} aria-pressed={marcado}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${marcado ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-brand-300'}`}
+                        >
+                          {r.curto} <span className={marcado ? 'text-white/80' : 'text-slate-400'}>{r.semanaCurta}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
           {!selecionados.size && resultadoLote && (

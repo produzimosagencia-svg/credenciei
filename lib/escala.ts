@@ -60,15 +60,20 @@ export async function pessoaEhSupervisor(cpf: string | null | undefined, eventoI
 
 export async function eventoUsaEscalaPorDia(eventoId: string): Promise<boolean> {
   try {
+    /*
+     * SEM depender de subgrupos (Juan, 16/10/2026: "o sistema siga os ajustes feitos no VITAL, tirando a parte de
+     * subeventos" — no LUAN SANTANA, sem subgrupos, não dava para puxar a relação por dia). Antes a escala só ligava
+     * com o evento usando subeventos; agora basta a funcionalidade "Escala por dia" (do evento ou da organização).
+     */
     const { data: evento, error } = await supabaseAdmin
-      .from('eventos').select('tem_subeventos, organizacao_id').eq('id', eventoId).maybeSingle()
-    if (error || !evento || (evento as { tem_subeventos?: boolean }).tem_subeventos !== true) return false
+      .from('eventos').select('organizacao_id').eq('id', eventoId).maybeSingle()
+    if (error || !evento) return false
 
     const orgId = (evento as { organizacao_id?: string | null }).organizacao_id
     if (!orgId) return false
     // As do EVENTO (Configurações dentro do evento, 09/10/2026), que sem configuração própria são as da organização.
     const flags = await obterFuncionalidadesDoEvento(eventoId)
-    if (!flags.subeventosHabilitado || !flags.escalaPorDiaHabilitada) return false
+    if (!flags.escalaPorDiaHabilitada) return false
 
     // A tabela existe? Sem ela não há onde guardar a escolha — melhor seguir
     // sem escala do que derrubar o cadastro inteiro.
