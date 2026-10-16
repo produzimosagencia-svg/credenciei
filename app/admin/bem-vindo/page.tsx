@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, ClipboardCheck, CalendarDays, ChevronRight } from 'lucide-react'
+import { ScanLine, ClipboardCheck, CalendarDays, ChevronRight, ListChecks } from 'lucide-react'
 import { getPerfil, eventosEscaneaveisSemData, eventosAcontecendoHoje } from '@/lib/supabase-server'
-import { podeAcompanhar } from '@/lib/permissions'
+import { podeAcompanhar, podeConferirListaManual } from '@/lib/permissions'
+import { quantasNaListaManual } from '@/lib/lista-manual'
 import AutoatendimentoBotao from '@/components/AutoatendimentoBotao'
 
 export const revalidate = 0
@@ -39,6 +40,8 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
   // Com um evento só, já entra nele (nada pra escolher).
   const escolhido = eventoParam ? ordenadosTodos.find(e => e.id === eventoParam) : ordenadosTodos.length === 1 ? ordenadosTodos[0] : undefined
   const ordenados = escolhido ? [escolhido] : ordenadosTodos
+  // Lista manual (entrada sem QR Code): o botão só aparece quando o evento tem alguém na lista.
+  const naListaManual = escolhido && podeConferirListaManual(perfil) ? await quantasNaListaManual(escolhido.id) : 0
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
@@ -114,6 +117,11 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
                 <Link href={`/admin/localizar?evento=${escolhido.id}`} className="btn btn-secundario justify-center py-3">
                   <ClipboardCheck className="w-4 h-4 shrink-0" /> Registrar ponto
                 </Link>
+                {naListaManual > 0 && (
+                  <Link href={`/admin/lista-manual?evento=${escolhido.id}`} className="btn btn-secundario justify-center py-3 sm:col-span-2">
+                    <ListChecks className="w-4 h-4 shrink-0" /> Lista manual <span className="text-slate-400 font-normal">({naListaManual})</span>
+                  </Link>
+                )}
               </div>
               {!hoje.has(escolhido.id) && (
                 <p className="text-slate-400 text-xs mt-2">O Scanner abre nos dias de operação do evento.</p>

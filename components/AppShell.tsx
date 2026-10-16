@@ -7,13 +7,13 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin, DoorClosed,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin, DoorClosed, ListChecks,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
   podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
   podeVerPerformance, type Role,
-  soBateMeio,
+  soBateMeio, podeGerenciarListaManual, podeConferirListaManual,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
@@ -179,6 +179,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (podeGerenciarVeiculos(perfil)) {
     doEvento.push({ href: '/admin/veiculos', label: 'Cadastrar veículo', icon: Truck })
+  }
+  /*
+   * Lista manual — entrada sem QR Code (Juan, 16/10/2026): convidados, prestadores, equipe interna. Quem gerencia
+   * cadastra; o operador de portão consulta e confirma a entrada (a tela pede o evento antes).
+   */
+  if (podeGerenciarListaManual(perfil) || podeConferirListaManual(perfil)) {
+    doEvento.push({ href: '/admin/lista-manual', label: 'Lista manual', icon: ListChecks })
   }
   // Acompanhar a operação, sim: tirar o scanner do supervisor não pode cegá-lo
   // em relação à própria equipe.

@@ -312,6 +312,21 @@ export const podeEscanear = capacidade('escanear', role =>
 export const podeAcompanhar = capacidade('acompanhar', role =>
   podeEscanear(role) || role === 'supervisor' || role === 'suporte')
 
+/**
+ * LISTA MANUAL — entrada sem QR Code (Juan, 16/10/2026: convidados, prestadores, equipe interna). GERENCIAR é
+ * cadastrar, corrigir e tirar pessoas da lista, e desfazer uma entrada confirmada por engano: quem administra o
+ * evento (master e administrador — mesma régua dos veículos, sem os papéis legados gerente/cliente).
+ */
+export const podeGerenciarListaManual = capacidade('gerenciar_lista_manual', role =>
+  role === 'master' || role === 'admin')
+
+/**
+ * CONFERIR a lista manual: consultar e confirmar a entrada na portaria. O padrão é quem lê o QR (o papel cru, igual
+ * `podeAcompanhar`) — o operador de portão entra aqui sem poder cadastrar nem tirar ninguém — mais quem gerencia.
+ */
+export const podeConferirListaManual = capacidade('conferir_lista_manual', role =>
+  podeEscanear(role) || podeGerenciarListaManual(role))
+
 // ─── O catálogo, pra tela de Configurações ───────────────────────────────────
 
 /**
@@ -355,6 +370,12 @@ export const CAPACIDADES: {
   { chave: 'gerenciar_veiculos', nome: 'Cadastrar veículos',
     descricao: 'Autoriza a entrada de caminhão, van ou carro no evento',
     padrao: podeGerenciarVeiculos },
+  { chave: 'gerenciar_lista_manual', nome: 'Gerenciar a lista manual',
+    descricao: 'Cadastra, corrige e tira pessoas da lista de entrada sem QR Code',
+    padrao: podeGerenciarListaManual },
+  { chave: 'conferir_lista_manual', nome: 'Confirmar entrada da lista manual',
+    descricao: 'Consulta a lista de entrada sem QR Code e confirma quem chegou',
+    padrao: podeConferirListaManual },
   { chave: 'corrigir_cpf', nome: 'Corrigir CPF e identidade',
     descricao: 'Conserta cadastro errado sem a pessoa refazer tudo',
     padrao: podeEditarIdentidade,
