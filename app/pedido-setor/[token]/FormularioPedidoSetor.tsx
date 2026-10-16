@@ -103,10 +103,10 @@ export default function FormularioPedidoSetor({
           key={s.chave}
           titulo="Serviço / Fornecedor"
         >
-          {/* "Setor" virou "Serviço / Fornecedor" (pedido do Juan, 09/10/2026): quem preenche diz a FUNÇÃO que vai
-              desempenhar no evento. O que ele escreve continua sendo o nome do setor no sistema. */}
-          <Campo rotulo="Função que vai desempenhar no evento *">
-            <NomeMaiusculoInput required className="input" placeholder="Ex.: SEGURANÇA, LIMPEZA, COMUNICAÇÃO VISUAL, BUFFET…" onValueChange={nome => mudar(s.chave, { nome })} />
+          {/* "Nome do serviço prestado" (Juan, 16/10/2026): "Função que vai desempenhar" fazia o pessoal escrever o
+              próprio CARGO em vez do serviço/empresa. O que ele escreve continua sendo o nome do setor no sistema. */}
+          <Campo rotulo="Nome do serviço prestado *" ajuda="O serviço da sua equipe no evento — não o seu cargo.">
+            <NomeMaiusculoInput required className="input" placeholder="Ex.: BAR, EQUIPE DE SEGURANÇA, EMPRESA DE LIMPEZA…" onValueChange={nome => mudar(s.chave, { nome })} />
           </Campo>
 
           {ctx.subeventoIds && (
