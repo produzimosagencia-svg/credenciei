@@ -46,6 +46,7 @@ import { sincronizarFuncionarioNaPlanilha, sincronizarRegistroNaPlanilha, diasDo
 import { podeReceberFuncaoExtra, MSG_FUNCAO_NAO_COMBINA } from './funcoes'
 import { ehFuncaoNaEquipe, rotuloDaFuncao, cargoAcompanhaFuncao, type FuncaoNaEquipe } from './funcao-na-equipe'
 import { pessoaDaBase } from './base-pessoas'
+import { fichaQueImpedeCadastro, fichaQueVale, semFichasDeBaixaRepetidas } from './ficha-no-evento'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
 import { alterarEncarregadoNoSetor } from './actions-encarregado'
 import { alcancaSetor } from './autorizacao'
@@ -4137,14 +4138,23 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
   if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os 11 dígitos.')
 
-  // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento
+  // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento — baixa em OUTRA equipe não conta (lib/ficha-no-evento.ts).
   const { data: existentes } = await db
     .from('funcionarios')
-    .select('id, fornecedores!inner(evento_id)')
+    .select('id, fornecedor_id, descredenciado_em, fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', eventoId)
-    .limit(1)
-  if (existentes && existentes.length) throw new Error('Já existe um funcionário com este CPF neste evento.')
+    .limit(20)
+  const impede = fichaQueImpedeCadastro(existentes, fornecedorId)
+  if (impede) {
+    if (impede.fornecedor_id === fornecedorId && impede.descredenciado_em) {
+      throw new Error('Esta pessoa já está nesta equipe, com baixa. Use "Trazer de volta" no fim da linha dela.')
+    }
+    const onde = (impede.fornecedores as unknown as { nome?: string } | null)?.nome
+    throw new Error(impede.fornecedor_id === fornecedorId || !onde
+      ? 'Já existe um funcionário com este CPF neste evento.'
+      : `Já existe um funcionário com este CPF neste evento, no fornecedor ${onde}.`)
+  }
 
   const { data: novo, error } = await db.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
@@ -4238,15 +4248,19 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
   const travado = await motivoCadastroTravado(setor.evento_id as string, { fornecedorId })
   if (travado) throw new Error(travado)
 
-  // Mesma trava do formulário público e da importação: um CPF por evento.
+  // Mesma trava do formulário público e da importação: um CPF por evento (baixa em outra equipe não conta).
   const { data: jaNoEvento } = await db
     .from('funcionarios')
-    .select('id, fornecedores!inner(nome, evento_id)')
+    .select('id, fornecedor_id, descredenciado_em, fornecedores!inner(nome, evento_id)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', setor.evento_id)
-    .limit(1)
-  if (jaNoEvento?.length) {
-    const outro = (jaNoEvento[0].fornecedores as unknown as { nome: string }).nome
+    .limit(20)
+  const impede = fichaQueImpedeCadastro(jaNoEvento, fornecedorId)
+  if (impede) {
+    if (impede.fornecedor_id === fornecedorId && impede.descredenciado_em) {
+      throw new Error(`${pessoa.nome} já está nesta equipe, com baixa. Use "Trazer de volta" no fim da linha dela.`)
+    }
+    const outro = (impede.fornecedores as unknown as { nome: string }).nome
     throw new Error(`${pessoa.nome} já está neste evento, no fornecedor "${outro}".`)
   }
 
@@ -5447,11 +5461,12 @@ async function crachaNoEvento(p: {
 }): Promise<{ qrToken: string; criado: boolean } | { error: string }> {
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, qr_token, status_credenciamento, fornecedor_id, subevento_id, fornecedores!inner(evento_id)')
+    .select('id, qr_token, status_credenciamento, fornecedor_id, subevento_id, descredenciado_em, fornecedores!inner(evento_id)')
     .eq('cpf', p.cpf)
     .eq('fornecedores.evento_id', p.eventoId)
-    .limit(1)
-  const existente = existentes?.[0]
+    .limit(20)
+  // Com uma ficha de baixa e outra que vale (lib/ficha-no-evento.ts), o crachá é o da que vale.
+  const existente = fichaQueVale(existentes)
   if (existente) {
     if (existente.status_credenciamento === 'pendente') {
       await supabaseAdmin.from('funcionarios')
@@ -6846,9 +6861,9 @@ async function gravarDepoimentoAutomatico(a: {
 }) {
   try {
     const { data: cad } = await supabaseAdmin
-      .from('funcionarios').select('id, nome, fornecedores!inner(nome, evento_id)')
-      .eq('cpf', a.cpf).eq('fornecedores.evento_id', a.eventoId).limit(1)
-    const f = cad?.[0] as { id: string; nome: string; fornecedores: { nome: string } } | undefined
+      .from('funcionarios').select('id, nome, descredenciado_em, fornecedores!inner(nome, evento_id)')
+      .eq('cpf', a.cpf).eq('fornecedores.evento_id', a.eventoId).limit(20)
+    const f = (fichaQueVale(cad) ?? undefined) as { id: string; nome: string; fornecedores: { nome: string } } | undefined
     const r = await inserirDepoimento({
       cpf: a.cpf, nomeNaEpoca: f?.nome ?? null, funcionarioId: f?.id ?? null,
       eventoId: a.eventoId, setorNome: (f?.fornecedores as unknown as { nome?: string } | undefined)?.nome ?? null,
@@ -7083,6 +7098,20 @@ export async function listarDepoimentos(funcionarioId: string, fornecedorId: str
 
 export async function recredenciarFuncionario(funcionarioId: string, fornecedorId: string, eventoId: string) {
   const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  /*
+   * Quem recebeu baixa aqui pode ter se cadastrado em OUTRA equipe depois (lib/ficha-no-evento.ts). Trazer de volta
+   * com a outra ficha valendo deixaria a pessoa em duas equipes do mesmo evento — primeiro a baixa lá.
+   */
+  const { data: ficha } = await supabaseAdmin.from('funcionarios').select('cpf, fornecedor_id').eq('id', funcionarioId).maybeSingle()
+  if (!ficha || ficha.fornecedor_id !== fornecedorId) throw new Error('Esta pessoa não é desta equipe.')
+  const { data: outras } = await supabaseAdmin
+    .from('funcionarios').select('id, fornecedores!inner(nome, evento_id)')
+    .eq('cpf', ficha.cpf as string).eq('fornecedores.evento_id', eventoId)
+    .neq('id', funcionarioId).is('descredenciado_em', null).limit(1)
+  if (outras?.length) {
+    const onde = (outras[0].fornecedores as unknown as { nome?: string } | null)?.nome ?? 'outra equipe'
+    throw new Error(`Esta pessoa se cadastrou de novo, no fornecedor ${onde}. Para trazer de volta aqui, dê baixa nela lá primeiro.`)
+  }
   const { error } = await supabaseAdmin
     .from('funcionarios')
     .update({ descredenciado_em: null, descredenciado_por: null })
@@ -7296,9 +7325,10 @@ export async function conferirCredenciamentoPorCpf(eventoId: string, cpfBruto: s
     .select('id, nome, cargo, ativo, descredenciado_em, fornecedor_id, fornecedores!inner(nome, evento_id)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', eventoId)
-    .limit(1)
+    .limit(20)
 
-  const f = achados?.[0]
+  // Baixa numa equipe e cadastro novo em outra (lib/ficha-no-evento.ts): responde pela ficha que vale.
+  const f = fichaQueVale(achados)
   // Sem cadastro NESTE evento. A tela transforma isto no alerta forte — é o
   // caso de alguém tentando entrar sem estar na lista.
   if (!f) return { credenciado: false }
@@ -9360,18 +9390,24 @@ export async function cadastrarFuncionarioPublico(
   // empresas/funções do mesmo evento (dupla contratação). No MESMO setor,
   // devolve a credencial existente (a pessoa só perdeu o link). Em eventos
   // DIFERENTES, mesmo no mesmo dia, o cadastro é livre — freelancer escolhe
-  // onde vai trabalhar.
+  // onde vai trabalhar. Com BAIXA em outra equipe, pode se cadastrar nesta
+  // (16/10/2026 — ver lib/ficha-no-evento.ts).
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, qr_token, fornecedor_id, status_credenciamento, decidido_em, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
+    .select('id, qr_token, fornecedor_id, status_credenciamento, decidido_em, descredenciado_em, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
-    .limit(1)
+    .limit(20)
   // Pedido NEGADO que a pessoa está refazendo (passou da espera) — o fluxo continua e, no fim, REABRE este cadastro.
   let pedidoNegadoId: string | null = null
-  if (existentes && existentes.length) {
-    const existente = existentes[0] as any
+  const fichaQueImpede = fichaQueImpedeCadastro(existentes as { fornecedor_id: string; descredenciado_em: string | null }[] | null, fornecedorId)
+  if (fichaQueImpede) {
+    const existente = fichaQueImpede as any
     if (existente.fornecedor_id === fornecedorId) {
+      // Baixa NESTA equipe: o QR antigo não vale mais, e uma ficha repetida na mesma equipe não resolve.
+      if (existente.descredenciado_em) {
+        return { error: 'Você recebeu baixa nesta equipe. Procure o supervisor dela para voltar — ou faça o cadastro pelo link de outra equipe.' }
+      }
       const statusDoPedido = statusCredenciamentoValido(existente.status_credenciamento)
       if (statusDoPedido !== 'negado') {
         return { qrToken: existente.qr_token, status: statusDoPedido }
@@ -9788,17 +9824,20 @@ export async function identificarNaPortaria(
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }
 
-  const { data: func } = await supabaseAdmin
+  const { data: fichas } = await supabaseAdmin
     .from('funcionarios')
     .select('qr_token, descredenciado_em, fornecedores!inner(evento_id)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', eventoId)
-    .maybeSingle()
+    .limit(20)
 
-  if (!func) return { naoEncontrado: true }
-  if (func.descredenciado_em) {
-    return { error: 'Você já foi descredenciado deste evento. Se isso for engano, procure o credenciamento.' }
-  }
+  const func = fichaQueVale(fichas)
+  /*
+   * Só com BAIXA: segue para o cadastro, como quem não tem ficha — quem recebeu baixa numa equipe pode se cadastrar
+   * em outra (Juan, 16/10/2026; lib/ficha-no-evento.ts). Se escolher a MESMA equipe, o cadastro devolve a ficha da
+   * baixa (o caminho ali é o supervisor "Trazer de volta").
+   */
+  if (!func || func.descredenciado_em) return { naoEncontrado: true }
   return { qrToken: func.qr_token }
 }
 
@@ -9915,7 +9954,7 @@ export type CandidatoLocalizado = {
  * caso de uso e só abriria espaço pra erro.
  */
 const SELECT_LOCALIZAR =
-  'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, subeventos(nome), fornecedores!inner(id, nome, evento_id, subeventos(nome), eventos!inner(id, nome, ativo, organizacao_id))'
+  'id, nome, cpf, cargo, empresa, ativo, foto_perfil_path, fornecedor_id, descredenciado_em, subeventos(nome), fornecedores!inner(id, nome, evento_id, subeventos(nome), eventos!inner(id, nome, ativo, organizacao_id))'
 
 /** O escopo de um suporte, como dois Sets — pra checar filtro síncrono sem uma consulta por linha. */
 async function escopoDoSuporteComoConjuntos(perfilId: string): Promise<{ eventos: Set<string>; orgs: Set<string> }> {
@@ -10127,7 +10166,8 @@ export async function localizarFuncionario(
     // Operador de portão de mais de uma organização enxerga os eventos de todas (`ehDaOrganizacaoDoPerfil`).
     return org === perfil.organizacao_id || (!!org && ehDaOrganizacaoDoPerfil(perfil, org))
   }
-  let visiveis = achados.filter(dentroDoEscopo)
+  // Baixa numa equipe e cadastro novo em outra: só a ficha que vale aparece (lib/ficha-no-evento.ts).
+  let visiveis = semFichasDeBaixaRepetidas(achados.filter(dentroDoEscopo))
   let buscaAproximada = false
 
   /*
@@ -10151,9 +10191,9 @@ export async function localizarFuncionario(
         .range(de, ate),
     { tetoTotal: 10_000 })
 
-    visiveis = possiveis
+    visiveis = semFichasDeBaixaRepetidas(possiveis
       .filter(f => distanciaEntreCpfs(f.cpf, digitos) <= 2)
-      .filter(dentroDoEscopo)
+      .filter(dentroDoEscopo))
     buscaAproximada = visiveis.length > 0
   }
 
@@ -10327,6 +10367,7 @@ type LinhaLocalizada = {
   ativo: boolean | null
   foto_perfil_path: string | null
   fornecedor_id: string
+  descredenciado_em?: string | null
   fornecedores: unknown
   subeventos?: unknown
 }
@@ -11669,13 +11710,14 @@ async function exigirDestinatariosDoEvento(eventoId: string, dados: ReturnType<t
     }
   }
   if (dados.publico === 'pessoa') {
+    // `limit(1)`, não `maybeSingle()`: com baixa numa equipe e ficha nova em outra, o CPF tem duas fichas no evento.
     const { data: pessoa } = await supabaseAdmin
       .from('funcionarios')
       .select('id, fornecedores!inner(evento_id)')
       .eq('cpf', dados.cpf_pessoa as string)
       .eq('fornecedores.evento_id', eventoId)
-      .maybeSingle()
-    if (!pessoa) throw new Error('Não encontrei ninguém com esse CPF neste evento.')
+      .limit(1)
+    if (!pessoa?.length) throw new Error('Não encontrei ninguém com esse CPF neste evento.')
   }
 }
 

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { motivoCadastroTravado } from '@/lib/internos-servidor'
+import { fichaQueImpedeCadastro } from '@/lib/ficha-no-evento'
 import { formatCpf, validarCpf } from '@/lib/format'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { importarFuncionarios } from '@/lib/importacao'
@@ -29,18 +30,22 @@ import {
  * "desativar", que é explícito, visível e reversível.
  */
 
-/** O mesmo CPF não pode estar em dois setores do mesmo evento. */
-async function cpfJaNoEvento(cpf: string, eventoId: string, ignorarId?: string) {
-  const q = supabaseAdmin
+/**
+ * O mesmo CPF não pode estar em dois setores do mesmo evento. Com `destino` (cadastro novo nesse fornecedor), a ficha
+ * com BAIXA em outro fornecedor não conta — quem recebeu baixa numa equipe pode entrar em outra (lib/ficha-no-evento.ts).
+ */
+async function cpfJaNoEvento(cpf: string, eventoId: string, opcoes: { ignorarId?: string; destino?: string } = {}) {
+  let q = supabaseAdmin
     .from('funcionarios')
-    .select('id, nome, fornecedores!inner(nome, evento_id)')
+    .select('id, nome, fornecedor_id, descredenciado_em, fornecedores!inner(nome, evento_id)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', eventoId)
-    .limit(1)
-  if (ignorarId) q.neq('id', ignorarId)
+    .limit(20)
+  if (opcoes.ignorarId) q = q.neq('id', opcoes.ignorarId)
   const { data } = await q
-  if (!data?.length) return null
-  return (data[0].fornecedores as unknown as { nome: string }).nome
+  const ficha = opcoes.destino ? fichaQueImpedeCadastro(data, opcoes.destino) : data?.[0]
+  if (!ficha) return null
+  return (ficha.fornecedores as unknown as { nome: string }).nome
 }
 
 export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: PedirConfirmacao) {
@@ -79,7 +84,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         const travado = await motivoCadastroTravado(r.setor.evento_id, { fornecedorId: String(fornecedor_id) })
         if (travado) return travado
 
-        const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id)
+        const outroSetor = await cpfJaNoEvento(digitos, r.setor.evento_id, { destino: String(fornecedor_id) })
         if (outroSetor) {
           return `Este CPF já está cadastrado neste evento, no fornecedor "${outroSetor}". Uma pessoa não pode estar em dois fornecedores do mesmo evento — se ela mudou de fornecedor, use mover_funcionario_de_setor.`
         }
@@ -171,7 +176,7 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         if (cpf != null) {
           const digitos = String(cpf).replace(/\D/g, '')
           if (!validarCpf(digitos)) return 'CPF inválido. Confira os 11 dígitos.'
-          const outroSetor = await cpfJaNoEvento(digitos, r.func.evento_id, funcionario_id)
+          const outroSetor = await cpfJaNoEvento(digitos, r.func.evento_id, { ignorarId: funcionario_id })
           if (outroSetor) return `Já existe outra pessoa com este CPF neste evento, no fornecedor "${outroSetor}".`
           mudancas.cpf = digitos
         }

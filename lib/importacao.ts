@@ -2,6 +2,7 @@ import { after } from 'next/server'
 import { adicionarFuncionarioNaPlanilha } from '@/lib/google-sheets'
 import { supabaseAdmin, buscarTudo } from '@/lib/supabase-server'
 import { emLotes } from '@/lib/lotes'
+import { fichaQueImpedeCadastro } from '@/lib/ficha-no-evento'
 import { ehMaster, type Role } from '@/lib/permissions'
 import { sincronizarAgendamentos, agendarBoasVindasFuncionario } from '@/lib/mensagens'
 import { validarCpf } from '@/lib/format'
@@ -180,15 +181,21 @@ export async function importarFuncionarios(
   if (semRepetidos.length) {
     // Em lotes e paginado: uma planilha de 4 mil CPFs num `.in(...)` só estoura o tamanho da
     // URL (a resposta vinha vazia e NENHUM duplicado era detectado) e passa do teto de 1.000 linhas.
-    const existentes: { cpf: string; nome: string; fornecedores: unknown }[] = []
+    type Existente = { cpf: string; nome: string; fornecedor_id: string; descredenciado_em: string | null; fornecedores: unknown }
+    const existentes: Existente[] = []
     for (const lote of emLotes(semRepetidos.map(f => f.cpf), 200)) {
-      existentes.push(...await buscarTudo<{ cpf: string; nome: string; fornecedores: unknown }>((de, ate) =>
+      existentes.push(...await buscarTudo<Existente>((de, ate) =>
         supabaseAdmin.from('funcionarios')
-          .select('cpf, nome, fornecedores!inner(evento_id, nome)')
+          .select('cpf, nome, fornecedor_id, descredenciado_em, fornecedores!inner(evento_id, nome)')
           .eq('fornecedores.evento_id', eventoId).in('cpf', lote).order('id').range(de, ate)))
     }
-    for (const e of existentes) {
-      jaCadastrados.set(e.cpf as string, {
+    // Baixa em OUTRA equipe não impede a linha (lib/ficha-no-evento.ts) — a mesma regra do formulário.
+    const fichasPorCpf = new Map<string, Existente[]>()
+    for (const e of existentes) fichasPorCpf.set(e.cpf, [...(fichasPorCpf.get(e.cpf) ?? []), e])
+    for (const [cpf, fichas] of fichasPorCpf) {
+      const e = fichaQueImpedeCadastro(fichas, fornecedorId)
+      if (!e) continue
+      jaCadastrados.set(cpf, {
         nome: e.nome as string,
         setor: (e.fornecedores as unknown as { nome: string } | null)?.nome ?? null,
       })

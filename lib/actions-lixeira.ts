@@ -8,6 +8,7 @@ import { mensagemAmigavel } from './erros'
 import { formatCpf } from './format'
 import { sincronizarAgendamentos } from './mensagens'
 import { TABELAS_DA_PESSOA } from './lixeira'
+import { fichaQueImpedeCadastro } from './ficha-no-evento'
 
 /**
  * Restaura uma pessoa excluída — SÓ o master (decisão do Juan, 08/10/2026).
@@ -39,11 +40,13 @@ export async function restaurarExcluido(lixeiraId: string): Promise<{ ok: true; 
     if (!setor) return { erro: `O setor "${copia.fornecedor_nome ?? ''}" não existe mais. Recadastre a pessoa em outro setor.` }
 
     // O mesmo CPF já voltou a este evento (recadastro)? Dois cadastros para o mesmo CPF não pode.
+    // Ficha com baixa em OUTRA equipe não impede (lib/ficha-no-evento.ts).
     const { data: jaTem } = await supabaseAdmin
-      .from('funcionarios').select('id, fornecedores!inner(nome, evento_id)')
-      .eq('cpf', copia.cpf as string).eq('fornecedores.evento_id', setor.evento_id as string).limit(1)
-    if (jaTem?.length) {
-      const onde = (jaTem[0].fornecedores as unknown as { nome: string } | null)?.nome ?? 'outro setor'
+      .from('funcionarios').select('id, fornecedor_id, descredenciado_em, fornecedores!inner(nome, evento_id)')
+      .eq('cpf', copia.cpf as string).eq('fornecedores.evento_id', setor.evento_id as string).limit(20)
+    const impede = fichaQueImpedeCadastro(jaTem, setor.id as string)
+    if (impede) {
+      const onde = (impede.fornecedores as unknown as { nome: string } | null)?.nome ?? 'outro setor'
       return { erro: `${copia.nome} já tem um cadastro novo neste evento (setor ${onde}). Exclua o cadastro novo antes de restaurar o antigo, ou mantenha o novo.` }
     }
 
