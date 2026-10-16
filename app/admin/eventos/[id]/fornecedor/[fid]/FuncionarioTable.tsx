@@ -518,6 +518,7 @@ export default function FuncionarioTable({
                     podeMudarFuncao={podeMudarFuncao}
                     podeEditarCpf={podeEditarCpf}
                     podeEditarPonto={podeEditarPonto}
+                    podeExcluir={podeExcluir}
                     role={role}
                     trigger={
                       <div className={`flex items-center gap-2.5 min-w-0 text-left ${f.descredenciadoEm ? 'opacity-50' : ''}`}>
@@ -683,6 +684,7 @@ export default function FuncionarioTable({
                       podeMudarFuncao={podeMudarFuncao}
                       podeEditarCpf={podeEditarCpf}
                       podeEditarPonto={podeEditarPonto}
+                      podeExcluir={podeExcluir}
                       role={role}
                       trigger={
                         <div className="flex items-center gap-2.5 hover:text-brand-600 transition-colors max-w-[15rem]">

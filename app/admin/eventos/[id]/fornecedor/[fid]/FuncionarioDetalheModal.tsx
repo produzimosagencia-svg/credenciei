@@ -1,9 +1,9 @@
 'use client'
 import { useEffect, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, Pencil, UserCheck, UserX, Printer } from 'lucide-react'
+import { X, Camera, MapPin, Minus, User, ScanLine, Check, ClipboardCheck, AlertTriangle, Users, Pencil, UserCheck, UserX, Printer, Trash2 } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
-import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, moverFuncionarioDeSetor, definirFuncaoNaEquipe, funcaoDaPessoaNaEquipe, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
+import { atualizarValorReceber, alternarPagamento, obterHistoricoDoFuncionario, deletarFuncionario, moverFuncionarioDeSetor, definirFuncaoNaEquipe, funcaoDaPessoaNaEquipe, editarCpfFuncionario, editarNomeFuncionario, editarTelefoneFuncionario, editarCargoFuncionario, alternarAtivacao, obterQRDoFuncionario, desdeQuandoNaBase, type QRDoFuncionario } from '@/lib/actions'
 import { FUNCOES_COMUNS } from '@/lib/funcoes-constantes'
 import { FUNCOES_NA_EQUIPE, rotuloDaFuncao, type FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import { formatarBR } from '@/lib/tz'
@@ -35,6 +35,8 @@ type Funcionario = {
   cadastradoEm?: string | null
   fotoUrl: string | null
   ativo?: boolean
+  /** Com baixa (fora da equipe, em cinza) — não tem mais o que excluir. */
+  descredenciadoEm?: string | null
   entrada: Presenca
   meio: Presenca
   fim: Presenca
@@ -56,6 +58,7 @@ export default function FuncionarioDetalheModal({
   podeEditarCpf = false,
   podeAtivarDesativar = false,
   podeEditarPonto = false,
+  podeExcluir = false,
   role,
 }: {
   funcionario: Funcionario
@@ -79,6 +82,8 @@ export default function FuncionarioDetalheModal({
   podeAtivarDesativar?: boolean
   /** Mesma régua de `lancarPontoManual` no servidor — liga o clique-pra-editar na aba Histórico. */
   podeEditarPonto?: boolean
+  /** Mesma régua do lixinho da linha da equipe (`podeExcluirDaEquipe`; o servidor confere o setor). */
+  podeExcluir?: boolean
   /**
    * O papel de quem está vendo o modal. Só usada pra uma coisa: quando é
    * `'suporte'`, o motivo passa de "ajuda a auditoria" pra OBRIGATÓRIO — é a
@@ -442,6 +447,25 @@ export default function FuncionarioDetalheModal({
       } catch (e: any) {
         setErro(mensagemAmigavel(e))
       }
+    })
+  }
+
+  /*
+   * EXCLUIR DA EQUIPE também aqui dentro (Juan, 16/10/2026: "coloca aqui a opção de excluir o funcionário dentro do
+   * modal do perfil dele também"). A mesma action do lixinho da linha: nada é apagado — é a baixa.
+   */
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false)
+  const [motivoExcluir, setMotivoExcluir] = useState('')
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null)
+  const [isPendingExcluir, startTransitionExcluir] = useTransition()
+  const confirmarExcluir = () => {
+    setErroExcluir(null)
+    startTransitionExcluir(async () => {
+      const r = await deletarFuncionario(f.id, fornecedorId, eventoId, motivoExcluir.trim() || undefined)
+      if (r?.error) { setErroExcluir(r.error); return }
+      setConfirmandoExcluir(false)
+      setOpen(false)
+      router.refresh()
     })
   }
 
@@ -1066,6 +1090,43 @@ export default function FuncionarioDetalheModal({
                   </div>
                   {erro && <p className="text-red-500 text-xs mt-1.5">{erro}</p>}
                 </div>
+
+                {podeExcluir && !f.descredenciadoEm && (
+                  <div className="border-t border-slate-100 pt-4">
+                    {!confirmandoExcluir ? (
+                      <button
+                        onClick={() => { setErroExcluir(null); setMotivoExcluir(''); setConfirmandoExcluir(true) }}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Excluir da equipe
+                      </button>
+                    ) : (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2.5">
+                        <p className="text-red-800 text-xs">
+                          Excluir <strong>{f.nome}</strong> da equipe? Nada é apagado: ela recebe baixa e continua na lista da
+                          equipe, em cinza, com as batidas no relatório. O QR para de valer e a vaga fica livre para um novo
+                          cadastro. Para desfazer, use &quot;Trazer de volta&quot; no fim da linha.
+                        </p>
+                        <input
+                          type="text"
+                          value={motivoExcluir}
+                          onChange={e => setMotivoExcluir(e.target.value)}
+                          className="input text-sm"
+                          placeholder="Motivo (opcional — vai para a auditoria)"
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={confirmarExcluir} disabled={isPendingExcluir} className="btn btn-perigo btn-sm disabled:opacity-50">
+                            {isPendingExcluir ? 'Excluindo…' : 'Excluir'}
+                          </button>
+                          <button onClick={() => setConfirmandoExcluir(false)} disabled={isPendingExcluir} className="btn btn-secundario btn-sm">
+                            Cancelar
+                          </button>
+                        </div>
+                        {erroExcluir && <p className="text-red-500 text-xs">{erroExcluir}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : aba === 'historico' ? (
               <div className="p-6">

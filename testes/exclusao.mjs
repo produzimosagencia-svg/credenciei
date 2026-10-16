@@ -63,6 +63,15 @@ const extras = ler('lib/relatorios-extras.ts')
 ok(/cadastrados: lista\.length,/.test(extras) && /baixa: lista\.filter\(f => !!f\.descredenciado_em\)\.length/.test(extras) && (extras.match(/\{ titulo: 'Com baixa', largura: 11 \}/g) ?? []).length === 2,
   'relatório de subeventos: quem tem baixa conta nos cadastrados, com a coluna "Com baixa"')
 
+console.log('\nExcluir também dentro da ficha da pessoa (Juan, 16/10/2026: "coloca aqui a opção de excluir o funcionário dentro do modal do perfil dele também")')
+{
+  const modal = ler('app/admin/eventos/[id]/fornecedor/[fid]/FuncionarioDetalheModal.tsx')
+  ok(/await deletarFuncionario\(f\.id, fornecedorId, eventoId, motivoExcluir\.trim\(\) \|\| undefined\)/.test(modal), 'a ficha chama a MESMA action do lixinho da linha (a baixa — nada é apagado)')
+  ok(/\{podeExcluir && !f\.descredenciadoEm && \(/.test(modal) && /podeExcluir = false,/.test(modal), 'só aparece para quem pode excluir (padrão: não aparece) e some para quem já tem baixa')
+  ok(/Nada é apagado: ela recebe baixa e continua na lista da\s+equipe, em cinza, com as batidas no relatório/.test(modal), 'a confirmação diz o mesmo que a da linha')
+  ok((tabela.match(/podeExcluir=\{podeExcluir\}/g) ?? []).length === 2, 'a equipe liga o botão na ficha, no computador e no celular')
+}
+
 console.log('\n"Funcionários do evento" nunca diminui')
 const lixeira = ler('lib/lixeira.ts'), paginaEvento = ler('app/admin/eventos/[id]/page.tsx')
 ok(/export async function cadastrosSoNaLixeira/.test(lixeira) && /\.is\('restaurado_em', null\)/.test(lixeira) && /!aindaNoEvento\.has\(c\)/.test(lixeira),
