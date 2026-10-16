@@ -38,6 +38,15 @@ export async function exigirAcessoAoEvento(eventoId: string): Promise<AcessoRela
   const evento = data as unknown as EventoParaRelatorio
 
   /*
+   * Quem GERENCIA o evento (master, ou admin da organização dele) vê TUDO — antes do vínculo de supervisor. Achado
+   * em 16/10/2026 (LUAN SANTANA): o master tinha um vínculo de supervisor num setor do evento e os relatórios
+   * mostravam só esse setor (sumiram o completo e os outros fornecedores).
+   */
+  if (podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)) {
+    return { perfil, evento, setoresPermitidos: null }
+  }
+
+  /*
    * Vale pro papel 'supervisor' E pra quem tem outro papel principal mas
    * GANHOU um vínculo de supervisor neste evento (achado ao vivo,
    * 05/10/2026, caso da Mara Lúcia).

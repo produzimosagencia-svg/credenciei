@@ -33,7 +33,9 @@ export default async function AprovacoesPage({ params }: { params: Promise<{ id:
    * papel, caía direto no `notFound()` de quem não é suporte).
    */
   let fornecedorIdsPermitidos: string[] | null = null
-  const meusSetoresNesteEvento = (await meusSetores(perfil)).filter(s => s.evento_id === eventoId)
+  // Quem gerencia o evento vê TUDO, mesmo tendo um vínculo de supervisor nele (16/10/2026 — ver lib/relatorios-acesso.ts).
+  const gerenciaOEvento = podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id)
+  const meusSetoresNesteEvento = gerenciaOEvento ? [] : (await meusSetores(perfil)).filter(s => s.evento_id === eventoId)
   if (meusSetoresNesteEvento.length) {
     fornecedorIdsPermitidos = meusSetoresNesteEvento.map(s => s.id)
   } else if (perfil.role === 'supervisor') {

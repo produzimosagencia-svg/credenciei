@@ -29,6 +29,14 @@ ok(pagEvento.includes('<OutrosRelatorios') && pagMenu.includes('<OutrosRelatorio
 console.log('\n2 · permissão: mesma régua dos relatórios; supervisor só o que tem setor, e só os setores dele')
 ok(/export async function exigirAcessoAoEvento/.test(acesso) && /import \{ exigirAcessoAoEvento \} from '\.\/relatorios-acesso'/.test(ler('lib/relatorios.ts')),
   'a régua de acesso é uma só, compartilhada')
+{
+  // 16/10/2026 (LUAN SANTANA): o master com vínculo de supervisor num setor via só esse setor nos relatórios.
+  const gestor = acesso.indexOf('if (podeGerenciarEventos(perfil) && (ehMaster(perfil.role) || evento.organizacao_id === perfil.organizacao_id))')
+  const vinculo = acesso.indexOf('const meus = await meusSetores(perfil)')
+  ok(gestor > 0 && vinculo > gestor, 'quem gerencia o evento vê tudo ANTES do vínculo de supervisor (o vínculo não recorta o master)')
+  const aprov = ler('app/admin/eventos/[id]/aprovacoes/page.tsx')
+  ok(/const meusSetoresNesteEvento = gerenciaOEvento \? \[\] :/.test(aprov), 'aprovações: mesma regra — o vínculo não recorta quem gerencia o evento')
+}
 ok(/if \(permitidos && SO_GESTOR\.includes\(tipo\)\) return \{ erro:/.test(extras), 'tipos do evento inteiro recusados para o supervisor (no servidor)')
 ok(/return permitidos \? todos\.filter\(s => permitidos\.has\(s\.id\)\) : todos/.test(extras), 'linhas recortadas pelos setores do supervisor')
 ok(/RELATORIOS\.filter\(r => eventoInteiro \|\| !r\.soGestor\)/.test(outros), 'a tela esconde do supervisor o que ele não pode puxar')
