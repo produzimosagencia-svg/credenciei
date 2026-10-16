@@ -10047,9 +10047,17 @@ export async function localizarFuncionario(
   // com um dígito no meio continua sendo nome.
   const pareceCpf = digitos.length >= 3 && digitos.length >= busca.replace(/\s/g, '').length - 3
 
-  if (!busca) return { error: 'Digite o CPF ou o nome da pessoa.' }
+  /*
+   * TELEFONE também (Juan, 16/10/2026: "é o que fica visível nos grupos"). Telefone com DDD tem 11 dígitos, igual a
+   * CPF: número de 11 dígitos que NÃO é CPF válido é procurado como telefone (antes dava "CPF inválido").
+   */
+  const digitosTelefone = digitos.length >= 12 && digitos.startsWith('55') ? digitos.slice(2) : digitos
+  const pareceTelefone = pareceCpf && digitosTelefone.length >= 8
+  const soTelefone = pareceCpf && digitos.length === 11 && !validarCpf(digitos)
+
+  if (!busca) return { error: 'Digite o CPF, o nome ou o telefone da pessoa.' }
   if (!pareceCpf && busca.length < 3) return { error: 'Digite pelo menos 3 letras do nome.' }
-  if (pareceCpf && digitos.length === 11 && !validarCpf(digitos)) {
+  if (soTelefone && !pareceTelefone) {
     return { error: 'CPF inválido. Confira os 11 dígitos.' }
   }
 
@@ -10079,10 +10087,13 @@ export async function localizarFuncionario(
       .order('nome')
       .order('id') // desempate: homônimos tinham a página cortada no meio
       .range(de, ate)
-    if (pareceCpf) {
-      consulta = digitos.length === 11
+    if (soTelefone) {
+      consulta = consulta.like('telefone', `%${digitosTelefone}%`)
+    } else if (pareceCpf) {
+      const porCpf = digitos.length === 11 ? `cpf.eq.${digitos}` : `cpf.like.%${digitos}%`
+      consulta = pareceTelefone ? consulta.or(`${porCpf},telefone.like.%${digitosTelefone}%`) : (digitos.length === 11
         ? consulta.eq('cpf', digitos)
-        : consulta.like('cpf', `%${digitos}%`)
+        : consulta.like('cpf', `%${digitos}%`))
     }
     return consulta
   }, { tetoTotal: 10_000 })
@@ -10129,7 +10140,7 @@ export async function localizarFuncionario(
    * automaticamente, mesmo quando aparece uma pessoa só: a tela mostra nome,
    * CPF salvo, setor e evento para o operador confirmar quem está na frente.
    */
-  if (pareceCpf && digitos.length === 11 && !visiveis.length) {
+  if (pareceCpf && digitos.length === 11 && !soTelefone && !visiveis.length) {
     const possiveis = await buscarTudo<LinhaLocalizada>((de, ate) =>
       supabaseAdmin
         .from('funcionarios')

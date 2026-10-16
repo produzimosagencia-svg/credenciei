@@ -7,6 +7,8 @@ import FuncionarioDetalheModal from '../eventos/[id]/fornecedor/[fid]/Funcionari
 import type { Presenca } from '../eventos/[id]/fornecedor/[fid]/FuncionarioTable'
 import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 
+const semPais = (t: string) => { const d = (t ?? '').replace(/\D/g, ''); return d.length >= 12 && d.startsWith('55') ? d.slice(2) : d }
+
 export type ColaboradorDoEvento = {
   id: string
   nome: string
@@ -78,6 +80,8 @@ export default function BuscarColaborador({
       .filter(c =>
         chaveBusca(c.nome).includes(t) ||
         (digitos.length >= 3 && c.cpf.includes(digitos)) ||
+        // Telefone (16/10/2026) — sem o 55 do país, nos dois lados.
+        (digitos.length >= 4 && semPais(c.telefone).includes(semPais(digitos))) ||
         chaveBusca(c.setorNome).includes(t),
       )
       .slice(0, 50)
@@ -96,7 +100,7 @@ export default function BuscarColaborador({
         <input
           value={busca}
           onChange={e => setBusca(e.target.value)}
-          placeholder="Nome ou CPF…"
+          placeholder="Nome, CPF ou telefone…"
           aria-label="Buscar colaborador"
           autoFocus
           className="input pl-9 pr-9"

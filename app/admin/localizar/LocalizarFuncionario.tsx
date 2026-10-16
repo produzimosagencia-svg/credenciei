@@ -181,7 +181,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                 autoFocus
                 value={termo}
                 onChange={e => { setTermo(mascarar(e.target.value)); setErro(null) }}
-                placeholder="000.000.000-00 ou Maria Silva"
+                placeholder="CPF, nome ou telefone"
                 className="input pl-9 w-full"
                 autoComplete="off"
               />

@@ -19,6 +19,14 @@ import SeletorLista from '@/components/SeletorLista'
 import { descreverDistancia } from '@/lib/geo-local'
 import { rotuloDoDia, listarDias, ROTULO_FASE, type DiaDaEscala } from '@/lib/escala-regras'
 
+/** Só os dígitos do que foi digitado na busca, sem o 55 do país ("+55 (27) 99639-3893" → "27996393893"). */
+const digitosDaBusca = (texto: string) => telefoneSemPais(texto.replace(/\D/g, ''))
+/** O telefone sem o código do país, pra "27996393893" achar quem foi gravado como "5527996393893". */
+function telefoneSemPais(telefone: string): string {
+  const d = (telefone ?? '').replace(/\D/g, '')
+  return d.length >= 12 && d.startsWith('55') ? d.slice(2) : d
+}
+
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const PAGE_SIZE = 25
@@ -233,9 +241,13 @@ export default function FuncionarioTable({
 
   const filtered = useMemo(() => funcionarios.filter(f => {
     const s = chaveBusca(search)
+    const digitos = digitosDaBusca(search)
     const bateBusca = s === '' ||
       chaveBusca(f.nome).includes(s) ||
       f.cpf.includes(search) ||
+      (digitos.length >= 3 && f.cpf.includes(digitos)) ||
+      // Telefone (Juan, 16/10/2026: "é o que fica visível nos grupos") — com ou sem DDD, parênteses, traço ou +55.
+      (digitos.length >= 4 && telefoneSemPais(f.telefone).includes(digitos)) ||
       chaveBusca(f.empresa).includes(s) ||
       chaveBusca(f.cargo).includes(s)
     if (!bateBusca) return false
@@ -273,7 +285,9 @@ export default function FuncionarioTable({
   const supervisoresVisiveis = useMemo(() => {
     if (currentPage !== 1 || filtroRapido !== 'todos' || filtrosAvancadosAtivos > 0) return []
     const t = chaveBusca(search)
-    return supervisoresDeFora.filter(sp => t === '' || chaveBusca(sp.nome).includes(t) || sp.cpf.includes(search) || 'supervisor'.includes(t))
+    const digitos = digitosDaBusca(search)
+    return supervisoresDeFora.filter(sp => t === '' || chaveBusca(sp.nome).includes(t) || sp.cpf.includes(search)
+      || (digitos.length >= 4 && telefoneSemPais(sp.telefone ?? '').includes(digitos)) || 'supervisor'.includes(t))
   }, [supervisoresDeFora, currentPage, filtroRapido, filtrosAvancadosAtivos, search])
   const telefoneBR = (t: string) => t.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
 
@@ -362,7 +376,7 @@ export default function FuncionarioTable({
             <input
               value={search}
               onChange={e => updateSearch(e.target.value)}
-              placeholder="Buscar por nome, CPF, empresa, cargo..."
+              placeholder="Buscar por nome, CPF, telefone, empresa, cargo..."
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-2 text-slate-700 text-sm outline-none focus:border-brand-400 placeholder:text-slate-400"
             />
             {search && (
