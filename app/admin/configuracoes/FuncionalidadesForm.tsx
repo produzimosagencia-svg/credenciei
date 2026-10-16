@@ -118,7 +118,7 @@ export default function FuncionalidadesForm({
               No formulário de cadastro, a pessoa marca em quais dias do evento vai trabalhar
               (montagem, evento, desmontagem — os dias configurados em Editar evento). O supervisor
               confirma ou ajusta os dias na aprovação, e o QR Code só libera a entrada nos dias
-              aprovados. Por enquanto vale só para eventos com subeventos.
+              aprovados. Vale com ou sem subeventos.
             </p>
           </div>
         </div>
