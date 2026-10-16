@@ -67,16 +67,19 @@ export function lerPessoaDaLista(entrada: { nome?: unknown; cpf?: unknown; telef
   if (/\d/.test(nome)) return { ok: false, erro: 'O nome não pode ter números.' }
   if (nome.split(' ').filter(p => p.length >= 2).length < 2) return { ok: false, erro: 'Escreva o nome completo (nome e sobrenome).' }
 
+  // Nome, CPF e telefone são obrigatórios em todo cadastro do sistema (Juan, 16/10/2026).
   const cpf = String(entrada.cpf ?? '').replace(/\D/g, '')
-  if (cpf && !validarCpf(cpf)) return { ok: false, erro: 'CPF inválido. Confira os 11 dígitos — ou deixe em branco.' }
+  if (!cpf) return { ok: false, erro: 'Informe o CPF.' }
+  if (!validarCpf(cpf)) return { ok: false, erro: 'CPF inválido. Confira os 11 dígitos.' }
 
   const telefone = normalizarTelefone(entrada.telefone)
-  if (telefone && (telefone.length < 10 || telefone.length > 11)) return { ok: false, erro: 'Telefone inválido — use o DDD e o número.' }
+  if (!telefone) return { ok: false, erro: 'Informe o telefone, com DDD.' }
+  if (telefone.length < 10 || telefone.length > 11) return { ok: false, erro: 'Telefone inválido — use o DDD e o número.' }
 
   const categoria = normalizarCategoria(entrada.categoria)
   if (!categoria) return { ok: false, erro: 'Escolha a categoria (ou escreva uma nova).' }
 
-  return { ok: true, dados: { nome, cpf: cpf || null, telefone: telefone || null, categoria } }
+  return { ok: true, dados: { nome, cpf, telefone, categoria } }
 }
 
 /**

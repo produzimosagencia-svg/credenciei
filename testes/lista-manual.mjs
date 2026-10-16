@@ -25,11 +25,12 @@ ok(bom.ok && bom.dados.nome === 'maria eduarda' && bom.dados.cpf === '1789365376
 ok(!R.lerPessoaDaLista({ nome: 'Maria', categoria: 'Outro' }).ok, 'nome completo é obrigatório (nome e sobrenome)')
 ok(!R.lerPessoaDaLista({ nome: 'Maria 2 Silva', categoria: 'Outro' }).ok, 'nome com número não passa')
 ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '111.111.111-11', categoria: 'Outro' }).ok, 'CPF inválido não passa')
-ok(R.lerPessoaDaLista({ nome: 'Maria Silva', categoria: 'Outro' }).ok, 'sem CPF passa (convidado estrangeiro, lista só com nome)')
-ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', telefone: '9999', categoria: 'Outro' }).ok, 'telefone curto não passa')
-ok(R.lerPessoaDaLista({ nome: 'Maria Silva', telefone: '+55 (27) 99735-6345', categoria: 'Outro' }).dados?.telefone === '27997356345', 'telefone com +55 fica só com DDD e número')
-ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', categoria: '   ' }).ok, 'categoria é obrigatória')
-ok(R.lerPessoaDaLista({ nome: 'Maria Silva', categoria: 'Imprensa' }).dados?.categoria === 'Imprensa', 'categoria nova entra como foi escrita')
+ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', telefone: '27997356345', categoria: 'Outro' }).ok && !R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '17893653760', categoria: 'Outro' }).ok,
+  'CPF e telefone são obrigatórios, como em todo cadastro do sistema (Juan, 16/10/2026)')
+ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '17893653760', telefone: '9999', categoria: 'Outro' }).ok, 'telefone curto não passa')
+ok(R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '17893653760', telefone: '+55 (27) 99735-6345', categoria: 'Outro' }).dados?.telefone === '27997356345', 'telefone com +55 fica só com DDD e número')
+ok(!R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '17893653760', telefone: '27997356345', categoria: '   ' }).ok, 'categoria é obrigatória')
+ok(R.lerPessoaDaLista({ nome: 'Maria Silva', cpf: '17893653760', telefone: '27997356345', categoria: 'Imprensa' }).dados?.categoria === 'Imprensa', 'categoria nova entra como foi escrita')
 
 console.log('\n2 · categorias e máscara')
 ok(JSON.stringify(R.categoriasParaEscolher(['Imprensa', 'imprensa', 'OUTRO', 'Patrocinador'])) === JSON.stringify([...R.CATEGORIAS_PADRAO, 'Imprensa', 'Patrocinador']),

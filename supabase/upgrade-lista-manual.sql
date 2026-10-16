@@ -39,7 +39,7 @@ create table if not exists lista_manual (
   id                       uuid primary key default gen_random_uuid(),
   evento_id                uuid not null references eventos(id) on delete cascade,
   nome                     text not null,
-  -- Opcional (convidado estrangeiro, lista que só tem o nome). Quando vem, é CPF válido, só dígitos.
+  -- Obrigatório no sistema, como nome e telefone (a tela e a action exigem); só dígitos, CPF válido.
   cpf                      text,
   telefone                 text,
   -- "Convidado / Lista VIP", "Prestador de serviço", "Equipe / Colaborador", "Outro" — ou uma nova, digitada.

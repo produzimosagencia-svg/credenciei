@@ -4137,6 +4137,11 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 
   const cpf = (formData.get('cpf') as string).replace(/\D/g, '')
   if (!validarCpf(cpf)) throw new Error('CPF inválido. Confira os 11 dígitos.')
+  // Nome, CPF e telefone são obrigatórios em todo cadastro do sistema (Juan, 16/10/2026).
+  const nomeDoCadastro = ((formData.get('nome') as string) ?? '').replace(/\s+/g, ' ').trim()
+  if (nomeDoCadastro.length < 2 || nomeDoCadastro.length > 120) throw new Error('Informe o nome completo.')
+  const telefoneDoCadastro = ((formData.get('telefone') as string) ?? '').replace(/\D/g, '')
+  if (telefoneDoCadastro.length < 10 || telefoneDoCadastro.length > 13) throw new Error('Informe o telefone, com DDD.')
 
   // Não deixa cadastrar o mesmo CPF duas vezes no mesmo evento — baixa em OUTRA equipe não conta (lib/ficha-no-evento.ts).
   const { data: existentes } = await db
@@ -4158,9 +4163,9 @@ export async function criarFuncionario(fornecedorId: string, eventoId: string, f
 
   const { data: novo, error } = await db.from('funcionarios').insert([{
     fornecedor_id: fornecedorId,
-    nome: (formData.get('nome') as string).trim(),
+    nome: nomeDoCadastro,
     cpf,
-    telefone: (formData.get('telefone') as string).replace(/\D/g, ''),
+    telefone: telefoneDoCadastro,
     cargo: ((formData.get('cargo') as string) || '').trim(),
     ativo: true,
   }]).select('id').single()
@@ -4245,6 +4250,11 @@ export async function atribuirColaboradorAoEvento(cpfBruto: string, fornecedorId
     : undefined)
   if (!pessoa) throw new Error('Esta pessoa não está na base do Credenciei')
   if (!setor) throw new Error('Fornecedor não encontrado')
+  // Telefone é obrigatório em todo cadastro (Juan, 16/10/2026): sem ele na base, cadastre a pessoa com o telefone.
+  const telefoneDaBase = String(pessoa.telefone ?? '').replace(/\D/g, '')
+  if (telefoneDaBase.length < 10 || telefoneDaBase.length > 13) {
+    throw new Error(`${pessoa.nome} não tem telefone na base. Cadastre pela equipe, com o telefone.`)
+  }
   const travado = await motivoCadastroTravado(setor.evento_id as string, { fornecedorId })
   if (travado) throw new Error(travado)
 

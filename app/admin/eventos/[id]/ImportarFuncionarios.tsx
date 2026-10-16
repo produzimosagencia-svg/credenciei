@@ -157,13 +157,19 @@ export default function ImportarFuncionarios({
               <ul className="max-h-40 overflow-y-auto space-y-0.5 pl-4">
                 {status.ignorados.map((f, i) => (
                   <li key={`${f.cpf}-${i}`} className="text-amber-800">
-                    {f.nome || 'Sem nome na planilha'} — CPF: {formatCpf(f.cpf)}
+                    {f.nome || 'Sem nome na planilha'} — CPF: {f.cpf ? formatCpf(f.cpf) : '—'}
                     {f.motivo === 'cpf_invalido' ? (
                       <span className="text-amber-600"> (CPF inválido — confira os números na planilha)</span>
                     ) : f.motivo === 'cota_atingida' ? (
                       <span className="text-amber-600"> (cota máxima já atingida)</span>
                     ) : f.motivo === 'sem_dias' ? (
                       <span className="text-amber-600"> (nenhum dia de trabalho marcado — marque X nos dias)</span>
+                    ) : f.motivo === 'sem_telefone' ? (
+                      <span className="text-amber-600"> (sem telefone — preencha com DDD na planilha)</span>
+                    ) : f.motivo === 'sem_nome' ? (
+                      <span className="text-amber-600"> (sem nome — preencha o nome completo na planilha)</span>
+                    ) : f.motivo === 'sem_cpf' ? (
+                      <span className="text-amber-600"> (sem CPF — preencha o CPF na planilha)</span>
                     ) : f.motivo === 'dia_lotado' ? (
                       <span className="text-amber-600"> ({f.detalhe ?? 'um dos dias'} já no limite de pessoas do setor)</span>
                     ) : f.setor ? (

@@ -65,15 +65,15 @@ export default function FormPessoaLista({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700" htmlFor="lm-cpf">CPF</label>
+              <label className="text-sm font-medium text-slate-700" htmlFor="lm-cpf">CPF *</label>
               <CpfInput id="lm-cpf" defaultValue={cpf} onValueChange={setCpf} className="input tabular-nums" autoComplete="off" placeholder="000.000.000-00" />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700" htmlFor="lm-tel">Telefone</label>
+              <label className="text-sm font-medium text-slate-700" htmlFor="lm-tel">Telefone *</label>
               <TelefoneInput id="lm-tel" defaultValue={telefone} onValueChange={setTelefone} className="input tabular-nums" autoComplete="off" placeholder="(00) 00000-0000" />
             </div>
           </div>
-          <p className="text-slate-400 text-xs -mt-2">O CPF é o que a portaria confere com o documento — sem ele, a conferência é só pelo nome.</p>
+          <p className="text-slate-400 text-xs -mt-2">O CPF é o que a portaria confere com o documento.</p>
           <div className="space-y-1.5">
             <span className="text-sm font-medium text-slate-700">Categoria *</span>
             <SeletorLista

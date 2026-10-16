@@ -34,7 +34,7 @@ export type LinhaIgnorada = {
    * repetido). `'cota_atingida'` só existe com a trava de cota ligada
    * (Vital, 30/09/2026).
    */
-  motivo?: 'duplicado' | 'cota_atingida' | 'cpf_invalido' | 'sem_dias' | 'dia_lotado'
+  motivo?: 'duplicado' | 'cota_atingida' | 'cpf_invalido' | 'sem_dias' | 'dia_lotado' | 'sem_nome' | 'sem_cpf' | 'sem_telefone'
   /** Pra `dia_lotado`: quais dias já estão cheios ("10/10 e 11/10"). */
   detalhe?: string
 }
@@ -123,7 +123,7 @@ export async function importarFuncionarios(
   // Prepara os registros com CPF e telefone limpos. O funcionário já fica
   // no setor certo via fornecedorId (a coluna "Empresa/Setor" da planilha
   // (a coluna de setor da planilha não cria setores novos).
-  const preparados = linhas.map(f => {
+  const brutos = linhas.map(f => {
     const valor = parseFloat(String(f.valor ?? '').replace(',', '.'))
     const cpfDigitado = String(f.cpf ?? '').replace(/\D/g, '')
     return {
@@ -145,7 +145,11 @@ export async function importarFuncionarios(
       fornecedor_id: fornecedorId,
       diasBrutos: Array.isArray(f.dias) ? f.dias.map(String) : [],
     }
-  }).filter(f => f.nome && f.cpf)
+  })
+  // Nome e CPF são obrigatórios (Juan, 16/10/2026) — a linha sem um deles sai, mas aparece na lista do que ficou de fora
+  // (antes sumia em silêncio). Linha toda em branco é só fim de planilha: nem conta.
+  const preparados = brutos.filter(f => f.nome && f.cpf)
+  const semNomeOuCpf = brutos.filter(f => !(f.nome && f.cpf) && (f.nome || f.cpfDigitado || f.telefone))
 
   // Linhas com CPF que não passa no dígito verificador não entram —
   // reportadas separadamente pro usuário corrigir na planilha e reenviar.
@@ -214,6 +218,9 @@ export async function importarFuncionarios(
   for (const f of preparados) {
     if (!validarCpf(f.cpf)) ignorados.push({ nome: f.nome ?? '', cpf: f.cpfDigitado, setor: null, motivo: 'cpf_invalido' })
   }
+  for (const f of semNomeOuCpf) {
+    ignorados.push({ nome: f.nome ?? '', cpf: f.cpfDigitado, setor: null, motivo: f.nome ? 'sem_cpf' : 'sem_nome' })
+  }
 
   const payload = semRepetidos
     .filter(f => !jaCadastrados.has(f.cpf))
@@ -228,9 +235,45 @@ export async function importarFuncionarios(
     return { ok: false, status: 400, error: motivo, ignorados }
   }
 
+  // Base central do Credenciei: quem já foi credenciado antes — por este ou
+  // por qualquer outro cliente — entra com telefone, cargo, PIX e cidade que
+  // a planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
+  // equipe dele no primeiro evento. ANTES da cota e dos dias: o telefone que vem
+  // da base decide se a linha entra (telefone é obrigatório — logo abaixo).
+  let reaproveitados = 0
+  // Em lotes por CPF (todas as linhas de um CPF caem no mesmo lote, então "o primeiro é o mais recente" continua valendo).
+  const conhecidos: { cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }[] = []
+  for (const lote of emLotes(payload.map(f => f.cpf), 200)) {
+    conhecidos.push(...await buscarTudo<{ cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>((de, ate) =>
+      supabaseAdmin.from('funcionarios')
+        .select('cpf, telefone, cargo, chave_pix, cidade')
+        .in('cpf', lote).order('created_at', { ascending: false }).order('id').range(de, ate)))
+  }
+
+  const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>()
+  for (const c of conhecidos) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
+
+  for (const f of payload) {
+    const anterior = base.get(f.cpf)
+    if (!anterior) continue
+    const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}`
+    if (!f.telefone) f.telefone = (anterior.telefone ?? '').replace(/\D/g, '')
+    if (!f.cargo) f.cargo = anterior.cargo ?? ''
+    if (!f.chave_pix) f.chave_pix = anterior.chave_pix
+    if (!f.cidade) f.cidade = anterior.cidade
+    if (`${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}` !== antes) reaproveitados++
+  }
+
+  // TELEFONE OBRIGATÓRIO (Juan, 16/10/2026): sem ele na planilha nem na base, a linha fica de fora — com o motivo.
+  const comTelefone = payload.filter(f => {
+    if (f.telefone.length >= 10 && f.telefone.length <= 13) return true
+    ignorados.push({ nome: f.nome ?? '', cpf: f.cpf, setor: null, motivo: 'sem_telefone' })
+    return false
+  })
+
   // SUBEVENTO — cada linha da planilha herda o subevento do fornecedor
   // (fixo, igual em toda a planilha — ninguém escolhe nada).
-  const comSubevento = payload.map(f => ({ ...f, subevento_id: subeventoIdDoFornecedor }))
+  const comSubevento = comTelefone.map(f => ({ ...f, subevento_id: subeventoIdDoFornecedor }))
 
   /*
    * TRAVA DE COTA — insere só até a cota RESTANTE, na ordem da planilha.
@@ -312,34 +355,6 @@ export async function importarFuncionarios(
       error: 'Nenhuma linha pôde ser importada — confira os motivos na lista abaixo.',
       ignorados,
     }
-  }
-
-  // Base central do Credenciei: quem já foi credenciado antes — por este ou
-  // por qualquer outro cliente — entra com telefone, cargo, PIX e cidade que
-  // a planilha deixou em branco. É o que faz um cliente novo já "conhecer" a
-  // equipe dele no primeiro evento.
-  let reaproveitados = 0
-  // Em lotes por CPF (todas as linhas de um CPF caem no mesmo lote, então "o primeiro é o mais recente" continua valendo).
-  const conhecidos: { cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }[] = []
-  for (const lote of emLotes(finalPayload.map(f => f.cpf), 200)) {
-    conhecidos.push(...await buscarTudo<{ cpf: string; telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>((de, ate) =>
-      supabaseAdmin.from('funcionarios')
-        .select('cpf, telefone, cargo, chave_pix, cidade')
-        .in('cpf', lote).order('created_at', { ascending: false }).order('id').range(de, ate)))
-  }
-
-  const base = new Map<string, { telefone: string | null; cargo: string | null; chave_pix: string | null; cidade: string | null }>()
-  for (const c of conhecidos) if (!base.has(c.cpf)) base.set(c.cpf, c)  // vem ordenado: o primeiro é o cadastro mais recente
-
-  for (const f of finalPayload) {
-    const anterior = base.get(f.cpf)
-    if (!anterior) continue
-    const antes = `${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}`
-    if (!f.telefone) f.telefone = anterior.telefone ?? ''
-    if (!f.cargo) f.cargo = anterior.cargo ?? ''
-    if (!f.chave_pix) f.chave_pix = anterior.chave_pix
-    if (!f.cidade) f.cidade = anterior.cidade
-    if (`${f.telefone}|${f.cargo}|${f.chave_pix}|${f.cidade}` !== antes) reaproveitados++
   }
 
   // `subevento` (texto da planilha) e `subevento_id` ficam de FORA do insert

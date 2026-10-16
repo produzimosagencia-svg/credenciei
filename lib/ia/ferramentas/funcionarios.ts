@@ -92,6 +92,9 @@ export function ferramentasDeFuncionario(ctx: ContextoIA, pedirConfirmacao: Pedi
         // Ninguém entra inativo — ver o comentário no topo do arquivo.
         const ativo = true
         const fone = String(telefone ?? '').replace(/\D/g, '')
+        // Nome, CPF e telefone são obrigatórios em todo cadastro do sistema (Juan, 16/10/2026).
+        if (String(nome ?? '').trim().length < 2) return 'Falta o nome completo — pergunte ao usuário.'
+        if (fone.length < 10 || fone.length > 13) return 'Falta o telefone (com DDD) ou ele está incompleto — pergunte ao usuário.'
 
         const { data: novo, error } = await supabaseAdmin.from('funcionarios').insert([{
           fornecedor_id,
