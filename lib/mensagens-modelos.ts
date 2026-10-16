@@ -366,6 +366,22 @@ Em caso de dúvida, fale com a organização do evento.`,
 
 Os detalhes estão na tela do seu setor no Credenciei.`,
 
+  /**
+   * LISTA MANUAL (entrada sem QR Code — lib/actions-lista-manual.ts): avisa quem foi colocado na lista que o nome
+   * dele está lá e que basta o documento na portaria. PRECISA ser cadastrado e aprovado na Meta com EXATAMENTE este
+   * texto e estas 5 variáveis (nome, evento, categoria, data, local) — ver supabase/TEMPLATES-WHATSAPP.md, item 10.
+   * A pessoa entra na lista do mesmo jeito se a mensagem falhar.
+   */
+  lista_manual_confirmacao: ([nome, evento, categoria, data, local]) =>
+`Olá, ${nome}! ✅
+
+Seu nome está na lista de entrada do evento ${evento} (${categoria}).
+
+📅 ${data}
+📍 ${local}
+
+Na portaria, apresente um documento oficial com foto. Não precisa de ingresso nem de QR Code.`,
+
   supervisor_escalado_evento: ([nome, evento, setor, data, local, login, formulario]) =>
 `Olá, ${nome}. Sua designação como supervisor foi atualizada.
 

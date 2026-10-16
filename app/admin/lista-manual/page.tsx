@@ -72,7 +72,7 @@ export default async function ListaManualPage({ searchParams }: { searchParams: 
             eventoId={eventoParam}
             pessoas={pessoas}
             podeGerenciar={acesso.podeGerenciar}
-            podeConferir={acesso.podeConferir}
+            podeConfirmar={acesso.podeConfirmar}
             acontecendoHoje={hoje.has(eventoParam)}
             categorias={categoriasParaEscolher(pessoas.map(p => p.categoria))}
           />

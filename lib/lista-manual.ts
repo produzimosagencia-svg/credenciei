@@ -1,6 +1,6 @@
 import 'server-only'
 import { getPerfil, supabaseAdmin, buscarTudo, ehDaOrganizacaoDoPerfil, eventosAindaVigentes } from './supabase-server'
-import { ehMaster, podeGerenciarListaManual, podeConferirListaManual } from './permissions'
+import { ehMaster, podeGerenciarListaManual, podeConferirListaManual, podeConfirmarEntradaListaManual } from './permissions'
 import { suporteTemEscopo } from './suporte'
 import { mascararCpf, type PessoaDaLista } from './lista-manual-regras'
 
@@ -16,8 +16,10 @@ export type AcessoListaManual = {
   evento: { id: string; nome: string; organizacao_id: string | null }
   /** Cadastra, corrige, tira da lista e desfaz entrada. */
   podeGerenciar: boolean
-  /** Consulta e confirma a entrada na portaria. */
+  /** Consulta (só leitura) — o operador de portão, por padrão. */
   podeConferir: boolean
+  /** Confirma a entrada na portaria (master/admin; o operador só se a permissão for ligada para ele). */
+  podeConfirmar: boolean
 }
 
 /**
@@ -54,6 +56,7 @@ export async function acessoAListaManual(eventoId: string): Promise<AcessoListaM
     evento: { id: evento.id as string, nome: evento.nome as string, organizacao_id: organizacaoId },
     podeGerenciar,
     podeConferir,
+    podeConfirmar: podeGerenciar || podeConfirmarEntradaListaManual(perfil),
   }
 }
 

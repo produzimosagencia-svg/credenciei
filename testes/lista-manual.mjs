@@ -93,5 +93,17 @@ const rotulos = ler('lib/auditoria-rotulos.ts')
 ok(['LISTA_MANUAL_CADASTRO', 'LISTA_MANUAL_EDICAO', 'LISTA_MANUAL_REMOCAO', 'LISTA_MANUAL_ENTRADA', 'LISTA_MANUAL_ENTRADA_DESFEITA'].every(a => rotulos.includes(`${a}:`)), 'os rótulos das ações na auditoria')
 ok(!/lista_manual/.test(ler('lib/actions.ts')), 'nada do credenciamento com QR foi tocado (lib/actions.ts não conhece a lista)')
 
+console.log('\n9 · operador de portão só CONSULTA (Juan, 16/10/2026: "apenas ler")')
+ok(/podeConfirmarEntradaListaManual = capacidade\('confirmar_entrada_lista_manual', role =>\s+podeGerenciarListaManual\(role\)\)/.test(perm), 'confirmar a entrada: master e administrador, por padrão')
+ok(/operador_portao: \['confirmar_entrada_lista_manual'\]/.test(perm) && /chave: 'confirmar_entrada_lista_manual'/.test(perm), 'para um operador confirmar, liga-se a permissão para ele (sem mexer no código)')
+ok(/if \(!acesso\.podeConfirmar\) return \{ erro:/.test(confirmar), 'o servidor recusa a confirmação de quem só consulta')
+ok(/podeConfirmar: podeGerenciar \|\| podeConfirmarEntradaListaManual\(perfil\)/.test(acesso) && /podeConfirmar=\{acesso\.podeConfirmar\}/.test(ler('app/admin/lista-manual/page.tsx')), 'a tela só mostra "Confirmar entrada" para quem pode')
+
+console.log('\n10 · aviso no WhatsApp (modelo da Meta `lista_manual_confirmacao`)')
+const modelos = ler('lib/mensagens-modelos.ts'), doc = ler('supabase/TEMPLATES-WHATSAPP.md')
+ok(/lista_manual_confirmacao: \(\[nome, evento, categoria, data, local\]\) =>/.test(modelos) && /## 10\. `lista_manual_confirmacao`/.test(doc), 'o texto no sistema e na receita da Meta, com as mesmas 5 variáveis')
+ok(/entrada\.avisarWhatsapp === true \? await avisarNoWhatsapp\(eventoId, dados\) : false/.test(acoes), 'só avisa quando quem cadastra deixa marcado')
+ok(/umaLinha/.test(acoes), 'nenhuma variável com quebra de linha (a Meta recusa)')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

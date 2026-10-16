@@ -6,6 +6,7 @@ import { registrarAuditoria } from './auditoria'
 import { mensagemAmigavel } from './erros'
 import { chaveBusca } from './format'
 import { formatarBR } from './tz'
+import { agendarTemplateSupervisor, enviarMensagemAgora } from './mensagens'
 import { acessoAListaManual, ehMigracaoPendente, paraTela, COLUNAS_DA_LISTA, type AcessoListaManual, type LinhaDaLista } from './lista-manual'
 import { lerPessoaDaLista, mascararCpf, type DadosDaPessoa, type PessoaDaLista } from './lista-manual-regras'
 
@@ -67,8 +68,36 @@ async function duplicadoNaLista(eventoId: string, d: DadosDaPessoa, ignorarId?: 
 
 type EntradaDoFormulario = { nome?: string; cpf?: string; telefone?: string; categoria?: string }
 
+/**
+ * O aviso no WhatsApp de quem entrou na lista (modelo `lista_manual_confirmacao`, aprovado na Meta). Falhar não desfaz
+ * o cadastro: a pessoa está na lista do mesmo jeito. Devolve se a mensagem entrou na fila.
+ */
+async function avisarNoWhatsapp(eventoId: string, d: DadosDaPessoa): Promise<boolean> {
+  if (!d.telefone) return false
+  try {
+    const { data: ev } = await supabaseAdmin.from('eventos').select('nome, data_inicio, local').eq('id', eventoId).maybeSingle()
+    // Ordem do texto: {{1}} nome · {{2}} evento · {{3}} categoria · {{4}} data · {{5}} local — sem quebra de linha (a Meta recusa).
+    const umaLinha = (t: string) => t.replace(/\s*\n+\s*/g, ' ').trim()
+    const id = await agendarTemplateSupervisor({
+      eventoId, telefone: d.telefone, template: 'lista_manual_confirmacao',
+      parametros: [
+        umaLinha(d.nome.split(' ')[0] ?? d.nome),
+        umaLinha((ev?.nome as string | undefined) ?? 'Evento'),
+        umaLinha(d.categoria),
+        ev?.data_inicio ? formatarBR(ev.data_inicio as string, 'completo') : 'a confirmar',
+        umaLinha((ev?.local as string | null | undefined)?.trim() || 'a confirmar'),
+      ],
+    })
+    if (id) after(() => enviarMensagemAgora(id).catch(e => console.error('[lista-manual] envio imediato falhou', e)))
+    return !!id
+  } catch (e) {
+    console.error('[lista-manual] aviso no WhatsApp não agendou', e)
+    return false
+  }
+}
+
 /** "Adicionar pessoa à lista". */
-export async function adicionarPessoaNaLista(eventoId: string, entrada: EntradaDoFormulario): Promise<{ ok: true; pessoa: PessoaDaLista } | Erro> {
+export async function adicionarPessoaNaLista(eventoId: string, entrada: EntradaDoFormulario & { avisarWhatsapp?: boolean }): Promise<{ ok: true; pessoa: PessoaDaLista; avisado: boolean } | Erro> {
   try {
     const acesso = await exigirGerenciar(eventoId)
     if ('erro' in acesso) return acesso
@@ -89,9 +118,10 @@ export async function adicionarPessoaNaLista(eventoId: string, entrada: EntradaD
       if (error.code === '23505') return { erro: 'Este CPF já está na lista deste evento.' }
       return { erro: mensagemAmigavel(error) }
     }
-    auditar(acesso, 'LISTA_MANUAL_CADASTRO', { valorNovo: resumo(dados) })
+    const avisado = entrada.avisarWhatsapp === true ? await avisarNoWhatsapp(eventoId, dados) : false
+    auditar(acesso, 'LISTA_MANUAL_CADASTRO', { valorNovo: `${resumo(dados)}${avisado ? ' · avisada no WhatsApp' : ''}` })
     revalidatePath(CAMINHO)
-    return { ok: true, pessoa: paraTela(data as LinhaDaLista, true) }
+    return { ok: true, pessoa: paraTela(data as LinhaDaLista, true), avisado }
   } catch (e) {
     return { erro: mensagemAmigavel(e) }
   }
@@ -156,7 +186,7 @@ export async function tirarDaLista(eventoId: string, id: string, motivo?: string
 }
 
 /**
- * "Confirmar entrada" na portaria. O UPDATE só pega quem AINDA não entrou (`presente_em is null`): com dois
+ * "Confirmar entrada" na portaria (master/admin — ver `podeConfirmarEntradaListaManual`). O UPDATE só pega quem AINDA não entrou (`presente_em is null`): com dois
  * operadores confirmando a mesma pessoa ao mesmo tempo, só um grava — o outro recebe `jaEntrou`, com o horário e
  * quem confirmou. Como o scanner, só nos dias do evento (vale até para o master).
  */
@@ -166,6 +196,8 @@ export async function confirmarEntradaNaLista(eventoId: string, id: string): Pro
   try {
     const acesso = await acessoAListaManual(eventoId)
     if ('erro' in acesso) return acesso
+    // Consultar é ler; confirmar é gravar — o operador de portão só lê, a não ser que a permissão seja ligada para ele.
+    if (!acesso.podeConfirmar) return { erro: 'Você pode consultar a lista, mas não confirmar a entrada. Chame quem gerencia o evento.' }
     if (!(await eventosAcontecendoHoje([eventoId])).has(eventoId)) {
       return { erro: 'A entrada só é confirmada nos dias do evento.' }
     }

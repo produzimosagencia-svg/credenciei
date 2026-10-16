@@ -321,11 +321,18 @@ export const podeGerenciarListaManual = capacidade('gerenciar_lista_manual', rol
   role === 'master' || role === 'admin')
 
 /**
- * CONFERIR a lista manual: consultar e confirmar a entrada na portaria. O padrão é quem lê o QR (o papel cru, igual
- * `podeAcompanhar`) — o operador de portão entra aqui sem poder cadastrar nem tirar ninguém — mais quem gerencia.
+ * CONSULTAR a lista manual — só ler (Juan, 16/10/2026: "os operadores de portão só têm permissão para consultar essa
+ * lista, apenas ler"). O padrão é quem lê o QR (o papel cru, igual `podeAcompanhar`) mais quem gerencia.
  */
 export const podeConferirListaManual = capacidade('conferir_lista_manual', role =>
   podeEscanear(role) || podeGerenciarListaManual(role))
+
+/**
+ * CONFIRMAR a entrada de alguém da lista manual — é gravar, então fica com quem gerencia a lista (master/admin). Para
+ * um operador de portão confirmar, liga-se esta permissão para ele (Configurações / Funções do acesso).
+ */
+export const podeConfirmarEntradaListaManual = capacidade('confirmar_entrada_lista_manual', role =>
+  podeGerenciarListaManual(role))
 
 // ─── O catálogo, pra tela de Configurações ───────────────────────────────────
 
@@ -373,9 +380,12 @@ export const CAPACIDADES: {
   { chave: 'gerenciar_lista_manual', nome: 'Gerenciar a lista manual',
     descricao: 'Cadastra, corrige e tira pessoas da lista de entrada sem QR Code',
     padrao: podeGerenciarListaManual },
-  { chave: 'conferir_lista_manual', nome: 'Confirmar entrada da lista manual',
-    descricao: 'Consulta a lista de entrada sem QR Code e confirma quem chegou',
+  { chave: 'conferir_lista_manual', nome: 'Consultar a lista manual',
+    descricao: 'Vê a lista de entrada sem QR Code e busca por nome ou CPF (só leitura)',
     padrao: podeConferirListaManual },
+  { chave: 'confirmar_entrada_lista_manual', nome: 'Confirmar entrada da lista manual',
+    descricao: 'Marca na lista manual que a pessoa chegou (com horário e quem confirmou)',
+    padrao: podeConfirmarEntradaListaManual },
   { chave: 'corrigir_cpf', nome: 'Corrigir CPF e identidade',
     descricao: 'Conserta cadastro errado sem a pessoa refazer tudo',
     padrao: podeEditarIdentidade,
@@ -425,6 +435,8 @@ const PODEM_GANHAR: Partial<Record<Role, string[]>> = {
   // O scanner não é do supervisor por padrão (ver `podeEscanear`), mas há
   // operação em que ele credencia a própria equipe — liberável caso a caso.
   supervisor: ['escanear'],
+  // Lista manual: o operador só CONSULTA por padrão; confirmar a entrada é liberável caso a caso (Juan, 16/10/2026).
+  operador_portao: ['confirmar_entrada_lista_manual'],
 }
 
 /**

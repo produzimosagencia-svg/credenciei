@@ -294,6 +294,31 @@ Exemplos: `João Souza` · `GOTE - LIMPEZA` · `VITAL` · `APROVADO — o setor 
 
 ---
 
+## 10. `lista_manual_confirmacao`
+
+**Precisa ser cadastrado na Meta** antes do primeiro aviso. Enviado a quem é colocado na **Lista manual** (entrada
+sem QR Code — convidados, prestadores, equipe interna), quando quem cadastra deixa marcado "Avisar pelo WhatsApp".
+A pessoa entra na lista do mesmo jeito se a mensagem falhar.
+
+**Variáveis**: 1 primeiro nome · 2 evento · 3 categoria · 4 data e hora · 5 local
+
+```
+Olá, {{1}}! ✅
+
+Seu nome está na lista de entrada do evento {{2}} ({{3}}).
+
+📅 {{4}}
+📍 {{5}}
+
+Na portaria, apresente um documento oficial com foto. Não precisa de ingresso nem de QR Code.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `Maria` · `LUAN SANTANA` · `Convidado / Lista VIP` · `17/10/2026 16:30` · `Parque de Exposições de Cariacica`
+
+---
+
 ## Depois de aprovar
 
 1. Configure as variáveis de ambiente na Vercel (e no worker, se estiver usando):

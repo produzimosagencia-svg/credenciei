@@ -20,13 +20,16 @@ export default function FormPessoaLista({
   /** Corrigir um cadastro (o CPF inteiro vem junto: só quem gerencia a lista abre isto). */
   pessoa?: PessoaDaLista
   onFechar: () => void
-  onSalvo: (p: PessoaDaLista, nova: boolean) => void
+  onSalvo: (p: PessoaDaLista, nova: boolean, avisado: boolean) => void
 }) {
   const [nome, setNome] = useState(pessoa?.nome ?? '')
   const [cpf, setCpf] = useState(pessoa?.cpf ?? '')
   const [telefone, setTelefone] = useState(pessoa?.telefone ?? '')
   const [categoria, setCategoria] = useState(pessoa?.categoria ?? categorias[0] ?? '')
   const [novaCategoria, setNovaCategoria] = useState('')
+  // O aviso no WhatsApp (modelo `lista_manual_confirmacao`) — só no cadastro novo, e só com telefone.
+  const [avisar, setAvisar] = useState(true)
+  const temTelefone = telefone.replace(/\D/g, '').length >= 10
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, startSalvar] = useTransition()
 
@@ -36,9 +39,11 @@ export default function FormPessoaLista({
     if (!lido.ok) { setErro(lido.erro); return }
     setErro(null)
     startSalvar(async () => {
-      const r = pessoa ? await editarPessoaDaLista(eventoId, pessoa.id, entrada) : await adicionarPessoaNaLista(eventoId, entrada)
+      const r = pessoa
+        ? await editarPessoaDaLista(eventoId, pessoa.id, entrada)
+        : await adicionarPessoaNaLista(eventoId, { ...entrada, avisarWhatsapp: avisar && temTelefone })
       if ('erro' in r) { setErro(r.erro); return }
-      onSalvo(r.pessoa, !pessoa)
+      onSalvo(r.pessoa, !pessoa, 'avisado' in r && r.avisado === true)
     })
   }
 
@@ -82,6 +87,12 @@ export default function FormPessoaLista({
               />
             )}
           </div>
+          {!pessoa && (
+            <label className={`flex items-start gap-2.5 text-sm ${temTelefone ? 'text-slate-700 cursor-pointer' : 'text-slate-400'}`}>
+              <input type="checkbox" checked={avisar && temTelefone} disabled={!temTelefone} onChange={e => setAvisar(e.target.checked)} className="w-4 h-4 mt-0.5 accent-brand-500" />
+              <span>Avisar pelo WhatsApp que o nome está na lista{!temTelefone && ' (precisa do telefone)'}</span>
+            </label>
+          )}
           {erro && <p className="flex items-start gap-1.5 text-red-600 text-sm"><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />{erro}</p>}
           <div className="flex gap-2 pt-1">
             <button type="submit" disabled={salvando} className="btn btn-primario flex-1 justify-center disabled:opacity-60">

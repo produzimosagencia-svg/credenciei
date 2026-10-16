@@ -32,12 +32,13 @@ const TOM_DO_AVISO: Record<AvisoDaTela['tom'], string> = {
  * acabou de fazer aparece na hora, por cima, até o servidor confirmar.
  */
 export default function PainelListaManual({
-  eventoId, pessoas: doServidor, podeGerenciar, podeConferir, acontecendoHoje, categorias,
+  eventoId, pessoas: doServidor, podeGerenciar, podeConfirmar, acontecendoHoje, categorias,
 }: {
   eventoId: string
   pessoas: PessoaDaLista[]
   podeGerenciar: boolean
-  podeConferir: boolean
+  /** Confirmar a entrada (master/admin). Sem isto a tela é só consulta — o operador de portão, por padrão. */
+  podeConfirmar: boolean
   /** A entrada só é confirmada nos dias do evento (como o scanner). */
   acontecendoHoje: boolean
   categorias: string[]
@@ -132,10 +133,10 @@ export default function PainelListaManual({
   const [erroModal, setErroModal] = useState<string | null>(null)
   const [salvando, startSalvar] = useTransition()
 
-  const aoSalvar = (p: PessoaDaLista, nova: boolean) => {
+  const aoSalvar = (p: PessoaDaLista, nova: boolean, avisado: boolean) => {
     setFormulario(null)
     setPessoas(lista => (nova ? [...lista, p].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) : lista.map(x => (x.id === p.id ? p : x))))
-    setAviso({ tom: 'sucesso', texto: nova ? `${p.nome} entrou na lista (${p.categoria}).` : `Cadastro de ${p.nome} corrigido.` })
+    setAviso({ tom: 'sucesso', texto: nova ? `${p.nome} entrou na lista (${p.categoria}).${avisado ? ' O aviso foi para o WhatsApp.' : ''}` : `Cadastro de ${p.nome} corrigido.` })
     router.refresh()
   }
 
@@ -196,7 +197,7 @@ export default function PainelListaManual({
         ))}
       </div>
 
-      {!acontecendoHoje && podeConferir && (
+      {!acontecendoHoje && podeConfirmar && (
         <p className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-600">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
           Hoje não é dia deste evento: a lista pode ser consultada, mas a entrada só é confirmada nos dias do evento.
@@ -297,7 +298,7 @@ export default function PainelListaManual({
                         <p className="flex items-center gap-1.5 text-sm font-bold"><CheckCircle2 className="w-4 h-4 shrink-0" /> Entrou {formatarBR(p.presenteEm, 'curto')}</p>
                         {p.confirmadoPor && <p className="text-green-700 text-2xs mt-0.5">Confirmado por {p.confirmadoPor}</p>}
                       </div>
-                    ) : podeConferir ? (
+                    ) : podeConfirmar ? (
                       <button
                         type="button" onClick={() => confirmar(p)} disabled={!acontecendoHoje || confirmando === p.id}
                         className="btn btn-primario flex-1 sm:flex-none justify-center py-2.5 px-4 disabled:opacity-50"
