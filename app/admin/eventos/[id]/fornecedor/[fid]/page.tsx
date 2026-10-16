@@ -369,7 +369,27 @@ export default async function FornecedorPage({
    */
   const verEscala = ehMaster(perfil.role) || perfil.role === 'admin' || perfil.role === 'supervisor'
     || setoresDoSupervisor.some(s => s.id === fid)
-  const diasDaEscala = verEscala && await eventoUsaEscalaPorDia(id) ? await diasDaEscalaDoEvento(id) : []
+  /*
+   * Os botões de dia valem em TODO evento com mais de um dia (Gabriel/Juan, 16/10/2026: "no VITAL tinha isso… tem que
+   * ser ativado para todos os eventos"). Cada dia conta quem está escalado nele E quem bateu entrada nele — sem escala
+   * por dia, é a relação de quem veio em cada dia.
+   */
+  const usaEscalaNoEvento = verEscala && await eventoUsaEscalaPorDia(id)
+  const diasParaOsBotoes = verEscala ? await diasDaEscalaDoEvento(id) : []
+  const diasDaEscala = diasParaOsBotoes.length >= 2 ? diasParaOsBotoes : []
+  const diasComEntrada = new Map<string, Set<string>>()
+  if (diasDaEscala.length) {
+    const entradas = await buscarTudo<{ funcionario_id: string; data_ref: string | null }>((de, ate) => supabase.from('registros')
+      .select('funcionario_id, data_ref, funcionarios!inner(fornecedor_id)')
+      .eq('evento_id', id).eq('funcionarios.fornecedor_id', fid).eq('tipo', 'entrada').order('id').range(de, ate),
+    ).catch(() => [])
+    for (const e of entradas) {
+      if (!e.data_ref) continue
+      const dias = diasComEntrada.get(e.funcionario_id) ?? new Set<string>()
+      dias.add(e.data_ref)
+      diasComEntrada.set(e.funcionario_id, dias)
+    }
+  }
   const diasPorFunc = new Map<string, { aprovados: string[]; pedidos: string[] }>()
   if (diasDaEscala.length) {
     const linhas = await buscarTudo<{ funcionario_id: string; data: string; aprovado: boolean | null; selecionado: boolean | null }>(
@@ -434,6 +454,7 @@ export default async function FornecedorPage({
           ? { diasEscala: [...d.aprovados].sort(), diasSaoPedido: false }
           : { diasEscala: [...(d?.pedidos ?? [])].sort(), diasSaoPedido: (d?.pedidos.length ?? 0) > 0 }
       })(),
+      diasComBatida: [...(diasComEntrada.get(f.id as string) ?? [])].sort(),
       entrada,
       meio,
       fim,
@@ -684,6 +705,7 @@ export default async function FornecedorPage({
           funcionarios={funcionariosEnriquecidos}
           supervisoresDeFora={supervisoresDeFora}
           diasDaEscala={diasDaEscala}
+          usaEscala={usaEscalaNoEvento}
           diaSelecionado={diaEscolhido}
           fornecedorId={fid}
           eventoId={id}

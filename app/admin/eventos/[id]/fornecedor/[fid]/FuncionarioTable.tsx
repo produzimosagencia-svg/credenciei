@@ -107,6 +107,8 @@ type Funcionario = {
   /** Dias da escala: os aprovados, ou os pedidos enquanto a escala não foi aprovada (`diasSaoPedido`). */
   diasEscala?: string[]
   diasSaoPedido?: boolean
+  /** Dias em que a pessoa bateu entrada neste evento — contam no botão do dia, com ou sem escala. */
+  diasComBatida?: string[]
   fotoUrl: string | null
   entrada: Presenca
   meio: Presenca
@@ -152,6 +154,7 @@ export default function FuncionarioTable({
   funcionarios,
   supervisoresDeFora = [],
   diasDaEscala = [],
+  usaEscala = false,
   diaSelecionado = null,
   fornecedorId,
   eventoId,
@@ -176,6 +179,8 @@ export default function FuncionarioTable({
    * "Escala por dia" (pedido do Juan, 09/10/2026). Vazio = sem a fileira.
    */
   diasDaEscala?: DiaDaEscala[]
+  /** O evento usa escala por dia: mostra os dias de cada pessoa. Sem escala, os botões de dia contam só quem bateu entrada. */
+  usaEscala?: boolean
   /** O dia das colunas Entrada/Meio/Saída (`?dia=`): null = o ciclo de hoje. */
   diaSelecionado?: string | null
   fornecedorId: string
@@ -252,7 +257,7 @@ export default function FuncionarioTable({
       chaveBusca(f.cargo).includes(s)
     if (!bateBusca) return false
     // Escalado no dia OU com batida naquele dia (as colunas já são do dia escolhido): quem bateu sem estar escalado aparece.
-    if (diaFiltro && !(f.diasEscala ?? []).includes(diaFiltro) && !(diaFiltro === diaSelecionado && (f.entrada || f.meio || f.fim))) return false
+    if (diaFiltro && !(f.diasEscala ?? []).includes(diaFiltro) && !(f.diasComBatida ?? []).includes(diaFiltro) && !(diaFiltro === diaSelecionado && (f.entrada || f.meio || f.fim))) return false
 
     if (statusEntrada !== 'todos' && f.statusEntrada !== statusEntrada) return false
     if (statusMeio !== 'todos' && f.statusMeio !== statusMeio) return false
@@ -271,7 +276,8 @@ export default function FuncionarioTable({
     const m = new Map<string, number>()
     for (const f of funcionarios) {
       if (f.descredenciadoEm || f.statusCredenciamento === 'negado') continue
-      for (const d of f.diasEscala ?? []) m.set(d, (m.get(d) ?? 0) + 1)
+      // Escalado no dia OU bateu entrada nele (sem contar a mesma pessoa duas vezes).
+      for (const d of new Set([...(f.diasEscala ?? []), ...(f.diasComBatida ?? [])])) m.set(d, (m.get(d) ?? 0) + 1)
     }
     return m
   }, [funcionarios])
@@ -390,7 +396,7 @@ export default function FuncionarioTable({
 
         {diasDaEscala.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto -mx-1 px-1 pb-0.5">
-            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wide shrink-0">Escala por dia</span>
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wide shrink-0" title={usaEscala ? 'Escalados no dia ou com entrada nele' : 'Quem bateu entrada em cada dia'}>{usaEscala ? 'Escala por dia' : 'Por dia'}</span>
             <button
               onClick={() => { setDiaFiltro(null); setPage(1) }}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
@@ -526,7 +532,7 @@ export default function FuncionarioTable({
                         <div className="min-w-0">
                           <p className={`text-sm font-semibold truncate ${f.ativo && !f.descredenciadoEm ? 'text-slate-800' : 'text-slate-400'}`}>{f.nome}</p>
                           <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
-                          {diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
+                          {usaEscala && diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                         </div>
                       </div>
                     }
@@ -706,7 +712,7 @@ export default function FuncionarioTable({
                               )}
                               <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                             </div>
-                            {diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
+                            {usaEscala && diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                           </div>
                         </div>
                       }
