@@ -13254,6 +13254,22 @@ export async function editarTelefoneFuncionario(
   }))
 
   after(() => sincronizarFuncionarioNaPlanilha(funcionarioId).catch(console.error))
+
+  /*
+   * Ganhou telefone e NUNCA recebeu a credencial: a boas-vindas (o link do QR Code) sai agora. Achado no LUAN
+   * (16/10/2026, LOJA OFICIAL): a planilha entrou sem telefone, a supervisora corrigiu os telefones um a um depois —
+   * e ninguém recebeu o QR Code, porque a boas-vindas só era agendada no cadastro. Só quem já está aprovado e sem
+   * baixa (pendente recebe na aprovação), e só se nunca houve boas-vindas neste evento (nada sai duas vezes).
+   */
+  after(async () => {
+    const { data: f } = await supabaseAdmin.from('funcionarios').select('status_credenciamento, descredenciado_em').eq('id', funcionarioId).maybeSingle()
+    if (!f || f.descredenciado_em || statusCredenciamentoValido(f.status_credenciamento as string) !== 'aprovado') return
+    const { data: ja } = await supabaseAdmin.from('mensagens_agendadas').select('id')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'boas_vindas_funcionario').limit(1)
+    if (ja?.length) return
+    await agendarBoasVindasFuncionario({ eventoId, funcionarioId, telefone: novo }).catch(console.error)
+  })
+
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
   return { ok: true as const, corrigidasNaFila: corrigidas?.length ?? 0 }
 }

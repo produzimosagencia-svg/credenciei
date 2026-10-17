@@ -43,5 +43,10 @@ ok(/Informe o nome completo \$\{quem\}/.test(pedido) && /O CPF \$\{quem\} não �
 
 ok(/if \(telefone\.length < 10 \|\| telefone\.length > 13\) \{\s*throw new Error\('Informe um telefone válido para enviar o acesso pelo WhatsApp\.'\)/.test(acoes) && /Informe o CPF do supervisor, com 11 dígitos/.test(acoes), 'supervisor')
 
+// Telefone corrigido depois do cadastro: a credencial (boas-vindas) sai se nunca saiu (LOJA OFICIAL, LUAN 16/10/2026).
+const editarTel = trecho('export async function editarTelefoneFuncionario(').slice(0, 6000)
+ok(/\.eq\('tipo', 'boas_vindas_funcionario'\)\.limit\(1\)/.test(editarTel) && /await agendarBoasVindasFuncionario\(\{ eventoId, funcionarioId, telefone: novo \}\)/.test(editarTel) && /statusCredenciamentoValido\(f\.status_credenciamento as string\) !== 'aprovado'/.test(editarTel),
+  'corrigir o telefone de quem nunca recebeu a credencial manda a credencial (só aprovado, sem baixa, uma vez)')
+
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)
