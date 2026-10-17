@@ -47,6 +47,8 @@ ok(/if \(telefone\.length < 10 \|\| telefone\.length > 13\) \{\s*throw new Error
 const editarTel = trecho('export async function editarTelefoneFuncionario(').slice(0, 6000)
 ok(/\.eq\('tipo', 'boas_vindas_funcionario'\)\.limit\(1\)/.test(editarTel) && /await agendarBoasVindasFuncionario\(\{ eventoId, funcionarioId, telefone: novo \}\)/.test(editarTel) && /statusCredenciamentoValido\(f\.status_credenciamento as string\) !== 'aprovado'/.test(editarTel),
   'corrigir o telefone de quem nunca recebeu a credencial manda a credencial (só aprovado, sem baixa, uma vez)')
+ok(/\['enviado', 'falhou'\]\.includes\(anterior\.status as string\) && semPais\(/.test(editarTel) && /status: 'pendente', tentativas: 0, proxima_tentativa: null, erro: null, enviado_em: null,/.test(editarTel),
+  'credencial que foi para o número ANTIGO (ou não foi entregue) volta para a fila, para o número novo')
 
 console.log(falhas ? `\n\x1b[31m${falhas} falha(s)\x1b[0m` : '\n\x1b[32mTudo certo.\x1b[0m')
 process.exit(falhas ? 1 : 0)

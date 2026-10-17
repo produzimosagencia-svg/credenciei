@@ -13264,10 +13264,25 @@ export async function editarTelefoneFuncionario(
   after(async () => {
     const { data: f } = await supabaseAdmin.from('funcionarios').select('status_credenciamento, descredenciado_em').eq('id', funcionarioId).maybeSingle()
     if (!f || f.descredenciado_em || statusCredenciamentoValido(f.status_credenciamento as string) !== 'aprovado') return
-    const { data: ja } = await supabaseAdmin.from('mensagens_agendadas').select('id')
+    const { data: ja } = await supabaseAdmin.from('mensagens_agendadas').select('id, telefone, status')
       .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'boas_vindas_funcionario').limit(1)
-    if (ja?.length) return
-    await agendarBoasVindasFuncionario({ eventoId, funcionarioId, telefone: novo }).catch(console.error)
+    if (!ja?.length) {
+      await agendarBoasVindasFuncionario({ eventoId, funcionarioId, telefone: novo }).catch(console.error)
+      return
+    }
+    /*
+     * A credencial JÁ saiu — para o número ANTIGO (ou não foi entregue). Achado no LUAN (17/10/2026): 10 pessoas
+     * tiveram o telefone corrigido depois do envio e nunca receberam o QR Code. Volta para a fila, para o número
+     * novo — o mesmo reenvio da ferramenta `reenviar_whatsapp` (a mensagem é montada de novo no envio).
+     */
+    const semPais = (t: string) => (t.length >= 12 && t.startsWith('55') ? t.slice(2) : t)
+    const anterior = ja[0]
+    if (['enviado', 'falhou'].includes(anterior.status as string) && semPais(String(anterior.telefone ?? '').replace(/\D/g, '')) !== semPais(novo)) {
+      await supabaseAdmin.from('mensagens_agendadas').update({
+        status: 'pendente', tentativas: 0, proxima_tentativa: null, erro: null, enviado_em: null,
+        agendado_para: new Date().toISOString(), telefone: novo,
+      }).eq('id', anterior.id)
+    }
   })
 
   revalidatePath(`/admin/eventos/${eventoId}/fornecedor/${fornecedorId}`)
