@@ -68,9 +68,18 @@ export async function importarFuncionarios(
     id: string; spreadsheet_id: string | null; nome: string; organizacao_id: string | null
   } | null
 
-  // Isolamento por organização: só master ou admin da mesma org do evento
+  /*
+   * Isolamento por organização: master, ou alguém da organização do evento — OU o supervisor DESTA equipe, seja de que
+   * organização for a conta dele (Naiara Abdalla, LUAN 16/10/2026: conta da Fatto Entreter, supervisora da ESG E
+   * HIDRATAÇÃO da Q2 — a organização da conta de supervisor não é trocada quando ele ganha um setor de outro cliente,
+   * e a importação recusava a equipe dela mesma). O vínculo é com ESTE fornecedor: outra equipe continua recusada.
+   */
   if (!ehMaster(perfil.role) && evento?.organizacao_id !== perfil.organizacao_id) {
-    return { ok: false, status: 403, error: 'Você não tem permissão para importar funcionários neste fornecedor.' }
+    const { data: vinculo } = await supabaseAdmin.from('supervisor_setores').select('fornecedor_id')
+      .eq('perfil_id', perfil.id).eq('fornecedor_id', fornecedorId).maybeSingle()
+    if (!vinculo) {
+      return { ok: false, status: 403, error: 'Você não tem permissão para importar funcionários neste fornecedor. Se você é supervisor desta equipe, peça ao administrador do evento para conferir o seu acesso a ela.' }
+    }
   }
   const spreadsheetId = evento?.spreadsheet_id
   const eventoId = evento?.id ?? fornecedor.evento_id
@@ -371,7 +380,7 @@ export async function importarFuncionarios(
     .select('id, nome, cpf, telefone, cargo, chave_pix, valor_receber, qr_token')
 
   if (error) {
-    return { ok: false, status: 500, error: mensagemAmigavel(error) }
+    return { ok: false, status: 500, error: `Não consegui gravar a equipe (${mensagemAmigavel(error)}). Nada desta planilha foi cadastrado: tente de novo em alguns instantes e, se repetir, chame o suporte pelo WhatsApp.` }
   }
 
   // Os dias, ANTES de responder (os lembretes logo abaixo dependem deles). Se um não gravar, a pessoa fica em

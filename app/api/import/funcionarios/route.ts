@@ -51,6 +51,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(res)
   } catch (err) {
     console.error('[import/funcionarios]', err)
-    return NextResponse.json({ error: 'Não foi possível concluir a importação. Tente de novo em alguns instantes.' }, { status: 500 })
+    return NextResponse.json({ error: 'Não foi possível concluir a importação. Abra a equipe para ver quem já entrou e importe a mesma planilha de novo em alguns instantes — quem já entrou não é cadastrado duas vezes. Se repetir, chame o suporte pelo WhatsApp.' }, { status: 500 })
   }
 }

@@ -83,17 +83,42 @@ function valorDaColuna(linha: Record<string, any>, apelidos: string[]): string {
 }
 
 /**
- * Lê o arquivo e devolve as linhas com nome preenchido. Linha sem nome é
- * descartada aqui — costuma ser rodapé ou linha em branco do fim da planilha.
+ * Um problema na planilha que a PESSOA resolve — a mensagem já diz o quê fazer (Juan, 16/10/2026: "caso aconteça
+ * algum erro na importação, preciso que você retorne uma mensagem para o usuário, para ele saber o que fazer").
+ */
+export class ErroNaPlanilha extends Error {}
+
+const DICA_DO_MODELO = 'Baixe o modelo (botão "Baixar modelo"), copie a equipe para ele e importe de novo.'
+
+/**
+ * Lê o arquivo e devolve as linhas que têm alguma coisa (nome, CPF ou telefone). Linha toda em branco — rodapé, fim
+ * da planilha — é descartada aqui; a que tem CPF mas não tem nome segue, para o servidor dizer que falta o nome.
+ * Arquivo que não abre, planilha vazia ou sem as colunas obrigatórias viram `ErroNaPlanilha`, com o que fazer.
  *
  * `xlsx` é pesado e só serve a este caminho, então entra por import dinâmico.
  */
 export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[]> {
   const XLSX = await import('xlsx')
-  const wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' })
+  let wb: ReturnType<typeof XLSX.read>
+  try {
+    wb = XLSX.read(await arquivo.arrayBuffer(), { type: 'array' })
+  } catch {
+    throw new ErroNaPlanilha('Não consegui abrir este arquivo. Salve a planilha como Excel (.xlsx) ou CSV — e, se ela tiver senha, tire a senha — e importe de novo.')
+  }
   const ws = wb.Sheets[wb.SheetNames[0]]
+  if (!ws) throw new ErroNaPlanilha(`A planilha está vazia. ${DICA_DO_MODELO}`)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const linhas = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' })
+  if (!linhas.length) throw new ErroNaPlanilha(`A planilha está vazia — a equipe começa na linha 2, logo abaixo dos títulos. ${DICA_DO_MODELO}`)
+
+  // Nome, CPF e telefone são obrigatórios: sem a coluna, nenhuma linha entraria — melhor dizer logo qual falta.
+  const titulos = Object.keys(linhas[0]).map(k => k.toLowerCase().trim())
+  const faltam = ([['Nome', COLUNAS.nome], ['CPF', COLUNAS.cpf], ['Telefone', COLUNAS.telefone]] as const)
+    .filter(([, apelidos]) => !apelidos.some(a => titulos.includes(a.toLowerCase())))
+    .map(([rotulo]) => rotulo)
+  if (faltam.length) {
+    throw new ErroNaPlanilha(`A planilha não tem ${faltam.length === 1 ? 'a coluna' : 'as colunas'} ${faltam.join(', ').replace(/, ([^,]*)$/, ' e $1')} na primeira linha (os títulos). ${DICA_DO_MODELO}`)
+  }
 
   return linhas
     .map(linha => ({
@@ -106,7 +131,7 @@ export async function lerPlanilhaDeEquipe(arquivo: File): Promise<LinhaPlanilha[
       valor: valorDaColuna(linha, COLUNAS.valor),
       dias: diasMarcadosNaLinha(linha),
     }))
-    .filter(l => l.nome)
+    .filter(l => l.nome || l.cpf || l.telefone)
 }
 
 // ─── Planilha de ESTRUTURA (fornecedores, áreas, travas, supervisores) ──────

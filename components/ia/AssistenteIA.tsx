@@ -10,7 +10,7 @@ import {
   apagarConversa, carregarConversas, novaConversa, quandoRelativo, salvarConversa, tituloDe,
   type Confirmacao, type Conversa, type Mensagem,
 } from './historico'
-import { lerPlanilhaDeEquipe, lerPlanilhaDeEstrutura, pareceEstrutura, type LinhaPlanilha } from '@/lib/planilha'
+import { lerPlanilhaDeEquipe, lerPlanilhaDeEstrutura, pareceEstrutura, ErroNaPlanilha, type LinhaPlanilha } from '@/lib/planilha'
 import type { LinhaEstrutura } from '@/lib/estrutura-regras'
 import { Aviso } from '@/components/ui/Superficie'
 import { LogoLoading } from '@/components/LogoLoading'
@@ -214,8 +214,8 @@ function ModalAssistente({ usuarioId, onFechar }: { usuarioId: string; onFechar:
       }
       setEstrutura(null)
       setAnexo({ nome: arquivo.name, linhas })
-    } catch {
-      setErroAnexo('Não consegui ler esse arquivo. Use a planilha modelo (.xlsx ou .csv).')
+    } catch (e) {
+      setErroAnexo(e instanceof ErroNaPlanilha ? e.message : 'Não consegui ler esse arquivo. Use a planilha modelo (.xlsx ou .csv).')
     }
   }
 

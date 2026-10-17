@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Upload, CheckCircle, AlertCircle, Download, Sparkles } from 'lucide-react'
 import { LogoLoading } from '@/components/LogoLoading'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
-import { lerPlanilhaDeEquipe } from '@/lib/planilha'
+import { lerPlanilhaDeEquipe, ErroNaPlanilha, type LinhaPlanilha } from '@/lib/planilha'
 import { formatCpf } from '@/lib/format'
 import type { LinhaIgnorada } from '@/lib/importacao'
 // xlsx é pesado e só é usado no download do modelo aqui (a leitura mora em
@@ -35,37 +35,56 @@ export default function ImportarFuncionarios({
 
     setLoading(true)
     setStatus(null)
+    /*
+     * Cada etapa com a sua mensagem — o que aconteceu E o que fazer (Juan, 16/10/2026). Antes qualquer falha, até
+     * a internet caindo no meio do envio, aparecia como "Erro ao ler o arquivo".
+     */
+    const terminar = (s: Status) => {
+      setStatus(s)
+      setLoading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
 
+    // 1 · Ler a planilha (no próprio aparelho).
+    let funcionarios: LinhaPlanilha[]
     try {
-      const funcionarios = await lerPlanilhaDeEquipe(file)
+      funcionarios = await lerPlanilhaDeEquipe(file)
+    } catch (e) {
+      terminar({ ok: false, error: e instanceof ErroNaPlanilha ? e.message : 'Não consegui ler este arquivo. Salve a planilha como Excel (.xlsx) ou CSV e importe de novo — ou use o modelo (botão "Baixar modelo").' })
+      return
+    }
+    if (funcionarios.length === 0) {
+      terminar({ ok: false, error: 'Não achei ninguém na planilha. A equipe começa na linha 2, logo abaixo dos títulos (Nome, CPF, Telefone). Confira o arquivo ou use o modelo (botão "Baixar modelo").' })
+      return
+    }
 
-      if (funcionarios.length === 0) {
-        setStatus({ ok: false, error: 'Nenhum funcionário encontrado. Verifique se a planilha tem as colunas corretas.' })
-        setLoading(false)
-        return
-      }
-
-      const res = await fetch('/api/import/funcionarios', {
+    // 2 · Enviar.
+    let res: Response
+    try {
+      res = await fetch('/api/import/funcionarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fornecedorId, funcionarios }),
       })
-
-      const json = await res.json()
-      if (res.ok) {
-        setStatus({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados, reaproveitados: json.reaproveitados, ignorados: json.ignorados })
-        router.refresh()
-      } else {
-        setStatus({ ok: false, error: json.error ?? 'Erro ao importar.', ignorados: json.ignorados })
-        // Recarrega também na recusa: "já cadastrado" quer dizer que a pessoa EXISTE, e a lista aberta pode estar desatualizada.
-        router.refresh()
-      }
     } catch {
-      setStatus({ ok: false, error: 'Erro ao ler o arquivo.' })
+      terminar({ ok: false, error: 'A conexão caiu no envio. Confira a internet e importe a mesma planilha de novo — quem já entrou não é cadastrado duas vezes.' })
+      return
     }
 
-    setLoading(false)
-    if (fileRef.current) fileRef.current.value = ''
+    // 3 · A resposta. Sem JSON = o servidor não respondeu direito (demorou demais, caiu no meio).
+    let json: (Status & { error?: string }) | null = null
+    try { json = await res.json() } catch { json = null }
+    router.refresh()
+    if (!json) {
+      terminar({ ok: false, error: 'O sistema demorou para responder. Espere 1 minuto, abra a equipe para ver quem já entrou e importe a mesma planilha de novo — quem já entrou não é cadastrado duas vezes. Se repetir, chame o suporte pelo WhatsApp.' })
+      return
+    }
+    if (res.ok) {
+      terminar({ ok: true, total: json.total, invalidos: json.invalidos, duplicados: json.duplicados, reaproveitados: json.reaproveitados, ignorados: json.ignorados })
+    } else {
+      // Recarrega também na recusa (acima): "já cadastrado" quer dizer que a pessoa EXISTE, e a lista aberta pode estar desatualizada.
+      terminar({ ok: false, error: json.error ?? 'Não foi possível importar. Tente de novo em alguns instantes; se repetir, chame o suporte pelo WhatsApp.', ignorados: json.ignorados })
+    }
   }
 
   // O modelo é gerado na hora para ESTE setor: as perguntas do formulário e, com escala, os dias do evento (09/10/2026).
@@ -152,6 +171,9 @@ export default function ImportarFuncionarios({
                 <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
                 {status.ignorados.length} linha{status.ignorados.length !== 1 ? 's' : ''} não {status.ignorados.length !== 1 ? 'foram importadas' : 'foi importada'}:
               </p>
+              <p className="text-amber-800">
+                O que fazer: corrija essas linhas na planilha e importe a mesma planilha de novo — quem já entrou não é cadastrado duas vezes.
+              </p>
               {/* Rola: com planilha grande a lista passa de 30 linhas, e sem
                   altura o aviso empurrava o resto do modal pra fora da tela. */}
               <ul className="max-h-40 overflow-y-auto space-y-0.5 pl-4">
@@ -161,7 +183,7 @@ export default function ImportarFuncionarios({
                     {f.motivo === 'cpf_invalido' ? (
                       <span className="text-amber-600"> (CPF inválido — confira os números na planilha)</span>
                     ) : f.motivo === 'cota_atingida' ? (
-                      <span className="text-amber-600"> (cota máxima já atingida)</span>
+                      <span className="text-amber-600"> (o fornecedor chegou ao máximo de pessoas — peça ao administrador para aumentar a quantidade)</span>
                     ) : f.motivo === 'sem_dias' ? (
                       <span className="text-amber-600"> (nenhum dia de trabalho marcado — marque X nos dias)</span>
                     ) : f.motivo === 'sem_telefone' ? (
@@ -173,9 +195,9 @@ export default function ImportarFuncionarios({
                     ) : f.motivo === 'dia_lotado' ? (
                       <span className="text-amber-600"> ({f.detalhe ?? 'um dos dias'} já no limite de pessoas do setor)</span>
                     ) : f.setor ? (
-                      <span className="text-amber-600"> (já está em {f.setor})</span>
+                      <span className="text-amber-600"> (já está em {f.setor} — se mudou de equipe, use &quot;Mover&quot; na ficha dela)</span>
                     ) : (
-                      <span className="text-amber-600"> (repetido na própria planilha)</span>
+                      <span className="text-amber-600"> (repetido na própria planilha — entrou uma vez só)</span>
                     )}
                   </li>
                 ))}
