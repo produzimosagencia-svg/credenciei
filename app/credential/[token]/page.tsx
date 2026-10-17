@@ -586,7 +586,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
    * trabalho de agora (o servidor deixou de gravar a entrada da manhã no dia em que a janela começou — 15/10/2026).
    */
   const diaDaBatida = proximoRegistro === 'entrada' ? dataRef : diaAutoatendimento
-  const bloqueadoNoAutoatendimento = !!escala && !!diaDaBatida && (escala.pendente || !escala.aprovados.includes(diaDaBatida))
+  // A saída de quem já entrou não é barrada pela escala (17/10/2026 — ver `conferirEscalaDaBatida`): só a entrada confere.
+  const bloqueadoNoAutoatendimento = proximoRegistro === 'entrada' && !!escala && !!diaDaBatida && (escala.pendente || !escala.aprovados.includes(diaDaBatida))
   const modoBotaoUnico = podeAutoRegistrar && !bloqueadoNoAutoatendimento
 
   return (

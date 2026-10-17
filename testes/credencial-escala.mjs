@@ -18,7 +18,7 @@ ok(/if \(info\.status === 'disponivel' && bloqueado\) \{/.test(checkin) && check
 ok(/biometriaAutoatendimento && !embutido && !bloqueadoHoje/.test(checkin), 'o reconhecimento facial também some')
 for (const acao of ['registrarPresencaLivre', 'registrarPresencaFoto', 'registrarPresencaFacialLivre']) {
   const a = ler('lib/actions.ts'); const i = a.indexOf(`export async function ${acao}(`)
-  ok(/conferirEscalaNoDia\(/.test(a.slice(i, i + 9000)), `${acao}: o servidor continua conferindo a escala`)
+  ok(/conferirEscalaNoDia\(|conferirEscalaDaBatida\(/.test(a.slice(i, i + 9000)), `${acao}: o servidor continua conferindo a escala`)
 }
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')

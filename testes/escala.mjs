@@ -126,8 +126,22 @@ const autorizar = corpo('autorizarPresenca')
 ok(autorizar.includes('conferirEscalaNoDia') && autorizar.indexOf('conferirEscalaNoDia') < autorizar.indexOf('inferirMomentoQR'),
   'autorizarPresenca (QR + biometria no portão) confere ANTES de decidir entrada/saída')
 ok(autorizar.includes('diaNaoAutorizado: true'), 'a recusa do portão vem marcada como diaNaoAutorizado')
+// A escala decide quem ENTRA — a saída de um turno já aberto não é barrada (Jefferson, LUAN 17/10/2026).
+ok(/const escalaHoje = entradaAberta \? \{ ok: true as const \} : await conferirEscalaNoDia\(func\.id, eventoId, diaTurno\)/.test(autorizar), 'QR: turno já aberto (saindo) não é barrado pela escala')
+{
+  const esc = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
+  const f = esc.slice(esc.indexOf('export async function conferirEscalaDaBatida'))
+  ok(/if \(momento !== 'entrada'\) \{[\s\S]{0,300}\.eq\('tipo', 'entrada'\)\.eq\('data_ref', dia\)[\s\S]{0,80}return \{ ok: true \}/.test(f) && /return conferirEscalaNoDia\(funcionarioId, eventoId, dia\)/.test(f),
+    'meio e saída com a entrada do dia registrada passam; sem entrada, confere como sempre')
+  for (const [nome, m] of [['registrarPresencaLivre', 'momento'], ['registrarPresencaFoto', "'meio'"], ['registrarPresencaAssistida', 'momento']]) {
+    ok(corpo(nome).includes(`conferirEscalaDaBatida(`) && corpo(nome).includes(`, ${m})`), `${nome}: usa a régua da batida (${m})`)
+  }
+  ok(corpo('registrarPresencaFacialLivre').includes('conferirEscalaNoDia('), 'reconhecimento facial (só entrada) confere como sempre')
+  const cred = readFileSync(new URL('../app/credential/[token]/page.tsx', import.meta.url), 'utf8')
+  ok(/const bloqueadoNoAutoatendimento = proximoRegistro === 'entrada' && /.test(cred), 'credencial: o botão de saída não some por causa da escala')
+}
 for (const nome of ['registrarPresencaLivre', 'registrarPresencaFacialLivre', 'registrarPresencaFoto', 'registrarPresencaAssistida']) {
-  ok(corpo(nome).includes('conferirEscalaNoDia'), `${nome} confere a escala`)
+  ok(/conferirEscalaNoDia|conferirEscalaDaBatida/.test(corpo(nome)), `${nome} confere a escala`)
 }
 const cadastro = corpo('cadastrarFuncionarioPublico')
 ok(cadastro.includes('conferirDiasPermitidos') && cadastro.includes('eventoUsaEscalaPorDia'),

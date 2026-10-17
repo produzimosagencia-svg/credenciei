@@ -236,6 +236,23 @@ export async function conferirEscalaNoDia(funcionarioId: string, eventoId: strin
   return vereditoDaEscala({ status, diasAprovados: (dias ?? []).map(d => d.data as string) }, dia)
 }
 
+/**
+ * A escala decide quem ENTRA num dia — não quem sai (LUAN, 17/10/2026: o Jefferson entrou no dia 16, de manhã o
+ * supervisor deixou a escala dele só com o 17, e a SAÍDA do turno do 16 era recusada com "Acesso não autorizado para
+ * hoje"). Meio e saída de um turno que já tem a entrada registrada passam: a pessoa foi liberada na entrada, e travar
+ * a saída só deixa o turno aberto. Sem entrada no dia (meio/saída "soltos"), confere como sempre.
+ */
+export async function conferirEscalaDaBatida(
+  funcionarioId: string, eventoId: string, dia: string, momento: 'entrada' | 'meio' | 'fim',
+): Promise<VereditoEscala> {
+  if (momento !== 'entrada') {
+    const { data } = await supabaseAdmin.from('registros').select('id')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'entrada').eq('data_ref', dia).limit(1)
+    if (data?.length) return { ok: true }
+  }
+  return conferirEscalaNoDia(funcionarioId, eventoId, dia)
+}
+
 /** Grava os dias que a pessoa escolheu no formulário e coloca a escala em 'pendente'. */
 export async function gravarDiasEscolhidos(
   funcionarioId: string, eventoId: string, dias: string[],

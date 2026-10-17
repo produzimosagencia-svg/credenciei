@@ -52,7 +52,7 @@ import { alterarEncarregadoNoSetor } from './actions-encarregado'
 import { alcancaSetor } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
-  eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia,
+  eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia, conferirEscalaDaBatida,
   gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
   pessoaEhSupervisor, relatorioTravasPorDia,
   type DetalheCredenciamento, type RelatorioTravas,
@@ -7958,7 +7958,8 @@ async function autorizarPresenca(args: {
    * turno de ontem, não começando um dia novo. Pessoa fora do fluxo (evento
    * normal, cadastro pelo painel) passa direto — ver `conferirEscalaNoDia`.
    */
-  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, entradaAberta?.dataRef ?? diaTurno)
+  // Turno já aberto (a pessoa entrou e está saindo): a escala não barra a saída — ver `conferirEscalaDaBatida`.
+  const escalaHoje = entradaAberta ? { ok: true as const } : await conferirEscalaNoDia(func.id, eventoId, diaTurno)
   if (!escalaHoje.ok) {
     return {
       success: false, diaNaoAutorizado: true, funcionario: funcInfo,
@@ -8824,8 +8825,8 @@ export async function registrarPresencaFoto(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'meio')
   if (!resolucao.ok) return { error: resolucao.erro }
-  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
-  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
+  // Escala por dia — mesma régua do portão, ver `autorizarPresenca` (o meio de quem já entrou não é barrado).
+  const escalaHoje = await conferirEscalaDaBatida(func.id, eventoId, resolucao.dataRef, 'meio')
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
   if (resolucao.jaEm) {
     return { error: `Você já registrou o meio em ${formatarBR(resolucao.jaEm, 'curto')}.` }
@@ -9058,8 +9059,8 @@ export async function registrarPresencaLivre(
       }
     }
   }
-  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
-  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
+  // Escala por dia — mesma régua do portão, ver `autorizarPresenca` (a saída de quem já entrou não é barrada).
+  const escalaHoje = await conferirEscalaDaBatida(func.id, eventoId, resolucao.dataRef, momento)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
   // Trava por dia do setor: lotado, a entrada pelo celular também é recusada.
   if (momento === 'entrada') {
@@ -10658,7 +10659,7 @@ export async function registrarPresencaAssistida(
 
   // Escala por dia (eventos de subeventos): mesma régua do QR. Para liberar um
   // dia fora da escala, o caminho é ajustar a escala — não contornar aqui.
-  const escalaHoje = await conferirEscalaNoDia(func.id, evento.id, refAssistido.dataRef)
+  const escalaHoje = await conferirEscalaDaBatida(func.id, evento.id, refAssistido.dataRef, momento)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} Ajuste os dias de trabalho desta pessoa antes de registrar.` }
 
   const contentType = match[1]
