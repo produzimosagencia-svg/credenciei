@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight, Search, X, ArrowRight,
-  TrendingUp, Activity, Radio, UserCheck, Clock, AlertTriangle } from 'lucide-react'
+  TrendingUp, Activity, Radio, UserCheck, Clock, AlertTriangle, ScanLine } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import { formatarBR, extensoBR } from '@/lib/tz'
 import { estadoWhatsAppSalvo } from '@/lib/saude'
@@ -731,6 +731,21 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   return (
     <TutorialProvider tutorial={TUTORIAL} ativo={!ehMaster(perfil.role)}>
     <div className="space-y-6">
+      {/*
+        * Operador de portão com gestão ligada pela organização dele (a Fatto deu "gerenciar eventos" aos operadores):
+        * ele cai neste Painel, que só lista a organização principal — e os eventos das OUTRAS organizações em que opera
+        * o portão (o LUAN da Q2, caso da Josete, 17/10/2026) não apareciam. O atalho leva à tela do operador, que lista
+        * todos, com Scanner e Registrar ponto.
+        */}
+      {perfil.role === 'operador_portao' && (
+        <Link href="/admin/bem-vindo" className="flex items-center justify-between gap-3 bg-brand-50 border border-brand-200 rounded-2xl px-4 py-3 hover:border-brand-300 transition-colors">
+          <span className="min-w-0">
+            <span className="block text-slate-800 text-sm font-bold">Operar o portão</span>
+            <span className="block text-slate-500 text-xs mt-0.5">Todos os eventos em que você opera o portão, com Scanner e Registrar ponto</span>
+          </span>
+          <ScanLine className="w-5 h-5 text-brand-500 shrink-0" />
+        </Link>
+      )}
       {/* Aviso de canal caído. Fica ACIMA do título de propósito: é a única
           coisa da tela que exige ação imediata. */}
       {alertaWhatsApp && (
