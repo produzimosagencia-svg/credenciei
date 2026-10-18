@@ -697,7 +697,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
                   podeAutoRegistrar={podeAutoRegistrar && !modoBotaoUnico}
                   ocultarEntradaSaida={modoBotaoUnico}
                   /* Só oferece a câmera se existe um cartaz impresso para ler. */
-                  temCartazNoLocal={!!evento?.token_portaria}
+                  // Só com o cartaz LIGADO (Juan, 18/10/2026: no LUAN o cartaz estava desligado e a Lais via "Escanear e registrar").
+                  temCartazNoLocal={!!evento?.token_portaria && (evento as { portaria_ativa?: boolean | null } | null)?.portaria_ativa === true}
                   biometriaAutoatendimento={false}
                   metodoAcesso={metodoAcesso}
                   bloqueadoHoje={bloqueadoHoje}

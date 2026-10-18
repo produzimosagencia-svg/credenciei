@@ -85,7 +85,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
     setFunc(f)
     // Sugestão pré-marcada; some se a pessoa já tem tudo registrado — aí o
     // operador escolhe manualmente qual corrigir.
-    setMomento(soMeio ? 'meio' : (f.proximaPendente?.momento ?? null))
+    setMomento(soMeio ? (f.etapas.some(e => e.momento === 'meio') ? 'meio' : null) : (f.proximaPendente?.momento ?? null))
     setFoto(null)
   }
 
@@ -339,7 +339,11 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                   Ver o comentário em registrarPresencaAssistida. */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3" data-tutorial="loc-etapa">
                 <p className="text-sm font-medium text-slate-700">Que batida é esta?</p>
-                <div className={`grid gap-2 ${soMeio ? 'grid-cols-1' : 'grid-cols-3'}`}>
+                {/* Equipe sem batida de meio: só entrada e saída (Juan, 18/10/2026) — o supervisor, que só bate o meio, é avisado. */}
+                {soMeio && !func.etapas.some(e => e.momento === 'meio') && (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Esta equipe não tem batida de meio — só entrada e saída, que são registradas pelo portão.</p>
+                )}
+                <div className={`grid gap-2 ${soMeio ? 'grid-cols-1' : func.etapas.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                   {func.etapas.filter(e => !soMeio || e.momento === 'meio').map(e => {
                     const feita = !!e.quandoISO
                     const ativo = momento === e.momento

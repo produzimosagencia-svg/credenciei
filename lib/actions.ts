@@ -10427,8 +10427,15 @@ async function fichaDoFuncionario(
   ])
 
   const feitos = new Map((registros ?? []).map(r => [r.tipo as MomentoPresenca, r.created_at as string]))
-  const proxima = ORDEM_ETAPAS.find(e => !feitos.has(e.momento)) ?? null
-  const etapas = ORDEM_ETAPAS.map(e => ({ ...e, quandoISO: feitos.get(e.momento) ?? null }))
+  /*
+   * O MEIO só aparece para quem é de equipe COM batida de meio (Juan, 18/10/2026: "só vai aparecer o registro de MEIO
+   * quando o setor precisa de batida de meio; senão, só entrada e saída"). Um meio já batido continua à vista.
+   */
+  const exigeMeio = await supabaseAdmin.from('fornecedores').select('exige_meio').eq('id', func.fornecedor_id).maybeSingle()
+    .then(r => (r.data as { exige_meio?: boolean } | null)?.exige_meio === true, () => true)
+  const etapasDaEquipe = ORDEM_ETAPAS.filter(e => e.momento !== 'meio' || exigeMeio || feitos.has('meio'))
+  const proxima = etapasDaEquipe.find(e => !feitos.has(e.momento)) ?? null
+  const etapas = etapasDaEquipe.map(e => ({ ...e, quandoISO: feitos.get(e.momento) ?? null }))
 
   // Última batida = a mais recente no relógio, não a última da ordem: alguém
   // pode ter batido o meio sem ter batido a entrada.
@@ -10501,6 +10508,26 @@ async function fichaDoFuncionario(
 
 const JUSTIFICATIVA_ASSISTIDO =
   'Batida registrada por supervisor devido à ausência de registro pelo colaborador.'
+
+/**
+ * A batida faz sentido para esta pessoa? (Juan, 18/10/2026) MEIO só para quem é de equipe com batida de meio; SAÍDA
+ * só para quem tem a ENTRADA daquele turno — "ontem eu vi muita gente dando saída sem ter dado entrada". Devolve a
+ * mensagem de recusa, ou null.
+ */
+async function etapaPermitida(
+  funcionarioId: string, fornecedorId: string, eventoId: string, momento: MomentoPresenca, dataRef: string,
+): Promise<string | null> {
+  if (momento === 'meio') {
+    const { data } = await supabaseAdmin.from('fornecedores').select('exige_meio').eq('id', fornecedorId).maybeSingle()
+    if ((data as { exige_meio?: boolean } | null)?.exige_meio !== true) return 'Esta equipe não tem batida de meio — só entrada e saída.'
+  }
+  if (momento === 'fim') {
+    const { data } = await supabaseAdmin.from('registros').select('id')
+      .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'entrada').eq('data_ref', dataRef).limit(1)
+    if (!data?.length) return 'Esta pessoa não tem entrada neste turno. Registre a entrada primeiro (se ela entrou sem bater, lance a entrada com o horário real em Lançamento manual).'
+  }
+  return null
+}
 
 /**
  * Registro assistido: o supervisor (ou operador de portão) localizou a
@@ -10661,6 +10688,10 @@ export async function registrarPresencaAssistida(
   // dia fora da escala, o caminho é ajustar a escala — não contornar aqui.
   const escalaHoje = await conferirEscalaDaBatida(func.id, evento.id, refAssistido.dataRef, momento)
   if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} Ajuste os dias de trabalho desta pessoa antes de registrar.` }
+
+  // Meio só para equipe com batida de meio; saída só com a entrada do turno registrada (Juan, 18/10/2026).
+  const conferenciaDaEtapa = await etapaPermitida(func.id, func.fornecedor_id as string, evento.id, momento, refAssistido.dataRef)
+  if (conferenciaDaEtapa) return { error: conferenciaDaEtapa }
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'
@@ -10864,6 +10895,12 @@ export async function lancarPontoManual(
   const dia = await diaDeTrabalho(evento.id, dataRef)
   if (!dia || dia.cancelado) {
     return { error: 'Esse dia não é um dia de trabalho deste evento. Marque-o em Editar evento antes de lançar o ponto.' }
+  }
+  // Saída só com a entrada do dia lançada (Juan, 18/10/2026: "muita gente dando saída sem ter dado entrada").
+  if (momento === 'fim') {
+    const { data: temEntrada } = await supabaseAdmin.from('registros').select('id')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('tipo', 'entrada').eq('data_ref', dataRef).limit(1)
+    if (!temEntrada?.length) return { error: `Esta pessoa não tem entrada no dia ${dataRef.split('-').reverse().join('/')}. Lance a entrada (com o horário real) antes da saída.` }
   }
 
   /*
