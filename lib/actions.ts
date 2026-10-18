@@ -10516,17 +10516,84 @@ const JUSTIFICATIVA_ASSISTIDO =
  */
 async function etapaPermitida(
   funcionarioId: string, fornecedorId: string, eventoId: string, momento: MomentoPresenca, dataRef: string,
-): Promise<string | null> {
+): Promise<{ erro: string; semEntrada?: true } | null> {
   if (momento === 'meio') {
     const { data } = await supabaseAdmin.from('fornecedores').select('exige_meio').eq('id', fornecedorId).maybeSingle()
-    if ((data as { exige_meio?: boolean } | null)?.exige_meio !== true) return 'Esta equipe não tem batida de meio — só entrada e saída.'
+    if ((data as { exige_meio?: boolean } | null)?.exige_meio !== true) return { erro: 'Esta equipe não tem batida de meio — só entrada e saída.' }
   }
   if (momento === 'fim') {
     const { data } = await supabaseAdmin.from('registros').select('id')
       .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', 'entrada').eq('data_ref', dataRef).limit(1)
-    if (!data?.length) return 'Esta pessoa não tem entrada neste turno. Registre a entrada primeiro (se ela entrou sem bater, lance a entrada com o horário real em Lançamento manual).'
+    if (!data?.length) return { erro: 'Esta pessoa não tem entrada neste turno. Informe abaixo a hora em que ela entrou — o sistema lança a entrada e registra a saída.', semEntrada: true }
   }
   return null
+}
+
+/**
+ * "Lançar a entrada e registrar a saída" no Registrar ponto (Juan, 18/10/2026: "coloca um botão quando der essa
+ * mensagem, para a pessoa do portão clicar e registrar de forma manual o horário da pessoa"). A saída de quem não tem
+ * entrada no turno é recusada; o operador informa a hora em que a pessoa ENTROU, e esta action lança essa entrada —
+ * marcada como lançada à mão, com quem lançou, na auditoria. Só a entrada que FALTA no turno (nunca troca uma que
+ * existe) e nunca no futuro. A saída vem em seguida, pelo `registrarPresencaAssistida` de sempre (foto e local).
+ */
+export async function lancarEntradaNaoBatida(funcionarioId: string, horaEntrada: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const perfil = await getPerfil()
+    if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
+    if (soBateMeio(perfil.role)) return { error: 'O supervisor só pode registrar a batida do meio.' }
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEntrada ?? '')) return { error: 'Informe a hora em que a pessoa entrou (ex.: 14:00).' }
+
+    const { data: func } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, nome, ativo, status_credenciamento, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, ativo, organizacao_id))')
+      .eq('id', funcionarioId)
+      .single()
+    if (!func) return { error: 'Funcionário não encontrado.' }
+    const evento = comEvento(func.fornecedores)?.eventos
+
+    // A mesma régua de escopo de `registrarPresencaAssistida`.
+    if (perfil.role === 'supervisor') {
+      if (!(await alcancaSetor(perfil, func.fornecedor_id as string))) return { error: 'Esta pessoa é de outro fornecedor. Você só registra a sua equipe.' }
+    } else if (perfil.role === 'suporte') {
+      if (!(await suporteTemEscopo(perfil.id, { eventoId: evento?.id, organizacaoId: evento?.organizacao_id ?? undefined }))) {
+        return { error: 'Este evento não está no seu escopo de atendimento.' }
+      }
+    } else if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento?.organizacao_id)) {
+      return { error: 'Esta pessoa é de outra organização.' }
+    }
+    if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
+    if (!(await eventosAcontecendoHoje([evento.id])).has(evento.id)) return { error: 'No portão só dá pra registrar quem é do evento de hoje.' }
+    if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') return { error: 'Este credenciamento ainda aguarda aprovação.' }
+
+    const ref = await diaDeReferencia(evento, func.id, 'fim')
+    const { data: jaTem } = await supabaseAdmin.from('registros').select('id')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('tipo', 'entrada').eq('data_ref', ref.dataRef).limit(1)
+    if (jaTem?.length) return { error: 'Esta pessoa já tem entrada neste turno — registre a saída normalmente.' }
+
+    const quandoISO = new Date(`${ref.dataRef}T${horaEntrada}:00-03:00`).toISOString()
+    if (new Date(quandoISO).getTime() > Date.now() + 60_000) {
+      return { error: `A entrada não pode ficar no futuro (${horaEntrada} de ${ref.dataRef.split('-').reverse().join('/')}). Confira a hora.` }
+    }
+    const dia = await diaDeTrabalho(evento.id, ref.dataRef)
+    if (!dia || dia.cancelado) return { error: 'Esse dia não é um dia de trabalho deste evento.' }
+
+    const justificativa = `Entrada não batida — lançada no portão por ${perfil.nome} na hora da saída (entrou às ${horaEntrada}, segundo o operador).`
+    const { error } = await upsertRegistro(func.id, evento.id, 'entrada', {
+      created_at: quandoISO, criado_por_perfil_id: perfil.id, registro_manual: true, justificativa,
+    }, ref.dataRef, dia.id ?? null)
+    if (error) return { error: mensagemAmigavel(error) }
+
+    after(() => registrarAuditoria({
+      perfil, acao: 'CORRECAO_PONTO', campoAlterado: 'Entrada (não batida — lançada no portão)',
+      valorAnterior: 'sem entrada no turno', valorNovo: formatarBR(quandoISO, 'curto'),
+      motivo: justificativa, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+    }))
+    revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
+    revalidatePath(`/admin/eventos/${evento.id}/presenca`)
+    return { ok: true }
+  } catch (e) {
+    return { error: mensagemAmigavel(e) }
+  }
 }
 
 /**
@@ -10556,7 +10623,7 @@ export async function registrarPresencaAssistida(
   momento: MomentoPresenca,
   dados: { fotoBase64: string; latitude?: number; longitude?: number; precisao?: number; dispositivo?: string },
   motivo?: string,
-): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
+): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string; /** Saída recusada por falta de entrada no turno — a tela oferece "Lançar a entrada". */ semEntrada?: true }> {
   const perfil = await getPerfil()
   if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
   const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
@@ -10691,7 +10758,7 @@ export async function registrarPresencaAssistida(
 
   // Meio só para equipe com batida de meio; saída só com a entrada do turno registrada (Juan, 18/10/2026).
   const conferenciaDaEtapa = await etapaPermitida(func.id, func.fornecedor_id as string, evento.id, momento, refAssistido.dataRef)
-  if (conferenciaDaEtapa) return { error: conferenciaDaEtapa }
+  if (conferenciaDaEtapa) return { error: conferenciaDaEtapa.erro, semEntrada: conferenciaDaEtapa.semEntrada }
 
   const contentType = match[1]
   const ext = contentType.split('/')[1] || 'jpg'

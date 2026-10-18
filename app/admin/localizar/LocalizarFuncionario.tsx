@@ -5,7 +5,7 @@ import {
   MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace, ChevronLeft, ChevronRight, LayoutGrid,
 } from 'lucide-react'
 import {
-  localizarFuncionario, abrirFuncionarioLocalizado, listarPessoasDoEvento, registrarPresencaAssistida, metodoIdentificacaoDoEvento,
+  localizarFuncionario, abrirFuncionarioLocalizado, listarPessoasDoEvento, registrarPresencaAssistida, lancarEntradaNaoBatida, metodoIdentificacaoDoEvento,
   type FuncionarioLocalizado, type CandidatoLocalizado, type MomentoPresenca, type PessoaDaLista,
 } from '@/lib/actions'
 import { formatCpf } from '@/lib/format'
@@ -62,6 +62,9 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   const [momento, setMomento] = useState<MomentoPresenca | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  // Saída recusada por falta de entrada no turno: o operador informa a hora da entrada (Juan, 18/10/2026).
+  const [semEntrada, setSemEntrada] = useState(false)
+  const [horaEntrada, setHoraEntrada] = useState('')
   const [sucesso, setSucesso] = useState<{ nome: string; etapa: string } | null>(null)
   const [buscando, startBusca] = useTransition()
   const [registrando, startRegistro] = useTransition()
@@ -83,6 +86,8 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
   const abrirFicha = (f: FuncionarioLocalizado) => {
     setFunc(f)
+    setSemEntrada(false)
+    setHoraEntrada('')
     // Sugestão pré-marcada; some se a pessoa já tem tudo registrado — aí o
     // operador escolhe manualmente qual corrigir.
     setMomento(soMeio ? (f.etapas.some(e => e.momento === 'meio') ? 'meio' : null) : (f.proximaPendente?.momento ?? null))
@@ -126,6 +131,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   const registrar = () => {
     if (!func || !momento || !foto) return
     setErro(null)
+    setSemEntrada(false)
     startRegistro(async () => {
       const gps = localizacao.atual()
       const res = await registrarPresencaAssistida(func.id, momento, {
@@ -135,8 +141,28 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         precisao: gps?.precisao ?? undefined,
         dispositivo: navigator.userAgent,
       })
-      if (res.error) return setErro(res.error)
+      if (res.error) {
+        setSemEntrada(res.semEntrada === true)
+        return setErro(res.error)
+      }
       setSucesso({ nome: res.nome ?? func.nome, etapa: res.etapa ?? '' })
+    })
+  }
+
+  /* "Lançar a entrada e registrar a saída": lança a entrada que faltou, na hora informada, e registra a saída (com a mesma foto). */
+  const lancarEntradaERegistrarSaida = () => {
+    if (!func || !foto || !horaEntrada) return
+    setErro(null)
+    startRegistro(async () => {
+      const r = await lancarEntradaNaoBatida(func.id, horaEntrada)
+      if ('error' in r) return setErro(r.error)
+      const gps = localizacao.atual()
+      const res = await registrarPresencaAssistida(func.id, 'fim', {
+        fotoBase64: foto, latitude: gps?.latitude, longitude: gps?.longitude, precisao: gps?.precisao ?? undefined, dispositivo: navigator.userAgent,
+      })
+      if (res.error) return setErro(`A entrada das ${horaEntrada} foi lançada, mas a saída não: ${res.error}`)
+      setSemEntrada(false)
+      setSucesso({ nome: res.nome ?? func.nome, etapa: `Entrada às ${horaEntrada} (lançada) e saída` })
     })
   }
 
@@ -239,6 +265,19 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           <p className="text-red-600 text-xs font-medium">{erro}</p>
+        </div>
+      )}
+      {semEntrada && func && (
+        <div className="bg-white border border-brand-200 rounded-2xl p-4 space-y-2.5 shadow-sm">
+          <p className="text-sm font-semibold text-slate-800">Que horas {func.nome.split(' ')[0]} entrou?</p>
+          <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)} className="input text-base tabular-nums" aria-label="Hora da entrada" />
+          <button
+            type="button" onClick={lancarEntradaERegistrarSaida} disabled={!horaEntrada || !foto || registrando}
+            className="btn-press w-full btn btn-primario disabled:opacity-60"
+          >
+            {registrando ? 'Registrando…' : 'Lançar a entrada e registrar a saída'}
+          </button>
+          <p className="text-slate-400 text-2xs">A entrada fica marcada como lançada à mão, com o seu nome. A saída é registrada agora, com a foto.</p>
         </div>
       )}
 
