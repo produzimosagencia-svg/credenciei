@@ -4,6 +4,7 @@ import { getPerfil, meusSetores, comArea, supabaseAdmin as supabase, buscarTudo 
 import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
+import MonteSuaEquipe from './MonteSuaEquipe'
 import { emLotes } from '@/lib/lotes'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf } from '@/lib/permissions'
@@ -660,6 +661,14 @@ export default async function FornecedorPage({
           <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Relatório
         </Link>
       </div>
+
+      {/*
+        * MONTE SUA EQUIPE (Juan, 18/10/2026): quem já trabalhou com o supervisor em outros eventos, para adicionar de
+        * uma vez, sem recadastro. Só aparece quando há gente no histórico; a lista carrega depois da página.
+        */}
+      {(supervisorDesteSetor || podeGerenciarEventos(perfil)) && (
+        <MonteSuaEquipe fornecedorId={fid} equipeNome={fornecedor.nome as string} />
+      )}
 
       {/* Três colunas porque são três indicadores. Numa grade de quatro, a
           quarta coluna ficava vazia e sobrava um vão à direita do último

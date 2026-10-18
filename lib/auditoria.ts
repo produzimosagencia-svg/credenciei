@@ -77,6 +77,7 @@ export const ROTULO_ORIGEM_CADASTRO: Record<string, string> = {
   portaria: 'Cadastro pela portaria (cartaz)',
   planilha: 'Importado por planilha',
   supervisor: 'Crachá do supervisor (gerado automaticamente)',
+  historico: 'Adicionado do histórico do supervisor (Monte sua equipe)',
 }
 
 /**

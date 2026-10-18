@@ -35,6 +35,7 @@ const SO_GESTOR: TipoRelatorioExtra[] = ['pedidos_setor', 'veiculos', 'subevento
 
 const ORIGEM: Record<string, string> = {
   formulario: 'Link do fornecedor', portaria: 'QR da portaria', supervisor: 'Cadastrado pelo supervisor',
+  historico: 'Do histórico do supervisor',
 }
 const SITUACAO: Record<string, string> = { pendente: 'Aguardando aprovação', aprovado: 'Aprovado', negado: 'Negado' }
 const SITUACAO_PEDIDO: Record<string, string> = { pendente: 'Aguardando decisão', aprovado: 'Aprovado', negado: 'Negado' }
