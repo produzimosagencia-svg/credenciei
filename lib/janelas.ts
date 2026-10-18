@@ -320,11 +320,17 @@ export function fimDoTurnoNaMadrugada(
   if (saidaFim) return new Date(saidaFim).toISOString()
 
   const depoisDoInicio = (iso: string) => !saidaInicio || new Date(iso).getTime() > new Date(saidaInicio).getTime()
+  const meioDia = instanteBRT(amanha, '12:00')
+  /*
+   * O horário do FIM do evento vira o fim da madrugada — mas só se for um horário de madrugada/manhã (até o
+   * meio-dia). LUAN, 18/10/2026: o evento foi salvo terminando "17/10 23:50"; o 23:50 caía no dia SEGUINTE e
+   * o turno do show ia até 18/10 às 23:50 — o dia inteiro da desmontagem virou "turno de ontem" (entradas de hoje
+   * gravadas no dia 17, "já registrado" e "dia não autorizado" no portão).
+   */
   if (evento.data_fim) {
     const fimNaManha = instanteBRT(amanha, hhmm(evento.data_fim))
-    if (depoisDoInicio(fimNaManha)) return fimNaManha
+    if (depoisDoInicio(fimNaManha) && new Date(fimNaManha).getTime() <= new Date(meioDia).getTime()) return fimNaManha
   }
-  const meioDia = instanteBRT(amanha, '12:00')
   return depoisDoInicio(meioDia) ? meioDia : new Date(new Date(saidaInicio!).getTime() + H_MS).toISOString()
 }
 
