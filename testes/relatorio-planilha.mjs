@@ -144,7 +144,12 @@ let linhasAna = 0; pag.eachRow(r => { if (r.values.includes('Ana Lima')) linhasA
 ok(linhasAna === 1, 'a Ana (mesmo CPF em dois fornecedores) aparece UMA vez')
 const pAna = acharLinha(pag, v => v.includes('Ana Lima')).r
 ok(pAna.getCell(colP('Fornecedor')).value === 'GILMAR - SEGURANÇA, GOTE - LIMPEZA' && pAna.getCell(colP('Dias trabalhados')).value === 3, 'com os dois fornecedores e os 3 dias (10, 11 e 12/10)')
-ok(pAna.getCell(colP('Quais dias')).value === '10/10 sáb, 11/10 dom, 12/10 seg', 'os dias com o dia da semana — ' + pAna.getCell(colP('Quais dias')).value)
+// Trabalhou em duas equipes (Juan, 18/10/2026: "preciso que isso tenha no relatório dela"): a equipe de cada dia.
+ok(pAna.getCell(colP('Quais dias')).value === 'GILMAR - SEGURANÇA: 10/10 sáb, 12/10 seg · GOTE - LIMPEZA: 11/10 dom', 'duas equipes: os dias de cada uma, com o dia da semana — ' + pAna.getCell(colP('Quais dias')).value)
+const pCaio = acharLinha(pag, v => v.includes('Caio Reis')).r
+ok(!/:/.test(String(pCaio.getCell(colP('Quais dias')).value)) && /sáb/.test(String(pCaio.getCell(colP('Quais dias')).value)), 'uma equipe só: a lista simples de dias, sem o nome da equipe — ' + pCaio.getCell(colP('Quais dias')).value)
+const pAnaLinha = montarLinhasPagamento([s1, s2]).find(p => p.nome === 'Ana Lima')
+ok(JSON.stringify(pAnaLinha.diasPorFornecedor) === JSON.stringify([{ fornecedor: 'GILMAR - SEGURANÇA', dias: ['2026-10-10', '2026-10-12'] }, { fornecedor: 'GOTE - LIMPEZA', dias: ['2026-10-11'] }]), 'diasPorFornecedor: a equipe do primeiro dia vem primeiro')
 ok(pAna.getCell(colP('Valor a receber')).value === 500 && pAna.getCell(colP('Pago')).value === 'Parcial', 'valor somado (300 + 200) e "Parcial" (pago num cadastro só)')
 ok(pAna.getCell(colP('Chave PIX')).value === 'ana@pix', 'chave PIX do cadastro')
 const pBia = acharLinha(pag, v => v.includes('Bia Souza')).r

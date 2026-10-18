@@ -219,6 +219,7 @@ export async function carregarHistoricoParaConsulta(v: VinculoDoEncarregado, fun
   const { data: f } = await supabaseAdmin
     .from('funcionarios').select('id').eq('id', funcionarioId).eq('fornecedor_id', v.fornecedorId).maybeSingle()
   if (!f) return null
-  const h = await historicoDoFuncionario(funcionarioId)
+  // Só o cadastro desta equipe: a consulta do encarregado é do setor dele.
+  const h = await historicoDoFuncionario(funcionarioId, { outrasEquipes: false })
   return h ? { ...h, cpf: '' } : null
 }

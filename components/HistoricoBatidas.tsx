@@ -49,9 +49,12 @@ export default function HistoricoBatidas({
 }) {
   const { resumo } = h
   const temPausas = h.dias.some(d => (d.pausas ?? []).length > 0)
+  // Trabalhou em mais de uma equipe neste evento: a tabela mostra a equipe de cada dia.
+  const variasEquipes = (h.equipes ?? []).length > 1 || h.dias.some(d => d.outraEquipe)
+  const equipesDaPessoa = [...new Set([...(h.equipes ?? []), h.setorNome])]
   const router = useRouter()
 
-  const [editando, setEditando] = useState<{ data: string; momento: MomentoPresenca; atual: string | null } | null>(null)
+  const [editando, setEditando] = useState<{ data: string; momento: MomentoPresenca; atual: string | null; fichaId: string } | null>(null)
   const [quando, setQuando] = useState('')
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<string | null>(null)
@@ -69,12 +72,12 @@ export default function HistoricoBatidas({
   const [confirmandoApagar, setConfirmandoApagar] = useState(false)
   const ROTULO_MOMENTO: Record<MomentoPresenca, string> = { entrada: 'entrada', meio: 'meio', fim: 'saída' }
 
-  const abrirEdicao = (data: string, momento: MomentoPresenca, atual: string | null) => {
+  const abrirEdicao = (data: string, momento: MomentoPresenca, atual: string | null, fichaId: string) => {
     setErro(null)
     setMotivo('')
     setConfirmandoApagar(false)
     setQuando(atual ? isoParaInput(atual) : `${data}T08:00`)
-    setEditando({ data, momento, atual })
+    setEditando({ data, momento, atual, fichaId })
   }
 
   const apagar = () => {
@@ -82,7 +85,8 @@ export default function HistoricoBatidas({
     setErro(null)
     if (!motivo.trim()) { setErro('Escreva o motivo — apagar não tem desfazer.'); return }
     startTransition(async () => {
-      const r = await apagarBatida(h.funcionarioId, editando.momento, editando.data, motivo)
+      // A batida é do cadastro DAQUELE dia — pode ser o da outra equipe.
+      const r = await apagarBatida(editando.fichaId, editando.momento, editando.data, motivo)
       if (r.error) { setErro(r.error); return }
       setEditando(null)
       setConfirmandoApagar(false)
@@ -96,7 +100,7 @@ export default function HistoricoBatidas({
     setErro(null)
     if (motivoObrigatorio && !motivo.trim()) { setErro('Informe o motivo da correção.'); return }
     startTransition(async () => {
-      const r = await lancarPontoManual(h.funcionarioId, editando.momento, editando.data, quando, motivo || `Corrigido no histórico (era ${ROTULO_MOMENTO[editando.momento]}${editando.atual ? ` às ${formatarBR(editando.atual, 'hora')}` : ', não registrada'}).`)
+      const r = await lancarPontoManual(editando.fichaId, editando.momento, editando.data, quando, motivo || `Corrigido no histórico (era ${ROTULO_MOMENTO[editando.momento]}${editando.atual ? ` às ${formatarBR(editando.atual, 'hora')}` : ', não registrada'}).`)
       if (r.error) { setErro(r.error); return }
       setEditando(null)
       if (onSalvo) onSalvo()
@@ -176,11 +180,22 @@ export default function HistoricoBatidas({
         * e voltou ao trabalho no mesmo dia. As colunas só aparecem quando
         * alguém de fato voltou — pra todo o resto a tabela continua igual.
         */}
+      {variasEquipes && (
+        <p className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-700">
+          <strong>Trabalhou em mais de uma equipe neste evento</strong> —{' '}
+          {equipesDaPessoa.map(e => {
+            const dias = [...new Set(h.dias.filter(d => d.equipe === e && d.compareceu).map(d => formatarBR(`${d.data}T12:00:00-03:00`, 'data').slice(0, 5)))]
+            return `${e}: ${dias.length ? dias.join(', ') : 'nenhum dia ainda'}`
+          }).join(' · ')}
+        </p>
+      )}
+
       <div className="overflow-x-auto -mx-1">
         <table className="tabela">
           <thead>
             <tr>
               <th>Dia</th>
+              {variasEquipes && <th>Equipe</th>}
               <th>Etapa</th>
               <th>Status</th>
               <th>Entrada</th>
@@ -193,7 +208,12 @@ export default function HistoricoBatidas({
           </thead>
           <tbody>
             {h.dias.map(d => (
-              <Linha key={d.data} dia={d} podeEditar={podeEditar} somenteMeio={somenteMeio} onEditar={abrirEdicao} temPausas={temPausas} />
+              <Linha
+                key={`${d.data}-${d.fichaId}`} dia={d} somenteMeio={somenteMeio} onEditar={abrirEdicao} temPausas={temPausas}
+                mostrarEquipe={variasEquipes}
+                // O supervisor corrige só a equipe dele: o dia na outra equipe fica sem o lápis (o servidor recusaria).
+                podeEditar={podeEditar && !(role === 'supervisor' && d.outraEquipe)}
+              />
             ))}
           </tbody>
         </table>
@@ -217,6 +237,7 @@ export default function HistoricoBatidas({
           <div className="flex items-center justify-between">
             <p className="text-amber-800 text-sm font-semibold">
               Corrigir {ROTULO_MOMENTO[editando.momento]} de {formatarBR(`${editando.data}T12:00:00-03:00`, 'data')}
+              {variasEquipes && ` · ${h.dias.find(d => d.fichaId === editando.fichaId)?.equipe ?? ''}`}
             </p>
             <button onClick={() => setEditando(null)} className="text-amber-700 hover:text-amber-900">
               <X className="w-4 h-4" />
@@ -402,16 +423,19 @@ function HoraFeita({ em }: { em: string }) {
 }
 
 function Linha({
-  dia, podeEditar, somenteMeio = false, onEditar, temPausas = false,
+  dia, podeEditar, somenteMeio = false, onEditar: editarNaFicha, temPausas = false, mostrarEquipe = false,
 }: {
   dia: DiaDoHistorico
   podeEditar: boolean
   /** Supervisor: só o meio tem o lápis de edição. */
   somenteMeio?: boolean
-  onEditar: (data: string, momento: MomentoPresenca, atual: string | null) => void
+  onEditar: (data: string, momento: MomentoPresenca, atual: string | null, fichaId: string) => void
   /** A tabela tem as colunas "Nova entrada" / "Nova saída". */
   temPausas?: boolean
+  /** A pessoa trabalhou em mais de uma equipe: a coluna "Equipe". */
+  mostrarEquipe?: boolean
 }) {
+  const onEditar = (data: string, momento: MomentoPresenca, atual: string | null) => editarNaFicha(data, momento, atual, dia.fichaId)
   /*
    * Com pausas, o dia é E1 → S1 → E2 → S2 … → saída final:
    *   Saída        = a primeira saída (a da pausa);
@@ -432,6 +456,9 @@ function Linha({
       <td className="font-medium text-slate-800 tabular-nums whitespace-nowrap">
         {formatarBR(`${dia.data}T12:00:00-03:00`, 'data')}
       </td>
+      {mostrarEquipe && (
+        <td className={`text-xs ${dia.outraEquipe ? 'text-brand-700 font-semibold' : 'text-slate-600'}`}>{dia.equipe}</td>
+      )}
       <td>
         {/* A ETAPA, não só "preparação": no fechamento importa saber se o dia
             foi montagem ou desmontagem — são contratos e diárias diferentes. */}

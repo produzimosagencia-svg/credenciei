@@ -101,6 +101,11 @@ export type LinhaPagamento = {
   nome: string; cpf: string | null; chavePix: string | null; fornecedores: string[]; areas: string[]; funcoes: string[]
   dias: string[]; diarias: number; horasMs: number; semSaida: number; semMeio: number
   valorReceber: number | null; pago: boolean | 'parcial'; pagoEm: string | null; baixaEm: string | null
+  /**
+   * Os dias trabalhados EM CADA equipe, na ordem dos dias (pedido do Juan, 18/10/2026: "uma pessoa que trabalhou numa
+   * equipe um dia e em outra equipe em outro — preciso que isso tenha no relatório dela"). Com uma equipe só, é uma linha.
+   */
+  diasPorFornecedor: { fornecedor: string; dias: string[] }[]
 }
 
 /**
@@ -117,7 +122,7 @@ export function montarLinhasPagamento(setores: SetorRelatorio[]): LinhaPagamento
       const chave = cpf || l.funcionarioId
       const acc = porPessoa.get(chave) ?? {
         nome: l.nome, cpf: l.cpf ?? null, chavePix: null, fornecedores: [], areas: [], funcoes: [], dias: [], diarias: 0, horasMs: 0,
-        semSaida: 0, semMeio: 0, valorReceber: null, pago: false, pagoEm: null, baixaEm: null, ids: new Set<string>(), pagos: 0,
+        semSaida: 0, semMeio: 0, valorReceber: null, pago: false, pagoEm: null, baixaEm: null, diasPorFornecedor: [], ids: new Set<string>(), pagos: 0,
       }
       if (!acc.fornecedores.includes(s.nome)) acc.fornecedores.push(s.nome)
       if (s.area && !acc.areas.includes(s.area)) acc.areas.push(s.area)
@@ -125,6 +130,9 @@ export function montarLinhasPagamento(setores: SetorRelatorio[]): LinhaPagamento
       if (l.entradaISO) {
         acc.diarias++
         if (!acc.dias.includes(l.dataRef)) acc.dias.push(l.dataRef)
+        const naEquipe = acc.diasPorFornecedor.find(e => e.fornecedor === s.nome)
+        if (!naEquipe) acc.diasPorFornecedor.push({ fornecedor: s.nome, dias: [l.dataRef] })
+        else if (!naEquipe.dias.includes(l.dataRef)) naEquipe.dias.push(l.dataRef)
       }
       acc.horasMs += duracaoDaLinha(l)
       if (l.entradaISO && !l.saidaISO) acc.semSaida++
@@ -143,7 +151,11 @@ export function montarLinhasPagamento(setores: SetorRelatorio[]): LinhaPagamento
     }
   }
   return [...porPessoa.values()]
-    .map(({ ids, pagos, ...p }) => ({ ...p, dias: [...p.dias].sort(), pago: pagos === 0 ? false : pagos === ids.size ? true : 'parcial' as const }))
+    .map(({ ids, pagos, ...p }) => ({
+      ...p, dias: [...p.dias].sort(), pago: pagos === 0 ? false : pagos === ids.size ? true : 'parcial' as const,
+      // A equipe do primeiro dia vem primeiro: "LIMPEZA: 17/10 · CARREGADOR: 18/10, 19/10".
+      diasPorFornecedor: p.diasPorFornecedor.map(e => ({ ...e, dias: [...e.dias].sort() })).sort((a, b) => a.dias[0].localeCompare(b.dias[0])),
+    }))
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
@@ -211,7 +223,7 @@ const COLUNAS_PAGAMENTO: Coluna[] = [
   { titulo: 'Área', largura: 24, esquerda: true },
   { titulo: 'Função', largura: 18, esquerda: true },
   { titulo: 'Dias trabalhados', largura: 11 },
-  { titulo: 'Quais dias', largura: 30, esquerda: true },
+  { titulo: 'Quais dias', largura: 40, esquerda: true },
   { titulo: 'Diárias (turnos)', largura: 11 },
   { titulo: 'Horas', largura: 10 },
   { titulo: 'Horas (decimal)', largura: 10 },
@@ -499,6 +511,14 @@ function escreverAbaResumoGeral(
   }
 }
 
+const diaComSemana = (d: string) => `${ddmm(d)} ${diaDaSemana(d).slice(0, 3).toLowerCase()}`
+
+/** "Quais dias": a lista simples; quem trabalhou em mais de uma equipe tem a equipe de cada dia. */
+function textoDosDias(p: LinhaPagamento): string {
+  if (p.diasPorFornecedor.length <= 1) return p.dias.map(diaComSemana).join(', ')
+  return p.diasPorFornecedor.map(e => `${e.fornecedor}: ${e.dias.map(diaComSemana).join(', ')}`).join(' · ')
+}
+
 /** A aba "Pagamento": uma linha por pessoa que trabalhou, com chave PIX, dias, diárias, horas, valor e se foi pago. */
 function escreverAbaPagamento(
   wb: import('exceljs').Workbook, ws: import('exceljs').Worksheet, bufferLogo: ArrayBuffer | null,
@@ -515,7 +535,7 @@ function escreverAbaPagamento(
   escreverInfo(ws, linha++, 'Evento:', evento.eventoNome, nCol)
   escreverInfo(ws, linha++, 'Período analisado:', textoPeriodo(evento.periodo), nCol)
   escreverInfo(ws, linha++, 'Pessoas que trabalharam:', String(pessoas.length), nCol)
-  escreverInfo(ws, linha++, 'Como ler:', 'Uma linha por pessoa (pelo CPF): quem está em mais de um fornecedor aparece uma vez só. "Dias trabalhados" conta os dias com entrada; "Diárias" conta os turnos (quem saiu e voltou no mesmo dia faz dois). Pendências em laranja: resolva antes de pagar. Valor a receber e Pago vêm do cadastro da pessoa.', nCol)
+  escreverInfo(ws, linha++, 'Como ler:', 'Uma linha por pessoa (pelo CPF): quem está em mais de um fornecedor aparece uma vez só, e em "Quais dias" vem a equipe de cada dia. "Dias trabalhados" conta os dias com entrada; "Diárias" conta os turnos (quem saiu e voltou no mesmo dia faz dois). Pendências em laranja: resolva antes de pagar. Valor a receber e Pago vêm do cadastro da pessoa.', nCol)
   ws.getRow(linha - 1).height = 30
   ws.getCell(linha - 1, 2).alignment = { wrapText: true, vertical: 'middle' }
   linha++
@@ -534,7 +554,7 @@ function escreverAbaPagamento(
       { v: p.areas.join(', ') || '—' },
       { v: p.funcoes.join(', ') || '—' },
       { v: p.dias.length },
-      { v: p.dias.map(d => `${ddmm(d)} ${diaDaSemana(d).slice(0, 3).toLowerCase()}`).join(', ') },
+      { v: textoDosDias(p) },
       { v: p.diarias },
       { v: horasTexto(p.horasMs) },
       { v: horasDecimais(p.horasMs), formato: FORMATO_DECIMAL },

@@ -70,6 +70,15 @@ export type DiaDoHistorico = {
   pausas: { saiu: string; voltou: string; /** O meio do bloco que terminou nesta pausa (meio por bloco). */ meio?: string | null }[]
   /** Da entrada à saída, em horas, sem o tempo das pausas. `null` enquanto faltar uma das duas pontas. */
   horas: number | null
+  /**
+   * O cadastro (ficha) de onde vêm as batidas deste dia, e a equipe dele. A pessoa pode ter trabalhado um dia numa
+   * equipe e outro dia em outra do mesmo evento (baixa numa, cadastro na outra) — pedido do Juan, 18/10/2026: "isso
+   * tem que ter no histórico dele". Correções do dia vão para ESTA ficha, não para a que está aberta.
+   */
+  fichaId: string
+  equipe: string
+  /** As batidas deste dia são de outra equipe, não da do cadastro aberto. */
+  outraEquipe: boolean
 }
 
 export type ResumoHistorico = {
@@ -93,6 +102,8 @@ export type HistoricoNoEvento = {
   cpf: string
   descredenciadoEm: string | null
   dias: DiaDoHistorico[]
+  /** As equipes em que a pessoa bateu ponto neste evento, na ordem dos dias. Mais de uma = trabalhou em equipes diferentes. */
+  equipes: string[]
   resumo: ResumoHistorico
   /**
    * Tentativas de bater o ponto RECUSADAS por estar fora do raio do local do evento, com o endereço (pedido do
@@ -109,8 +120,14 @@ const H_MS = 60 * 60 * 1000
  *
  * Devolve UMA linha por dia de trabalho do evento — inclusive os dias em que a
  * pessoa não apareceu, que são justamente os que interessam no fechamento.
+ *
+ * Junta os OUTROS cadastros do mesmo CPF neste evento (outra equipe, com ou sem baixa): o dia trabalhado lá aparece
+ * aqui com a equipe dele. `outrasEquipes: false` mostra só este cadastro (consulta do encarregado, que é do setor dele).
  */
-export async function historicoDoFuncionario(funcionarioId: string): Promise<HistoricoNoEvento | null> {
+export async function historicoDoFuncionario(
+  funcionarioId: string,
+  opcoes: { outrasEquipes?: boolean } = {},
+): Promise<HistoricoNoEvento | null> {
   const { data: func } = await supabaseAdmin
     .from('funcionarios')
     .select('id, nome, cpf, descredenciado_em, fornecedor_id, fornecedores!inner(nome, evento_id, eventos!inner(id, nome, data_inicio, data_fim, janela_entrada_inicio, janela_entrada_fim, janela_meio_inicio, janela_meio_fim, janela_fim_inicio, janela_fim_fim))')
@@ -122,6 +139,19 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
   const evento = setor?.eventos
   if (!evento) return null
 
+  // As fichas desta pessoa no evento: esta e as de outras equipes com o mesmo CPF.
+  const fichas = new Map<string, string>([[funcionarioId, setor.nome]])
+  if (opcoes.outrasEquipes !== false && func.cpf) {
+    const { data: outras } = await supabaseAdmin
+      .from('funcionarios')
+      .select('id, fornecedores!inner(nome, evento_id)')
+      .eq('cpf', func.cpf as string)
+      .eq('fornecedores.evento_id', evento.id)
+      .neq('id', funcionarioId)
+    for (const o of outras ?? []) fichas.set(o.id as string, (o.fornecedores as unknown as { nome: string }).nome)
+  }
+  const ids = [...fichas.keys()]
+
   const [{ data: diasBrutos }, { data: registros }, { data: pausasBrutas }] = await Promise.all([
     supabaseAdmin
       .from('jornada_dias')
@@ -130,8 +160,8 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       .order('data'),
     supabaseAdmin
       .from('registros')
-      .select('tipo, created_at, data_ref, registro_manual, foto_url')
-      .eq('funcionario_id', funcionarioId)
+      .select('funcionario_id, tipo, created_at, data_ref, registro_manual, foto_url')
+      .in('funcionario_id', ids)
       .eq('evento_id', evento.id)
       .order('created_at'),
     // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio; sem a coluna do meio por bloco
@@ -139,27 +169,35 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     (async () => {
       const ler = (colunas: string) => supabaseAdmin
         .from('pausas_turno').select(colunas)
-        .eq('funcionario_id', funcionarioId).eq('evento_id', evento.id).order('saiu_em')
-      type LinhaPausa = { data_ref: string; saiu_em: string; voltou_em: string; meio_em?: string | null }
-      const comMeio = await ler('data_ref, saiu_em, voltou_em, meio_em')
+        .in('funcionario_id', ids).eq('evento_id', evento.id).order('saiu_em')
+      type LinhaPausa = { funcionario_id: string; data_ref: string; saiu_em: string; voltou_em: string; meio_em?: string | null }
+      const comMeio = await ler('funcionario_id, data_ref, saiu_em, voltou_em, meio_em')
       if (!comMeio.error) return { data: (comMeio.data ?? []) as unknown as LinhaPausa[] }
-      const semMeio = await ler('data_ref, saiu_em, voltou_em')
+      const semMeio = await ler('funcionario_id, data_ref, saiu_em, voltou_em')
       return { data: (semMeio.error ? [] : (semMeio.data ?? [])) as unknown as LinhaPausa[] }
     })(),
   ])
 
+  // Chave: dia + ficha — no mesmo dia, cada equipe tem as suas batidas.
+  const chave = (dia: string, ficha: string) => `${dia}|${ficha}`
   const pausasPorDia = new Map<string, { saiu: string; voltou: string; meio?: string | null }[]>()
   for (const p of pausasBrutas ?? []) {
-    const dia = p.data_ref as string
-    if (!pausasPorDia.has(dia)) pausasPorDia.set(dia, [])
-    pausasPorDia.get(dia)!.push({ saiu: p.saiu_em as string, voltou: p.voltou_em as string, meio: p.meio_em ?? null })
+    const k = chave(p.data_ref as string, p.funcionario_id)
+    if (!pausasPorDia.has(k)) pausasPorDia.set(k, [])
+    pausasPorDia.get(k)!.push({ saiu: p.saiu_em as string, voltou: p.voltou_em as string, meio: p.meio_em ?? null })
   }
 
   const porDia = new Map<string, Map<string, Batida>>()
+  const fichasDoDia = new Map<string, string[]>()
   for (const r of registros ?? []) {
     const dia = (r.data_ref as string | null) ?? (r.created_at as string).slice(0, 10)
-    if (!porDia.has(dia)) porDia.set(dia, new Map())
-    porDia.get(dia)!.set(r.tipo as string, {
+    const ficha = r.funcionario_id as string
+    const k = chave(dia, ficha)
+    if (!porDia.has(k)) {
+      porDia.set(k, new Map())
+      fichasDoDia.set(dia, [...(fichasDoDia.get(dia) ?? []), ficha])
+    }
+    porDia.get(k)!.set(r.tipo as string, {
       em: r.created_at as string,
       assistido: r.registro_manual === true,
       temFoto: !!r.foto_url,
@@ -174,7 +212,7 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
    * fora da escala: o dinheiro daquele dia foi trabalhado de qualquer jeito.
    */
   const datas = new Set<string>((diasBrutos ?? []).map(d => d.data as string))
-  for (const dia of porDia.keys()) datas.add(dia)
+  for (const dia of fichasDoDia.keys()) datas.add(dia)
 
   const metaPorData = new Map((diasBrutos ?? []).map(d => [d.data as string, d as DiaDaJornada]))
 
@@ -191,13 +229,23 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     .map(d => d.data as string)
   if (!diasPrincipais.length && evento.data_inicio) diasPrincipais.push(diaBRT(evento.data_inicio))
 
-  const dias: DiaDoHistorico[] = [...datas].sort().map(data => {
+  /*
+   * Uma linha por dia; duas no dia em que a pessoa bateu ponto em duas equipes. Dia sem batida nenhuma fica com o
+   * cadastro aberto (é dele a falta). Esta ficha primeiro, as outras na ordem da primeira batida.
+   */
+  const linhas = [...datas].sort().flatMap(data => {
+    const comBatida = fichasDoDia.get(data) ?? []
+    const ordem = comBatida.includes(funcionarioId) ? [funcionarioId, ...comBatida.filter(f => f !== funcionarioId)] : comBatida
+    return (ordem.length ? ordem : [funcionarioId]).map(ficha => ({ data, ficha }))
+  })
+
+  const dias: DiaDoHistorico[] = linhas.map(({ data, ficha }) => {
     const meta = metaPorData.get(data) ?? null
-    const batidas = porDia.get(data)
+    const batidas = porDia.get(chave(data, ficha))
     const entrada = batidas?.get('entrada') ?? null
     const meio = batidas?.get('meio') ?? null
     const fim = batidas?.get('fim') ?? null
-    const pausas = pausasPorDia.get(data) ?? []
+    const pausas = pausasPorDia.get(chave(data, ficha)) ?? []
     // O meio do bloco ATUAL conta da volta da última pausa longa (meio por bloco, 12/10/2026).
     const janela = janelaDoMeio(evento, meta, inicioDoBloco(entrada?.em ?? null, pausas.map(p => ({ saiuEm: p.saiu, voltouEm: p.voltou }))))
     const foraMs = pausas.reduce((s, p) => s + Math.max(0, new Date(p.voltou).getTime() - new Date(p.saiu).getTime()), 0)
@@ -219,12 +267,19 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
       horas: entrada && fim
         ? Math.round((Math.max(0, new Date(fim.em).getTime() - new Date(entrada.em).getTime() - foraMs) / H_MS) * 100) / 100
         : null,
+      fichaId: ficha,
+      equipe: fichas.get(ficha) ?? setor.nome,
+      outraEquipe: ficha !== funcionarioId,
     }
   })
 
   // Dia cancelado não conta como escalado: o organizador desmarcou o
   // expediente, então ninguém faltou a ele.
   const valem = dias.filter(d => !d.cancelado)
+  // Dias contam por DATA: o dia com batida em duas equipes é um dia trabalhado, não dois.
+  const datasEscaladas = new Set(valem.map(d => d.data))
+  const datasTrabalhadas = new Set(valem.filter(d => d.compareceu).map(d => d.data))
+  const equipes = [...new Set(dias.filter(d => d.entrada || d.meio || d.fim || d.pausas.length).map(d => d.equipe))]
 
   return {
     eventoId: evento.id,
@@ -236,10 +291,11 @@ export async function historicoDoFuncionario(funcionarioId: string): Promise<His
     cpf: func.cpf as string,
     descredenciadoEm: (func.descredenciado_em as string | null) ?? null,
     dias,
+    equipes,
     resumo: {
-      diasEscalados: valem.length,
-      diasTrabalhados: valem.filter(d => d.compareceu).length,
-      diasFaltados: valem.filter(d => !d.compareceu).length,
+      diasEscalados: datasEscaladas.size,
+      diasTrabalhados: datasTrabalhadas.size,
+      diasFaltados: datasEscaladas.size - datasTrabalhadas.size,
       diasIncompletos: valem.filter(d => d.compareceu && !d.completo).length,
       horasTotais: Math.round(valem.reduce((soma, d) => soma + (d.horas ?? 0), 0) * 100) / 100,
       // Cada pausa é uma saída E uma volta (entrada) a mais — conta como batida.
