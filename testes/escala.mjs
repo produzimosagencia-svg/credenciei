@@ -113,7 +113,9 @@ ok(liberado(null, '2026-10-11'), 'sem escala → liberado pela regra da escala (
 ok(liberado({ status: null, diasAprovados: [] }, '2026-10-11'), 'escala_status nulo → liberado')
 
 // ─────────────────────────────────────────────────────────────────────────────
-grupo('6 · Cada caminho de presença confere a escala (código-fonte)')
+grupo('6 · A escala NÃO barra mais nenhum caminho — a batida entra MARCADA (Juan, 18/10/2026)')
+// "Esses ajustes que a gente fez no VITAL não podem prejudicar o sistema… o sistema é simples, não pode estar acontecendo
+// esses entraves." Antes cada caminho recusava fora da escala; agora grava e marca `registros.alerta` (lib/alerta-batida.ts).
 
 const actions = readFileSync(new URL('../lib/actions.ts', import.meta.url), 'utf8')
 const corpo = nome => {
@@ -123,25 +125,24 @@ const corpo = nome => {
   return actions.slice(i, Math.min(...[j, k].filter(x => x > 0)))
 }
 const autorizar = corpo('autorizarPresenca')
-ok(autorizar.includes('conferirEscalaNoDia') && autorizar.indexOf('conferirEscalaNoDia') < autorizar.indexOf('inferirMomentoQR'),
-  'autorizarPresenca (QR + biometria no portão) confere ANTES de decidir entrada/saída')
-ok(autorizar.includes('diaNaoAutorizado: true'), 'a recusa do portão vem marcada como diaNaoAutorizado')
-// A escala decide quem ENTRA — a saída de um turno já aberto não é barrada (Jefferson, LUAN 17/10/2026).
-ok(/const escalaHoje = entradaAberta \? \{ ok: true as const \} : await conferirEscalaNoDia\(func\.id, eventoId, diaTurno\)/.test(autorizar), 'QR: turno já aberto (saindo) não é barrado pela escala')
+ok(!autorizar.includes('diaNaoAutorizado: true') && !/conferirEscala(NoDia|DaBatida)\(/.test(autorizar), 'portão (QR + rosto): não recusa mais por escala')
+ok(/alertaDeEscala\(func\.id, eventoId, resolucao\.dataRef, 'entrada'\)/.test(autorizar) && autorizar.includes('...(alerta ? { alerta } : {})'),
+  'portão: a ENTRADA fora da escala entra marcada (registros.alerta)')
+ok(/const \[alertaEscala, alertaLimite\] = momento === 'entrada'/.test(autorizar), 'portão: saída e volta não são marcadas — a escala decide quem entra (Jefferson, LUAN 17/10)')
+ok(/previa: true, momento, funcionario: funcInfo, precisaJustificativaAtraso, aviso,/.test(autorizar), 'a prévia já mostra o aviso para o operador, antes de salvar')
+for (const nome of ['registrarPresencaLivre', 'registrarPresencaFacialLivre', 'registroAssistido']) {
+  ok(corpo(nome).includes('alertaDeEscala(') && !/conferirEscala(NoDia|DaBatida)\(/.test(corpo(nome)), `${nome}: marca em vez de recusar`)
+}
+ok(!/conferirEscala(NoDia|DaBatida)\(/.test(corpo('registrarPresencaFoto')), 'meio pela credencial: a escala não barra (a marca fica na entrada)')
 {
   const esc = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
   const f = esc.slice(esc.indexOf('export async function conferirEscalaDaBatida'))
   ok(/if \(momento !== 'entrada'\) \{[\s\S]{0,300}\.eq\('tipo', 'entrada'\)\.eq\('data_ref', dia\)[\s\S]{0,80}return \{ ok: true \}/.test(f) && /return conferirEscalaNoDia\(funcionarioId, eventoId, dia\)/.test(f),
-    'meio e saída com a entrada do dia registrada passam; sem entrada, confere como sempre')
-  for (const [nome, m] of [['registrarPresencaLivre', 'momento'], ['registrarPresencaFoto', "'meio'"], ['registrarPresencaAssistida', 'momento']]) {
-    ok(corpo(nome).includes(`conferirEscalaDaBatida(`) && corpo(nome).includes(`, ${m})`), `${nome}: usa a régua da batida (${m})`)
-  }
-  ok(corpo('registrarPresencaFacialLivre').includes('conferirEscalaNoDia('), 'reconhecimento facial (só entrada) confere como sempre')
+    'meio e saída com a entrada do dia registrada não são marcados; sem entrada, confere como sempre')
+  const alertaFn = esc.slice(esc.indexOf('export async function alertaDeEscala'))
+  ok(/if \(v\.ok \|\| v === FALHA_AO_CONFERIR\) return null/.test(alertaFn), 'não deu para conferir a escala (erro de banco): não marca nem trava')
   const cred = readFileSync(new URL('../app/credential/[token]/page.tsx', import.meta.url), 'utf8')
-  ok(/const bloqueadoNoAutoatendimento = proximoRegistro === 'entrada' && /.test(cred), 'credencial: o botão de saída não some por causa da escala')
-}
-for (const nome of ['registrarPresencaLivre', 'registrarPresencaFacialLivre', 'registrarPresencaFoto', 'registrarPresencaAssistida']) {
-  ok(/conferirEscalaNoDia|conferirEscalaDaBatida/.test(corpo(nome)), `${nome} confere a escala`)
+  ok(/const bloqueadoHoje = false/.test(cred) && /const modoBotaoUnico = podeAutoRegistrar\n/.test(cred), 'credencial: a escala não esconde mais o botão nem bloqueia a etapa')
 }
 const cadastro = corpo('cadastrarFuncionarioPublico')
 ok(cadastro.includes('conferirDiasPermitidos') && cadastro.includes('eventoUsaEscalaPorDia'),

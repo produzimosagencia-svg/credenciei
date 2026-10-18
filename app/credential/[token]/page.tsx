@@ -572,8 +572,12 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   // O dia da janela liberada (às 03:00 de uma janela 18:00–09:00, é a véspera) — ou null fora dela.
   const diaAutoatendimento = await diaDoAutoatendimentoLiberado(evento?.id ?? null)
   const podeAutoRegistrar = diaAutoatendimento !== null
-  // Mesma regra do servidor (`conferirEscalaNoDia`): escala pendente, ou hoje fora dos dias aprovados.
-  const bloqueadoHoje = !!escala && (escala.pendente || !escala.aprovados.includes(hoje))
+  /*
+   * A ESCALA NÃO BLOQUEIA MAIS NADA AQUI (Juan, 18/10/2026: "o sistema é simples, não pode estar acontecendo esses
+   * entraves") — o servidor deixa a batida fora da escala entrar e a marca (lib/alerta-batida.ts). Os dias liberados
+   * continuam à vista (`DiasLiberados`), só como informação.
+   */
+  const bloqueadoHoje = false
   /*
    * BOTÃO ÚNICO no lugar do QR (pedido do Juan, 08/10/2026): com o autoatendimento liberado, a pessoa vê só um
    * botão — o sistema decide se é entrada ou saída. Tem entrada sem saída → saída; senão → entrada.
@@ -581,14 +585,8 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const entradaFeita = momentos.some(m => m.momento === 'entrada' && m.status === 'feito')
   const saidaFeita = momentos.some(m => m.momento === 'fim' && m.status === 'feito')
   const proximoRegistro: 'entrada' | 'fim' | null = !entradaFeita ? 'entrada' : !saidaFeita ? 'fim' : null
-  /*
-   * A escala é conferida no MESMO dia que o servidor usa na batida: a SAÍDA no dia da janela; a ENTRADA no dia de
-   * trabalho de agora (o servidor deixou de gravar a entrada da manhã no dia em que a janela começou — 15/10/2026).
-   */
-  const diaDaBatida = proximoRegistro === 'entrada' ? dataRef : diaAutoatendimento
-  // A saída de quem já entrou não é barrada pela escala (17/10/2026 — ver `conferirEscalaDaBatida`): só a entrada confere.
-  const bloqueadoNoAutoatendimento = proximoRegistro === 'entrada' && !!escala && !!diaDaBatida && (escala.pendente || !escala.aprovados.includes(diaDaBatida))
-  const modoBotaoUnico = podeAutoRegistrar && !bloqueadoNoAutoatendimento
+  // Sem trava de escala (ver acima): com o autoatendimento liberado, é sempre o botão único.
+  const modoBotaoUnico = podeAutoRegistrar
 
   return (
     <TutorialProvider tutorial={TUTORIAL} usuarioId={token} ativo={tutorialDoEvento}>

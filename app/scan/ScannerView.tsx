@@ -5,7 +5,10 @@ import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/Loc
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
 import { formatarBR } from '@/lib/tz'
-import { ScanLine, CameraOff, Copy, CheckCheck, Loader2 } from 'lucide-react'
+import { ScanLine, CameraOff, Copy, CheckCheck, Loader2, CloudOff } from 'lucide-react'
+import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
+import ModoSemInternet from '@/components/ModoSemInternet'
+import { guardarNaFila, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo } from '@/lib/fila-offline'
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -38,6 +41,14 @@ type ScanResult = {
   encerra?: boolean
   /** Entrada atrasada, fornecedor exige meio (Vital, 30/09/2026) — pede o motivo antes de salvar. */
   precisaJustificativaAtraso?: boolean
+  /** Registrada com aviso (fora da escala, acima do limite do dia) — o portão não barra mais (18/10/2026). */
+  aviso?: string
+  /** Só da tela: o pedido não chegou ao servidor (sem internet). */
+  semRede?: boolean
+  /** Só da tela: prévia SEM INTERNET — SALVAR guarda no aparelho (lib/fila-offline.ts). */
+  offline?: boolean
+  /** Só da tela: a batida foi guardada no aparelho e sobe quando a internet voltar. */
+  guardado?: boolean
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
@@ -143,9 +154,10 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta' | 'guardado'
 
 function categoriaDo(r: ScanResult): Categoria {
+  if (r.guardado) return 'guardado'
   if (r.semResposta) return 'semResposta'
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
@@ -181,6 +193,8 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   negado:      { fundo: 'bg-red-600',   icone: '✕', titulo: 'ACESSO NEGADO' },
   invalido:    { fundo: 'bg-red-600',   icone: '✕', titulo: 'QR CODE INVÁLIDO' },
   semResposta: { fundo: 'bg-amber-600', icone: '⏳', titulo: 'SEM RESPOSTA AINDA' },
+  // Sem internet: guardada no aparelho — cor própria, nem verde (não foi conferida ainda) nem vermelho.
+  guardado:    { fundo: 'bg-teal-700', icone: '📦', titulo: 'GUARDADA SEM INTERNET' },
 }
 
 /*
@@ -216,7 +230,7 @@ function vibrar(padrao: number | number[]) {
   try { navigator.vibrate?.(padrao) } catch { /* nem todo aparelho vibra */ }
 }
 function sinalizar(c: Categoria) {
-  if (c === 'liberado' || c === 'saida') { vibrar(80); bipe([880]) }
+  if (c === 'liberado' || c === 'saida' || c === 'guardado') { vibrar(80); bipe([880]) }
   else if (c === 'jaValidado' || c === 'semResposta') { vibrar([60, 60, 60]); bipe([660, 660]) }
   else { vibrar([200, 80, 200]); bipe([220], 0.35) }
 }
@@ -251,6 +265,8 @@ export default function ScannerView({
   // arquivo já lê/escreve nele; na prática nunca muda durante esta instância.
   const [eventoId] = useState(initialEventoId ?? eventos[0]?.id ?? '')
   const subeventosDoEvento = subeventosPorEvento[eventoId] ?? []
+  // Sem internet, a leitura fica guardada no aparelho e sobe sozinha depois (Juan, 18/10/2026) — ver lib/fila-offline.ts.
+  const fila = useFilaSemInternet(eventoId)
   // Localização do aparelho do operador: obrigatória, vai junto em cada leitura (ver components/LocalizacaoOperador).
   const localizacao = useLocalizacaoOperador()
 
@@ -316,6 +332,8 @@ export default function ScannerView({
   const ocupadoRef = useRef(false)
   /** Identifica a leitura da vez — uma resposta atrasada de uma leitura antiga não sobrescreve a atual. */
   const leituraRef = useRef(0)
+  /** A leitura esperando o servidor — para "Seguir sem internet" saber o que guardar. */
+  const pendenteRef = useRef<{ codigo: string; modo: Modo; etapa: 'previa' | 'salvar' } | null>(null)
   /** O último QR com resultado, pra não validar de novo o mesmo QR parado na frente da câmera. */
   const ultimoRef = useRef<{ codigo: string; modo: Modo; em: number; resumo: string } | null>(null)
   const modoRef = useRef<Modo>(modo)
@@ -360,6 +378,7 @@ export default function ScannerView({
     setSalvando(false)
     setConferindo(false)
     setJustificativaAtraso('')
+    pendenteRef.current = null
     ocupadoRef.current = false
     retomarLeitura()
   }
@@ -392,8 +411,83 @@ export default function ScannerView({
 
   const semRede = (): ScanResult => ({
     success: false,
+    semRede: true,
     message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
   })
+
+  /*
+   * SEM INTERNET (Juan, 18/10/2026). A leitura não para: a tela mostra quem é (pela lista do evento guardada no
+   * aparelho), o operador confirma, e a batida fica GUARDADA com a hora da leitura. Quem a lista já sabe que não
+   * pode entrar (baixa, pendente, negado) é recusado aqui mesmo; o resto o servidor confere quando a internet voltar.
+   */
+  const abrirSemInternet = async (id: number, codigo: string, modoDaLeitura: Modo) => {
+    if (id !== leituraRef.current) return
+    if (ehQrDeVeiculo(codigo)) {
+      mostrarResultado(id, codigo, modoDaLeitura, { success: false, message: 'Sem internet: o QR de veículo precisa de internet para ser conferido. Anote a placa e confira quando a internet voltar.' })
+      return
+    }
+    if (!tokenDoQR(codigo)) {
+      mostrarResultado(id, codigo, modoDaLeitura, { success: false, qrInvalido: true, message: 'QR Code fora do padrão. Peça para a pessoa abrir a credencial de novo e mostrar o código.' })
+      return
+    }
+    const pessoa = await pessoaPeloQR(eventoIdRef.current, codigo).catch(() => null)
+    if (id !== leituraRef.current) return
+    const funcionario = pessoa ? { nome: pessoa.nome, cargo: pessoa.cargo, setor: pessoa.equipe } : undefined
+    const impedimento = pessoa ? motivoDaSituacao(pessoa.situacao) : null
+    if (impedimento) {
+      mostrarResultado(id, codigo, modoDaLeitura, { success: false, funcionario, message: `${impedimento} (conferido na lista guardada no aparelho — sem internet.)` })
+      return
+    }
+    setValidando(false)
+    setResult(null)
+    setConfirmacao({
+      codigo, modo: modoDaLeitura,
+      r: {
+        success: true, previa: true, offline: true, funcionario,
+        message: pessoa
+          ? 'Sem internet: a batida fica guardada neste aparelho e sobe sozinha quando a internet voltar.'
+          : 'Sem internet, e esta pessoa não está na lista guardada no aparelho (cadastro novo?). A batida fica guardada e é conferida quando a internet voltar.',
+      },
+    })
+    vibrar(40)
+  }
+
+  /** Guarda a leitura confirmada no aparelho, com a hora certa (a do servidor) e a localização de agora. */
+  const guardarLeitura = async (c: { codigo: string; modo: Modo; r: ScanResult }): Promise<boolean> => {
+    try {
+      await guardarNaFila({
+        id: idNovo(), eventoId: eventoIdRef.current, tipo: 'qr', codigo: c.codigo, momento: c.modo,
+        lidoEm: agoraCerto().toISOString(), local: localizacao.atual(),
+        subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
+        nome: c.r.funcionario?.nome ?? null, equipe: c.r.funcionario?.setor ?? null,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const mostrarGuardada = async (id: number, c: { codigo: string; modo: Modo; r: ScanResult }, motivo: string) => {
+    const ok = await guardarLeitura(c)
+    setConfirmacao(null)
+    mostrarResultado(id, c.codigo, c.modo, ok
+      ? { success: true, guardado: true, momento: c.modo, funcionario: c.r.funcionario, message: motivo }
+      : { success: false, message: 'Sem internet e não foi possível guardar neste aparelho (navegador em modo anônimo?). Use o Registrar ponto quando a internet voltar.' })
+  }
+
+  /** "Seguir sem internet" na tela de "sem resposta": desiste de esperar e guarda (ou abre a confirmação sem internet). */
+  const seguirSemInternet = () => {
+    const p = pendenteRef.current
+    if (!p) return liberar()
+    const id = ++leituraRef.current // a resposta atrasada, se chegar, não vale mais
+    setResult(null)
+    setSalvando(false)
+    if (p.etapa === 'salvar' && confirmacao) {
+      void mostrarGuardada(id, confirmacao, 'A internet não respondeu: a batida ficou guardada neste aparelho e sobe sozinha quando a internet voltar.')
+    } else {
+      void abrirSemInternet(id, p.codigo, p.modo)
+    }
+  }
 
   /**
    * Espera a resposta; se demorar, a tela DIZ que ainda não chegou (e troca
@@ -424,7 +518,13 @@ export default function ScannerView({
     if (!c || salvando) return
     if (c.r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5) return
     const id = ++leituraRef.current
+    // Prévia sem internet: SALVAR guarda no aparelho.
+    if (c.r.offline) {
+      await mostrarGuardada(id, c, 'Guardada neste aparelho. Sobe sozinha quando a internet voltar — não precisa ler de novo.')
+      return
+    }
     setSalvando(true)
+    pendenteRef.current = { codigo: c.codigo, modo: c.modo, etapa: 'salvar' }
     const r = await aguardar(
       id, c.codigo, c.modo,
       registrarPresencaQR(eventoIdRef.current, c.codigo, c.modo, {
@@ -435,6 +535,11 @@ export default function ScannerView({
     )
     setSalvando(false)
     if (!r) return
+    // A internet caiu entre a prévia e o SALVAR: guarda no aparelho (o operador já confirmou).
+    if (r.semRede) {
+      await mostrarGuardada(id, c, 'A internet caiu ao salvar: a batida ficou guardada neste aparelho e sobe sozinha quando a internet voltar.')
+      return
+    }
     setConfirmacao(null)
     mostrarResultado(id, c.codigo, c.modo, r)
   }
@@ -489,7 +594,14 @@ export default function ScannerView({
       return
     }
 
+    // Aparelho sabidamente sem internet: nem tenta — vai direto para a confirmação sem internet.
+    if (navigator.onLine === false) {
+      await abrirSemInternet(id, codigo, modoDaLeitura)
+      return
+    }
+
     // Primeiro a PRÉVIA (nada é gravado); o operador confirma na tela.
+    pendenteRef.current = { codigo, modo: modoDaLeitura, etapa: 'previa' }
     const previa = await aguardar(
       id, codigo, modoDaLeitura,
       registrarPresencaQR(eventoIdRef.current, codigo, modoDaLeitura, {
@@ -499,6 +611,11 @@ export default function ScannerView({
       }).catch(semRede),
     )
     if (!previa) return
+    // O pedido não chegou ao servidor: segue sem internet.
+    if (previa.semRede) {
+      await abrirSemInternet(id, codigo, modoDaLeitura)
+      return
+    }
     if (previa.previa) {
       setResult(null)
       setValidando(false)
@@ -607,6 +724,7 @@ export default function ScannerView({
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
+      <ModoSemInternet />
       {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
       <div className="w-full max-w-sm space-y-3">
         {/*
@@ -705,6 +823,7 @@ export default function ScannerView({
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
           O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
         </p>
+        <AvisoFilaSemInternet estado={fila} escuro={!noPainel} />
       </div>
 
       {/*
@@ -850,6 +969,11 @@ export default function ScannerView({
         return (
           <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/95 px-6" role="dialog" aria-modal="true" aria-label={`Confirmar ${acao}`}>
             <div className="w-full max-w-sm text-center text-white">
+              {r.offline && (
+                <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 text-xs font-extrabold tracking-wide text-slate-900">
+                  <CloudOff className="w-3.5 h-3.5" /> SEM INTERNET
+                </p>
+              )}
               <p className="text-sm font-semibold opacity-70">Confirme o registro</p>
               <span className={`inline-block mt-2 rounded-full px-5 py-2 text-lg font-extrabold tracking-wide ${cor}`}>
                 {acao}
@@ -863,6 +987,9 @@ export default function ScannerView({
                 </>
               )}
               <p className="text-base mt-4 opacity-90 leading-snug">{r.message}</p>
+              {r.aviso && (
+                <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ {r.aviso}</p>
+              )}
 
               {r.precisaJustificativaAtraso && (
                 <div className="mt-5 text-left">
@@ -887,7 +1014,7 @@ export default function ScannerView({
               >
                 {salvando
                   ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>
-                  : `SALVAR ${ehEntrada ? 'ENTRADA' : 'SAÍDA'}`}
+                  : `${r.offline ? 'GUARDAR' : 'SALVAR'} ${ehEntrada ? 'ENTRADA' : 'SAÍDA'}`}
               </button>
               <button
                 type="button"
@@ -941,9 +1068,21 @@ export default function ScannerView({
               </>
             )}
             <p className="text-lg mt-5 opacity-95 leading-snug">{result.message}</p>
+            {result.aviso && (
+              <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-base font-semibold px-3 py-2 leading-snug">⚠ {result.aviso}</p>
+            )}
 
             {categoria === 'semResposta' && (
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mt-5 opacity-80" />
+              <>
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mt-5 opacity-80" />
+                {/* Internet que não responde (Wi-Fi sem sinal de verdade): não precisa esperar — guarda no aparelho. */}
+                <button
+                  onClick={e => { e.stopPropagation(); seguirSemInternet() }}
+                  className="mt-6 w-full max-w-xs mx-auto flex items-center justify-center gap-2 bg-slate-900/80 text-white font-bold rounded-2xl px-6 py-4 border-2 border-white/40 active:scale-95 transition-all"
+                >
+                  <CloudOff className="w-5 h-5" /> Seguir sem internet
+                </button>
+              </>
             )}
 
             {/*

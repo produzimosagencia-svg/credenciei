@@ -32,13 +32,14 @@ const cracha = trecho('async function crachaNoEvento', 2600)
 ok(cracha.includes(".eq('cpf', p.cpf)") && cracha.includes('return { qrToken: existente.qr_token'),
   'o crachá é um por CPF por evento: reaproveitado nos demais setores')
 
-console.log('\n\x1b[1m3 · Trava por dia no portão\x1b[0m')
+console.log('\n\x1b[1m3 · Limite do dia no portão: entra e fica MARCADA (Juan, 18/10/2026)\x1b[0m')
 const aut = trecho('async function autorizarPresenca', 24000)
-ok(aut.includes('vagaNoSetorNoDia(') && aut.includes('setorLotado: true') && aut.includes("momento === 'entrada'"),
-  'autorizarPresenca barra a ENTRADA quando o setor lotou, com setorLotado')
-ok(aut.indexOf('vagaNoSetorNoDia(') > aut.indexOf('resolucao.jaEm'),
-  'quem já entrou hoje (leitura repetida) nunca é barrado — a checagem vem depois')
-ok((actions.match(/vagaNoSetorNoDia\(/g) ?? []).length >= 3, 'portão, biometria pelo celular e registro pelo celular conferem')
+ok(aut.includes('alertaDeLimite(') && !aut.includes('setorLotado: true') && /const \[alertaEscala, alertaLimite\] = momento === 'entrada'/.test(aut),
+  'autorizarPresenca não barra mais a ENTRADA do setor lotado: marca "acima do limite do dia"')
+ok(aut.indexOf('alertaDeLimite(') > aut.indexOf('resolucao.jaEm'),
+  'quem já entrou hoje (leitura repetida) nem é conferido — a marca vem depois')
+ok((actions.match(/alertaDeLimite\(/g) ?? []).length >= 3 && !/vagaNoSetorNoDia\(/.test(actions),
+  'portão, biometria pelo celular e registro pelo celular marcam — nenhum recusa')
 const esc = readFileSync(new URL('../lib/escala.ts', import.meta.url), 'utf8')
 ok(esc.includes("origemDaPessoa === 'supervisor') return { ok: true }"), 'o crachá do supervisor não ocupa nem sofre a trava')
 ok(esc.includes('if (erroContagem) return { ok: true }'), 'erro de leitura não tranca o portão')

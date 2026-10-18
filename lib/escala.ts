@@ -3,9 +3,10 @@ import { obterFuncionalidadesDoEvento } from './internos-servidor'
 import { faseDoDia, periodoDoEvento, somarDias } from './janelas'
 import { emLotes } from './lotes'
 import {
-  TRAVA_POR_DIA_ATIVA, planejarAprovacao, statusEscalaValido, vereditoDaEscala,
+  TRAVA_POR_DIA_ATIVA, RECUSA_ESCALA_PENDENTE, planejarAprovacao, statusEscalaValido, vereditoDaEscala,
   type DiaDaEscala, type DiaEscolhido, type StatusEscala, type VereditoEscala,
 } from './escala-regras'
+import type { CodigoAlerta } from './alerta-batida'
 
 /**
  * Escala por dia (eventos de subeventos) — LEITURA e GRAVAÇÃO no banco.
@@ -251,6 +252,31 @@ export async function conferirEscalaDaBatida(
     if (data?.length) return { ok: true }
   }
   return conferirEscalaNoDia(funcionarioId, eventoId, dia)
+}
+
+/**
+ * O PORTÃO NÃO RECUSA MAIS POR ESCALA (Juan, 18/10/2026) — a batida entra e fica marcada (ver lib/alerta-batida.ts).
+ * Devolve o código da marca, ou `null` com a escala em dia. Não deu para conferir (erro de banco): `null` — na dúvida,
+ * não marca nem trava.
+ */
+export async function alertaDeEscala(
+  funcionarioId: string, eventoId: string, dia: string, momento: 'entrada' | 'meio' | 'fim',
+): Promise<CodigoAlerta | null> {
+  try {
+    const v = await conferirEscalaDaBatida(funcionarioId, eventoId, dia, momento)
+    if (v.ok || v === FALHA_AO_CONFERIR) return null
+    return v.titulo === RECUSA_ESCALA_PENDENTE.titulo ? 'escala_pendente' : 'fora_da_escala'
+  } catch {
+    return null
+  }
+}
+
+/** Mesma ideia para o limite de pessoas do setor no dia: o portão deixa entrar e marca "acima do limite do dia". */
+export async function alertaDeLimite(
+  fornecedorId: string, dia: string, funcionarioId: string, origemDaPessoa?: string | null,
+): Promise<{ codigo: CodigoAlerta; maximo: number; ocupadas: number } | null> {
+  const vaga = await vagaNoSetorNoDia(fornecedorId, dia, funcionarioId, origemDaPessoa)
+  return vaga.ok ? null : { codigo: 'acima_do_limite', maximo: vaga.maximo, ocupadas: vaga.ocupadas }
 }
 
 /** Grava os dias que a pessoa escolheu no formulário e coloca a escala em 'pendente'. */

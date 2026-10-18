@@ -65,6 +65,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // O worker do modo sem internet do portão (public/sw.js): sempre a versão nova, nunca de cache.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+        ],
+      },
+      {
         // Tudo é DENY (ninguém embute o Credenciei), exceto o guia do supervisor, que a
         // tela "Tutorial supervisor" mostra num iframe do MESMO site (ver o bloco abaixo).
         source: '/:path((?!guia-(?:supervisor|operador|encarregado)$).*)',

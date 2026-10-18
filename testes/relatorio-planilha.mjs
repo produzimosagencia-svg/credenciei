@@ -20,8 +20,8 @@ const lib = f => readFileSync(join(aqui, '..', 'lib', f), 'utf8')
 // Os arquivos importam sem extensão (ok pro Next, não pro Node): copia pra uma pasta dentro do projeto e ajusta os caminhos.
 const pasta = join(aqui, '..', '.tmp-teste-relatorio-planilha')
 rmSync(pasta, { recursive: true, force: true }); mkdirSync(pasta, { recursive: true })
-for (const f of ['tz.ts', 'marca-relatorio.ts', 'geo-local.ts']) writeFileSync(join(pasta, f), lib(f))
-writeFileSync(join(pasta, 'relatorio-linhas.ts'), lib('relatorio-linhas.ts').replace("from './geo-local'", "from './geo-local.ts'"))
+for (const f of ['tz.ts', 'marca-relatorio.ts', 'geo-local.ts', 'alerta-batida.ts']) writeFileSync(join(pasta, f), lib(f))
+writeFileSync(join(pasta, 'relatorio-linhas.ts'), lib('relatorio-linhas.ts').replace("from './geo-local'", "from './geo-local.ts'").replace("from './alerta-batida'", "from './alerta-batida.ts'"))
 writeFileSync(join(pasta, 'relatorio-excel.ts'), lib('relatorio-excel.ts').replace("from './tz'", "from './tz.ts'").replace("from './marca-relatorio'", "from './marca-relatorio.ts'").replace("await import('exceljs')", "(await import('exceljs')).default"))
 const { linhasDoSetor, textoDoLancamento } = await import(join(pasta, 'relatorio-linhas.ts'))
 const { montarPlanilhaCompleta, montarPlanilhaSetor, montarPlanilhaSubevento, montarLinhasPagamento, diaDaSemana } = await import(join(pasta, 'relatorio-excel.ts'))
@@ -188,6 +188,23 @@ ok(/comColunasTolerantes\(COLUNAS_PAUSA/.test(srv) && /meio_em/.test(srv), 'tole
 const tela = readFileSync(join(aqui, '..', 'app/admin/eventos/[id]/relatorios/ExportarRelatorio.tsx'), 'utf8')
 ok(/obterDadosRelatorioEvento\(eventoId, periodo, \{ soComMeio: true \}\)/.test(tela) && /Exportar só equipes com batida de meio/.test(tela) && /if \(opcoes\.soComMeio\) consulta = consulta\.eq\('exige_meio', true\)/.test(srv),
   'botão "Exportar só equipes com batida de meio": o completo recortado nos fornecedores que pedem o meio (Juan, 13/10/2026)')
+
+// O portão não barra mais por escala nem por limite do dia (Juan, 18/10/2026): a batida entra MARCADA — e a feita sem
+// internet chega depois, com a hora em que foi lida. As duas vão na Situação, em laranja.
+console.log('\nBatida com aviso e batida feita sem internet')
+{
+  const { situacaoDaLinha } = await import(join(pasta, 'relatorio-excel.ts'))
+  const regs = new Map([['eva', [
+    reg('eva', 'entrada', '2026-10-10', '09:00', { alerta: 'fora_da_escala,acima_do_limite' }),
+    reg('eva', 'fim', '2026-10-10', '17:00', { recebido_em: iso('2026-10-10', '18:30') }),
+  ]]])
+  const [m] = linhasDoSetor([{ id: 'eva', nome: 'Eva Nunes', cargo: null }], regs, new Map(), { id: 's9', nome: 'BAR' }, ctx)
+  ok(JSON.stringify(m.linha.avisos) === JSON.stringify(['Entrada fora da escala', 'Entrada acima do limite do dia', 'Saída feita sem internet']), 'os avisos da linha: ' + JSON.stringify(m.linha.avisos))
+  const sit = situacaoDaLinha(m.linha)
+  ok(/fora da escala/.test(sit.texto) && sit.faltas.length === 3, 'na Situação, para pintar de laranja — ' + sit.texto)
+  const [semAviso] = linhasDoSetor([{ id: 'eva', nome: 'Eva Nunes', cargo: null }], new Map([['eva', [reg('eva', 'entrada', '2026-10-10', '09:00', { recebido_em: iso('2026-10-10', '09:00') })]]]), new Map(), { id: 's9', nome: 'BAR' }, ctx)
+  ok(!semAviso.linha.avisos, 'batida normal (recebida na hora): sem aviso nenhum')
+}
 
 rmSync(pasta, { recursive: true, force: true })
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')

@@ -1,6 +1,6 @@
 import { CalendarDays } from 'lucide-react'
 import type { FaseDoDia } from '@/lib/janelas'
-import { listarDias, rotuloDoDia, RECUSA_DIA_NAO_AUTORIZADO, type DiaDaEscala } from '@/lib/escala-regras'
+import { listarDias, rotuloDoDia, type DiaDaEscala } from '@/lib/escala-regras'
 
 /**
  * Os dias em que ESTE QR vale (escala por dia), logo abaixo do QR — pedido do
@@ -8,9 +8,9 @@ import { listarDias, rotuloDoDia, RECUSA_DIA_NAO_AUTORIZADO, type DiaDaEscala } 
  * liberados". Mesmas cores por fase do formulário e de Editar evento, e o dia
  * de hoje marcado.
  *
- * Só AVISA: a recusa de verdade é no portão (`conferirEscalaNoDia`). O vermelho
- * aparece só quando hoje É um dia do evento e não foi aprovado — antes do
- * evento começar, "acesso não autorizado para hoje" só assustaria.
+ * Só AVISA — e desde 18/10/2026 o portão também não recusa mais (Juan: "o sistema é simples, não pode estar
+ * acontecendo esses entraves"): a batida fora da escala entra marcada para o supervisor conferir. Por isso o aviso de
+ * hoje fora da escala é âmbar e diz para avisar o supervisor, não que o QR "não vale".
  *
  * Quando o supervisor ajusta os dias, isto muda sozinho na próxima vez que a
  * credencial atualizar (`ManterAtualizado`) — sem mensagem nova.
@@ -37,7 +37,7 @@ export default function DiasLiberados({
           <CalendarDays className="w-4 h-4 shrink-0" /> Seus dias de trabalho
         </p>
         <p className="text-amber-900/80 text-sm mt-1 leading-relaxed">
-          Aguardando a confirmação do supervisor. Seu QR Code só vai liberar a entrada nos dias que ele aprovar.
+          Aguardando a confirmação do supervisor. Se for trabalhar antes disso, avise o seu supervisor.
         </p>
       </div>
     )
@@ -51,7 +51,7 @@ export default function DiasLiberados({
     <div className="rounded-2xl border border-slate-200 p-4 space-y-3">
       <div>
         <p className="flex items-center gap-2 text-slate-800 text-sm font-bold">
-          <CalendarDays className="w-4 h-4 shrink-0 text-brand-500" /> Dias liberados para o seu QR Code
+          <CalendarDays className="w-4 h-4 shrink-0 text-brand-500" /> Seus dias de trabalho
         </p>
         <p className="text-slate-500 text-xs mt-0.5">{listarDias(aprovados)}</p>
       </div>
@@ -76,11 +76,11 @@ export default function DiasLiberados({
 
       {hojeEhDiaDoEvento && (
         hojeLiberado ? (
-          <p className="text-green-700 text-xs font-semibold">Hoje é um dos seus dias de trabalho — seu QR Code está liberado.</p>
+          <p className="text-green-700 text-xs font-semibold">Hoje é um dos seus dias de trabalho.</p>
         ) : (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-            <p className="text-red-700 text-sm font-semibold">{RECUSA_DIA_NAO_AUTORIZADO.titulo}</p>
-            <p className="text-red-700/90 text-xs mt-0.5 leading-relaxed">{RECUSA_DIA_NAO_AUTORIZADO.mensagem}</p>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-amber-800 text-sm font-semibold">Hoje não está entre os seus dias confirmados.</p>
+            <p className="text-amber-800/90 text-xs mt-0.5 leading-relaxed">Se você vai trabalhar hoje, avise o seu supervisor para ajustar a sua escala.</p>
           </div>
         )
       )}

@@ -60,6 +60,8 @@ type ScanResult = {
   diaNaoAutorizado?: boolean
   /** O setor da pessoa já bateu o limite de entradas do dia — NÃO liberar. */
   setorLotado?: boolean
+  /** Entra, mas marcada (fora da escala, acima do limite do dia) — o portão não barra mais (18/10/2026). */
+  aviso?: string
   previa?: boolean
   /** O rosto bateu, mas com alguém credenciado em OUTRO evento — ver lib/actions.ts. */
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
@@ -596,6 +598,7 @@ export default function FaceScannerView({
                 </>
               )}
               <p className="text-base mt-4 opacity-90 leading-snug">{r.message}</p>
+              {r.aviso && <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ {r.aviso}</p>}
 
               {r.precisaJustificativaAtraso && (
                 <div className="mt-5 text-left">
@@ -651,6 +654,7 @@ export default function FaceScannerView({
               </>
             )}
             <p className="text-lg mt-5 opacity-95 leading-snug">{result.message}</p>
+            {result.aviso && <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-base font-semibold px-3 py-2 leading-snug">⚠ {result.aviso}</p>}
 
             <button
               onClick={voltarAEscanear}

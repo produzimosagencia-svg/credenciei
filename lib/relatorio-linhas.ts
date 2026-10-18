@@ -3,12 +3,14 @@
  * (testes/relatorio-planilha.mjs). Quem busca os dados é `lib/relatorios.ts`.
  */
 import { avaliarLocal, posicaoValida, provaDeLocal, type LocalDoEvento } from './geo-local'
+import { rotulosDoAlerta, foiEnviadaDepois } from './alerta-batida'
 import type { LinhaRelatorio } from './relatorios'
 
 export type RegistroBruto = {
   id?: string; funcionario_id: string; tipo: string; data_ref: string | null; created_at: string
   registro_manual?: boolean | null; justificativa?: string | null; criado_por_perfil_id?: string | null; foto_url?: string | null
   latitude?: number | null; longitude?: number | null; precisao_m?: number | null; distancia_m?: number | null; fora_do_local?: boolean | null
+  alerta?: string | null; recebido_em?: string | null
 }
 export type PausaBruta = {
   funcionario_id: string; data_ref: string; saiu_em: string; voltou_em: string
@@ -88,8 +90,8 @@ export function linhasDoSetor(
 ): LinhaEmMontagem[] {
   const saida: LinhaEmMontagem[] = []
   const pedeMeio = (dia: string) => ctx.comMeio.has(setor.id) && (!ctx.diasMeio.ok || ctx.diasMeio.dias.has(dia))
-  type Bloco = { entradaISO: string | null; saidaISO: string | null; meios: string[]; como: Set<string>; lancamentos: LancamentoBruto[]; fora: string[] }
-  const novoBloco = (entradaISO: string | null): Bloco => ({ entradaISO, saidaISO: null, meios: [], como: new Set(), lancamentos: [], fora: [] })
+  type Bloco = { entradaISO: string | null; saidaISO: string | null; meios: string[]; como: Set<string>; lancamentos: LancamentoBruto[]; fora: string[]; avisos: string[] }
+  const novoBloco = (entradaISO: string | null): Bloco => ({ entradaISO, saidaISO: null, meios: [], como: new Set(), lancamentos: [], fora: [], avisos: [] })
   const anotar = (b: Bloco, r: RegistroBruto) => {
     const como = comoFoiBatido(r)
     b.como.add(como)
@@ -99,6 +101,8 @@ export function linhasDoSetor(
     }
     const fora = distanciaForaDoLocal(r, ctx.local)
     if (fora !== null) b.fora.push(`${ETAPA[r.tipo] ?? r.tipo} a ${textoDistancia(fora)}`)
+    for (const rotulo of rotulosDoAlerta(r.alerta)) b.avisos.push(`${ETAPA[r.tipo] ?? r.tipo} ${rotulo}`)
+    if (foiEnviadaDepois(r.created_at, r.recebido_em)) b.avisos.push(`${ETAPA[r.tipo] ?? r.tipo} feita sem internet`)
   }
 
   for (const f of funcionarios) {
@@ -157,6 +161,7 @@ export function linhasDoSetor(
             origem: b.como.has('manual') ? 'manual' : b.como.has('registrar') ? 'registrar' : 'normal',
             foraDoLocal: b.fora,
             baixaEm: f.descredenciado_em ?? null,
+            ...(b.avisos.length ? { avisos: b.avisos } : {}),
           },
           lancamentos: b.lancamentos,
         })

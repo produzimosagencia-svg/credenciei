@@ -21,12 +21,17 @@ import { supabaseAdmin, meusSetores } from './supabase-server'
 import type { TentativaForaDoLocal } from './alertas-local'
 import { veTodosEventos } from './permissions'
 import { janelaDoMeio, faseDoDia, diaBRT, inicioDoBloco, type EventoJanelas, type DiaDaJornada, type TipoDia, type FaseDoDia } from './janelas'
+import { rotulosDoAlerta, foiEnviadaDepois } from './alerta-batida'
 
 export type Batida = {
   em: string
   /** Registrada pelo supervisor no lugar da pessoa, com foto e justificativa. */
   assistido: boolean
   temFoto: boolean
+  /** Entrou com aviso — "fora da escala", "acima do limite do dia" (o portão não barra mais; ver lib/alerta-batida.ts). */
+  alertas?: string[]
+  /** Feita sem internet e enviada depois pelo aparelho (vale a hora em que foi feita). */
+  semInternet?: boolean
 }
 
 export type DiaDoHistorico = {
@@ -158,12 +163,19 @@ export async function historicoDoFuncionario(
       .select('data, tipo, cancelado, entrada_inicio, entrada_fim, saida_inicio, saida_fim')
       .eq('evento_id', evento.id)
       .order('data'),
-    supabaseAdmin
-      .from('registros')
-      .select('funcionario_id, tipo, created_at, data_ref, registro_manual, foto_url')
-      .in('funcionario_id', ids)
-      .eq('evento_id', evento.id)
-      .order('created_at'),
+    // Tolerante: sem a coluna `alerta` (supabase/upgrade-alerta-e-offline.sql), lê sem ela.
+    (async () => {
+      type LinhaRegistro = {
+        funcionario_id: string; tipo: string; created_at: string; data_ref: string | null
+        registro_manual: boolean | null; foto_url: string | null; alerta?: string | null; recebido_em?: string | null
+      }
+      const ler = (colunas: string) => supabaseAdmin
+        .from('registros').select(colunas).in('funcionario_id', ids).eq('evento_id', evento.id).order('created_at')
+      const completo = await ler('funcionario_id, tipo, created_at, data_ref, registro_manual, foto_url, alerta, recebido_em')
+      if (!completo.error) return { data: (completo.data ?? []) as unknown as LinhaRegistro[] }
+      const basico = await ler('funcionario_id, tipo, created_at, data_ref, registro_manual, foto_url')
+      return { data: (basico.data ?? []) as unknown as LinhaRegistro[] }
+    })(),
     // Tolerante: sem a tabela (upgrade-pausas-turno.sql), vem vazio; sem a coluna do meio por bloco
     // (upgrade-meio-por-bloco.sql), lê sem ela.
     (async () => {
@@ -201,6 +213,8 @@ export async function historicoDoFuncionario(
       em: r.created_at as string,
       assistido: r.registro_manual === true,
       temFoto: !!r.foto_url,
+      alertas: rotulosDoAlerta(r.alerta),
+      semInternet: foiEnviadaDepois(r.created_at, r.recebido_em),
     })
   }
 

@@ -61,6 +61,11 @@ export type LinhaRelatorio = {
   foraDoLocal?: string[]
   /** A pessoa está com baixa (saiu da equipe) — as batidas continuam no relatório. */
   baixaEm?: string | null
+  /**
+   * Batidas que entraram com aviso ("Entrada fora da escala", "Entrada acima do limite do dia" — o portão não barra
+   * mais) ou que foram feitas sem internet e enviadas depois. Vão na Situação, em laranja, para conferir.
+   */
+  avisos?: string[]
 }
 
 /** Alguém da equipe que NÃO registrou nada no período — o avesso do relatório. */
@@ -173,6 +178,8 @@ async function comColunasTolerantes<T>(opcoes: string[], buscar: (colunas: strin
 }
 
 const COLUNAS_REGISTRO = [
+  // `alerta` só existe depois de supabase/upgrade-alerta-e-offline.sql (o portão não barra mais por escala/limite).
+  'id, funcionario_id, tipo, data_ref, created_at, registro_manual, justificativa, criado_por_perfil_id, foto_url, latitude, longitude, precisao_m, distancia_m, fora_do_local, alerta, recebido_em',
   'id, funcionario_id, tipo, data_ref, created_at, registro_manual, justificativa, criado_por_perfil_id, foto_url, latitude, longitude, precisao_m, distancia_m, fora_do_local',
   'id, funcionario_id, tipo, data_ref, created_at, registro_manual, justificativa, criado_por_perfil_id, foto_url',
   'funcionario_id, tipo, data_ref, created_at',

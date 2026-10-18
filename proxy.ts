@@ -69,6 +69,8 @@ export async function proxy(request: NextRequest) {
     // tem conta. Se esta linha sair, o link da bio cai no login e o comercial
     // para de receber conversa sem ninguém entender por quê.
     pathname === '/wa' ||
+    // O worker do modo sem internet do portão: o navegador o busca sozinho, e um redirecionamento para o login o quebraria.
+    pathname === '/sw.js' ||
     // `/ir` é o atalho rastreável pro Instagram e pro site (lib/links-rastreados.ts) — sai da credencial e do
     // formulário, de quem não tem login. Sem esta linha o clique no Instagram cairia no login.
     pathname === '/ir'

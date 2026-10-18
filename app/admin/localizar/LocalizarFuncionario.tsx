@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import {
   Search, Camera as CameraIcon, X, CheckCircle2, User, AlertTriangle,
   MapPin, Clock, Building2, IdCard, ShieldCheck, Check, RotateCcw, UserSearch, ScanFace, ChevronLeft, ChevronRight, LayoutGrid,
+  CloudOff, CloudUpload,
 } from 'lucide-react'
 import {
   localizarFuncionario, abrirFuncionarioLocalizado, listarPessoasDoEvento, registrarPresencaAssistida, lancarEntradaNaoBatida, metodoIdentificacaoDoEvento,
@@ -13,6 +14,11 @@ import { formatarBR } from '@/lib/tz'
 import { Secao, Cartao, EmptyState } from '@/components/ui/Superficie'
 import CadastroBiometrico from '@/components/CadastroBiometrico'
 import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
+import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
+import ModoSemInternet from '@/components/ModoSemInternet'
+import {
+  guardarNaFila, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, type PessoaParaSemInternet,
+} from '@/lib/fila-offline'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
 function comprimir(file: File): Promise<string> {
@@ -65,7 +71,14 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   // Saída recusada por falta de entrada no turno: o operador informa a hora da entrada (Juan, 18/10/2026).
   const [semEntrada, setSemEntrada] = useState(false)
   const [horaEntrada, setHoraEntrada] = useState('')
-  const [sucesso, setSucesso] = useState<{ nome: string; etapa: string } | null>(null)
+  const [sucesso, setSucesso] = useState<{ nome: string; etapa: string; guardada?: boolean; aviso?: string } | null>(null)
+  /*
+   * SEM INTERNET (Juan, 18/10/2026): a busca usa a lista do evento guardada no aparelho (CPF completo ou nome), e a
+   * batida — com a foto — fica guardada e sobe sozinha quando a internet voltar. Ver lib/fila-offline.ts.
+   */
+  const fila = useFilaSemInternet(eventoId)
+  const [semNet, setSemNet] = useState<PessoaParaSemInternet | null>(null)
+  const [candidatosSemNet, setCandidatosSemNet] = useState<PessoaParaSemInternet[] | null>(null)
   const [buscando, startBusca] = useTransition()
   const [registrando, startRegistro] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -82,6 +95,48 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
   const recomecar = () => {
     setTermo(''); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null); setErro(null); setSucesso(null)
+    setSemNet(null); setCandidatosSemNet(null)
+  }
+
+  const abrirSemNet = (p: PessoaParaSemInternet) => {
+    setCandidatosSemNet(null)
+    setSemNet(p)
+    setMomento('entrada')
+    setFoto(null)
+  }
+
+  /** A busca sem internet: CPF completo (pelo resumo guardado) ou parte do nome. */
+  const buscarSemInternet = async (t: string) => {
+    const digitos = t.replace(/\D/g, '')
+    if (digitos.length === 11) {
+      const p = await pessoaPeloCpf(eventoId, digitos).catch(() => null)
+      if (p) return abrirSemNet(p)
+      return setErro(fila.pacote
+        ? 'Sem internet, e este CPF não está na lista guardada neste aparelho. Confira o número, ou busque pelo nome.'
+        : 'Sem internet, e a lista do evento ainda não foi guardada neste aparelho. Quando a internet voltar, abra esta tela uma vez para guardar.')
+    }
+    const lista = await pessoasPeloNome(eventoId, t).catch(() => [] as PessoaParaSemInternet[])
+    if (!lista.length) {
+      return setErro(fila.pacote
+        ? 'Sem internet: ninguém com esse nome na lista guardada neste aparelho. Busque pelo CPF completo.'
+        : 'Sem internet, e a lista do evento ainda não foi guardada neste aparelho. Quando a internet voltar, abra esta tela uma vez para guardar.')
+    }
+    if (lista.length === 1) return abrirSemNet(lista[0])
+    setCandidatosSemNet(lista)
+  }
+
+  /** Guarda a batida no aparelho, com a hora certa (a do servidor), a foto e a localização de agora. */
+  const guardarBatida = async (p: { id: string; nome: string; equipe: string | null }, etapa: 'entrada' | 'fim', fotoDaBatida: string) => {
+    try {
+      await guardarNaFila({
+        id: idNovo(), eventoId, tipo: 'assistido', funcionarioId: p.id, momento: etapa,
+        lidoEm: agoraCerto().toISOString(), local: localizacao.atual(), foto: fotoDaBatida, dispositivo: navigator.userAgent,
+        nome: p.nome, equipe: p.equipe,
+      })
+      setSucesso({ nome: p.nome, etapa: etapa === 'entrada' ? 'Entrada' : 'Saída', guardada: true })
+    } catch {
+      setErro('Sem internet e não foi possível guardar neste aparelho (navegador em modo anônimo?). Registre quando a internet voltar.')
+    }
   }
 
   const abrirFicha = (f: FuncionarioLocalizado) => {
@@ -96,9 +151,16 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
   const buscar = (e: React.FormEvent) => {
     e.preventDefault()
-    setErro(null); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null)
+    setErro(null); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null); setSemNet(null); setCandidatosSemNet(null)
+    if (navigator.onLine === false) { void buscarSemInternet(termo); return }
     startBusca(async () => {
-      const res = await localizarFuncionario(termo, eventoId)
+      let res: Awaited<ReturnType<typeof localizarFuncionario>>
+      try {
+        res = await localizarFuncionario(termo, eventoId)
+      } catch {
+        // O pedido não chegou: busca na lista guardada no aparelho.
+        return buscarSemInternet(termo)
+      }
       if (res.error) return setErro(res.error)
       if (res.candidatos) return setCandidatos(res.candidatos)
       abrirFicha(res.funcionario!)
@@ -109,7 +171,12 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   const escolher = (id: string) => {
     setErro(null)
     startBusca(async () => {
-      const res = await abrirFuncionarioLocalizado(id)
+      let res: Awaited<ReturnType<typeof abrirFuncionarioLocalizado>>
+      try {
+        res = await abrirFuncionarioLocalizado(id)
+      } catch {
+        return setErro('Sem internet agora. Busque a pessoa de novo pelo CPF completo ou pelo nome — a busca sem internet usa a lista guardada neste aparelho.')
+      }
       if (res.error) return setErro(res.error)
       setCandidatos(null)
       abrirFicha(res.funcionario!)
@@ -134,18 +201,25 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
     setSemEntrada(false)
     startRegistro(async () => {
       const gps = localizacao.atual()
-      const res = await registrarPresencaAssistida(func.id, momento, {
-        fotoBase64: foto,
-        latitude: gps?.latitude,
-        longitude: gps?.longitude,
-        precisao: gps?.precisao ?? undefined,
-        dispositivo: navigator.userAgent,
-      })
+      let res: Awaited<ReturnType<typeof registrarPresencaAssistida>>
+      try {
+        res = await registrarPresencaAssistida(func.id, momento, {
+          fotoBase64: foto,
+          latitude: gps?.latitude,
+          longitude: gps?.longitude,
+          precisao: gps?.precisao ?? undefined,
+          dispositivo: navigator.userAgent,
+        })
+      } catch {
+        // A internet caiu ao registrar: entrada e saída ficam guardadas no aparelho (o meio precisa de internet).
+        if (momento === 'meio') return setErro('Sem internet agora. O meio só pode ser registrado com internet — tente de novo em instantes.')
+        return guardarBatida({ id: func.id, nome: func.nome, equipe: func.setorNome }, momento, foto)
+      }
       if (res.error) {
         setSemEntrada(res.semEntrada === true)
         return setErro(res.error)
       }
-      setSucesso({ nome: res.nome ?? func.nome, etapa: res.etapa ?? '' })
+      setSucesso({ nome: res.nome ?? func.nome, etapa: res.etapa ?? '', aviso: res.aviso })
     })
   }
 
@@ -169,15 +243,22 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   if (sucesso) {
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-3 shadow-sm">
-        <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />
+        {sucesso.guardada
+          ? <CloudUpload className="w-14 h-14 text-teal-600 mx-auto" />
+          : <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />}
         <div>
-          <p className="text-slate-800 font-bold text-lg">Presença registrada</p>
+          <p className="text-slate-800 font-bold text-lg">{sucesso.guardada ? 'Guardada sem internet' : 'Presença registrada'}</p>
           <p className="text-slate-500 text-sm mt-1">
             <strong>{sucesso.nome}</strong> — {sucesso.etapa.toLowerCase()}
           </p>
         </div>
+        {sucesso.aviso && (
+          <p className="text-amber-800 text-sm font-semibold bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">⚠ {sucesso.aviso}</p>
+        )}
         <p className="text-slate-400 text-xs">
-          O registro ficou marcado como feito por você, com a foto, o horário e a localização.
+          {sucesso.guardada
+            ? 'Ficou neste aparelho com a hora de agora, a foto e a localização, e sobe sozinha quando a internet voltar. Se o sistema recusar, aparece em "não entraram" no aviso desta tela.'
+            : 'O registro ficou marcado como feito por você, com a foto, o horário e a localização.'}
         </p>
         <button onClick={recomecar} className="btn-press w-full btn btn-primario btn-lg">
           Localizar outra pessoa
@@ -189,6 +270,8 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   return (
     <div className="space-y-4">
       {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
+      <ModoSemInternet />
+      <AvisoFilaSemInternet estado={fila} />
       {/* Busca por CPF ou nome */}
       <Secao
         tom="acento"
@@ -225,9 +308,106 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
       {/* Nada buscado ainda: a lista do evento (30 por página, em ordem alfabética) — antes era um retângulo
           vazio, e quem não lembrava o nome exato não tinha por onde começar (pedido do Juan, 08/10/2026). */}
-      {!termo && !candidatos && !func && !erro && (
+      {!termo && !candidatos && !func && !erro && !fila.semInternet && (
         <ListaDoEvento eventoId={eventoId} aoEscolher={escolher} desabilitado={buscando} />
       )}
+
+      {/* Sem internet: a lista guardada no aparelho achou mais de uma pessoa com esse nome. */}
+      {candidatosSemNet && (
+        <div className="bg-white border border-amber-200 rounded-2xl shadow-sm overflow-hidden">
+          <p className="text-amber-800 text-xs font-semibold px-4 py-3 border-b border-amber-100 bg-amber-50 flex items-center gap-1.5">
+            <CloudOff className="w-3.5 h-3.5 shrink-0" /> Sem internet — {candidatosSemNet.length} pessoas na lista guardada. Toque em quem você está atendendo.
+          </p>
+          <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+            {candidatosSemNet.map(c => (
+              <button key={c.id} type="button" onClick={() => abrirSemNet(c)} className="btn-press w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-slate-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-slate-800 text-sm font-semibold truncate">{c.nome}</p>
+                  <p className="text-slate-400 text-2xs truncate">{c.equipe}{c.cargo ? ` • ${c.cargo}` : ''}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sem internet: a ficha que a lista guardada conhece — só entrada e saída, com foto, guardadas no aparelho. */}
+      {semNet && (() => {
+        const impedimento = motivoDaSituacao(semNet.situacao)
+        const etapa = momento === 'fim' ? 'fim' : 'entrada'
+        return (
+          <div className="bg-white border border-amber-300 rounded-2xl p-5 shadow-sm space-y-4">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 text-2xs font-extrabold tracking-wide">
+              <CloudOff className="w-3.5 h-3.5" /> SEM INTERNET — LISTA GUARDADA NO APARELHO
+            </p>
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0">
+                <User className="w-6 h-6 text-slate-300" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-slate-800 font-bold leading-tight">{semNet.nome}</p>
+                <p className="text-slate-500 text-xs mt-0.5">{semNet.equipe}{semNet.cargo ? ` • ${semNet.cargo}` : ''}</p>
+              </div>
+            </div>
+            {impedimento ? (
+              <p className="text-red-700 text-sm font-semibold bg-red-50 border border-red-200 rounded-xl px-3 py-2">{impedimento} Não registre.</p>
+            ) : soMeio ? (
+              <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Sem internet, o meio não pode ser registrado. Registre quando a internet voltar.</p>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Que batida é esta?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['entrada', 'fim'] as const).map(m => (
+                      <button
+                        key={m} type="button" onClick={() => setMomento(m)}
+                        className={`btn-press rounded-xl border p-3 text-sm font-semibold transition-colors ${
+                          etapa === m ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500 text-slate-800' : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {m === 'entrada' ? 'Entrada' : 'Saída'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFoto} />
+                {foto ? (
+                  <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={foto} alt="Foto tirada agora" className="w-20 h-20 rounded-xl object-cover border border-slate-200" />
+                    <button type="button" onClick={() => setFoto(null)} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                      <X className="w-3 h-3" /> Tirar de novo
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button" onClick={() => fileRef.current?.click()}
+                    className="btn-press w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 rounded-xl py-4 text-sm text-slate-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                  >
+                    <CameraIcon className="w-4 h-4" /> Tirar a foto do rosto
+                  </button>
+                )}
+                <button
+                  type="button" disabled={!foto}
+                  onClick={() => foto && void guardarBatida({ id: semNet.id, nome: semNet.nome, equipe: semNet.equipe }, etapa, foto)}
+                  className="btn btn-primario btn-lg w-full disabled:opacity-60"
+                >
+                  Guardar {etapa === 'entrada' ? 'entrada' : 'saída'} neste aparelho
+                </button>
+                <p className="text-slate-400 text-2xs text-center">
+                  Vale a hora de agora. O sistema confere tudo quando a internet voltar — o que não puder entrar aparece em &ldquo;não entraram&rdquo;.
+                </p>
+              </>
+            )}
+            <button type="button" onClick={recomecar} className="w-full text-center text-slate-500 text-xs font-semibold hover:text-slate-700">
+              Buscar outra pessoa
+            </button>
+          </div>
+        )
+      })()}
 
       {/* Nome quase nunca é único: quem escolhe a pessoa certa é o supervisor. */}
       {candidatos && (

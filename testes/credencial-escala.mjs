@@ -1,7 +1,10 @@
 /*
- * CREDENCIAL: DIA NÃO LIBERADO NA ESCALA = NENHUM BOTÃO DE REGISTRAR (VITAL, 08/10/2026). A tela mostrava "Acesso
- * não autorizado para hoje" e, logo abaixo, o botão "Registrar entrada" ativo. O servidor recusa
- * (`conferirEscalaNoDia`), mas o botão não pode nem aparecer.
+ * CREDENCIAL E ESCALA.
+ *
+ * VITAL, 08/10/2026: dia fora da escala escondia os botões de registrar (o servidor recusava).
+ * LUAN, 18/10/2026 — REGRA NOVA (Juan: "esses ajustes que a gente fez no VITAL não podem prejudicar o sistema… o
+ * sistema é simples, não pode estar acontecendo esses entraves"): a escala NÃO bloqueia mais nada. A credencial mostra
+ * os dias como informação, e o servidor deixa a batida entrar MARCADA (lib/alerta-batida.ts).
  *
  * Roda com: node testes/credencial-escala.mjs
  */
@@ -12,13 +15,21 @@ const ok = (c, m) => { if (c) console.log(`  \x1b[32m✓\x1b[0m ${m}`); else { c
 const ler = f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')
 
 const pagina = ler('app/credential/[token]/page.tsx')
-const checkin = ler('app/credential/[token]/CheckinPresenca.tsx')
-ok(/const bloqueadoHoje = !!escala && \(escala\.pendente \|\| !escala\.aprovados\.includes\(hoje\)\)/.test(pagina) && pagina.includes('bloqueadoHoje={bloqueadoHoje}'), 'a credencial bloqueia quando a escala está pendente ou hoje não é dia aprovado (a mesma regra do servidor)')
-ok(/if \(info\.status === 'disponivel' && bloqueado\) \{/.test(checkin) && checkin.indexOf("info.status === 'disponivel' && bloqueado") < checkin.indexOf("if (info.status === 'disponivel') {"), 'o cartão bloqueado vira aviso ANTES de qualquer botão (entrada, meio, saída)')
-ok(/biometriaAutoatendimento && !embutido && !bloqueadoHoje/.test(checkin), 'o reconhecimento facial também some')
+ok(/const bloqueadoHoje = false/.test(pagina) && pagina.includes('bloqueadoHoje={bloqueadoHoje}'), 'a credencial não bloqueia mais a etapa por causa da escala')
+ok(/const modoBotaoUnico = podeAutoRegistrar\n/.test(pagina) && !pagina.includes('bloqueadoNoAutoatendimento'), 'o botão único do autoatendimento não some por causa da escala')
+
+const dias = ler('app/credential/[token]/DiasLiberados.tsx')
+ok(!dias.includes('RECUSA_DIA_NAO_AUTORIZADO') && /Hoje não está entre os seus dias confirmados/.test(dias) && /avise o seu supervisor/.test(dias),
+  'os dias continuam à vista, como informação — sem o "acesso não autorizado para hoje"')
+
+const a = ler('lib/actions.ts')
 for (const acao of ['registrarPresencaLivre', 'registrarPresencaFoto', 'registrarPresencaFacialLivre']) {
-  const a = ler('lib/actions.ts'); const i = a.indexOf(`export async function ${acao}(`)
-  ok(/conferirEscalaNoDia\(|conferirEscalaDaBatida\(/.test(a.slice(i, i + 9000)), `${acao}: o servidor continua conferindo a escala`)
+  const i = a.indexOf(`export async function ${acao}(`)
+  ok(!/conferirEscalaNoDia\(|conferirEscalaDaBatida\(/.test(a.slice(i, i + 9000)), `${acao}: o servidor não recusa mais por escala`)
+}
+for (const acao of ['registrarPresencaLivre', 'registrarPresencaFacialLivre']) {
+  const i = a.indexOf(`export async function ${acao}(`)
+  ok(/alertaDeEscala\(/.test(a.slice(i, i + 9000)), `${acao}: a entrada fora da escala fica marcada`)
 }
 
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')

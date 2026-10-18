@@ -396,6 +396,9 @@ function Celula({
       {/* Batida do supervisor no lugar da pessoa: precisa ficar visível no
           fechamento, porque é a que alguém pode querer contestar. */}
       {batida.assistido && <span className="text-amber-600 text-2xs">assistida</span>}
+      {/* Entrou com aviso (o portão não barra mais por escala nem por limite) — e a feita sem internet, enviada depois. */}
+      {(batida.alertas ?? []).map(a => <span key={a} className="text-amber-700 text-2xs font-semibold uppercase tracking-wide">{a}</span>)}
+      {batida.semInternet && <span className="text-slate-500 text-2xs">sem internet</span>}
     </span>
   )
 

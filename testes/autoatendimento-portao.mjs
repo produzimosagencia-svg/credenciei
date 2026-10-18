@@ -67,7 +67,8 @@ confere('a ENTRADA usa o dia de trabalho de agora — quem chega de manhã antes
   /momento === 'fim' \? \{ diaTurno/.test(actions) && /if \(momento === 'entrada' && resolucao\.diaPrincipal\)/.test(actions), true)
 confere('janela que COMEÇA no dia principal nunca libera (diaPermiteAutoatendimento no dia de início)',
   /return \(await diaPermiteAutoatendimento\(eventoId, janela\.diaInicio\)\) \? janela\.diaInicio : null/.test(autoatendimentoLib), true)
-confere('a credencial confere a escala no mesmo dia que o servidor usa (saída: dia da janela; entrada: dia de agora)', credencial.includes("const diaDaBatida = proximoRegistro === 'entrada' ? dataRef : diaAutoatendimento") && credencial.includes('escala.aprovados.includes(diaDaBatida)'), true)
+// 18/10/2026: a escala não bloqueia mais o autoatendimento (Juan: "o sistema é simples") — a batida entra marcada.
+confere('a escala não esconde mais o botão do autoatendimento', /const modoBotaoUnico = podeAutoRegistrar\n/.test(credencial) && !credencial.includes('bloqueadoNoAutoatendimento'), true)
 
 console.log('\n5 · auditoria específica do registro feito nessa janela')
 confere("registro sob autoatendimento grava 'REGISTRO_AUTOATENDIMENTO'",

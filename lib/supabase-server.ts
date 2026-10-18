@@ -421,10 +421,14 @@ export async function eventosEscaneaveisSemData(perfil: any): Promise<{ id: stri
  * é amarrado a um evento (só à organização); o que diz em qual evento ele
  * está trabalhando é o evento que está acontecendo.
  */
-export async function eventosAcontecendoHoje(eventoIds: string[]): Promise<Set<string>> {
+export async function eventosAcontecendoHoje(
+  eventoIds: string[],
+  /** Outro dia em vez de hoje — a leitura guardada sem internet confere o dia em que foi lida. */
+  dia: string = diaBRT(),
+): Promise<Set<string>> {
   const ids = [...new Set(eventoIds.filter(Boolean))]
   if (!ids.length) return new Set()
-  const hoje = diaBRT()
+  const hoje = dia
   const [{ data: eventos }, { data: diasHoje }] = await Promise.all([
     admin.from('eventos').select('id, ativo, data_inicio, data_fim').in('id', ids),
     admin.from('jornada_dias').select('evento_id').in('evento_id', ids).eq('data', hoje).eq('cancelado', false),
@@ -528,10 +532,10 @@ export function ehDaOrganizacaoDoPerfil(perfil: any, organizacaoId: string | nul
   return !!organizacaoId && perfil?.role === 'operador_portao' && organizacoesDoOperador(perfil).has(organizacaoId)
 }
 
-export async function podeEscanearEvento(perfil: any, eventoId: string): Promise<boolean> {
+export async function podeEscanearEvento(perfil: any, eventoId: string, dia?: string): Promise<boolean> {
   if (!perfil || !podeEscanear(perfil)) return false
-  // Portão só opera evento que está acontecendo hoje — vale até pro master.
-  if (!(await eventosAcontecendoHoje([eventoId])).has(eventoId)) return false
+  // Portão só opera evento que está acontecendo hoje — vale até pro master. (`dia`: o da leitura guardada sem internet.)
+  if (!(await eventosAcontecendoHoje([eventoId], dia)).has(eventoId)) return false
   if (ehMaster(perfil.role)) return true
 
   if (perfil.role === 'supervisor') {

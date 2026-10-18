@@ -58,9 +58,10 @@ export function situacaoDaLinha(l: LinhaRelatorio): { faltas: string[]; texto: s
   if (!l.entradaISO) faltas.push('Sem entrada')
   if (l.entradaISO && !l.saidaISO) faltas.push('Sem saída')
   if (l.semMeio) faltas.push('Sem meio')
-  const partes = [...faltas]
+  // Entrou com aviso (fora da escala, acima do limite, sem internet): não é falta, mas é para conferir — vai em laranja.
+  const partes = [...faltas, ...(l.avisos ?? [])]
   if (l.baixaEm) partes.push(`Baixa em ${formatarBR(l.baixaEm, 'data')}`)
-  return { faltas, texto: partes.join(' · ') || 'OK' }
+  return { faltas: [...faltas, ...(l.avisos ?? [])], texto: partes.join(' · ') || 'OK' }
 }
 
 const ROTULO_ORIGEM: Record<OrigemDaLinha, string> = {

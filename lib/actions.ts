@@ -52,11 +52,12 @@ import { alterarEncarregadoNoSetor } from './actions-encarregado'
 import { alcancaSetor } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
-  eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario, conferirEscalaNoDia, conferirEscalaDaBatida,
-  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor, vagaNoSetorNoDia,
-  pessoaEhSupervisor, relatorioTravasPorDia,
+  eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario,
+  gravarDiasEscolhidos, gravarEscalaAprovada, diasLotados, travasDoFornecedor, gravarTravasDoFornecedor,
+  pessoaEhSupervisor, relatorioTravasPorDia, alertaDeEscala, alertaDeLimite,
   type DetalheCredenciamento, type RelatorioTravas,
 } from './escala'
+import { juntarAlertas, textoDoAlerta } from './alerta-batida'
 import { conferirDiasPermitidos, listarDias, rotuloDoDia, type DiaDaEscala } from './escala-regras'
 import {
   planejarEstrutura, mesmoNome, normalizarCpfPlanilha, maiorTrava,
@@ -6491,14 +6492,27 @@ async function upsertRegistro(
   if (dataRef) q.eq('data_ref', dataRef)
   await q
 
-  return supabaseAdmin.from('registros').insert([{
+  const linha: Record<string, unknown> = {
     funcionario_id: funcionarioId,
     evento_id: eventoId,
     tipo: momento,
     data_ref: dataRef ?? null,
     jornada_dia_id: jornadaDiaId ?? null,
     ...extra,
-  }]).select('id').single()
+  }
+  const inserir = (l: Record<string, unknown>) => supabaseAdmin.from('registros').insert([l]).select('id').single()
+  const r = await inserir(linha)
+  /*
+   * A marca "fora da escala / acima do limite" (`alerta`) é coluna nova — supabase/upgrade-alerta-e-offline.sql. Sem
+   * ela, a batida NUNCA pode deixar de ser gravada por causa da marca: grava sem a coluna, com a marca escrita no fim
+   * da justificativa.
+   */
+  if (r.error && 'alerta' in linha && /alerta/.test(r.error.message ?? '')) {
+    const { alerta, ...semAlerta } = linha
+    const marca = textoDoAlerta(alerta as string | null)
+    return inserir({ ...semAlerta, justificativa: [semAlerta.justificativa, marca].filter(Boolean).join(' ') || null })
+  }
+  return r
 }
 
 /**
@@ -6528,8 +6542,9 @@ async function diaDeReferencia(
   evento: { id: string; data_inicio?: string | null },
   funcionarioId: string,
   momento?: MomentoPresenca,
+  /** A hora da batida — só difere de agora no Registrar ponto feito sem internet (ver `registroAssistido`). */
+  agora: Date = new Date(),
 ) {
-  const agora = new Date()
 
   // A entrada abre o turno; nunca pertence a um turno anterior.
   const entrada = momento === 'entrada'
@@ -7284,6 +7299,11 @@ export type ResultadoScan = {
    */
   setorLotado?: boolean
   /**
+   * A batida ENTRA, mas fica marcada (Juan, 18/10/2026: o portão não barra mais por escala nem por limite do dia).
+   * O texto é para quem está no portão: "fora da escala de hoje — avise o supervisor". Ver lib/alerta-batida.ts.
+   */
+  aviso?: string
+  /**
    * O APARELHO DE QUEM LEU estava fora do raio do local do evento configurado em Editar evento (pedido do Juan,
    * 08/10/2026: testou o próprio QR fora do estádio e o sistema liberou sem avisar nada — "é pra travar"). O
    * portão NÃO libera. Só existe quando o evento TEM local configurado; sem ele, nada bloqueia (ver `autorizarPresenca`).
@@ -7659,6 +7679,107 @@ export async function registrarPresencaQR(
   return resultado
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SEM INTERNET NO PORTÃO (Juan, 18/10/2026: "a internet caiu no Luan Santana, muita gente ficou muito tempo sem
+// bater o registro de ponto… da entrada e da saída").
+//
+// O leitor de QR e o Registrar ponto guardam a batida NO APARELHO (lib/fila-offline.ts) com a hora em que foi
+// feita, e mandam para cá quando a internet volta. Aqui cada uma passa pelas MESMAS regras de sempre
+// (`validarLeituraQR` → `autorizarPresenca`, e `registroAssistido`), só que no instante da leitura — não no do envio.
+// Nada é aceito sem conferência: o aparelho não sabe se o QR é válido, se a pessoa tem baixa ou se já bateu.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type BatidaGuardada = {
+  /** Gerado no aparelho — é o que casa a resposta com o item da fila. */
+  id: string
+  /** Quando foi feita, já corrigida pelo relógio do servidor (ISO). */
+  lidoEm: string
+  momento: 'entrada' | 'fim'
+  local?: { latitude: number; longitude: number; precisao?: number | null } | null
+} & (
+  | { tipo: 'qr'; codigo: string; subeventoIds?: string[] }
+  | { tipo: 'assistido'; funcionarioId: string; foto: string; dispositivo?: string }
+)
+
+export type RespostaDaGuardada = {
+  id: string
+  ok: boolean
+  /** Recusada pelas regras (não adianta reenviar) — vai para a lista "não entraram" do aparelho. */
+  definitivo: boolean
+  mensagem: string
+  nome?: string | null
+  aviso?: string
+}
+
+/** A leitura mais antiga que ainda vale: depois disso, o caminho é o Lançar ponto, com o horário conferido. */
+const GUARDADA_VALE_POR_MS = 24 * 60 * 60 * 1000
+
+export async function enviarBatidasGuardadas(
+  eventoId: string, itens: BatidaGuardada[],
+): Promise<{ respostas: RespostaDaGuardada[]; error?: undefined } | { respostas?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  // Sem sessão os itens continuam guardados no aparelho — nada se perde por ter saído da conta.
+  if (!perfil) return { error: 'Entre de novo no sistema para enviar as batidas guardadas.' }
+  if (!Array.isArray(itens) || !itens.length) return { respostas: [] }
+  if (itens.length > 25) return { error: 'Envie no máximo 25 batidas por vez.' }
+
+  // Em ordem de horário: a entrada das 08:00 antes da saída das 17:00 da mesma pessoa.
+  const ordenados = [...itens].sort((a, b) => String(a?.lidoEm ?? '').localeCompare(String(b?.lidoEm ?? '')))
+  const respostas: RespostaDaGuardada[] = []
+  for (const item of ordenados) {
+    try {
+      respostas.push(await aplicarBatidaGuardada(perfil, eventoId, item))
+    } catch (e) {
+      console.error('[enviarBatidasGuardadas]', e)
+      respostas.push({ id: String(item?.id ?? ''), ok: false, definitivo: false, mensagem: 'Não foi possível enviar agora — o aparelho tenta de novo sozinho.' })
+    }
+  }
+  return { respostas }
+}
+
+async function aplicarBatidaGuardada(
+  perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>, eventoId: string, item: BatidaGuardada,
+): Promise<RespostaDaGuardada> {
+  const id = String(item?.id ?? '').slice(0, 64)
+  const recusa = (mensagem: string): RespostaDaGuardada => ({ id, ok: false, definitivo: true, mensagem })
+
+  const lidoMs = Date.parse(String(item?.lidoEm ?? ''))
+  if (!Number.isFinite(lidoMs)) return recusa('Batida sem hora válida.')
+  if (lidoMs > Date.now() + 5 * 60_000) return recusa('A hora desta batida está no futuro (o relógio do aparelho estava errado). Lance pelo Registrar ponto.')
+  if (Date.now() - lidoMs > GUARDADA_VALE_POR_MS) return recusa('Batida de mais de 24 horas atrás. Lance pelo Lançar ponto, com o horário certo.')
+  const momento = item.momento === 'entrada' || item.momento === 'fim' ? item.momento : null
+  if (!momento) return recusa('Etapa inválida.')
+  const lidoEm = new Date(lidoMs)
+  const local = posicaoValida(item.local)
+  // "Tente de novo" é falha de gravação, não regra: o aparelho reenvia em vez de dar como recusada.
+  const definitivo = (mensagem: string) => !/Tente de novo\.?$/.test(mensagem)
+
+  if (item.tipo === 'qr') {
+    const codigo = String(item.codigo ?? '').slice(0, 600)
+    const areas = Array.isArray(item.subeventoIds) ? item.subeventoIds.filter(x => typeof x === 'string').slice(0, 30) : undefined
+    const r = await validarLeituraQR(eventoId, codigo, momento, false, areas?.length ? areas : undefined, undefined, local, { lidoEm })
+    after(() => gravarLeituraQR({
+      eventoId, perfilId: perfil.id as string, tipo: 'credencial', qrData: codigo, local,
+      resultado: { ...r, message: `[sem internet, lida às ${formatarBR(lidoEm.toISOString(), 'curto')}] ${r.message}` },
+    }))
+    // "Já registrada" conta como enviada: a batida existe (a internet caiu na volta da resposta, ou outro portão gravou).
+    const gravada = r.success || r.jaRegistrado === true
+    return { id, ok: gravada, definitivo: !gravada && definitivo(r.message), mensagem: r.message, nome: r.funcionario?.nome ?? null, aviso: r.aviso }
+  }
+
+  if (item.tipo === 'assistido') {
+    const r = await registroAssistido(String(item.funcionarioId ?? ''), momento, {
+      fotoBase64: String(item.foto ?? ''),
+      latitude: local?.latitude, longitude: local?.longitude, precisao: local?.precisao ?? undefined,
+      dispositivo: String(item.dispositivo ?? '').slice(0, 300) || undefined,
+    }, undefined, { lidoEm })
+    if (r.error) return { id, ok: false, definitivo: definitivo(r.error), mensagem: r.error, nome: r.nome ?? null }
+    return { id, ok: true, definitivo: false, mensagem: r.etapa ?? 'Registrada', nome: r.nome ?? null, aviso: r.aviso }
+  }
+
+  return recusa('Tipo de batida desconhecido.')
+}
+
 /** O operador leu, viu a prévia e CANCELOU — fica no histórico de leituras. */
 export async function cancelarLeituraQR(eventoId: string, qrData: string, momento?: 'entrada' | 'fim'): Promise<void> {
   const perfil = await getPerfil()
@@ -7680,6 +7801,8 @@ async function validarLeituraQR(
   justificativaAtraso?: string,
   /** Onde o aparelho do operador estava. */
   local?: Posicao | null,
+  /** Leitura feita SEM INTERNET e guardada no aparelho — vale a hora em que foi lida (ver `enviarBatidasGuardadas`). */
+  guardado?: { lidoEm: Date },
 ): Promise<ResultadoScan> {
   const perfil = await getPerfil()
   // Todos os papéis autenticados podem escanear (inclui supervisor).
@@ -7691,10 +7814,10 @@ async function validarLeituraQR(
   // O dia de HOJE, não o `data_ref` do registro: num turno que vira a
   // madrugada o registro pertence a ontem, mas o crachá na mão da pessoa é o
   // de hoje. Comparar com data_ref recusaria quem está saindo às 4 da manhã.
-  const leitura = lerCodigoQR((qrData ?? '').split('|')[0]?.trim() ?? '', diaBRT())
+  const agora = guardado?.lidoEm ?? new Date()
+  const leitura = lerCodigoQR((qrData ?? '').split('|')[0]?.trim() ?? '', diaBRT(agora), agora)
   if (!leitura.ok) return { success: false, message: leitura.erro, qrInvalido: true }
   const token = leitura.token
-  const agora = new Date()
 
   /*
    * TUDO QUE NÃO DEPENDE UMA COISA DA OUTRA SAI JUNTO (portão do Pontal
@@ -7717,7 +7840,8 @@ async function validarLeituraQR(
     // várias noites, não só a data de início — `diaDeTrabalho` já sabe ler
     // `jornada_dias` pela data certa.
     diaDeTrabalho(eventoId, diaBRT(agora)),
-    podeEscanearEvento(perfil, eventoId),
+    // A leitura guardada sem internet confere o evento no dia em que foi lida.
+    podeEscanearEvento(perfil, eventoId, guardado ? diaBRT(agora) : undefined),
     supabaseAdmin
       .from('funcionarios')
       .select('id, nome, cpf, cargo, telefone, ativo, status_credenciamento, descredenciado_em, fornecedor_id, origem, fornecedores(evento_id, nome, exige_meio)')
@@ -7779,6 +7903,7 @@ async function validarLeituraQR(
     eventoId, func, agora, escolhido, apenasConferir, diaTurno,
     origem: 'web', subeventoIdsLidos: subeventoIds, justificativaAtraso,
     latitude: local?.latitude, longitude: local?.longitude, precisao: local?.precisao ?? undefined,
+    guardado: !!guardado,
   })
 }
 
@@ -7832,8 +7957,14 @@ async function autorizarPresenca(args: {
    * isso a entrada segue como antes, sem pedir nada.
    */
   justificativaAtraso?: string
+  /**
+   * Leitura feita SEM INTERNET, guardada no aparelho e enviada depois (Juan, 18/10/2026: a internet caiu no LUAN e
+   * muita gente ficou sem bater). `agora` é a hora da LEITURA (corrigida pelo relógio do servidor), não a do envio;
+   * a batida grava essa hora e marca `recebido_em` com a chegada. Ver `enviarBatidasGuardadas`.
+   */
+  guardado?: boolean
 }): Promise<ResultadoScan> {
-  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, precisao, subeventoIdsLidos, justificativaAtraso } = args
+  const { perfil, evento, eventoId, func, agora, escolhido, apenasConferir, diaTurno, origem, latitude, longitude, precisao, subeventoIdsLidos, justificativaAtraso, guardado = false } = args
 
   if (!func) return { success: false, message: 'Funcionário não encontrado' }
 
@@ -7843,6 +7974,10 @@ async function autorizarPresenca(args: {
   }
   if ((func.fornecedores as any)?.evento_id !== eventoId) {
     return { success: false, message: 'Credencial não pertence a este evento' }
+  }
+  // A mesma leitura guardada enviada duas vezes (a resposta se perdeu na volta): já está gravada, nada a fazer.
+  if (guardado && escolhido && await leituraGuardadaJaGravada(func.id, eventoId, escolhido, agora.toISOString())) {
+    return { success: true, jaRegistrado: true, momento: escolhido, funcionario: funcInfo, message: 'Esta leitura já tinha sido enviada.' }
   }
 
   /*
@@ -7952,20 +8087,9 @@ async function autorizarPresenca(args: {
   }
 
   /*
-   * ESCALA POR DIA (eventos de subeventos) — o QR só vale nos dias que o
-   * supervisor aprovou para esta pessoa. O dia conferido é o do TURNO: quem
-   * entrou ontem à noite (dia aprovado) e sai às 4h de hoje está fechando o
-   * turno de ontem, não começando um dia novo. Pessoa fora do fluxo (evento
-   * normal, cadastro pelo painel) passa direto — ver `conferirEscalaNoDia`.
+   * ESCALA POR DIA: NÃO BARRA MAIS (Juan, 18/10/2026: "o sistema é simples, não pode estar acontecendo esses
+   * entraves") — a entrada fora da escala entra e fica MARCADA, conferida mais abaixo junto do limite do dia.
    */
-  // Turno já aberto (a pessoa entrou e está saindo): a escala não barra a saída — ver `conferirEscalaDaBatida`.
-  const escalaHoje = entradaAberta ? { ok: true as const } : await conferirEscalaNoDia(func.id, eventoId, diaTurno)
-  if (!escalaHoje.ok) {
-    return {
-      success: false, diaNaoAutorizado: true, funcionario: funcInfo,
-      message: `${escalaHoje.titulo} ${escalaHoje.mensagem}`,
-    }
-  }
 
   /*
    * FORA DO LOCAL DO EVENTO: BLOQUEIA (pedido do Juan, 08/10/2026 — antes só marcava para conferência; achado ao
@@ -8005,6 +8129,20 @@ async function autorizarPresenca(args: {
   // mostra como "já validado" (âmbar), não como acesso negado (vermelho).
   if ('erro' in decidido) {
     return { success: false, message: decidido.erro, funcionario: funcInfo, jaRegistrado: decidido.recente === true }
+  }
+  /*
+   * Leitura guardada que chega DEPOIS de uma batida mais nova da mesma pessoa (outro portão, com internet, registrou
+   * antes): aplicar fora de ordem reabriria um turno, ou fecharia um turno que começou depois dela. Não grava — vai
+   * para a lista "não entraram" do aparelho, para conferir no histórico e lançar pelo Registrar ponto.
+   */
+  if (guardado) {
+    const maisNova = 'reabrir' in decidido ? decidido.reabrir.em : decidido.entrada?.em
+    if (maisNova && new Date(maisNova).getTime() > agora.getTime()) {
+      return {
+        success: false, funcionario: funcInfo,
+        message: `Já existe uma batida desta pessoa às ${formatarBR(maisNova, 'curto')}, depois desta leitura (${formatarBR(agora.toISOString(), 'curto')}). Confira o histórico e, se faltar, lance pelo Registrar ponto.`,
+      }
+    }
   }
 
   /*
@@ -8133,21 +8271,18 @@ async function autorizarPresenca(args: {
   }
 
   /*
-   * SETOR LOTADO NO DIA (trava por dia do fornecedor): só ENTRADA nova — quem
-   * já entrou hoje foi devolvido acima como "já registrado", e saída/meio não
-   * ocupam vaga. A mensagem é pra quem está no portão: diz o que aconteceu e
-   * o que fazer, sem deixar dúvida de que NÃO é pra liberar.
+   * ESCALA E LIMITE DO DIA — só na ENTRADA, e NÃO BARRAM MAIS (Juan, 18/10/2026): a pessoa entra e a batida fica
+   * marcada ("fora da escala", "acima do limite do dia") para o supervisor conferir. Saída e volta não são marcadas: a
+   * escala decide quem entra, e quem volta já entrou no dia.
    */
-  if (momento === 'entrada') {
-    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem)
-    if (!vaga.ok) {
-      const setor = funcInfo.setor ?? 'este setor'
-      return {
-        success: false, setorLotado: true, funcionario: funcInfo,
-        message: `SETOR LOTADO. ${setor} já tem ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje (${listarDias([resolucao.dataRef])}). NÃO libere a entrada. Peça para a pessoa procurar o supervisor do setor.`,
-      }
-    }
-  }
+  const [alertaEscala, alertaLimite] = momento === 'entrada'
+    ? await Promise.all([
+        alertaDeEscala(func.id, eventoId, resolucao.dataRef, 'entrada'),
+        alertaDeLimite(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem),
+      ])
+    : [null, null]
+  const alerta = juntarAlertas([alertaEscala, alertaLimite?.codigo])
+  const aviso = avisoDoAlerta(alerta, alertaLimite)
 
   /*
    * JUSTIFICATIVA DE ATRASO — pedido do Vital (30/09/2026), corrigido no
@@ -8178,12 +8313,13 @@ async function autorizarPresenca(args: {
   // Prévia: tudo conferido, nada gravado — o operador confirma antes.
   if (apenasConferir) {
     return {
-      success: true, previa: true, momento, funcionario: funcInfo, precisaJustificativaAtraso,
+      success: true, previa: true, momento, funcionario: funcInfo, precisaJustificativaAtraso, aviso,
       message: momento === 'entrada' ? 'Confirme para registrar a ENTRADA.' : 'Confirme para registrar a SAÍDA.',
     }
   }
 
-  if (precisaJustificativaAtraso && (justificativaAtraso ?? '').trim().length < 5) {
+  // Leitura guardada sem internet: não havia como pedir o motivo na hora — entra com a observação.
+  if (precisaJustificativaAtraso && !guardado && (justificativaAtraso ?? '').trim().length < 5) {
     return {
       success: false, funcionario: funcInfo, precisaJustificativaAtraso,
       message: 'Chegou atrasado — escreva o motivo antes de salvar.',
@@ -8199,7 +8335,12 @@ async function autorizarPresenca(args: {
     criado_por_perfil_id: perfil.id,
     origem,
     ...(typeof latitude === 'number' && typeof longitude === 'number' ? { latitude, longitude } : {}),
-    ...(precisaJustificativaAtraso ? { justificativa: justificativaAtraso!.trim() } : {}),
+    ...(precisaJustificativaAtraso
+      ? { justificativa: (justificativaAtraso ?? '').trim() || 'Chegou depois do horário — lida sem internet, sem o motivo do atraso.' }
+      : {}),
+    ...(alerta ? { alerta } : {}),
+    // Guardada sem internet: a batida fica com a hora da LEITURA; `recebido_em` diz quando chegou ao servidor.
+    ...(guardado ? { created_at: agora.toISOString(), recebido_em: new Date().toISOString() } : {}),
   }
   if (momento === 'fim') {
     const justificativa = await observacaoSemMeio(func.id, eventoId, resolucao.dataRef)
@@ -8221,13 +8362,14 @@ async function autorizarPresenca(args: {
    *
    * Em background: falhar o agendamento nao pode segurar a fila do portao.
    */
-  if (momento === 'entrada' && func.telefone) {
+  // Leitura guardada que chegou muito depois: o lembrete do meio já teria passado — não agenda (nada sai atrasado).
+  if (momento === 'entrada' && func.telefone && (!guardado || Date.now() - agora.getTime() < 30 * 60_000)) {
     after(() =>
       agendarMeioAposEntrada({
         eventoId,
         funcionarioId: func.id,
         telefone: func.telefone as string,
-        entradaEm: new Date().toISOString(),
+        entradaEm: agora.toISOString(),
         dataRef: resolucao.dataRef,
       }).catch(console.error)
     )
@@ -8253,7 +8395,33 @@ async function autorizarPresenca(args: {
     message: momento === 'entrada' ? 'Entrada registrada!' : 'Saída registrada!',
     funcionario: funcInfo,
     momento,
+    aviso,
   }
+}
+
+/** O aviso na tela de quem registrou, a partir da marca da batida. */
+function avisoDoAlerta(alerta: string | null, limite?: { maximo: number; ocupadas: number } | null): string | undefined {
+  if (!alerta) return undefined
+  const partes: string[] = []
+  if (alerta.includes('fora_da_escala')) partes.push('hoje está fora da escala desta pessoa')
+  if (alerta.includes('escala_pendente')) partes.push('a escala desta pessoa ainda não foi aprovada')
+  if (alerta.includes('acima_do_limite')) partes.push(`a equipe já passou do limite do dia${limite ? ` (${limite.ocupadas} de ${limite.maximo} já entraram)` : ''}`)
+  return `Atenção: ${partes.join(' e ')}. A batida entra mesmo assim — avise o supervisor da equipe.`
+}
+
+/**
+ * A leitura guardada já foi gravada antes? A batida (ou a pausa em que ela virou) tem EXATAMENTE a hora da leitura —
+ * é assim que o reenvio não grava duas vezes nem reabre um turno à toa.
+ */
+async function leituraGuardadaJaGravada(funcionarioId: string, eventoId: string, momento: MomentoPresenca, lidoEmISO: string): Promise<boolean> {
+  const { data: batida } = await supabaseAdmin.from('registros').select('id')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId).eq('tipo', momento).eq('created_at', lidoEmISO).limit(1)
+  if (batida?.length) return true
+  if (momento === 'meio') return false
+  const { data: pausa, error } = await supabaseAdmin.from('pausas_turno').select('id')
+    .eq('funcionario_id', funcionarioId).eq('evento_id', eventoId)
+    .eq(momento === 'entrada' ? 'voltou_em' : 'saiu_em', lidoEmISO).limit(1)
+  return !error && !!pausa?.length
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -8681,19 +8849,17 @@ export async function registrarPresencaFacialLivre(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'entrada')
   if (!resolucao.ok) return { error: resolucao.erro }
-  // Escala por dia (eventos de subeventos) — mesma régua do portão, ver `autorizarPresenca`.
-  const escalaHoje = await conferirEscalaNoDia(func.id, eventoId, resolucao.dataRef)
-  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
-  // Trava por dia do setor: lotado, a entrada pelo celular também é recusada.
-  {
-    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null)
-    if (!vaga.ok) return { error: `Setor lotado: já há ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje. Procure o seu supervisor.` }
-  }
   if (resolucao.jaEm) {
     return { error: `Você já registrou a entrada em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
+  // Escala e limite do dia: não barram mais — a entrada fica marcada (mesma régua do portão, ver `autorizarPresenca`).
+  const [alertaEscala, alertaLimite] = await Promise.all([
+    alertaDeEscala(func.id, eventoId, resolucao.dataRef, 'entrada'),
+    alertaDeLimite(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null),
+  ])
+  const alerta = juntarAlertas([alertaEscala, alertaLimite?.codigo])
 
-  const extra: Record<string, unknown> = { origem: 'face', ...(temGps ? { latitude, longitude } : {}) }
+  const extra: Record<string, unknown> = { origem: 'face', ...(temGps ? { latitude, longitude } : {}), ...(alerta ? { alerta } : {}) }
   const { data: registro, error } = await upsertRegistro(func.id, eventoId, 'entrada', extra, resolucao.dataRef, resolucao.jornadaDiaId)
   if (error) return { error: 'Erro ao registrar. Tente de novo.' }
 
@@ -8825,9 +8991,7 @@ export async function registrarPresencaFoto(
 
   const resolucao = await resolverRegistro({ ...evento, id: eventoId }, func.id, 'meio')
   if (!resolucao.ok) return { error: resolucao.erro }
-  // Escala por dia — mesma régua do portão, ver `autorizarPresenca` (o meio de quem já entrou não é barrado).
-  const escalaHoje = await conferirEscalaDaBatida(func.id, eventoId, resolucao.dataRef, 'meio')
-  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
+  // A escala não barra mais (Juan, 18/10/2026) — e o meio exige a entrada do turno, que é onde a escala é marcada.
   if (resolucao.jaEm) {
     return { error: `Você já registrou o meio em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
@@ -9059,14 +9223,14 @@ export async function registrarPresencaLivre(
       }
     }
   }
-  // Escala por dia — mesma régua do portão, ver `autorizarPresenca` (a saída de quem já entrou não é barrada).
-  const escalaHoje = await conferirEscalaDaBatida(func.id, eventoId, resolucao.dataRef, momento)
-  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} ${escalaHoje.mensagem}` }
-  // Trava por dia do setor: lotado, a entrada pelo celular também é recusada.
-  if (momento === 'entrada') {
-    const vaga = await vagaNoSetorNoDia(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null)
-    if (!vaga.ok) return { error: `Setor lotado: já há ${vaga.ocupadas} de ${vaga.maximo} pessoas liberadas hoje. Procure o seu supervisor.` }
-  }
+  // Escala e limite do dia: não barram mais — a ENTRADA fica marcada (mesma régua do portão, ver `autorizarPresenca`).
+  const [alertaEscala, alertaLimite] = momento === 'entrada'
+    ? await Promise.all([
+        alertaDeEscala(func.id, eventoId, resolucao.dataRef, 'entrada'),
+        alertaDeLimite(func.fornecedor_id as string, resolucao.dataRef, func.id, func.origem as string | null),
+      ])
+    : [null, null]
+  const alerta = juntarAlertas([alertaEscala, alertaLimite?.codigo])
 
   /*
    * NO DIA PRINCIPAL, SEMPRE SÓ O OPERADOR — mesmo dentro da janela de autoatendimento (correção do Juan,
@@ -9099,7 +9263,7 @@ export async function registrarPresencaLivre(
     return { error: `Você já registrou ${momento === 'entrada' ? 'a entrada' : 'a saída'} em ${formatarBR(resolucao.jaEm, 'curto')}.` }
   }
 
-  const extra: Record<string, unknown> = { latitude, longitude }
+  const extra: Record<string, unknown> = { latitude, longitude, ...(alerta ? { alerta } : {}) }
   /*
    * A justificativa carrega as duas informações que o fechamento precisa ler
    * de relance: se veio do cartaz (prova de presença no local) e se a saída
@@ -10623,7 +10787,30 @@ export async function registrarPresencaAssistida(
   momento: MomentoPresenca,
   dados: { fotoBase64: string; latitude?: number; longitude?: number; precisao?: number; dispositivo?: string },
   motivo?: string,
-): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string; /** Saída recusada por falta de entrada no turno — a tela oferece "Lançar a entrada". */ semEntrada?: true }> {
+): Promise<ResultadoAssistido> {
+  return registroAssistido(funcionarioId, momento, dados, motivo)
+}
+
+type ResultadoAssistido = {
+  ok?: boolean; error?: string; nome?: string; etapa?: string
+  /** Saída recusada por falta de entrada no turno — a tela oferece "Lançar a entrada". */
+  semEntrada?: true
+  /** Registrada, mas marcada (fora da escala) — ver lib/alerta-batida.ts. */
+  aviso?: string
+}
+
+/**
+ * O corpo do Registrar ponto. `guardado`: feito SEM INTERNET e enviado depois pela fila do aparelho
+ * (`enviarBatidasGuardadas`) — vale a hora em que foi feito, e nada já registrado é substituído.
+ */
+async function registroAssistido(
+  funcionarioId: string,
+  momento: MomentoPresenca,
+  dados: { fotoBase64: string; latitude?: number; longitude?: number; precisao?: number; dispositivo?: string },
+  motivo?: string,
+  guardado?: { lidoEm: Date },
+): Promise<ResultadoAssistido> {
+  const agora = guardado?.lidoEm ?? new Date()
   const perfil = await getPerfil()
   if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
   const etapaEscolhida = ORDEM_ETAPAS.find(e => e.momento === momento)
@@ -10657,8 +10844,8 @@ export async function registrarPresencaAssistida(
   if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
   // Registro do portão só pra quem é de evento acontecendo HOJE — mesma régua
   // da busca (`localizarFuncionario`), repetida aqui porque a trava de verdade
-  // é o servidor, não a lista.
-  if (!(await eventosAcontecendoHoje([evento.id])).has(evento.id)) {
+  // é o servidor, não a lista. O guardado sem internet tem a própria régua (até 24h, em `enviarBatidasGuardadas`).
+  if (!guardado && !(await eventosAcontecendoHoje([evento.id])).has(evento.id)) {
     return { error: 'Esta pessoa é de um evento que não está acontecendo hoje. No portão só dá pra registrar quem é do evento de hoje.' }
   }
 
@@ -10729,7 +10916,29 @@ export async function registrarPresencaAssistida(
    * um erro: `upsertRegistro` grava por cima, e o índice único do banco
    * garante que nunca vira uma segunda linha.
    */
-  const refAssistido = await diaDeReferencia(evento, func.id, momento)
+  const refAssistido = await diaDeReferencia(evento, func.id, momento, agora)
+
+  /*
+   * Feito SEM INTERNET: o reenvio não grava duas vezes, e nada que já esteja registrado é substituído — no aparelho
+   * não dava para ver o que outro portão já tinha registrado. A volta ao trabalho (entrada depois da saída) segue abaixo.
+   */
+  if (guardado) {
+    if (await leituraGuardadaJaGravada(func.id, evento.id, momento, agora.toISOString())) {
+      return { ok: true, nome: func.nome, etapa: `${etapaEscolhida.rotulo} (já tinha sido enviada)` }
+    }
+    const { data: doDia } = await supabaseAdmin
+      .from('registros').select('tipo, created_at')
+      .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('data_ref', refAssistido.dataRef)
+    const mesma = (doDia ?? []).find(r => r.tipo === momento)
+    const saida = (doDia ?? []).find(r => r.tipo === 'fim')
+    const ehVolta = momento === 'entrada' && !!mesma && !!saida && (saida.created_at as string) > (mesma.created_at as string)
+    if (ehVolta && new Date(saida!.created_at as string).getTime() > agora.getTime()) {
+      return { error: `Já existe a saída das ${formatarBR(saida!.created_at as string, 'curto')}, depois deste registro. Confira o histórico.` }
+    }
+    if (mesma && !ehVolta) {
+      return { ok: true, nome: func.nome, etapa: `${etapaEscolhida.rotulo} já estava registrada às ${formatarBR(mesma.created_at as string, 'hora')}` }
+    }
+  }
 
   /*
    * O MEIO TAMBÉM PRECISA DAS 4 HORAS DESDE A ENTRADA aqui — achado real (08/10/2026, VITAL): o registro
@@ -10739,22 +10948,22 @@ export async function registrarPresencaAssistida(
    * ajuda a decidir quando voltar, em vez de abrir brecha para burlar.
    */
   if (momento === 'meio') {
-    const entradaDoMeio = await entradaDoTurno(func.id, evento.id, new Date())
+    const entradaDoMeio = await entradaDoTurno(func.id, evento.id, agora)
     // Do início do BLOCO (a volta de uma pausa longa, ou a entrada) — meio por bloco, 12/10/2026.
     const inicioDoMeio = entradaDoMeio ? await inicioDoBlocoDe(func.id, evento.id, entradaDoMeio.dataRef, entradaDoMeio.em) : null
     const janela = inicioDoMeio ? janelaMeio(inicioDoMeio) : null
     if (!janela) {
       return { error: 'Registre primeiro a entrada. O horário do meio é contado a partir dela.' }
     }
-    if (Date.now() < new Date(janela.inicio).getTime()) {
+    if (agora.getTime() < new Date(janela.inicio).getTime()) {
       return { error: `O meio só abre 4 horas depois da entrada — a partir das ${formatarBR(janela.inicio, 'hora')}.` }
     }
   }
 
-  // Escala por dia (eventos de subeventos): mesma régua do QR. Para liberar um
-  // dia fora da escala, o caminho é ajustar a escala — não contornar aqui.
-  const escalaHoje = await conferirEscalaDaBatida(func.id, evento.id, refAssistido.dataRef, momento)
-  if (!escalaHoje.ok) return { error: `${escalaHoje.titulo} Ajuste os dias de trabalho desta pessoa antes de registrar.` }
+  // Escala por dia: NÃO BARRA MAIS (Juan, 18/10/2026) — a entrada fora da escala entra marcada, como no QR.
+  const alerta = momento === 'entrada'
+    ? juntarAlertas([await alertaDeEscala(func.id, evento.id, refAssistido.dataRef, 'entrada')])
+    : null
 
   // Meio só para equipe com batida de meio; saída só com a entrada do turno registrada (Juan, 18/10/2026).
   const conferenciaDaEtapa = await etapaPermitida(func.id, func.fornecedor_id as string, evento.id, momento, refAssistido.dataRef)
@@ -10783,7 +10992,7 @@ export async function registrarPresencaAssistida(
     const entradaDoDia = (doDia ?? []).find(r => r.tipo === 'entrada')
     const saidaDoDia = (doDia ?? []).find(r => r.tipo === 'fim')
     if (entradaDoDia && saidaDoDia && saidaDoDia.created_at > entradaDoDia.created_at) {
-      const agoraISO = new Date().toISOString()
+      const agoraISO = agora.toISOString()
       await registrarPausa({
         funcionarioId: func.id, eventoId: evento.id, dataRef: refAssistido.dataRef,
         saiuEm: saidaDoDia.created_at as string, voltouEm: agoraISO,
@@ -10811,6 +11020,9 @@ export async function registrarPresencaAssistida(
     justificativa: (motivo ?? '').trim() || JUSTIFICATIVA_ASSISTIDO,
     dispositivo: dados.dispositivo?.slice(0, 300) ?? null,
     ...(temGps ? { latitude: dados.latitude, longitude: dados.longitude } : {}),
+    ...(alerta ? { alerta } : {}),
+    // Feito sem internet: a batida fica com a hora em que foi registrada no aparelho; `recebido_em`, com a chegada.
+    ...(guardado ? { created_at: agora.toISOString(), recebido_em: new Date().toISOString() } : {}),
   }, refAssistido.dataRef, refAssistido.jornadaDiaId)
   if (error) return { error: mensagemAmigavel(error) }
   {
@@ -10819,9 +11031,11 @@ export async function registrarPresencaAssistida(
     after(() => marcarLocalDaBatida(registro?.id as string | undefined, evento.id, pos))
   }
 
+  const semInternet = guardado ? `Registrado sem internet às ${formatarBR(agora.toISOString(), 'curto')}, enviado depois.` : null
   after(() => registrarAuditoria({
     perfil, acao: momento === 'entrada' ? 'REGISTRO_ENTRADA_ASSISTIDA' : momento === 'fim' ? 'REGISTRO_SAIDA_ASSISTIDA' : 'CORRECAO_PONTO',
-    motivo: motivo ?? null, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
+    motivo: [motivo, semInternet].filter(Boolean).join(' ') || null,
+    funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
   }))
 
   if (registro && temGps) {
@@ -10830,13 +11044,14 @@ export async function registrarPresencaAssistida(
 
   // Mesma razao do scanner: o meio so ganha horario depois que a entrada
   // existe, inclusive quando quem registrou a entrada foi o supervisor.
-  if (momento === 'entrada' && func.telefone) {
+  // Feito sem internet e enviado muito depois: o lembrete já teria passado — não agenda.
+  if (momento === 'entrada' && func.telefone && (!guardado || Date.now() - agora.getTime() < 30 * 60_000)) {
     after(() =>
       agendarMeioAposEntrada({
         eventoId: evento.id,
         funcionarioId: func.id,
         telefone: func.telefone as string,
-        entradaEm: new Date().toISOString(),
+        entradaEm: agora.toISOString(),
         dataRef: refAssistido.dataRef,
       }).catch(console.error)
     )
@@ -10845,7 +11060,7 @@ export async function registrarPresencaAssistida(
   // comentário em `autorizarPresenca`.
 
   revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
-  return { ok: true, nome: func.nome, etapa: etapaEscolhida.rotulo }
+  return { ok: true, nome: func.nome, etapa: etapaEscolhida.rotulo, aviso: avisoDoAlerta(alerta) }
 }
 
 /**
