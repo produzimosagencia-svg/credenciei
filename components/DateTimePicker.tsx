@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, subMonths,
   isSameDay, isSameMonth, isToday, format,
@@ -163,8 +164,14 @@ export default function DateTimePicker({
         <Icone className="w-4 h-4 text-slate-400 shrink-0" />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+      {/*
+        * Num PORTAL, fora da árvore de quem chamou (Juan, 18/10/2026: "não funciona ao clicar em Limpar, Cancelar ou
+        * Aplicar, pelo mobile"). O seletor costuma ficar dentro de um <label> (o "Início"/"Fim" do autoatendimento):
+        * no celular, todo toque dentro do label era repassado ao botão do campo — o quadro fechava e REABRIA na hora.
+        * Fora do label (e de qualquer caixa com overflow), os botões funcionam em qualquer aparelho.
+        */}
+      {open && createPortal(
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
           <div className="overlay-fade-in absolute inset-0 bg-black/45" />
           <div
             className={`modal-pop-in relative bg-white rounded-3xl shadow-xl w-full overflow-hidden ${
@@ -257,7 +264,8 @@ export default function DateTimePicker({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )
