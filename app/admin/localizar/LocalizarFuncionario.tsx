@@ -16,8 +16,10 @@ import CadastroBiometrico from '@/components/CadastroBiometrico'
 import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
 import ModoSemInternet from '@/components/ModoSemInternet'
+import { percebeuSemRede } from '@/lib/rede-do-portao'
 import {
-  guardarNaFila, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, type PessoaParaSemInternet,
+  guardarNaFila, guardarNaFilaJuntos, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, entradaJaNaFila,
+  horaDeEntradaValida, type PessoaParaSemInternet,
 } from '@/lib/fila-offline'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
@@ -78,6 +80,9 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
    */
   const fila = useFilaSemInternet(eventoId)
   const [semNet, setSemNet] = useState<PessoaParaSemInternet | null>(null)
+  // Saída sem internet de quem não bateu a entrada (Juan, 19/10/2026): o operador informa a hora e as duas ficam na fila.
+  const [informandoEntradaSemNet, setInformandoEntradaSemNet] = useState(false)
+  const [entradaJaGuardada, setEntradaJaGuardada] = useState(false)
   const [candidatosSemNet, setCandidatosSemNet] = useState<PessoaParaSemInternet[] | null>(null)
   const [buscando, startBusca] = useTransition()
   const [registrando, startRegistro] = useTransition()
@@ -95,7 +100,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
 
   const recomecar = () => {
     setTermo(''); setFunc(null); setCandidatos(null); setMomento(null); setFoto(null); setErro(null); setSucesso(null)
-    setSemNet(null); setCandidatosSemNet(null)
+    setSemNet(null); setCandidatosSemNet(null); setInformandoEntradaSemNet(false); setHoraEntrada('')
   }
 
   const abrirSemNet = (p: PessoaParaSemInternet) => {
@@ -103,10 +108,16 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
     setSemNet(p)
     setMomento('entrada')
     setFoto(null)
+    setInformandoEntradaSemNet(false)
+    setHoraEntrada('')
+    setEntradaJaGuardada(false)
+    // Este aparelho já guardou a entrada dela? Então não faz sentido perguntar a hora na saída.
+    void entradaJaNaFila(eventoId, p.id).then(setEntradaJaGuardada).catch(() => {})
   }
 
   /** A busca sem internet: CPF completo (pelo resumo guardado) ou parte do nome. */
   const buscarSemInternet = async (t: string) => {
+    percebeuSemRede()
     const digitos = t.replace(/\D/g, '')
     if (digitos.length === 11) {
       const p = await pessoaPeloCpf(eventoId, digitos).catch(() => null)
@@ -126,14 +137,27 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   }
 
   /** Guarda a batida no aparelho, com a hora certa (a do servidor), a foto e a localização de agora. */
-  const guardarBatida = async (p: { id: string; nome: string; equipe: string | null }, etapa: 'entrada' | 'fim', fotoDaBatida: string) => {
+  const guardarBatida = async (p: { id: string; nome: string; equipe: string | null }, etapa: 'entrada' | 'fim', fotoDaBatida: string, horaDaEntrada?: string) => {
     try {
-      await guardarNaFila({
-        id: idNovo(), eventoId, tipo: 'assistido', funcionarioId: p.id, momento: etapa,
-        lidoEm: agoraCerto().toISOString(), local: localizacao.atual(), foto: fotoDaBatida, dispositivo: navigator.userAgent,
+      const lidoEm = agoraCerto().toISOString()
+      const batida = {
+        id: idNovo(), eventoId, tipo: 'assistido' as const, funcionarioId: p.id, momento: etapa,
+        lidoEm, local: localizacao.atual(), foto: fotoDaBatida, dispositivo: navigator.userAgent,
         nome: p.nome, equipe: p.equipe,
+      }
+      // A entrada informada e a saída entram juntas na fila, ou nenhuma das duas.
+      if (horaDaEntrada && etapa === 'fim') {
+        await guardarNaFilaJuntos([
+          entradaInformadaParaSaida({ eventoId, pessoaId: p.id, nome: p.nome, equipe: p.equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm }),
+          batida,
+        ])
+      } else {
+        await guardarNaFila(batida)
+      }
+      setSucesso({
+        nome: p.nome, guardada: true,
+        etapa: horaDaEntrada && etapa === 'fim' ? `Entrada às ${horaDaEntrada} (informada) e saída` : etapa === 'entrada' ? 'Entrada' : 'Saída',
       })
-      setSucesso({ nome: p.nome, etapa: etapa === 'entrada' ? 'Entrada' : 'Saída', guardada: true })
     } catch {
       setErro('Sem internet e não foi possível guardar neste aparelho (navegador em modo anônimo?). Registre quando a internet voltar.')
     }
@@ -175,6 +199,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
       try {
         res = await abrirFuncionarioLocalizado(id)
       } catch {
+        percebeuSemRede()
         return setErro('Sem internet agora. Busque a pessoa de novo pelo CPF completo ou pelo nome — a busca sem internet usa a lista guardada neste aparelho.')
       }
       if (res.error) return setErro(res.error)
@@ -212,6 +237,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         })
       } catch {
         // A internet caiu ao registrar: entrada e saída ficam guardadas no aparelho (o meio precisa de internet).
+        percebeuSemRede()
         if (momento === 'meio') return setErro('Sem internet agora. O meio só pode ser registrado com internet — tente de novo em instantes.')
         return guardarBatida({ id: func.id, nome: func.nome, equipe: func.setorNome }, momento, foto)
       }
@@ -243,6 +269,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   if (sucesso) {
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-3 shadow-sm">
+        <ModoSemInternet eventoId={eventoId} />
         {sucesso.guardada
           ? <CloudUpload className="w-14 h-14 text-teal-600 mx-auto" />
           : <CheckCircle2 className="w-14 h-14 text-green-500 mx-auto" />}
@@ -270,7 +297,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   return (
     <div className="space-y-4">
       {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
-      <ModoSemInternet />
+      <ModoSemInternet eventoId={eventoId} />
       <AvisoFilaSemInternet estado={fila} />
       {/* Busca por CPF ou nome */}
       <Secao
@@ -373,6 +400,30 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                     ))}
                   </div>
                 </div>
+                {/* Saída de quem não bateu a entrada: sem internet o aparelho não sabe o que os outros portões gravaram — a opção fica à mão. */}
+                {etapa === 'fim' && !entradaJaGuardada && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
+                    {!informandoEntradaSemNet ? (
+                      <button type="button" onClick={() => setInformandoEntradaSemNet(true)} className="w-full text-left text-amber-900 text-sm font-semibold">
+                        A pessoa não bateu a entrada? Informar a hora →
+                      </button>
+                    ) : (
+                      <>
+                        <label htmlFor="hora-entrada-semnet" className="text-sm font-semibold text-slate-800 block">Que horas {semNet.nome.split(' ')[0]} entrou? *</label>
+                        <input
+                          id="hora-entrada-semnet" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
+                          className="input text-base tabular-nums" aria-label="Hora da entrada"
+                        />
+                        <p className="text-slate-500 text-2xs">
+                          A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora, com a foto. As duas sobem juntas quando a internet voltar.
+                        </p>
+                        <button type="button" onClick={() => { setInformandoEntradaSemNet(false); setHoraEntrada('') }} className="text-slate-500 text-xs font-semibold underline-offset-2 hover:underline">
+                          Ela já entrou — guardar só a saída
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
                 <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFoto} />
                 {foto ? (
                   <div className="flex items-center gap-3">
@@ -390,13 +441,18 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                     <CameraIcon className="w-4 h-4" /> Tirar a foto do rosto
                   </button>
                 )}
-                <button
-                  type="button" disabled={!foto}
-                  onClick={() => foto && void guardarBatida({ id: semNet.id, nome: semNet.nome, equipe: semNet.equipe }, etapa, foto)}
-                  className="btn btn-primario btn-lg w-full disabled:opacity-60"
-                >
-                  Guardar {etapa === 'entrada' ? 'entrada' : 'saída'} neste aparelho
-                </button>
+                {(() => {
+                  const comEntrada = etapa === 'fim' && informandoEntradaSemNet && !entradaJaGuardada
+                  return (
+                    <button
+                      type="button" disabled={!foto || (comEntrada && !horaDeEntradaValida(horaEntrada))}
+                      onClick={() => foto && void guardarBatida({ id: semNet.id, nome: semNet.nome, equipe: semNet.equipe }, etapa, foto, comEntrada ? horaEntrada : undefined)}
+                      className="btn btn-primario btn-lg w-full disabled:opacity-60"
+                    >
+                      Guardar {etapa === 'entrada' ? 'entrada' : comEntrada ? 'entrada e saída' : 'saída'} neste aparelho
+                    </button>
+                  )
+                })()}
                 <p className="text-slate-400 text-2xs text-center">
                   Vale a hora de agora. O sistema confere tudo quando a internet voltar — o que não puder entrar aparece em &ldquo;não entraram&rdquo;.
                 </p>

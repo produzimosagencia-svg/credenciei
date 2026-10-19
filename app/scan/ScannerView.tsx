@@ -8,7 +8,10 @@ import { formatarBR } from '@/lib/tz'
 import { ScanLine, CameraOff, Copy, CheckCheck, Loader2, CloudOff } from 'lucide-react'
 import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
 import ModoSemInternet from '@/components/ModoSemInternet'
-import { guardarNaFila, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo } from '@/lib/fila-offline'
+import { percebeuSemRede } from '@/lib/rede-do-portao'
+import {
+  guardarNaFila, guardarNaFilaJuntos, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, entradaJaNaFila, horaDeEntradaValida,
+} from '@/lib/fila-offline'
 
 type Evento = { id: string; nome: string }
 type ScanResult = {
@@ -49,6 +52,10 @@ type ScanResult = {
   offline?: boolean
   /** Só da tela: a batida foi guardada no aparelho e sobe quando a internet voltar. */
   guardado?: boolean
+  /** Só da tela (prévia sem internet): quem é na lista guardada — habilita "informar a hora da entrada" na saída. */
+  pessoaId?: string
+  /** Só da tela (prévia sem internet): este aparelho já guardou a entrada dela — não precisa perguntar a hora. */
+  entradaNaFila?: boolean
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
@@ -315,6 +322,12 @@ export default function ScannerView({
   // A prévia esperando SALVAR / CANCELAR.
   const [confirmacao, setConfirmacao] = useState<{ codigo: string; modo: Modo; r: ScanResult } | null>(null)
   const [salvando, setSalvando] = useState(false)
+  /*
+   * Saída SEM INTERNET de quem não bateu a entrada (Juan, 19/10/2026): o operador pergunta a hora e informa aqui; a
+   * entrada vai para a fila junto com a saída (lançada à mão, com o nome dele) e sobe quando a internet voltar.
+   */
+  const [informandoEntrada, setInformandoEntrada] = useState(false)
+  const [horaEntrada, setHoraEntrada] = useState('')
   // Motivo do atraso — só aparece quando a prévia pede (fornecedor com meio ligado).
   const [justificativaAtraso, setJustificativaAtraso] = useState('')
   const [conferindo, setConferindo] = useState(false)
@@ -378,6 +391,8 @@ export default function ScannerView({
     setSalvando(false)
     setConferindo(false)
     setJustificativaAtraso('')
+    setInformandoEntrada(false)
+    setHoraEntrada('')
     pendenteRef.current = null
     ocupadoRef.current = false
     retomarLeitura()
@@ -409,11 +424,15 @@ export default function ScannerView({
      */
   }
 
-  const semRede = (): ScanResult => ({
-    success: false,
-    semRede: true,
-    message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
-  })
+  const semRede = (): ScanResult => {
+    // A tela anota que o pedido não chegou: trocar para o Registrar ponto agora abre a cópia guardada, sem esperar.
+    percebeuSemRede()
+    return {
+      success: false,
+      semRede: true,
+      message: 'Não foi possível validar agora. Confira a internet do aparelho e leia o QR de novo.',
+    }
+  }
 
   /*
    * SEM INTERNET (Juan, 18/10/2026). A leitura não para: a tela mostra quem é (pela lista do evento guardada no
@@ -422,6 +441,7 @@ export default function ScannerView({
    */
   const abrirSemInternet = async (id: number, codigo: string, modoDaLeitura: Modo) => {
     if (id !== leituraRef.current) return
+    percebeuSemRede()
     if (ehQrDeVeiculo(codigo)) {
       mostrarResultado(id, codigo, modoDaLeitura, { success: false, message: 'Sem internet: o QR de veículo precisa de internet para ser conferido. Anote a placa e confira quando a internet voltar.' })
       return
@@ -433,6 +453,8 @@ export default function ScannerView({
     const pessoa = await pessoaPeloQR(eventoIdRef.current, codigo).catch(() => null)
     if (id !== leituraRef.current) return
     const funcionario = pessoa ? { nome: pessoa.nome, cargo: pessoa.cargo, setor: pessoa.equipe } : undefined
+    const entradaNaFila = pessoa && modoDaLeitura === 'fim' ? await entradaJaNaFila(eventoIdRef.current, pessoa.id) : false
+    if (id !== leituraRef.current) return
     const impedimento = pessoa ? motivoDaSituacao(pessoa.situacao) : null
     if (impedimento) {
       mostrarResultado(id, codigo, modoDaLeitura, { success: false, funcionario, message: `${impedimento} (conferido na lista guardada no aparelho — sem internet.)` })
@@ -440,10 +462,12 @@ export default function ScannerView({
     }
     setValidando(false)
     setResult(null)
+    setInformandoEntrada(false)
+    setHoraEntrada('')
     setConfirmacao({
       codigo, modo: modoDaLeitura,
       r: {
-        success: true, previa: true, offline: true, funcionario,
+        success: true, previa: true, offline: true, funcionario, pessoaId: pessoa?.id, entradaNaFila,
         message: pessoa
           ? 'Sem internet: a batida fica guardada neste aparelho e sobe sozinha quando a internet voltar.'
           : 'Sem internet, e esta pessoa não está na lista guardada no aparelho (cadastro novo?). A batida fica guardada e é conferida quando a internet voltar.',
@@ -453,23 +477,37 @@ export default function ScannerView({
   }
 
   /** Guarda a leitura confirmada no aparelho, com a hora certa (a do servidor) e a localização de agora. */
-  const guardarLeitura = async (c: { codigo: string; modo: Modo; r: ScanResult }): Promise<boolean> => {
+  const guardarLeitura = async (c: { codigo: string; modo: Modo; r: ScanResult }, horaDaEntrada?: string): Promise<boolean> => {
     try {
-      await guardarNaFila({
-        id: idNovo(), eventoId: eventoIdRef.current, tipo: 'qr', codigo: c.codigo, momento: c.modo,
-        lidoEm: agoraCerto().toISOString(), local: localizacao.atual(),
+      const lidoEm = agoraCerto().toISOString()
+      const nome = c.r.funcionario?.nome ?? null
+      const equipe = c.r.funcionario?.setor ?? null
+      const leitura = {
+        id: idNovo(), eventoId: eventoIdRef.current, tipo: 'qr' as const, codigo: c.codigo, momento: c.modo,
+        lidoEm, local: localizacao.atual(),
         subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
-        nome: c.r.funcionario?.nome ?? null, equipe: c.r.funcionario?.setor ?? null,
-      })
+        nome, equipe, pessoaId: c.r.pessoaId ?? null,
+      }
+      // A entrada informada e a saída entram juntas na fila, ou nenhuma das duas.
+      if (horaDaEntrada && c.r.pessoaId) {
+        await guardarNaFilaJuntos([
+          entradaInformadaParaSaida({ eventoId: eventoIdRef.current, pessoaId: c.r.pessoaId, nome, equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm }),
+          leitura,
+        ])
+      } else {
+        await guardarNaFila(leitura)
+      }
       return true
     } catch {
       return false
     }
   }
 
-  const mostrarGuardada = async (id: number, c: { codigo: string; modo: Modo; r: ScanResult }, motivo: string) => {
-    const ok = await guardarLeitura(c)
+  const mostrarGuardada = async (id: number, c: { codigo: string; modo: Modo; r: ScanResult }, motivo: string, horaDaEntrada?: string) => {
+    const ok = await guardarLeitura(c, horaDaEntrada)
     setConfirmacao(null)
+    setInformandoEntrada(false)
+    setHoraEntrada('')
     mostrarResultado(id, c.codigo, c.modo, ok
       ? { success: true, guardado: true, momento: c.modo, funcionario: c.r.funcionario, message: motivo }
       : { success: false, message: 'Sem internet e não foi possível guardar neste aparelho (navegador em modo anônimo?). Use o Registrar ponto quando a internet voltar.' })
@@ -517,10 +555,19 @@ export default function ScannerView({
     const c = confirmacao
     if (!c || salvando) return
     if (c.r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5) return
+    if (c.r.offline && informandoEntrada && !horaDeEntradaValida(horaEntrada)) return
     const id = ++leituraRef.current
     // Prévia sem internet: SALVAR guarda no aparelho.
     if (c.r.offline) {
-      await mostrarGuardada(id, c, 'Guardada neste aparelho. Sobe sozinha quando a internet voltar — não precisa ler de novo.')
+      // Saída de quem não bateu a entrada: a hora informada vai junto (precisa ser uma hora válida).
+      const horaDaEntrada = informandoEntrada && c.modo === 'fim' && c.r.pessoaId ? horaEntrada : undefined
+      await mostrarGuardada(
+        id, c,
+        horaDaEntrada
+          ? `Entrada às ${horaDaEntrada} (informada) e saída guardadas neste aparelho. Sobem juntas quando a internet voltar — não precisa ler de novo.`
+          : 'Guardada neste aparelho. Sobe sozinha quando a internet voltar — não precisa ler de novo.',
+        horaDaEntrada,
+      )
       return
     }
     setSalvando(true)
@@ -724,7 +771,7 @@ export default function ScannerView({
 
   return (
     <div className="flex-1 flex flex-col items-center p-4 gap-5">
-      <ModoSemInternet />
+      <ModoSemInternet eventoId={eventoId} />
       {localizacao.bloqueado && <BloqueioSemLocalizacao estado={localizacao.estado} onTentar={localizacao.tentarDeNovo} />}
       <div className="w-full max-w-sm space-y-3">
         {/*
@@ -991,6 +1038,43 @@ export default function ScannerView({
                 <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ {r.aviso}</p>
               )}
 
+              {/*
+                * Saída sem internet de quem não bateu a entrada: o aparelho não sabe o que os outros portões gravaram, então
+                * a opção fica à mão — o operador pergunta a hora e informa aqui. O servidor confere quando a internet volta
+                * (quem já tinha a entrada não é alterado).
+                */}
+              {r.offline && !ehEntrada && r.pessoaId && !r.entradaNaFila && (
+                <div className="mt-5 text-left rounded-2xl border border-amber-400/60 bg-amber-500/10 p-3">
+                  {!informandoEntrada ? (
+                    <button
+                      type="button" onClick={() => setInformandoEntrada(true)}
+                      className="w-full text-left text-amber-200 text-sm font-bold"
+                    >
+                      A pessoa não bateu a entrada? Toque aqui para informar a hora →
+                    </button>
+                  ) : (
+                    <>
+                      <label className="text-amber-100 text-sm font-semibold block mb-1.5" htmlFor="hora-entrada-informada">
+                        Que horas ela entrou? *
+                      </label>
+                      <input
+                        id="hora-entrada-informada" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
+                        className="w-full rounded-xl px-3 py-2 text-xl tabular-nums bg-white/10 border border-white/30 text-white outline-none focus:border-white/60 [color-scheme:dark]"
+                      />
+                      <p className="text-white/60 text-xs mt-2 leading-snug">
+                        A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora. As duas sobem juntas quando a internet voltar.
+                      </p>
+                      <button
+                        type="button" onClick={() => { setInformandoEntrada(false); setHoraEntrada('') }}
+                        className="mt-2 text-white/70 text-xs font-semibold underline-offset-2 hover:underline"
+                      >
+                        Ela já entrou — guardar só a saída
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               {r.precisaJustificativaAtraso && (
                 <div className="mt-5 text-left">
                   <label className="text-white/80 text-sm font-semibold block mb-1.5">
@@ -1009,12 +1093,12 @@ export default function ScannerView({
               <button
                 type="button"
                 onClick={confirmar}
-                disabled={salvando || (r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5)}
+                disabled={salvando || (r.precisaJustificativaAtraso && justificativaAtraso.trim().length < 5) || (informandoEntrada && !horaDeEntradaValida(horaEntrada))}
                 className={`mt-8 w-full rounded-2xl py-5 text-xl font-extrabold text-white shadow-lg active:scale-95 transition-all disabled:opacity-50 ${cor}`}
               >
                 {salvando
                   ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>
-                  : `${r.offline ? 'GUARDAR' : 'SALVAR'} ${ehEntrada ? 'ENTRADA' : 'SAÍDA'}`}
+                  : `${r.offline ? 'GUARDAR' : 'SALVAR'} ${ehEntrada ? 'ENTRADA' : informandoEntrada && r.offline ? 'ENTRADA E SAÍDA' : 'SAÍDA'}`}
               </button>
               <button
                 type="button"

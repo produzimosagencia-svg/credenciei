@@ -7699,6 +7699,12 @@ export type BatidaGuardada = {
 } & (
   | { tipo: 'qr'; codigo: string; subeventoIds?: string[] }
   | { tipo: 'assistido'; funcionarioId: string; foto: string; dispositivo?: string }
+  /**
+   * A hora em que a pessoa entrou, INFORMADA pelo operador na hora da saída (ela não bateu a entrada). Vai na fila
+   * logo antes da saída (1 segundo antes, para a ordem de horário) e o servidor lança a entrada — marcada como
+   * lançada à mão — antes de gravar a saída. `hora` = "HH:MM" do turno.
+   */
+  | { tipo: 'entrada_informada'; funcionarioId: string; hora: string }
 )
 
 export type RespostaDaGuardada = {
@@ -7775,6 +7781,17 @@ async function aplicarBatidaGuardada(
     }, undefined, { lidoEm })
     if (r.error) return { id, ok: false, definitivo: definitivo(r.error), mensagem: r.error, nome: r.nome ?? null }
     return { id, ok: true, definitivo: false, mensagem: r.etapa ?? 'Registrada', nome: r.nome ?? null, aviso: r.aviso }
+  }
+
+  if (item.tipo === 'entrada_informada') {
+    const hora = String(item.hora ?? '')
+    const r = await lancarEntradaInformada(String(item.funcionarioId ?? ''), hora, { agora: lidoEm, semInternet: true })
+    if ('error' in r) return { id, ok: false, definitivo: definitivo(r.error), mensagem: r.error }
+    // Quem já tinha a entrada do turno (outro portão, ou a internet voltou no meio) não é erro: não há nada a lançar.
+    return {
+      id, ok: true, definitivo: false, nome: r.nome,
+      mensagem: r.jaTinha ? 'A pessoa já tinha a entrada deste turno — nada a lançar.' : `Entrada às ${hora} lançada.`,
+    }
   }
 
   return recusa('Tipo de batida desconhecido.')
@@ -10701,6 +10718,23 @@ async function etapaPermitida(
  * existe) e nunca no futuro. A saída vem em seguida, pelo `registrarPresencaAssistida` de sempre (foto e local).
  */
 export async function lancarEntradaNaoBatida(funcionarioId: string, horaEntrada: string): Promise<{ ok: true } | { error: string }> {
+  const r = await lancarEntradaInformada(funcionarioId, horaEntrada)
+  if ('error' in r) return r
+  if (r.jaTinha) return { error: 'Esta pessoa já tem entrada neste turno — registre a saída normalmente.' }
+  return { ok: true }
+}
+
+/**
+ * O corpo de "lançar a entrada que faltou". `contexto.semInternet`: a entrada veio da fila do aparelho (Juan,
+ * 19/10/2026: "se chega uma pessoa dando a saída e ela não registrou a entrada, eu queria registrar a hora dela ali, no
+ * offline mesmo"). Aí o "agora" é a hora da leitura da saída (o dia do turno e o "não pode ficar no futuro" valem para
+ * ela), a entrada tem que ser ANTES da saída, e quem já tem a entrada do turno não é erro — a internet pode ter voltado
+ * para outro portão que já registrou.
+ */
+async function lancarEntradaInformada(
+  funcionarioId: string, horaEntrada: string,
+  contexto: { agora: Date; semInternet: boolean } = { agora: new Date(), semInternet: false },
+): Promise<{ ok: true; nome: string; jaTinha?: boolean } | { error: string }> {
   try {
     const perfil = await getPerfil()
     if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
@@ -10726,35 +10760,42 @@ export async function lancarEntradaNaoBatida(funcionarioId: string, horaEntrada:
       return { error: 'Esta pessoa é de outra organização.' }
     }
     if (!evento?.ativo) return { error: 'Este evento já foi encerrado.' }
-    if (!(await eventosAcontecendoHoje([evento.id])).has(evento.id)) return { error: 'No portão só dá pra registrar quem é do evento de hoje.' }
+    if (!(await eventosAcontecendoHoje([evento.id], contexto.semInternet ? diaBRT(contexto.agora) : undefined)).has(evento.id)) return { error: 'No portão só dá pra registrar quem é do evento de hoje.' }
     if (statusCredenciamentoValido(func.status_credenciamento as string) !== 'aprovado') return { error: 'Este credenciamento ainda aguarda aprovação.' }
 
-    const ref = await diaDeReferencia(evento, func.id, 'fim')
+    const ref = await diaDeReferencia(evento, func.id, 'fim', contexto.agora)
     const { data: jaTem } = await supabaseAdmin.from('registros').select('id')
       .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('tipo', 'entrada').eq('data_ref', ref.dataRef).limit(1)
-    if (jaTem?.length) return { error: 'Esta pessoa já tem entrada neste turno — registre a saída normalmente.' }
+    // Não troca a entrada que existe: quem chama decide se isso é erro (tela) ou nada a fazer (fila do aparelho).
+    if (jaTem?.length) return { ok: true, nome: func.nome as string, jaTinha: true }
 
     const quandoISO = new Date(`${ref.dataRef}T${horaEntrada}:00-03:00`).toISOString()
-    if (new Date(quandoISO).getTime() > Date.now() + 60_000) {
-      return { error: `A entrada não pode ficar no futuro (${horaEntrada} de ${ref.dataRef.split('-').reverse().join('/')}). Confira a hora.` }
+    if (new Date(quandoISO).getTime() > contexto.agora.getTime() + (contexto.semInternet ? 0 : 60_000)) {
+      return {
+        error: contexto.semInternet
+          ? `A entrada das ${horaEntrada} de ${ref.dataRef.split('-').reverse().join('/')} ficaria depois da saída. Confira a hora e lance pelo Lançar ponto.`
+          : `A entrada não pode ficar no futuro (${horaEntrada} de ${ref.dataRef.split('-').reverse().join('/')}). Confira a hora.`,
+      }
     }
     const dia = await diaDeTrabalho(evento.id, ref.dataRef)
     if (!dia || dia.cancelado) return { error: 'Esse dia não é um dia de trabalho deste evento.' }
 
-    const justificativa = `Entrada não batida — lançada no portão por ${perfil.nome} na hora da saída (entrou às ${horaEntrada}, segundo o operador).`
+    const justificativa = contexto.semInternet
+      ? `Entrada não batida — informada no portão SEM INTERNET por ${perfil.nome} na hora da saída (entrou às ${horaEntrada}, segundo o operador). Lançada quando a internet voltou.`
+      : `Entrada não batida — lançada no portão por ${perfil.nome} na hora da saída (entrou às ${horaEntrada}, segundo o operador).`
     const { error } = await upsertRegistro(func.id, evento.id, 'entrada', {
       created_at: quandoISO, criado_por_perfil_id: perfil.id, registro_manual: true, justificativa,
     }, ref.dataRef, dia.id ?? null)
     if (error) return { error: mensagemAmigavel(error) }
 
     after(() => registrarAuditoria({
-      perfil, acao: 'CORRECAO_PONTO', campoAlterado: 'Entrada (não batida — lançada no portão)',
+      perfil, acao: 'CORRECAO_PONTO', campoAlterado: contexto.semInternet ? 'Entrada (não batida — informada no portão sem internet)' : 'Entrada (não batida — lançada no portão)',
       valorAnterior: 'sem entrada no turno', valorNovo: formatarBR(quandoISO, 'curto'),
       motivo: justificativa, funcionarioId: func.id, eventoId: evento.id, organizacaoId: evento.organizacao_id ?? undefined,
     }))
     revalidatePath(`/admin/eventos/${evento.id}/fornecedor/${func.fornecedor_id}`)
     revalidatePath(`/admin/eventos/${evento.id}/presenca`)
-    return { ok: true }
+    return { ok: true, nome: func.nome as string }
   } catch (e) {
     return { error: mensagemAmigavel(e) }
   }

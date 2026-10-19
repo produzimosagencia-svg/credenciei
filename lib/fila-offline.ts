@@ -25,6 +25,8 @@ export type ItemNaFila = BatidaGuardada & {
   /** Para a tela: quem é, se a lista guardada sabia. */
   nome: string | null
   equipe: string | null
+  /** Quem é, na lista guardada (a leitura do QR só traz o código) — para saber se a entrada desta pessoa já está na fila. */
+  pessoaId?: string | null
   /** Envios que falharam por erro de gravação (não por regra). */
   tentativas: number
 }
@@ -94,6 +96,50 @@ type SemTentativas<T> = T extends unknown ? Omit<T, 'tentativas'> : never
 export async function guardarNaFila(item: SemTentativas<ItemNaFila>): Promise<void> {
   await naGaveta('fila', 'readwrite', g => g.put({ ...item, tentativas: 0 }))
   avisarTelas()
+}
+
+/**
+ * Guarda VÁRIOS itens de uma vez, numa transação só: a entrada informada e a saída (Juan, 19/10/2026) entram juntas ou
+ * nenhuma — nunca uma saída guardada sem a entrada que o operador acabou de informar.
+ */
+export async function guardarNaFilaJuntos(itens: SemTentativas<ItemNaFila>[]): Promise<void> {
+  const db = await banco()
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction('fila', 'readwrite')
+    const g = t.objectStore('fila')
+    for (const i of itens) g.put({ ...i, tentativas: 0 })
+    t.oncomplete = () => resolve()
+    t.onerror = () => reject(t.error)
+    t.onabort = () => reject(t.error)
+  })
+  avisarTelas()
+}
+
+/** "HH:MM" válido (o que o campo de hora do navegador devolve). */
+export const horaDeEntradaValida = (hora: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(hora ?? '')
+
+/**
+ * O item "entrada informada" que vai ANTES da saída: a hora que o operador ouviu da pessoa. Fica 1 segundo antes da
+ * saída na ordem de horário — é o que faz a fila (e o servidor) lançarem a entrada primeiro.
+ */
+export function entradaInformadaParaSaida(
+  p: { eventoId: string; pessoaId: string; nome: string | null; equipe: string | null; hora: string; saidaLidaEm: string },
+): SemTentativas<ItemNaFila> {
+  return {
+    id: idNovo(), eventoId: p.eventoId, tipo: 'entrada_informada', funcionarioId: p.pessoaId, hora: p.hora, momento: 'entrada',
+    lidoEm: new Date(Date.parse(p.saidaLidaEm) - 1000).toISOString(), nome: p.nome, equipe: p.equipe, pessoaId: p.pessoaId,
+  }
+}
+
+/**
+ * Este aparelho JÁ guardou a entrada desta pessoa (e depois dela nenhuma saída)? Então não faz sentido perguntar a hora
+ * da entrada na saída. Sem internet o aparelho não sabe o que outros portões gravaram — só o que está na própria fila.
+ */
+export async function entradaJaNaFila(eventoId: string, pessoaId: string): Promise<boolean> {
+  const itens = await itensDaFila(eventoId).catch(() => [] as ItemNaFila[])
+  const dela = itens.filter(i => (i.tipo === 'assistido' || i.tipo === 'entrada_informada' ? i.funcionarioId : i.pessoaId) === pessoaId)
+  const ultimo = dela[dela.length - 1]
+  return !!ultimo && ultimo.momento === 'entrada'
 }
 
 export async function itensDaFila(eventoId?: string): Promise<ItemNaFila[]> {
@@ -269,9 +315,9 @@ export async function enviarFila(): Promise<{ enviadas: number; recusadas: numbe
 /** Só o que o servidor precisa (sem nome, equipe, tentativas). */
 function paraEnviar(i: ItemNaFila): BatidaGuardada {
   const base = { id: i.id, lidoEm: i.lidoEm, momento: i.momento, local: i.local ?? null }
-  return i.tipo === 'qr'
-    ? { ...base, tipo: 'qr', codigo: i.codigo, subeventoIds: i.subeventoIds }
-    : { ...base, tipo: 'assistido', funcionarioId: i.funcionarioId, foto: i.foto, dispositivo: i.dispositivo }
+  if (i.tipo === 'qr') return { ...base, tipo: 'qr', codigo: i.codigo, subeventoIds: i.subeventoIds }
+  if (i.tipo === 'entrada_informada') return { ...base, tipo: 'entrada_informada', funcionarioId: i.funcionarioId, hora: i.hora }
+  return { ...base, tipo: 'assistido', funcionarioId: i.funcionarioId, foto: i.foto, dispositivo: i.dispositivo }
 }
 
 async function aplicarRespostas(
