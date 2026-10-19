@@ -3,8 +3,8 @@ import { supabaseAdmin } from './supabase-server'
 import { emLotes } from './lotes'
 
 /*
- * A CREDENCIAL CHEGOU? (Juan, 18/10/2026: o fim do "chegou o link?") — para cada ficha, a última mensagem de
- * credencial (`boas_vindas_funcionario`) na fila e o que a Meta devolveu pelo webhook (`whatsapp_eventos`: sent,
+ * A CREDENCIAL CHEGOU? (Juan, 18/10/2026: o fim do "chegou o link?") — para cada ficha, a última mensagem que leva
+ * a credencial (`boas_vindas_funcionario` ou `confirmacao_escala`, a do Monte sua equipe) na fila e o que a Meta devolveu pelo webhook (`whatsapp_eventos`: sent,
  * delivered, read, failed), ligados pelo id da mensagem (`mensagens_agendadas.evolution_message_id` = wamid).
  */
 
@@ -20,7 +20,7 @@ export async function statusDasCredenciais(funcionarioIds: string[]): Promise<Ma
     for (const lote of emLotes(ids, 150)) {
       const { data, error } = await supabaseAdmin.from('mensagens_agendadas')
         .select('funcionario_id, status, evolution_message_id, created_at')
-        .in('funcionario_id', lote).eq('tipo', 'boas_vindas_funcionario')
+        .in('funcionario_id', lote).in('tipo', ['boas_vindas_funcionario', 'confirmacao_escala'])
       if (error) return resultado
       mensagens.push(...((data ?? []) as Linha[]))
     }

@@ -397,8 +397,7 @@ Cadastro da equipe: ${formulario}
 Até lá.`,
 
   /*
-   * CONVITE POR WHATSAPP e RESUMO DO SUPERVISOR (18/10/2026) — mesmos textos de supabase/TEMPLATES-WHATSAPP.md,
-   * itens 11 a 13. Ordem dos parâmetros = a de lib/convites.ts e lib/actions-convites.ts.
+   * CONVITE POR WHATSAPP — DESLIGADO POR ENQUANTO (lib/convites.ts). Textos guardados para quando ligar.
    */
   convite_cadastro_equipe: ([supervisor, equipe, evento, link]) =>
 `Olá! ${supervisor} convidou você para trabalhar na equipe ${equipe} do evento ${evento}.
@@ -414,6 +413,10 @@ Faça agora por este link: ${link}
 
 Sem o cadastro, você não recebe a credencial para entrar no evento.`,
 
+  /*
+   * RESUMO DO SUPERVISOR (18/10/2026) — mesmo texto de supabase/TEMPLATES-WHATSAPP.md, item 11. Ordem dos
+   * parâmetros = a de lib/resumo-supervisor.ts.
+   */
   resumo_pendencias_supervisor: ([nome, evento, resumo, link]) =>
 `Bom dia, ${nome}! Na sua equipe do evento ${evento} há ${resumo}.
 

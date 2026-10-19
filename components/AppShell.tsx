@@ -78,8 +78,16 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
   // ─── Evento ─────────────────────────────────────────────────────────────
   // Na ordem do trabalho de um dia de evento: abre o painel, escaneia,
   // ajusta o evento, regulariza quem perdeu a batida, confere as atividades.
-  // O supervisor não tem "Painel": o caminho dele começa em "Minhas equipes" (Juan, 14/10/2026).
-  const doEvento: NavItem[] = role === 'supervisor' ? [] : [{ href: '/admin', label: 'Painel', icon: Home }]
+  // O supervisor não tem "Painel": o caminho dele começa em "Meus eventos" (Juan, 14/10/2026).
+  // O operador de portão também começa em "Meus eventos" — a lista dos eventos dele, com Scanner e Registrar ponto
+  // (Juan, 18/10/2026). Quem, além de operar o portão, gerencia eventos (a Fatto deu isso aos operadores) mantém o Painel.
+  const doEvento: NavItem[] = role === 'supervisor' ? []
+    : role === 'operador_portao'
+      ? [
+          { href: '/admin/bem-vindo', label: 'Meus eventos', icon: CalendarDays },
+          ...(podeGerenciarEventos(perfil) ? [{ href: '/admin', label: 'Painel', icon: Home }] : []),
+        ]
+      : [{ href: '/admin', label: 'Painel', icon: Home }]
   /*
    * "Meus eventos" — pedido do Juan, 02/10/2026: o supervisor trabalha em
    * mais de um evento ao longo do tempo (atual + encerrados), e precisa de
@@ -94,7 +102,7 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    * vínculo, não o papel da conta.
    */
   if (role === 'supervisor' || temVinculoSupervisor) {
-    doEvento.push({ href: '/admin/meus-eventos', label: 'Minhas equipes', icon: CalendarDays })
+    doEvento.push({ href: '/admin/meus-eventos', label: role === 'operador_portao' ? 'Minhas equipes' : 'Meus eventos', icon: CalendarDays })
   }
   /*
    * "Pendências do turno" (Juan, 14/10/2026): quem da equipe está sem saída e sem meio no turno de agora, com o

@@ -88,7 +88,7 @@ export default async function MeusEventosPage() {
           </>
         ) : (
           <>
-            <h1 className="text-slate-800 font-bold text-2xl">Minhas equipes</h1>
+            <h1 className="text-slate-800 font-bold text-2xl">Meus eventos</h1>
             <p className="text-slate-500 text-sm mt-2">
               {passados.length ? 'Nenhum evento ativo agora — mas seu histórico continua abaixo.' : 'Escolha o evento que você quer acessar.'}
             </p>
@@ -97,7 +97,7 @@ export default async function MeusEventosPage() {
       </div>
 
       {!eventos.length && (
-        <Secao tom="acento" icone={<CalendarDays className="w-4 h-4" />} titulo="Minhas equipes">
+        <Secao tom="acento" icone={<CalendarDays className="w-4 h-4" />} titulo="Meus eventos">
           <EmptyState
             icone={<CalendarDays className="w-6 h-6" />}
             titulo="Nenhum evento ainda"

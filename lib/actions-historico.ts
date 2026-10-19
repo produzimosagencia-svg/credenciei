@@ -6,7 +6,8 @@ import { motivoCadastroTravado, sincronizarFuncionarioNaPlanilha } from './inter
 import { acessoAEquipe, vagasNaCota } from './acesso-equipe'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, vagasAprovadasPorDia, gravarEscalaAprovada } from './escala'
 import { listarDias, type DiaDaEscala } from './escala-regras'
-import { agendarBoasVindasFuncionario, sincronizarAgendamentos } from './mensagens'
+import { agendarBoasVindasFuncionario, enviarConfirmacaoDeEscalaAgora, sincronizarAgendamentos } from './mensagens'
+import { modeloPronto } from './resumo-supervisor'
 import { registrarAuditoria } from './auditoria'
 import { fichaQueImpedeCadastro } from './ficha-no-evento'
 import { mensagemAmigavel } from './erros'
@@ -18,7 +19,8 @@ import { paraATela, ROTULO_SITUACAO, O_QUE_FAZER, type PessoaDoHistorico } from 
  * MONTE SUA EQUIPE (Juan, 18/10/2026) — o supervisor vê quem já trabalhou com ele em outros eventos e adiciona
  * várias pessoas de uma vez, sem recadastro. Cada pessoa passa pelas MESMAS conferências do cadastro de hoje
  * (um CPF por evento, cadastro travado, cota, dias da escala, CPF bloqueado, telefone), entra aprovada — igual ao
- * cadastro feito pelo supervisor e à planilha — e recebe a credencial no WhatsApp pela fila de sempre.
+ * cadastro feito pelo supervisor e à planilha — e recebe no WhatsApp a CONFIRMAÇÃO DE ESCALA de sempre ("sua escala no
+ * evento X está confirmada": função, setor, data e horário, instruções e a credencial — Juan, 18/10/2026).
  *
  * As regras puras estão em lib/historico-supervisor-regras.ts; a leitura, em lib/historico-supervisor.ts.
  */
@@ -170,10 +172,22 @@ export async function adicionarDoHistorico(
 
     if (novas.length) {
       const perfil = { id: a.perfil.id as string, nome: a.perfil.nome as string }
-      // Credencial no WhatsApp pela fila (uma por pessoa; a fila espaça os envios), auditoria e planilha — depois da resposta.
+      /*
+       * A mensagem: a CONFIRMAÇÃO DE ESCALA de sempre (Juan, 18/10/2026: "vai disparar a mesma mensagem que já existe…
+       * você foi escalada para trabalhar em tal setor, em tal evento, tal dia"). Evento com subgrupo usa a irmã dela.
+       * Se a Meta ainda não aprovou esse modelo, vai a boas-vindas (também com a credencial): ninguém fica sem link.
+       */
+      const { data: ev } = await supabaseAdmin.from('eventos').select('tem_subeventos').eq('id', a.evento.id).maybeSingle()
+      const modelo = (ev as { tem_subeventos?: boolean } | null)?.tem_subeventos === true && a.fornecedor.subevento_id ? 'confirmacao_subeventos' : 'confirmacao_escala'
+      const comConfirmacao = await modeloPronto(modelo).catch(() => false)
+      // Mensagem, auditoria e planilha — depois da resposta. A sincronização do evento vai por ÚLTIMO: a confirmação
+      // já saiu (não fica pendente para ser cancelada).
       after(async () => {
         for (const n of novas) {
-          try { await agendarBoasVindasFuncionario({ eventoId: a.evento.id, funcionarioId: n.id, telefone: n.telefone }) } catch (e) { console.error('[monte-sua-equipe] boas-vindas', e) }
+          try {
+            if (comConfirmacao) await enviarConfirmacaoDeEscalaAgora({ eventoId: a.evento.id, funcionarioId: n.id, telefone: n.telefone })
+            else await agendarBoasVindasFuncionario({ eventoId: a.evento.id, funcionarioId: n.id, telefone: n.telefone })
+          } catch (e) { console.error('[monte-sua-equipe] mensagem', e) }
           await registrarAuditoria({
             perfil, acao: 'COLABORADOR_DO_HISTORICO', campoAlterado: 'Adicionado do histórico', eventoId: a.evento.id,
             organizacaoId: a.evento.organizacao_id ?? undefined, funcionarioId: n.id,

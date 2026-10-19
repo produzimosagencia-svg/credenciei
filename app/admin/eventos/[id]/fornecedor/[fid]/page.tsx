@@ -5,7 +5,8 @@ import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import MonteSuaEquipe from './MonteSuaEquipe'
-import ConvidarPorWhatsApp from './ConvidarPorWhatsApp'
+// Convite por WhatsApp — DESLIGADO POR ENQUANTO (Juan, 18/10/2026: "deixa isso comentado"). Ver lib/convites.ts.
+// import ConvidarPorWhatsApp from './ConvidarPorWhatsApp'
 import { statusDasCredenciais } from '@/lib/credencial-whatsapp'
 import { emLotes } from '@/lib/lotes'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
@@ -654,9 +655,10 @@ export default async function FornecedorPage({
           setorNome={fornecedor.nome as string}
         />
         <ImportarFuncionarios fornecedorId={fid} />
+        {/* Convite por WhatsApp — desligado por enquanto (ver lib/convites.ts):
         {(supervisorDesteSetor || podeGerenciarEventos(perfil)) && (
           <ConvidarPorWhatsApp fornecedorId={fid} equipeNome={fornecedor.nome as string} />
-        )}
+        )} */}
         {supervisorDesteSetor && (
           <SolicitarMaisColaboradores
             fornecedorId={fid}

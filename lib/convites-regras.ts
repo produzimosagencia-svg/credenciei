@@ -1,28 +1,16 @@
 /*
- * CONVITE POR WHATSAPP E RESUMO DO SUPERVISOR — as regras, sem banco (testadas em testes/convites-e-resumo.mjs).
+ * CONVITE POR WHATSAPP — as regras, sem banco. DESLIGADO POR ENQUANTO (ver lib/convites.ts).
  * Servem à tela (ler a lista colada antes de enviar) e ao servidor (conferir de novo).
  */
+import { normalizarTelefoneBR } from './resumo-supervisor-regras'
+
+export { normalizarTelefoneBR }
 
 /** Até quantos convites de uma vez. */
 export const MAX_CONVITES_POR_VEZ = 100
 
 /** Depois de quanto tempo sem cadastro o convite ganha UM lembrete. */
 export const LEMBRETE_DEPOIS_MS = 24 * 60 * 60 * 1000
-
-/**
- * O telefone brasileiro em DDD + número (10 ou 11 dígitos, sem o 55), ou `null` quando não serve. O genérico de
- * destravar cadastro (DDD + zeros, ex.: 27 0000-0000) não serve.
- */
-export function normalizarTelefoneBR(bruto: string | null | undefined): string | null {
-  let d = String(bruto ?? '').replace(/\D/g, '')
-  if (d.startsWith('55') && (d.length === 12 || d.length === 13)) d = d.slice(2)
-  if (d.length !== 10 && d.length !== 11) return null
-  if (d[0] === '0' || d[2] === '0') return null
-  if (/^\d{2}0{8,9}$/.test(d)) return null
-  // Celular com 11 dígitos começa com 9 depois do DDD.
-  if (d.length === 11 && d[2] !== '9') return null
-  return d
-}
 
 /** O mesmo número, com ou sem o 9 da frente (cadastros antigos guardam sem). */
 export function mesmoTelefone(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -65,19 +53,4 @@ export function telefoneMascarado(t: string | null | undefined): string {
   const d = normalizarTelefoneBR(t)
   if (!d) return '—'
   return `(${d.slice(0, 2)}) ${d.length === 11 ? '9••••' : '••••'}-${d.slice(-4)}`
-}
-
-export type Pendencias = { aprovar: number; credenciaisFalharam: number; convidadosSemCadastro: number }
-
-/**
- * O corpo do resumo do supervisor numa frase (sem quebra de linha — a Meta recusa quebra em parâmetro).
- * `null` quando não há nada pendente: aí não sai mensagem.
- */
-export function textoDoResumo(p: Pendencias): string | null {
-  const partes: string[] = []
-  if (p.aprovar > 0) partes.push(`${p.aprovar} ${p.aprovar === 1 ? 'pessoa aguardando' : 'pessoas aguardando'} sua aprovação`)
-  if (p.credenciaisFalharam > 0) partes.push(`${p.credenciaisFalharam} ${p.credenciaisFalharam === 1 ? 'credencial que não chegou' : 'credenciais que não chegaram'} no WhatsApp`)
-  if (p.convidadosSemCadastro > 0) partes.push(`${p.convidadosSemCadastro} ${p.convidadosSemCadastro === 1 ? 'convidado que ainda não se cadastrou' : 'convidados que ainda não se cadastraram'}`)
-  if (!partes.length) return null
-  return partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(', ')} e ${partes.at(-1)}`
 }

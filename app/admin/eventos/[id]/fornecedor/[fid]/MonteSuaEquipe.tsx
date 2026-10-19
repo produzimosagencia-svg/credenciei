@@ -149,7 +149,7 @@ export default function MonteSuaEquipe({ fornecedorId, equipeNome }: { fornecedo
           {resultado.adicionadas.length > 0 && (
             <div className="flex items-start gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
               <Check className="w-4 h-4 shrink-0 mt-0.5" />
-              <p><strong>{plural(resultado.adicionadas.length, 'pessoa adicionada', 'pessoas adicionadas')}</strong> a {equipeNome}. A credencial de cada uma está saindo pelo WhatsApp.
+              <p><strong>{plural(resultado.adicionadas.length, 'pessoa adicionada', 'pessoas adicionadas')}</strong> a {equipeNome}. Cada uma está recebendo no WhatsApp a confirmação da escala, com a credencial.
               {resultado.semDias.length > 0 && ` ${plural(resultado.semDias.length, 'ficou', 'ficaram')} aguardando aprovação porque os dias não gravaram: ${resultado.semDias.join(', ')}.`}</p>
             </div>
           )}
@@ -278,7 +278,7 @@ export default function MonteSuaEquipe({ fornecedorId, equipeNome }: { fornecedo
           {credenciais && credenciais.length > 0 && (
             <div className="p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-slate-600">Credencial no WhatsApp de quem entrou pelo histórico</p>
+                <p className="text-xs font-semibold text-slate-600">Confirmação no WhatsApp de quem entrou pelo histórico</p>
                 <button type="button" onClick={() => void carregarCredenciais()} className="inline-flex items-center gap-1 text-xs text-brand-600 font-semibold hover:underline">
                   <RefreshCw className="w-3 h-3" /> Atualizar
                 </button>
@@ -305,7 +305,7 @@ export default function MonteSuaEquipe({ fornecedorId, equipeNome }: { fornecedo
           <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
               <p className="text-lg font-extrabold text-slate-900">Adicionar {plural(selecionadasN, 'pessoa', 'pessoas')} a {equipeNome}?</p>
-              <p className="text-sm text-slate-600 mt-1">Cada uma entra aprovada e recebe a credencial do evento no WhatsApp agora. Ninguém precisa se cadastrar de novo.</p>
+              <p className="text-sm text-slate-600 mt-1">Cada uma entra aprovada e recebe agora no WhatsApp a confirmação da escala: evento, setor, função, dia e horário, com o link da credencial. Ninguém precisa se cadastrar de novo.</p>
             </div>
 
             {dados.usaEscala && (
@@ -347,7 +347,7 @@ export default function MonteSuaEquipe({ fornecedorId, equipeNome }: { fornecedo
                 disabled={enviando || (dados.usaEscala && diasMarcados.size === 0)}
                 className="btn btn-primario disabled:opacity-50"
               >
-                {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Adicionando…</> : <>Adicionar e enviar a credencial</>}
+                {enviando ? <><Loader2 className="w-4 h-4 animate-spin" /> Adicionando…</> : <>Adicionar e confirmar a escala</>}
               </button>
             </div>
           </div>

@@ -319,7 +319,32 @@ Exemplos: `Maria` · `LUAN SANTANA` · `Convidado / Lista VIP` · `17/10/2026 16
 
 ---
 
-## 11. `convite_cadastro_equipe`
+## 11. `resumo_pendencias_supervisor`
+
+**Precisa ser cadastrado na Meta.** Vai para o supervisor, uma vez por dia (a partir das 9h), enquanto o evento
+dele está em operação ou começa nos próximos 7 dias — só quando há pendência (gente aguardando aprovação,
+credencial que não chegou). Uma mensagem por evento.
+
+**Variáveis**: 1 primeiro nome do supervisor · 2 evento · 3 o resumo numa frase · 4 link do sistema
+
+```
+Bom dia, {{1}}! Na sua equipe do evento {{2}} há {{3}}.
+
+Para resolver, acesse {{4}} e confira a lista.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `Kissila` · `LUAN SANTANA` · `12 pessoas aguardando sua aprovação e 3 credenciais que não chegaram no WhatsApp` · `https://credenciei.com.br/admin/meus-eventos`
+
+Para desligar sem mexer no código: no painel do WhatsApp, fluxo "Resumo diário do supervisor" desligado.
+
+---
+
+> O convite por WhatsApp está desligado por enquanto (Juan, 18/10/2026). Os dois modelos abaixo ficam guardados
+> para quando for ligar — ver lib/convites.ts.
+
+## 12. `convite_cadastro_equipe` — DESLIGADO (só cadastre quando for ligar)
 
 **Precisa ser cadastrado na Meta.** Enquanto não estiver aprovado, o botão "Convidar por WhatsApp" avisa e não
 envia nada. Vai para quem o supervisor convidou (colando os telefones na equipe), com o link de cadastro da equipe.
@@ -340,7 +365,7 @@ Exemplos: `Kissila` · `SEGURANÇA` · `LUAN SANTANA` · `https://credenciei.com
 
 ---
 
-## 12. `lembrete_convite_equipe`
+## 13. `lembrete_convite_equipe` — DESLIGADO (só cadastre quando for ligar)
 
 **Precisa ser cadastrado na Meta.** Sai UMA vez, 24 horas depois do convite, só para quem ainda não se cadastrou
 (entre 8h e 21h). O supervisor pode cancelar o lembrete de alguém na lista de convites.
@@ -358,28 +383,6 @@ Sem o cadastro, você não recebe a credencial para entrar no evento.
 Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
 
 Exemplos: `SEGURANÇA` · `LUAN SANTANA` · `https://credenciei.com.br/form/abc123`
-
----
-
-## 13. `resumo_pendencias_supervisor`
-
-**Precisa ser cadastrado na Meta.** Vai para o supervisor, uma vez por dia (a partir das 9h), enquanto o evento
-dele está em operação ou começa nos próximos 7 dias — só quando há pendência. Uma mensagem por evento.
-
-**Variáveis**: 1 primeiro nome do supervisor · 2 evento · 3 o resumo numa frase · 4 link do sistema
-
-```
-Bom dia, {{1}}! Na sua equipe do evento {{2}} há {{3}}.
-
-Para resolver, acesse {{4}} e confira a lista.
-```
-
-Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
-
-Exemplos: `Kissila` · `LUAN SANTANA` · `12 pessoas aguardando sua aprovação, 3 credenciais que não chegaram no WhatsApp e 5 convidados que ainda não se cadastraram` · `https://credenciei.com.br/admin/meus-eventos`
-
-Para desligar sem mexer no código: no painel do WhatsApp, fluxo `resumo_supervisor` (e `lembrete_convite` para o
-lembrete do convite) como desligado.
 
 ---
 

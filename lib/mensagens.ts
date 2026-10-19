@@ -9,6 +9,7 @@
 // no agendamento; só decide QUANDO enviar. O texto real (nome do template +
 // parâmetros {{1}}, {{2}}...) é montado na hora do envio, com dados frescos
 // do banco — mesmo padrão que o alerta ao supervisor já usava antes.
+import { listarDias } from './escala-regras'
 import { inicioDoBlocoDe } from './meio-bloco'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
@@ -1131,6 +1132,40 @@ export async function agendarBoasVindasFuncionario(params: {
 }
 
 /**
+ * A CONFIRMAÇÃO DE ESCALA NA HORA (Monte sua equipe — Juan, 18/10/2026: "quando marcar que quer chamar de novo essa
+ * pessoa, vai disparar a mesma mensagem que já existe… você foi escalada para trabalhar em tal setor, em tal evento,
+ * tal dia"). É a `confirmacao_escala` de sempre (montada no envio: função, setor, data e horário, instruções e a
+ * credencial), só que agora, em vez de esperar a data da mensagem pré-evento.
+ *
+ * Mesma chave do agendamento normal (dia principal), então a pessoa não recebe duas. Sai na hora
+ * (`enviarMensagemAgora`): pendente, a próxima sincronização do evento a cancelaria como "regra que não vale mais".
+ */
+export async function enviarConfirmacaoDeEscalaAgora(params: {
+  eventoId: string
+  funcionarioId: string
+  telefone: string
+}): Promise<void> {
+  const telefone = params.telefone.replace(/\D/g, '')
+  if (!telefone) return
+  const { data: evento } = await supabase.from('eventos').select('data_inicio').eq('id', params.eventoId).maybeSingle()
+  if (!evento?.data_inicio) return
+  const { data, error } = await supabase.from('mensagens_agendadas').insert([{
+    evento_id: params.eventoId,
+    funcionario_id: params.funcionarioId,
+    tipo: 'confirmacao_escala',
+    data_ref: diaBRT(evento.data_inicio as string),
+    agendado_para: new Date().toISOString(),
+    telefone,
+    mensagem: 'confirmação de escala (montada no envio)',
+  }]).select('id').single()
+  if (error) {
+    if (error.code === '23505') return // já tem a confirmação deste evento: não manda outra
+    throw error
+  }
+  if (data?.id) await enviarMensagemAgora(data.id as string)
+}
+
+/**
  * Agenda a confirmação de cadastro de veículo — mesmo molde de
  * `agendarBoasVindasFuncionario`, mas apontando pro veículo, não pro
  * funcionário (o condutor pode nem ser da equipe).
@@ -1822,7 +1857,17 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     if (!func || !evento) return null
     const { data: fornecedor } = await supabase.from('fornecedores').select('nome').eq('id', func.fornecedor_id).single()
 
-    const dataLocal = `dia ${evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar'}${evento.local ? `, em ${evento.local}` : ''}`
+    /*
+     * "Tal dia" (Juan, 18/10/2026): quem tem dias aprovados na escala vê OS DIAS DELE — quem é chamado para a
+     * desmontagem não pode ler a data do show. Sem escala, vale a data do evento, como sempre.
+     */
+    const { data: diasAprovados } = await supabase.from('funcionario_dias').select('data')
+      .eq('funcionario_id', msg.funcionario_id).eq('aprovado', true).order('data')
+    const diasDaPessoa = (diasAprovados ?? []).map(d => d.data as string)
+    const quando = diasDaPessoa.length
+      ? `${diasDaPessoa.length === 1 ? 'dia' : 'dias'} ${listarDias(diasDaPessoa)}`
+      : `dia ${evento.data_inicio ? formatarBR(evento.data_inicio, 'curto') : 'a confirmar'}`
+    const dataLocal = `${quando}${evento.local ? `, em ${evento.local}` : ''}`
     const instrucoes = evento.msg_pre_evento_instrucoes?.trim() || 'Fique atento aos horários da sua escala.'
 
     const credencial = linkDaCredencial(func.qr_token, 'confirmacao_escala')

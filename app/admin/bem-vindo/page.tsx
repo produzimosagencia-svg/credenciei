@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, ClipboardCheck, CalendarDays, ChevronRight, ListChecks, UserCheck, Clock, LogIn, Camera, LogOut } from 'lucide-react'
+import { ScanLine, ClipboardCheck, CalendarDays, ChevronRight, ListChecks, UserCheck, Clock, LogIn, Camera, LogOut, ArrowLeftRight } from 'lucide-react'
 import { getPerfil, eventosEscaneaveisSemData, eventosAcontecendoHoje } from '@/lib/supabase-server'
 import { podeAcompanhar, podeConferirListaManual } from '@/lib/permissions'
 import { quantasNaListaManual } from '@/lib/lista-manual'
@@ -52,6 +52,14 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
       <div className="w-full max-w-md text-center">
+        {/* "Trocar de evento" no canto de cima (Juan, 18/10/2026): embaixo, depois dos números, ninguém achava. */}
+        {escolhido && ordenadosTodos.length > 1 && (
+          <div className="flex justify-end -mt-1 mb-3">
+            <Link href="/admin/bem-vindo" className="btn btn-secundario btn-sm">
+              <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" /> Trocar de evento
+            </Link>
+          </div>
+        )}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/marca/logo-laranja.png" alt="Credenciei" className="h-10 w-auto mx-auto mb-6" />
 
@@ -161,11 +169,6 @@ export default async function BemVindoPage({ searchParams }: { searchParams: Pro
                 </div>
                 <p className="text-slate-400 text-2xs px-1">Atualiza sozinho a cada 30 segundos.</p>
               </div>
-            )}
-            {ordenadosTodos.length > 1 && (
-              <Link href="/admin/bem-vindo" className="block text-center text-brand-600 text-sm font-semibold hover:underline mt-3">
-                Trocar de evento
-              </Link>
             )}
           </div>
         )}
