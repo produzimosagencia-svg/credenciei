@@ -38,6 +38,13 @@ ok(/export async function exigirAcessoAoEvento/.test(acesso) && /import \{ exigi
   ok(/const meusSetoresNesteEvento = gerenciaOEvento \? \[\] :/.test(aprov), 'aprovações: mesma regra — o vínculo não recorta quem gerencia o evento')
 }
 ok(/if \(permitidos && SO_GESTOR\.includes\(tipo\)\) return \{ erro:/.test(extras), 'tipos do evento inteiro recusados para o supervisor (no servidor)')
+{
+  // 19/10/2026 (LUAN SANTANA): supervisor de 2+ equipes via o card do completo (e o .zip) e recebia erro ao clicar.
+  const srv = ler('lib/relatorios.ts')
+  const corpo = srv.slice(srv.indexOf('export async function obterDadosRelatorioEvento'), srv.indexOf('export async function obterResumoParaTelaDeRelatorios'))
+  ok(/if \(acesso\.setoresPermitidos\) consulta = consulta\.in\('id', \[\.\.\.acesso\.setoresPermitidos\]\)/.test(corpo) && !/O relatório completo é só para quem gerencia/.test(corpo),
+    'completo do supervisor de várias equipes: só as equipes dele (não recusa, não vaza as outras)')
+}
 ok(/return permitidos \? todos\.filter\(s => permitidos\.has\(s\.id\)\) : todos/.test(extras), 'linhas recortadas pelos setores do supervisor')
 ok(/RELATORIOS\.filter\(r => eventoInteiro \|\| !r\.soGestor\)/.test(outros), 'a tela esconde do supervisor o que ele não pode puxar')
 

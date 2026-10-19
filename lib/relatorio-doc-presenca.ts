@@ -21,6 +21,19 @@ const diaComSemana = (d: string) => `${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex'
 const diaEHora = (iso: string) => `${new Date(iso).toLocaleDateString('pt-BR', { ...fuso, day: '2-digit', month: '2-digit' })} ${hora(iso)}`
 const duracao = (ms: number) => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60).toLocaleString('pt-BR')}h${String(m % 60).padStart(2, '0')}` }
 const ETAPA: Record<string, string> = { entrada: 'Entrada', meio: 'Meio', fim: 'Saída' }
+/** Acima disto as horas vão em laranja para conferir a saída — o mesmo teto da planilha (lib/relatorio-excel.ts). */
+const TURNO_LONGO_MS = 18 * 3_600_000
+/**
+ * As horas da linha. A saída lançada ANTES da entrada (LUAN, 19/10/2026: a hora da madrugada no dia errado) saía como
+ * "-11h-28"; agora vai em laranja, como o turno longo demais (a saída do dia anterior batida na manhã seguinte).
+ */
+function horasDaLinha(l: { entradaISO: string | null; saidaISO: string | null }): CelulaDoc {
+  if (!l.entradaISO || !l.saidaISO) return null
+  const ms = new Date(l.saidaISO).getTime() - new Date(l.entradaISO).getTime()
+  if (ms < 0) return { valor: 'saída antes da entrada', destaque: true }
+  if (ms > TURNO_LONGO_MS) return { valor: `${duracao(ms)} · conferir`, destaque: true }
+  return duracao(ms)
+}
 
 export function periodoTexto(de: string, ate: string): string {
   return de === ate ? `Dia ${diaCurto(de)}.` : `Período de ${diaCurto(de)} a ${diaCurto(ate)}.`
@@ -123,7 +136,8 @@ export function montarPresenca(dados: DadosRelatorioEvento, x: ExtrasDaPresenca)
     }
     const semMeio = linhas.filter((l, i) => !meioDaLinha.has(i) && l.entradaISO && x.pedeMeio(s.id, l.dataRef)
       && (porPessoaDia.get(`${l.funcionarioId}|${l.dataRef}`) ?? []).every(j => !meioDaLinha.has(j))).length
-    const faltas = [s.semSaida ? plural(s.semSaida, 'saída') : null, semMeio ? plural(semMeio, 'meio') : null].filter(Boolean).join(' e ')
+    const conferir = linhas.filter(l => { const c = horasDaLinha(l); return typeof c === 'object' && c !== null && c.destaque }).length
+    const faltas = [s.semSaida ? plural(s.semSaida, 'saída') : null, semMeio ? plural(semMeio, 'meio') : null, conferir ? `${plural(conferir, 'saída')} para conferir` : null].filter(Boolean).join(' e ')
     secoes.push({
       rotulo: s.area ? `Equipe · ${s.area}` : 'Equipe',
       titulo: `${s.nomeBonito}: ${plural(s.pessoas, 'pessoa')}, ${plural(s.diarias, 'diária')}, ${duracao(s.horasMs)}.`,
@@ -149,7 +163,7 @@ export function montarPresenca(dados: DadosRelatorioEvento, x: ExtrasDaPresenca)
           l.entradaISO ? hora(l.entradaISO) : { valor: 'sem entrada', destaque: true },
           meio,
           l.saidaISO ? hora(l.saidaISO) : { valor: 'sem saída', destaque: true },
-          l.entradaISO && l.saidaISO ? duracao(new Date(l.saidaISO).getTime() - new Date(l.entradaISO).getTime()) : null,
+          horasDaLinha(l),
         ]
       }),
       novaFolha: primeiraEquipe,

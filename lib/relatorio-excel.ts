@@ -38,6 +38,8 @@ import { COR_MARCA, COR_ACENTO, COR_FAIXA_CLARA, COR_TEXTO, BRANCO, BORDA_CELULA
 // ════════════════════════════════════════════════════════════════════════
 
 const DIA_EM_MS = 86_400_000
+/** Acima disto a linha vai em laranja para conferir a saída — o mesmo teto do PDF (lib/relatorio-doc-presenca.ts). */
+const TURNO_LONGO_MS = 18 * 3_600_000
 const SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
 /** "2026-10-10" → "Sábado" (pelo calendário, sem fuso: a data já é o dia de trabalho). */
@@ -52,12 +54,27 @@ export function duracaoDaLinha(l: LinhaRelatorio): number {
   return Math.max(0, new Date(l.saidaISO).getTime() - new Date(l.entradaISO).getTime())
 }
 
+/** A saída que não fecha a conta: lançada antes da entrada, ou um turno acima de 18h (o dia do show chega a 17h de verdade). `null` quando está tudo certo. */
+export function saidaParaConferir(l: LinhaRelatorio): string | null {
+  if (!l.entradaISO || !l.saidaISO) return null
+  const ms = new Date(l.saidaISO).getTime() - new Date(l.entradaISO).getTime()
+  if (ms < 0) return 'Saída antes da entrada'
+  if (ms > TURNO_LONGO_MS) return `Turno de ${Math.floor(ms / 3_600_000)}h — conferir a saída`
+  return null
+}
+
 /** O que falta na linha (laranja) e se a pessoa está com baixa (cinza). */
 export function situacaoDaLinha(l: LinhaRelatorio): { faltas: string[]; texto: string } {
   const faltas: string[] = []
   if (!l.entradaISO) faltas.push('Sem entrada')
   if (l.entradaISO && !l.saidaISO) faltas.push('Sem saída')
   if (l.semMeio) faltas.push('Sem meio')
+  /*
+   * A saída existe mas não fecha a conta (LUAN, 19/10/2026): lançada ANTES da entrada (a hora da madrugada no dia
+   * errado — as horas saem zeradas) ou um turno longo demais (a saída do dia anterior batida na manhã seguinte).
+   */
+  const conferir = saidaParaConferir(l)
+  if (conferir) faltas.push(conferir)
   // Entrou com aviso (fora da escala, acima do limite, sem internet): não é falta, mas é para conferir — vai em laranja.
   const partes = [...faltas, ...(l.avisos ?? [])]
   if (l.baixaEm) partes.push(`Baixa em ${formatarBR(l.baixaEm, 'data')}`)
@@ -101,6 +118,8 @@ export function calcularResumoPorFuncao(setor: SetorRelatorio): ResumoFuncao[] {
 export type LinhaPagamento = {
   nome: string; cpf: string | null; chavePix: string | null; fornecedores: string[]; areas: string[]; funcoes: string[]
   dias: string[]; diarias: number; horasMs: number; semSaida: number; semMeio: number
+  /** Linhas com a saída que não fecha a conta (antes da entrada, ou turno acima de 18h): as horas precisam de conferência. */
+  conferir: number
   valorReceber: number | null; pago: boolean | 'parcial'; pagoEm: string | null; baixaEm: string | null
   /**
    * Os dias trabalhados EM CADA equipe, na ordem dos dias (pedido do Juan, 18/10/2026: "uma pessoa que trabalhou numa
@@ -123,7 +142,7 @@ export function montarLinhasPagamento(setores: SetorRelatorio[]): LinhaPagamento
       const chave = cpf || l.funcionarioId
       const acc = porPessoa.get(chave) ?? {
         nome: l.nome, cpf: l.cpf ?? null, chavePix: null, fornecedores: [], areas: [], funcoes: [], dias: [], diarias: 0, horasMs: 0,
-        semSaida: 0, semMeio: 0, valorReceber: null, pago: false, pagoEm: null, baixaEm: null, diasPorFornecedor: [], ids: new Set<string>(), pagos: 0,
+        semSaida: 0, semMeio: 0, conferir: 0, valorReceber: null, pago: false, pagoEm: null, baixaEm: null, diasPorFornecedor: [], ids: new Set<string>(), pagos: 0,
       }
       if (!acc.fornecedores.includes(s.nome)) acc.fornecedores.push(s.nome)
       if (s.area && !acc.areas.includes(s.area)) acc.areas.push(s.area)
@@ -138,6 +157,7 @@ export function montarLinhasPagamento(setores: SetorRelatorio[]): LinhaPagamento
       acc.horasMs += duracaoDaLinha(l)
       if (l.entradaISO && !l.saidaISO) acc.semSaida++
       if (l.semMeio) acc.semMeio++
+      if (saidaParaConferir(l)) acc.conferir++
       if (!acc.ids.has(l.funcionarioId)) {
         acc.ids.add(l.funcionarioId)
         const p = cadastro.get(l.funcionarioId)
@@ -546,7 +566,7 @@ function escreverAbaPagamento(
   linha++
   const total = { dias: 0, diarias: 0, horasMs: 0, valor: 0, pagos: 0 }
   for (const p of pessoas) {
-    const pendencias = [p.semSaida ? `${p.semSaida} sem saída` : '', p.semMeio ? `${p.semMeio} sem meio` : ''].filter(Boolean).join(' · ')
+    const pendencias = [p.semSaida ? `${p.semSaida} sem saída` : '', p.semMeio ? `${p.semMeio} sem meio` : '', p.conferir ? `${p.conferir} saída para conferir` : ''].filter(Boolean).join(' · ')
     const valores: { v: string | number | Date | null; formato?: string; falta?: boolean }[] = [
       { v: p.nome },
       { v: cpfFormatado(p.cpf) },

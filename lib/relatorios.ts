@@ -368,8 +368,10 @@ export async function obterDadosRelatorioSetor(
 
 /**
  * Dados do relatório COMPLETO do evento — todos os setores, cada um vira uma
- * aba. Supervisor nunca chega aqui: `exigirAcessoAoEvento` só libera
- * `setoresPermitidos: null` para quem gerencia o evento inteiro.
+ * aba. Supervisor de MAIS de uma equipe também chega aqui (a tela mostra o
+ * card do completo e o .zip quando ele vê mais de um setor): recebe o
+ * completo só das equipes DELE — `setoresPermitidos` recorta a consulta.
+ * Antes recusava, e os botões davam erro para ele (achado no LUAN, 19/10/2026).
  */
 export async function obterDadosRelatorioEvento(
   eventoId: string, periodoPedido?: Periodo,
@@ -378,14 +380,17 @@ export async function obterDadosRelatorioEvento(
 ): Promise<{ dados: DadosRelatorioEvento } | { erro: string }> {
   const acesso = await exigirAcessoAoEvento(eventoId)
   if ('erro' in acesso) return { erro: acesso.erro }
-  if (acesso.setoresPermitidos) return { erro: 'O relatório completo é só para quem gerencia o evento inteiro.' }
+  if (acesso.setoresPermitidos && !acesso.setoresPermitidos.size) return { erro: 'Sem permissão sobre este evento.' }
 
   const periodo = await resolverPeriodo(eventoId, periodoPedido)
   let consulta = supabaseAdmin.from('fornecedores').select('id').eq('evento_id', eventoId)
+  if (acesso.setoresPermitidos) consulta = consulta.in('id', [...acesso.setoresPermitidos])
   if (opcoes.soComMeio) consulta = consulta.eq('exige_meio', true)
   const { data: fornecedores, error } = await consulta.order('created_at')
   if (error) return { erro: 'Não foi possível ler os fornecedores do evento.' }
-  if (opcoes.soComMeio && !fornecedores?.length) return { erro: 'Nenhum fornecedor deste evento pede a batida do meio.' }
+  if (opcoes.soComMeio && !fornecedores?.length) {
+    return { erro: acesso.setoresPermitidos ? 'Nenhuma das suas equipes pede a batida do meio.' : 'Nenhum fornecedor deste evento pede a batida do meio.' }
+  }
   const setores = await carregarSetores(eventoId, (fornecedores ?? []).map(f => f.id as string), periodo)
 
   return {

@@ -206,6 +206,24 @@ console.log('\nBatida com aviso e batida feita sem internet')
   ok(!semAviso.linha.avisos, 'batida normal (recebida na hora): sem aviso nenhum')
 }
 
+// LUAN, 19/10/2026: saída lançada à mão às 01:10 do MESMO dia (horas zeradas, "OK") e a saída do dia anterior batida
+// na manhã seguinte (23h). As duas vão em laranja, na linha e no Pagamento.
+console.log('\nSaída que não fecha a conta')
+{
+  const { situacaoDaLinha } = await import(join(pasta, 'relatorio-excel.ts'))
+  const base = { funcionarioId: 'x', nome: 'X', setor: 'S', funcao: '', dataRef: '2026-10-17', cpf: '11122233344' }
+  const invertida = { ...base, entradaISO: iso('2026-10-17', '11:38'), saidaISO: iso('2026-10-17', '01:10') }
+  const longa = { ...base, dataRef: '2026-10-15', entradaISO: iso('2026-10-15', '09:05'), saidaISO: iso('2026-10-16', '08:22') }
+  const normal = { ...base, entradaISO: iso('2026-10-17', '08:00'), saidaISO: iso('2026-10-18', '00:30') }
+  ok(situacaoDaLinha(invertida).faltas.includes('Saída antes da entrada'), 'saída antes da entrada: em laranja')
+  ok(situacaoDaLinha(longa).faltas.some(f => /^Turno de 23h — conferir a saída$/.test(f)), 'turno de 23h: em laranja — ' + situacaoDaLinha(longa).texto)
+  ok(situacaoDaLinha(normal).texto === 'OK', 'turno de 16h30 até a madrugada (o dia do show): OK')
+  const [pag] = montarLinhasPagamento([{ id: 's', nome: 'S', linhas: [invertida, longa, normal], ausentes: [] }])
+  ok(pag.conferir === 2, 'no Pagamento: 2 saídas para conferir')
+  const pdf = lib('relatorio-doc-presenca.ts')
+  ok(/if \(ms < 0\) return \{ valor: 'saída antes da entrada', destaque: true \}/.test(pdf) && /horasDaLinha\(l\),/.test(pdf), 'no PDF: nada de horas negativas ("-11h-28")')
+}
+
 rmSync(pasta, { recursive: true, force: true })
 console.log(falhas ? `\n${falhas} falha(s)` : '\nOK')
 process.exit(falhas ? 1 : 0)
