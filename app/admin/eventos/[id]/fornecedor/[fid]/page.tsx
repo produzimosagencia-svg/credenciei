@@ -12,7 +12,7 @@ import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf } from '@/lib/permissions'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ScanLine, Users, AlertTriangle, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
+import { ScanLine, Users, Wallet, TrendingUp, ClipboardList, FileSpreadsheet } from 'lucide-react'
 import FuncionarioTable, { type Presenca, type StatusEtapa } from './FuncionarioTable'
 import StatCard from '@/components/StatCard'
 import { Secao, PageHeader } from '@/components/ui/Superficie'
@@ -40,8 +40,8 @@ const TUTORIAL: TutorialConfig = {
   tela: 'setor-equipe',
   versao: 1,
   passos: [
-    { alvo: 'setor-stats', titulo: 'Situação da equipe', posicao: 'bottom',
-      descricao: 'Veja de relance quantos estão presentes, quantos ainda não chegaram e quem está com alguma etapa pendente.' },
+    { alvo: 'setor-stats', titulo: 'Tamanho da equipe', posicao: 'bottom',
+      descricao: 'Quantas pessoas estão na sua equipe. Quem chegou e quem falta você vê no progresso e na lista logo abaixo.' },
     { alvo: 'setor-tabela', titulo: 'Sua equipe', posicao: 'top',
       descricao: 'A lista completa com o status de cada etapa. Verde já registrou, amarelo está na hora e vermelho passou do horário esperado. Clique numa pessoa para ver os detalhes.' },
   ],
@@ -494,7 +494,6 @@ export default async function FornecedorPage({
 
   const total = funcionariosEnriquecidos.length
   const contar = (t: MomentoTipo) => funcionariosEnriquecidos.filter(f => f[t]).length
-  const comPendencia = funcionariosEnriquecidos.filter(f => f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado').length
   const totalReceber = funcionariosEnriquecidos.reduce((acc, f) => acc + f.valorReceber, 0)
   const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -503,8 +502,8 @@ export default async function FornecedorPage({
      O "A receber (equipe)" NÃO aparece pro supervisor — quanto a equipe dele
      recebe é dado da produção, não do supervisor (pedido do Juan). */
   const stats = [
-    { label: 'Total', value: total, icon: Users, tom: 'info' as const },
-    { label: 'Com pendências', value: comPendencia, icon: AlertTriangle, tom: 'aviso' as const },
+    // Só o total (Juan, 18/10/2026: o "Com pendências" saiu — quem falta está no progresso e na lista logo abaixo).
+    { label: 'Total', value: total, sub: total === 1 ? 'pessoa na equipe' : 'pessoas na equipe', icon: Users, tom: 'info' as const },
     ...(perfil.role === 'supervisor' ? [] : [{
       label: 'A receber (equipe)',
       value: brl(totalReceber),
@@ -683,11 +682,10 @@ export default async function FornecedorPage({
         <MonteSuaEquipe fornecedorId={fid} equipeNome={fornecedor.nome as string} />
       )}
 
-      {/* Três colunas porque são três indicadores. Numa grade de quatro, a
-          quarta coluna ficava vazia e sobrava um vão à direita do último
-          cartão — parecia que faltava alguma coisa ali. */}
-      <div data-tutorial="setor-stats" className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        {stats.map(s => <StatCard key={s.label} {...s} />)}
+      {/* Cartões em linha: o total sozinho (supervisor) ocupa a fileira inteira, baixo, sem vão ao lado; com o
+          "A receber" (admin), os dois dividem a fileira no computador e empilham no celular. */}
+      <div data-tutorial="setor-stats" className={`grid gap-3 sm:gap-4 ${stats.length > 1 ? 'sm:grid-cols-2' : ''}`}>
+        {stats.map(s => <StatCard key={s.label} {...s} emLinha />)}
       </div>
 
       {/* Progresso da equipe por etapa */}

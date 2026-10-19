@@ -771,6 +771,14 @@ button, [role='button'], a.btn-press {
   .indicador { padding: 0.875rem; }
   .indicador-valor { font-size: 1.75rem; }
 }
+/* Cartão em linha (StatCard `emLinha`): ícone e rótulo à esquerda, número à direita, na mesma altura. */
+.indicador.indicador-linha { display: flex; align-items: center; gap: 0.875rem; padding: 1rem 1.25rem; }
+.indicador-linha .indicador-sub { margin-top: 0.125rem; }
+.indicador-linha .indicador-valor { margin-top: 0; margin-left: auto; flex-shrink: 0; font-size: 2rem; }
+@media (max-width: 640px) {
+  .indicador.indicador-linha { padding: 0.875rem 1rem; }
+  .indicador-linha .indicador-valor { font-size: 1.75rem; }
+}
 
 /* Pastilha de status: pílula com borda. */
 .indicador-selo {

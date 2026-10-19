@@ -41,6 +41,7 @@ export default function StatCard({
   small,
   href,
   sensivel,
+  emLinha,
 }: {
   label: string
   value: string | number
@@ -59,7 +60,35 @@ export default function StatCard({
   href?: string
   /** Mostra um olho pra tampar o valor (dado sensível — dinheiro, custo). */
   sensivel?: boolean
+  /**
+   * Em linha: ícone e rótulo à esquerda, número à direita, mais baixo. Para quando o cartão fica sozinho (ou em
+   * dupla) numa fileira — o cartão alto, sozinho, deixava um vão enorme ao lado (equipe, 18/10/2026).
+   */
+  emLinha?: boolean
 }) {
+  if (emLinha && !sensivel) {
+    const linha = (
+      <>
+        {Icon && (
+          <span className="indicador-icone" aria-hidden="true">
+            <Icon className="w-3.5 h-3.5" />
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="indicador-rotulo truncate">{label}</p>
+          {sub && <p className="indicador-sub truncate">{sub}</p>}
+        </div>
+        <p className="indicador-valor" style={small ? { fontSize: '1.5rem' } : undefined}>{value}</p>
+      </>
+    )
+    if (!href) return <div className={`indicador indicador-linha ${TONS[tom]}`}>{linha}</div>
+    return (
+      <Link href={href} className={`indicador indicador-linha ${TONS[tom]} text-left hover:border-white/20 transition-colors`}>
+        {linha}
+      </Link>
+    )
+  }
+
   const conteudo = (
     <>
       <div className="flex items-center justify-between gap-3">
