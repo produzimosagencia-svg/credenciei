@@ -690,6 +690,10 @@ export const FLUXOS: { chave: string; titulo: string; descricao: string; quando:
     descricao: 'A segunda chamada de quem ainda está pendente.' },
   { chave: 'alerta_supervisor', titulo: 'Alerta ao supervisor', quando: 'Quando o prazo de uma etapa passa',
     descricao: 'Manda ao supervisor a lista de quem ficou pendente.' },
+  { chave: 'lembrete_convite', titulo: 'Lembrete do convite', quando: '24 horas depois do convite, entre 8h e 21h',
+    descricao: 'Lembra quem foi convidado pelo supervisor e ainda não se cadastrou. Sai uma vez só.' },
+  { chave: 'resumo_supervisor', titulo: 'Resumo diário do supervisor', quando: 'Uma vez por dia, a partir das 9h',
+    descricao: 'Quem espera aprovação, credencial que não chegou e convidado sem cadastro. Só sai se houver pendência.' },
 ]
 
 export async function fluxosAtivos(): Promise<Record<string, boolean>> {

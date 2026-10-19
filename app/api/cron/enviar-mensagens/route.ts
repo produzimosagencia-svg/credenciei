@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processarFilaMensagens, agendarAlertasSupervisorCredenciamento } from '@/lib/mensagens'
+import { processarLembretesDeConvite, enviarResumosDoDia } from '@/lib/convites'
 
 // Lote da Meta (100 por rodada, ver lib/mensagens.ts) leva segundos, mas com
 // folga explícita: sem isto vale o padrão do plano da Vercel.
@@ -26,6 +27,18 @@ export async function GET(request: NextRequest) {
     await agendarAlertasSupervisorCredenciamento()
   } catch (e) {
     console.error('[cron] agendarAlertasSupervisorCredenciamento falhou:', e)
+  }
+  // Convite por WhatsApp (lembrete em 24h) e resumo diário do supervisor (18/10/2026) — mesma ideia: varredura,
+  // isolada, que entra na fila antes do envio desta mesma volta. Ver lib/convites.ts.
+  try {
+    await processarLembretesDeConvite()
+  } catch (e) {
+    console.error('[cron] processarLembretesDeConvite falhou:', e)
+  }
+  try {
+    await enviarResumosDoDia()
+  } catch (e) {
+    console.error('[cron] enviarResumosDoDia falhou:', e)
   }
 
   /*

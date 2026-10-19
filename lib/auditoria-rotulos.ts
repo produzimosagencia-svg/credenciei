@@ -68,6 +68,7 @@ export const ACAO_LABELS: Record<string, string> = {
   SETOR_EXCLUIDO: 'Fornecedor excluído',
   COLABORADOR_ATRIBUIDO: 'Pessoa da base colocada no evento',
   COLABORADOR_DO_HISTORICO: 'Adicionado do histórico do supervisor (Monte sua equipe)',
+  CONVITE_EQUIPE: 'Convite por WhatsApp para a equipe',
   VALOR_A_RECEBER_ALTERADO: 'Valor a receber alterado',
   PAGAMENTO_ALTERADO: 'Pagamento marcado/desmarcado',
   DIAS_DO_EVENTO_ALTERADOS: 'Dias de trabalho do evento alterados',

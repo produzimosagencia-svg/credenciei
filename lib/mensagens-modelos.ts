@@ -395,6 +395,29 @@ Consulte os detalhes da operação no sistema: ${login}
 Cadastro da equipe: ${formulario}
 
 Até lá.`,
+
+  /*
+   * CONVITE POR WHATSAPP e RESUMO DO SUPERVISOR (18/10/2026) — mesmos textos de supabase/TEMPLATES-WHATSAPP.md,
+   * itens 11 a 13. Ordem dos parâmetros = a de lib/convites.ts e lib/actions-convites.ts.
+   */
+  convite_cadastro_equipe: ([supervisor, equipe, evento, link]) =>
+`Olá! ${supervisor} convidou você para trabalhar na equipe ${equipe} do evento ${evento}.
+
+Para participar, faça seu cadastro por este link: ${link}
+
+Leva 2 minutos. Se você não for trabalhar, pode ignorar esta mensagem.`,
+
+  lembrete_convite_equipe: ([equipe, evento, link]) =>
+`Olá! Seu cadastro para a equipe ${equipe} do evento ${evento} ainda não foi feito.
+
+Faça agora por este link: ${link}
+
+Sem o cadastro, você não recebe a credencial para entrar no evento.`,
+
+  resumo_pendencias_supervisor: ([nome, evento, resumo, link]) =>
+`Bom dia, ${nome}! Na sua equipe do evento ${evento} há ${resumo}.
+
+Para resolver, acesse ${link} e confira a lista.`,
 }
 
 /**

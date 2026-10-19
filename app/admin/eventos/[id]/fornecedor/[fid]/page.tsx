@@ -5,6 +5,8 @@ import { ampliacoesDoSetor } from '@/lib/pedidos-setor-consulta'
 import { tutorialHabilitadoNoEvento } from '@/lib/internos-servidor'
 import SolicitarMaisColaboradores from './SolicitarMaisColaboradores'
 import MonteSuaEquipe from './MonteSuaEquipe'
+import ConvidarPorWhatsApp from './ConvidarPorWhatsApp'
+import { statusDasCredenciais } from '@/lib/credencial-whatsapp'
 import { emLotes } from '@/lib/lotes'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento } from '@/lib/escala'
 import { veTodosEventos, ehMaster, podeExcluirDaEquipe, podeEscanear, podeGerenciarEventos, podeGerenciarUsuarios, podeCorrigirNomeECpf } from '@/lib/permissions'
@@ -282,10 +284,17 @@ export default async function FornecedorPage({
   const fotosAvatar = (funcionarios ?? []).map(f => f.foto_perfil_path).filter((p): p is string => !!p)
   const urlPorPath: Record<string, string> = {}
   const todosPaths = [...fotosPresenca, ...fotosAvatar]
-  if (todosPaths.length) {
-    const { data: signed } = await supabase.storage.from('presencas').createSignedUrls(todosPaths, 60 * 60)
-    for (const s of signed ?? []) if (s.path && s.signedUrl) urlPorPath[s.path] = s.signedUrl
-  }
+  // A credencial chegou no WhatsApp? Só de quem está valendo na equipe (aprovado, sem baixa) — ver lib/credencial-whatsapp.ts.
+  const [, credenciais] = await Promise.all([
+    todosPaths.length
+      ? supabase.storage.from('presencas').createSignedUrls(todosPaths, 60 * 60).then(({ data: signed }) => {
+          for (const s of signed ?? []) if (s.path && s.signedUrl) urlPorPath[s.path] = s.signedUrl
+        })
+      : Promise.resolve(),
+    statusDasCredenciais((funcionarios ?? [])
+      .filter(f => !f.descredenciado_em && statusCredenciamentoValido(f.status_credenciamento as string) === 'aprovado')
+      .map(f => f.id as string)),
+  ])
 
   /*
    * Qual dia cada pessoa esta cumprindo.
@@ -448,6 +457,7 @@ export default async function FornecedorPage({
       motivoNegacao: (f.motivo_negacao as string | null) ?? null,
       descredenciadoEm: (f.descredenciado_em as string | null) ?? null,
       fotoUrl: f.foto_perfil_path ? urlPorPath[f.foto_perfil_path] ?? null : null,
+      credencial: credenciais.get(f.id as string) ?? null,
       temBiometria: comBiometria.has(f.id as string),
       ...(() => {
         const d = diasPorFunc.get(f.id as string)
@@ -645,6 +655,9 @@ export default async function FornecedorPage({
           setorNome={fornecedor.nome as string}
         />
         <ImportarFuncionarios fornecedorId={fid} />
+        {(supervisorDesteSetor || podeGerenciarEventos(perfil)) && (
+          <ConvidarPorWhatsApp fornecedorId={fid} equipeNome={fornecedor.nome as string} />
+        )}
         {supervisorDesteSetor && (
           <SolicitarMaisColaboradores
             fornecedorId={fid}

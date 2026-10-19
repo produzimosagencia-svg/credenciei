@@ -1,16 +1,16 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
-import { getPerfil, supabaseAdmin, meusSetores, ehDaOrganizacaoDoPerfil } from './supabase-server'
-import { ehMaster, podeGerenciarEventos } from './permissions'
-import { motivoCadastroTravado, obterFuncionalidadesDoEvento, sincronizarFuncionarioNaPlanilha } from './internos-servidor'
+import { supabaseAdmin } from './supabase-server'
+import { motivoCadastroTravado, sincronizarFuncionarioNaPlanilha } from './internos-servidor'
+import { acessoAEquipe, vagasNaCota } from './acesso-equipe'
 import { eventoUsaEscalaPorDia, diasDaEscalaDoEvento, vagasAprovadasPorDia, gravarEscalaAprovada } from './escala'
 import { listarDias, type DiaDaEscala } from './escala-regras'
 import { agendarBoasVindasFuncionario, sincronizarAgendamentos } from './mensagens'
 import { registrarAuditoria } from './auditoria'
 import { fichaQueImpedeCadastro } from './ficha-no-evento'
 import { mensagemAmigavel } from './erros'
-import { emLotes } from './lotes'
+import { statusDasCredenciais, type StatusDaCredencial } from './credencial-whatsapp'
 import { historicoParaEquipe, fotosDoHistorico } from './historico-supervisor'
 import { paraATela, ROTULO_SITUACAO, O_QUE_FAZER, type PessoaDoHistorico } from './historico-supervisor-regras'
 
@@ -24,60 +24,6 @@ import { paraATela, ROTULO_SITUACAO, O_QUE_FAZER, type PessoaDoHistorico } from 
  */
 
 const MAX_POR_VEZ = 200
-
-type Acesso = {
-  perfil: NonNullable<Awaited<ReturnType<typeof getPerfil>>>
-  fornecedor: { id: string; nome: string; evento_id: string; quantidade_estimada: number | null; subevento_id: string | null }
-  evento: { id: string; nome: string; organizacao_id: string | null; ativo: boolean | null }
-  /** De quem é o histórico: o supervisor logado, ou (para o admin) os supervisores desta equipe. */
-  supervisorIds: string[]
-  ehOSupervisor: boolean
-}
-
-/**
- * Quem pode montar esta equipe: o supervisor DELA (vínculo em `supervisor_setores`, qualquer que seja o papel
- * principal da conta) e quem gerencia o evento (admin da organização, master). A mesma régua do cadastro pela
- * equipe (`exigirAcessoFuncionarios`).
- */
-async function acessoAEquipe(fornecedorId: string): Promise<Acesso | null> {
-  const perfil = await getPerfil()
-  if (!perfil || typeof fornecedorId !== 'string' || !fornecedorId) return null
-  const { data: forn } = await supabaseAdmin.from('fornecedores')
-    .select('id, nome, evento_id, quantidade_estimada, subevento_id, eventos!inner(id, nome, organizacao_id, ativo)')
-    .eq('id', fornecedorId).maybeSingle()
-  if (!forn) return null
-  const evento = forn.eventos as unknown as Acesso['evento']
-  const meus = await meusSetores(perfil)
-  const ehOSupervisor = meus.some(s => s.id === fornecedorId)
-  if (!ehOSupervisor) {
-    if (perfil.role === 'supervisor' || !podeGerenciarEventos(perfil)) return null
-    if (!ehMaster(perfil.role) && !ehDaOrganizacaoDoPerfil(perfil, evento.organizacao_id)) return null
-  }
-  let supervisorIds = [perfil.id as string]
-  if (!ehOSupervisor) {
-    const { data: sup } = await supabaseAdmin.from('supervisor_setores').select('perfil_id').eq('fornecedor_id', fornecedorId)
-    supervisorIds = [...new Set((sup ?? []).map(s => s.perfil_id as string))]
-  }
-  return {
-    perfil,
-    fornecedor: {
-      id: forn.id as string, nome: String(forn.nome ?? '').trim(), evento_id: forn.evento_id as string,
-      quantidade_estimada: (forn.quantidade_estimada as number | null) ?? null,
-      subevento_id: (forn as { subevento_id?: string | null }).subevento_id ?? null,
-    },
-    evento, supervisorIds, ehOSupervisor,
-  }
-}
-
-/** Vagas que a cota da equipe ainda deixa (null = sem trava de cota). Mesma conta da importação. */
-async function vagasNaCota(fornecedor: Acesso['fornecedor']): Promise<number | null> {
-  const funcionalidades = await obterFuncionalidadesDoEvento(fornecedor.evento_id)
-  if (!funcionalidades.travaCotaHabilitada || !fornecedor.quantidade_estimada) return null
-  const { count } = await supabaseAdmin.from('funcionarios').select('id', { count: 'exact', head: true })
-    .eq('fornecedor_id', fornecedor.id).or('origem.is.null,origem.neq.supervisor').is('descredenciado_em', null)
-  return Math.max(0, fornecedor.quantidade_estimada - (count ?? 0))
-}
-
 export type PessoaNaTela = PessoaDoHistorico & { fotoUrl: string | null }
 
 export type HistoricoDaEquipe = {
@@ -246,59 +192,21 @@ export async function adicionarDoHistorico(
   }
 }
 
-export type StatusDaCredencial = 'na_fila' | 'enviada' | 'entregue' | 'lida' | 'falhou' | 'sem_mensagem'
-
 /**
- * A credencial de quem entrou pelo "Monte sua equipe" chegou? Lê a fila (`mensagens_agendadas`) e os status que a
- * Meta devolve pelo webhook (`whatsapp_eventos`: sent / delivered / read / failed) — o fim do "chegou o link?".
+ * A credencial de quem entrou pelo "Monte sua equipe" chegou? Ver lib/credencial-whatsapp.ts.
  */
 export async function credenciaisDoHistorico(
   fornecedorId: string,
-): Promise<{ pessoas: { nome: string; status: StatusDaCredencial; quando: string | null }[] } | { error: string }> {
+): Promise<{ pessoas: { nome: string; status: StatusDaCredencial }[] } | { error: string }> {
   try {
     const a = await acessoAEquipe(fornecedorId)
     if (!a) return { error: 'Sem permissão.' }
-    const { data: fichas } = await supabaseAdmin.from('funcionarios').select('id, nome, created_at')
+    const { data: fichas } = await supabaseAdmin.from('funcionarios').select('id, nome')
       .eq('fornecedor_id', fornecedorId).eq('origem', 'historico').is('descredenciado_em', null)
       .order('created_at', { ascending: false }).limit(500)
     if (!fichas?.length) return { pessoas: [] }
-    const ids = fichas.map(f => f.id as string)
-    const mensagens: { funcionario_id: string; status: string; evolution_message_id: string | null; enviado_em: string | null; created_at: string }[] = []
-    for (const lote of emLotes(ids, 150)) {
-      const { data } = await supabaseAdmin.from('mensagens_agendadas')
-        .select('funcionario_id, status, evolution_message_id, enviado_em, created_at')
-        .in('funcionario_id', lote).eq('tipo', 'boas_vindas_funcionario')
-      mensagens.push(...((data ?? []) as typeof mensagens))
-    }
-    const ultima = new Map<string, (typeof mensagens)[number]>()
-    for (const m of mensagens) {
-      const atual = ultima.get(m.funcionario_id)
-      if (!atual || m.created_at > atual.created_at) ultima.set(m.funcionario_id, m)
-    }
-    const wamids = [...ultima.values()].map(m => m.evolution_message_id).filter((w): w is string => !!w)
-    const estados = new Map<string, Set<string>>()
-    for (const lote of emLotes(wamids, 100)) {
-      const { data } = await supabaseAdmin.from('whatsapp_eventos').select('wa_message_id, tipo').eq('direcao', 'status').in('wa_message_id', lote)
-      for (const e of data ?? []) {
-        const k = e.wa_message_id as string
-        if (!estados.has(k)) estados.set(k, new Set())
-        estados.get(k)!.add(String(e.tipo))
-      }
-    }
-    return {
-      pessoas: fichas.map(f => {
-        const m = ultima.get(f.id as string)
-        const s = m?.evolution_message_id ? estados.get(m.evolution_message_id) : undefined
-        const status: StatusDaCredencial = !m ? 'sem_mensagem'
-          : m.status === 'falhou' || s?.has('failed') ? 'falhou'
-          : s?.has('read') ? 'lida'
-          : s?.has('delivered') ? 'entregue'
-          : m.status === 'enviado' ? 'enviada'
-          : m.status === 'cancelado' ? 'sem_mensagem'
-          : 'na_fila'
-        return { nome: String(f.nome ?? ''), status, quando: m?.enviado_em ?? null }
-      }),
-    }
+    const status = await statusDasCredenciais(fichas.map(f => f.id as string))
+    return { pessoas: fichas.map(f => ({ nome: String(f.nome ?? ''), status: status.get(f.id as string) ?? 'sem_mensagem' })) }
   } catch (e) {
     console.error('[credenciaisDoHistorico]', e)
     return { error: 'Não foi possível conferir as credenciais agora.' }

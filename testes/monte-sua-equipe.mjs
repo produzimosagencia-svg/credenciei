@@ -74,7 +74,8 @@ ok(R.telefoneValido('(27) 99999-0000') && !R.telefoneValido('2700000000') && !R.
 console.log('\n2 · O servidor confere tudo de novo')
 const acoes = ler('lib/actions-historico.ts')
 const add = acoes.slice(acoes.indexOf('export async function adicionarDoHistorico'), acoes.indexOf('export type StatusDaCredencial'))
-ok(/if \(perfil\.role === 'supervisor' \|\| !podeGerenciarEventos\(perfil\)\) return null/.test(acoes) && /meus\.some\(s => s\.id === fornecedorId\)/.test(acoes), 'só o supervisor DESTA equipe, ou quem gerencia o evento da organização')
+const acesso = ler('lib/acesso-equipe.ts')
+ok(/if \(perfil\.role === 'supervisor' \|\| !podeGerenciarEventos\(perfil\)\) return null/.test(acesso) && /meus\.some\(s => s\.id === fornecedorId\)/.test(acesso) && /acessoAEquipe\(fornecedorId\)/.test(acoes), 'só o supervisor DESTA equipe, ou quem gerencia o evento da organização')
 ok(/historicoParaEquipe\(\{ eventoId: a\.evento\.id, fornecedorId/.test(add) && /if \(p\.situacao !== 'disponivel'\)/.test(add), 'o histórico é recalculado no servidor: a lista da tela não vale como prova')
 ok(/motivoCadastroTravado\(a\.evento\.id/.test(add), 'respeita o cadastro travado (equipe, subgrupo, evento)')
 ok(/vagasNaCota\(a\.fornecedor\)/.test(add) && /Não coube: a equipe chegou ao limite/.test(add), 'respeita a cota da equipe (entra até onde cabe)')
@@ -83,7 +84,7 @@ ok(/fichaQueImpedeCadastro\(noEvento, fornecedorId\)/.test(add), 'conferência d
 ok(/origem: 'historico'/.test(add) && /gravarEscalaAprovada/.test(add) && /status_credenciamento: 'pendente'/.test(add), 'ficha nova (origem "historico"), dias gravados; sem dia gravado, fica aguardando aprovação')
 ok(/after\(async \(\) => \{[\s\S]*agendarBoasVindasFuncionario[\s\S]*COLABORADOR_DO_HISTORICO[\s\S]*sincronizarAgendamentos/.test(add), 'credencial pela fila do WhatsApp e auditoria de cada pessoa, depois da resposta')
 ok(/MAX_POR_VEZ = 200/.test(acoes) && !/throw new Error/.test(acoes), 'até 200 por vez; nunca lança (devolve o erro com o que fazer)')
-ok(/from\('whatsapp_eventos'\)\.select\('wa_message_id, tipo'\)\.eq\('direcao', 'status'\)/.test(acoes), 'status da credencial: fila + entregue/lida do webhook da Meta')
+ok(/from\('whatsapp_eventos'\)\.select\('wa_message_id, tipo'\)\.eq\('direcao', 'status'\)/.test(ler('lib/credencial-whatsapp.ts')) && /statusDasCredenciais\(/.test(acoes), 'status da credencial: fila + entregue/lida do webhook da Meta')
 ok(/COLABORADOR_DO_HISTORICO/.test(ler('lib/auditoria-rotulos.ts')), 'a auditoria tem o rótulo da ação nova')
 
 console.log('\n3 · A tela')

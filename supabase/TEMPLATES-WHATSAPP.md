@@ -319,6 +319,70 @@ Exemplos: `Maria` · `LUAN SANTANA` · `Convidado / Lista VIP` · `17/10/2026 16
 
 ---
 
+## 11. `convite_cadastro_equipe`
+
+**Precisa ser cadastrado na Meta.** Enquanto não estiver aprovado, o botão "Convidar por WhatsApp" avisa e não
+envia nada. Vai para quem o supervisor convidou (colando os telefones na equipe), com o link de cadastro da equipe.
+
+**Variáveis**: 1 primeiro nome do supervisor · 2 equipe · 3 evento · 4 link de cadastro
+
+```
+Olá! {{1}} convidou você para trabalhar na equipe {{2}} do evento {{3}}.
+
+Para participar, faça seu cadastro por este link: {{4}}
+
+Leva 2 minutos. Se você não for trabalhar, pode ignorar esta mensagem.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `Kissila` · `SEGURANÇA` · `LUAN SANTANA` · `https://credenciei.com.br/form/abc123`
+
+---
+
+## 12. `lembrete_convite_equipe`
+
+**Precisa ser cadastrado na Meta.** Sai UMA vez, 24 horas depois do convite, só para quem ainda não se cadastrou
+(entre 8h e 21h). O supervisor pode cancelar o lembrete de alguém na lista de convites.
+
+**Variáveis**: 1 equipe · 2 evento · 3 link de cadastro
+
+```
+Olá! Seu cadastro para a equipe {{1}} do evento {{2}} ainda não foi feito.
+
+Faça agora por este link: {{3}}
+
+Sem o cadastro, você não recebe a credencial para entrar no evento.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `SEGURANÇA` · `LUAN SANTANA` · `https://credenciei.com.br/form/abc123`
+
+---
+
+## 13. `resumo_pendencias_supervisor`
+
+**Precisa ser cadastrado na Meta.** Vai para o supervisor, uma vez por dia (a partir das 9h), enquanto o evento
+dele está em operação ou começa nos próximos 7 dias — só quando há pendência. Uma mensagem por evento.
+
+**Variáveis**: 1 primeiro nome do supervisor · 2 evento · 3 o resumo numa frase · 4 link do sistema
+
+```
+Bom dia, {{1}}! Na sua equipe do evento {{2}} há {{3}}.
+
+Para resolver, acesse {{4}} e confira a lista.
+```
+
+Categoria: `Utilidade` · Idioma: `Português (BR)` · Sem botões.
+
+Exemplos: `Kissila` · `LUAN SANTANA` · `12 pessoas aguardando sua aprovação, 3 credenciais que não chegaram no WhatsApp e 5 convidados que ainda não se cadastraram` · `https://credenciei.com.br/admin/meus-eventos`
+
+Para desligar sem mexer no código: no painel do WhatsApp, fluxo `resumo_supervisor` (e `lembrete_convite` para o
+lembrete do convite) como desligado.
+
+---
+
 ## Depois de aprovar
 
 1. Configure as variáveis de ambiente na Vercel (e no worker, se estiver usando):

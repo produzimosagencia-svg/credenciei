@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Users, Search, Loader2, X, Check, RefreshCw, CalendarDays, UserPlus } from 'lucide-react'
 import {
   obterHistoricoDaEquipe, adicionarDoHistorico, credenciaisDoHistorico,
-  type HistoricoDaEquipe, type PessoaNaTela, type ResultadoDoLote, type StatusDaCredencial,
+  type HistoricoDaEquipe, type PessoaNaTela, type ResultadoDoLote,
 } from '@/lib/actions-historico'
+import type { StatusDaCredencial } from '@/lib/credencial-whatsapp'
 import { ROTULO_SITUACAO, O_QUE_FAZER } from '@/lib/historico-supervisor-regras'
 import { ROTULO_FASE } from '@/lib/escala-regras'
 import { Secao, Badge } from '@/components/ui/Superficie'

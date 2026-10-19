@@ -110,6 +110,8 @@ type Funcionario = {
   /** Dias em que a pessoa bateu entrada neste evento — contam no botão do dia, com ou sem escala. */
   diasComBatida?: string[]
   fotoUrl: string | null
+  /** A credencial chegou no WhatsApp? `null` = não se aplica (aguardando aprovação, baixa). Ver lib/credencial-whatsapp.ts. */
+  credencial?: 'na_fila' | 'enviada' | 'entregue' | 'lida' | 'falhou' | 'sem_mensagem' | null
   entrada: Presenca
   meio: Presenca
   fim: Presenca
@@ -118,7 +120,30 @@ type Funcionario = {
   statusFim: StatusEtapa
 }
 
-type FiltroRapido = 'todos' | 'pendencias' | 'presentes' | 'ausentes' | 'nao_ativados'
+type FiltroRapido = 'todos' | 'pendencias' | 'presentes' | 'ausentes' | 'nao_ativados' | 'credencial'
+
+/*
+ * Credencial que não chegou = a mensagem FALHOU (número errado, sem WhatsApp). "Sem mensagem" não acende: acontece
+ * por motivo bom (crachá de supervisor, credencial já enviada ao mesmo número em outra equipe) e viraria alarme falso.
+ */
+const credencialNaoChegou = (f: { credencial?: Funcionario['credencial'] }) => f.credencial === 'falhou'
+
+/** O selo da credencial no WhatsApp — só o que pede atenção grita; o resto é discreto. */
+function SeloCredencial({ status }: { status: Funcionario['credencial'] }) {
+  if (!status || status === 'sem_mensagem') return null
+  if (status === 'falhou') {
+    return (
+      <span
+        className="shrink-0 text-2xs font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
+        title="A credencial não chegou no WhatsApp. Confira o telefone na ficha: corrigir reenvia sozinho."
+      >
+        CREDENCIAL NÃO CHEGOU
+      </span>
+    )
+  }
+  const texto = status === 'lida' ? 'credencial lida' : status === 'entregue' ? 'credencial entregue' : status === 'enviada' ? 'credencial enviada' : 'credencial na fila'
+  return <span className="shrink-0 text-2xs text-slate-400" title="Status da mensagem da credencial no WhatsApp">{texto}</span>
+}
 
 const OPCOES_STATUS: { value: StatusEtapa | 'todos'; label: string }[] = [
   { value: 'todos', label: 'Qualquer status' },
@@ -267,6 +292,7 @@ export default function FuncionarioTable({
     if (filtroRapido === 'ausentes' && f.entrada) return false
     if (filtroRapido === 'pendencias' && !(f.statusEntrada === 'fechado' || f.statusMeio === 'fechado' || f.statusFim === 'fechado')) return false
     if (filtroRapido === 'nao_ativados' && f.ativo) return false
+    if (filtroRapido === 'credencial' && !credencialNaoChegou(f)) return false
 
     return true
   }), [funcionarios, search, diaFiltro, filtroRapido, statusEntrada, statusMeio, statusFim])
@@ -432,6 +458,7 @@ export default function FuncionarioTable({
             ['presentes', 'Presentes'],
             ['ausentes', 'Ausentes'],
             ['nao_ativados', 'Não ativados'],
+            ['credencial', `Credencial não chegou${funcionarios.filter(credencialNaoChegou).length ? ` (${funcionarios.filter(credencialNaoChegou).length})` : ''}`],
           ] as [FiltroRapido, string][]).map(([value, label]) => (
             <button
               key={value}
@@ -614,6 +641,7 @@ export default function FuncionarioTable({
                   <EtapaChip label="Entrada" p={f.entrada} status={f.statusEntrada} />
                   <EtapaChip label="Meio" p={f.meio} status={f.statusMeio} />
                   <EtapaChip label="Saída" p={f.fim} status={f.statusFim} />
+                  <SeloCredencial status={f.credencial} />
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -712,6 +740,7 @@ export default function FuncionarioTable({
                               )}
                               <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                             </div>
+                            {f.credencial && <div className="mt-0.5"><SeloCredencial status={f.credencial} /></div>}
                             {usaEscala && diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                           </div>
                         </div>
