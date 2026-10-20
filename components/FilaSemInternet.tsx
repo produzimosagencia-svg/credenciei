@@ -93,62 +93,68 @@ export function useFilaSemInternet(eventoId: string): EstadoDaFila {
 /**
  * O aviso do portão: sem internet, quantas batidas estão guardadas no aparelho, e as que o servidor recusou.
  * Some quando está tudo em dia — com internet e fila vazia não há o que dizer.
+ *
+ * CORES FIXAS (Juan, 19/10/2026: "não ficou legal essa mensagem, o modal amarelo não ficou claro"): as cores do Tailwind
+ * (amber-100, amber-200…) mudam com o tema e, no tema escuro, viram âmbar quase transparente — texto escuro sobre fundo
+ * escuro. Aqui é uma caixa âmbar SÓLIDA com texto quase preto (contraste acima de 8:1), igual em qualquer tema e tela.
  */
-export default function AvisoFilaSemInternet({ estado, escuro = false }: { estado: EstadoDaFila; escuro?: boolean }) {
+export default function AvisoFilaSemInternet({ estado }: { estado: EstadoDaFila }) {
   const [abertas, setAbertas] = useState(false)
   const { semInternet, pendentes, recusas, enviando, pacote } = estado
   if (!semInternet && !pendentes && !recusas.length) return null
 
-  const caixa = escuro ? 'bg-amber-500/15 border-amber-500/40 text-amber-100' : 'bg-amber-50 border-amber-200 text-amber-900'
-  const fraco = escuro ? 'text-amber-200/80' : 'text-amber-800/80'
-
   return (
-    <div className={`w-full rounded-xl border px-3 py-2.5 text-sm space-y-1.5 ${caixa}`} role="status" aria-live="polite">
+    <div className="w-full space-y-3 rounded-2xl bg-[#fbbf24] p-4 text-left text-[#111827]" role="status" aria-live="polite">
       {semInternet && (
-        <p className="flex items-start gap-2 font-semibold">
-          <CloudOff className="w-4 h-4 shrink-0 mt-0.5" />
-          Sem internet. Pode continuar: as batidas ficam guardadas neste aparelho e sobem sozinhas quando a internet voltar.
-        </p>
+        <div className="flex items-start gap-2.5">
+          <CloudOff className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="text-base font-extrabold leading-snug">SEM INTERNET</p>
+            <p className="mt-0.5 text-sm font-semibold leading-snug">
+              Pode continuar: as batidas ficam guardadas neste aparelho e sobem sozinhas quando a internet voltar.
+            </p>
+          </div>
+        </div>
       )}
       {pendentes > 0 && (
-        <p className="flex items-start gap-2">
-          <CloudUpload className={`w-4 h-4 shrink-0 mt-0.5 ${enviando ? 'animate-pulse' : ''}`} />
-          <span>
-            <strong>{pendentes} batida{pendentes === 1 ? '' : 's'} guardada{pendentes === 1 ? '' : 's'}</strong> neste aparelho
+        <div className="flex items-start gap-2.5">
+          <CloudUpload className={`mt-0.5 h-5 w-5 shrink-0 ${enviando ? 'animate-pulse' : ''}`} />
+          <p className="text-sm font-semibold leading-snug">
+            <strong className="font-extrabold">{pendentes} batida{pendentes === 1 ? '' : 's'} guardada{pendentes === 1 ? '' : 's'}</strong> neste aparelho
             {enviando ? ' — enviando…' : semInternet ? ' — esperando a internet.' : ' — enviando em instantes.'}
             {' '}Não feche o navegador nem limpe os dados dele.
-          </span>
-        </p>
+          </p>
+        </div>
       )}
       {semInternet && (
-        <p className={`text-xs ${fraco}`}>
+        <p className="text-sm font-medium leading-snug text-[#374151]">
           {pacote
             ? `Lista do evento guardada às ${formatarBR(pacote.geradoEm, 'curto')} (${pacote.pessoas} pessoas): o nome aparece na leitura.`
             : 'A lista do evento ainda não foi guardada neste aparelho: a leitura é guardada, mas sem mostrar o nome.'}
         </p>
       )}
       {recusas.length > 0 && (
-        <div className={`pt-1.5 border-t ${escuro ? 'border-amber-500/30' : 'border-amber-200'}`}>
-          <button type="button" onClick={() => setAbertas(a => !a)} className="w-full flex items-center justify-between gap-2 font-semibold text-left">
+        <div className="border-t-2 border-[#111827]/20 pt-3">
+          <button type="button" onClick={() => setAbertas(a => !a)} className="flex w-full items-center justify-between gap-2 text-left text-sm font-extrabold">
             <span className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+              <AlertTriangle className="h-5 w-5 shrink-0 text-[#b91c1c]" />
               {recusas.length} batida{recusas.length === 1 ? '' : 's'} guardada{recusas.length === 1 ? '' : 's'} não entr{recusas.length === 1 ? 'ou' : 'aram'} — ver
             </span>
-            {abertas ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {abertas ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
           </button>
           {abertas && (
-            <ul className="mt-2 space-y-1.5">
+            <ul className="mt-2 space-y-2">
               {recusas.map(r => (
-                <li key={r.id} className={`rounded-lg px-2.5 py-2 text-xs ${escuro ? 'bg-black/30' : 'bg-white border border-amber-100'}`}>
-                  <p className="font-semibold">
+                <li key={r.id} className="rounded-xl bg-white px-3 py-2.5 text-[#111827]">
+                  <p className="text-sm font-extrabold">
                     {r.nome ?? 'Pessoa não identificada'} · {r.momento === 'fim' ? 'Saída' : 'Entrada'} às {formatarBR(r.lidoEm, 'curto')}
                   </p>
-                  <p className={`mt-0.5 ${fraco}`}>{r.motivo}</p>
+                  <p className="mt-0.5 text-sm font-medium leading-snug text-[#374151]">{r.motivo}</p>
                   <button
                     type="button" onClick={() => void descartarRecusa(r.id)}
-                    className="mt-1 inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
+                    className="mt-1.5 inline-flex items-center gap-1 text-sm font-bold text-[#1d4ed8] underline underline-offset-4"
                   >
-                    <Check className="w-3 h-3" /> Já resolvi — tirar da lista
+                    <Check className="h-4 w-4" /> Já resolvi — tirar da lista
                   </button>
                 </li>
               ))}

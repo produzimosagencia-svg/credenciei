@@ -920,7 +920,7 @@ export default function ScannerView({
           Quem saiu e está voltando: use ENTRADA — a saída fica no histórico como pausa.
           O <strong>meio</strong> continua sendo registrado pelo próprio funcionário, com foto, na credencial dele.
         </p>
-        <AvisoFilaSemInternet estado={fila} escuro={!noPainel} />
+        <AvisoFilaSemInternet estado={fila} />
       </div>
 
       {/*

@@ -260,6 +260,9 @@ ok(/SEM ENTRADA REGISTRADA\{conferido\}/.test(reg) && /setInformandoEntradaSemNe
 const cartaoDeEntrada = leitor.slice(leitor.indexOf('SEM INTERNET: o aparelho diz se a pessoa já tem entrada'), leitor.indexOf('{r.precisaJustificativaAtraso && ('))
 ok(/bg-\[#b91c1c\]/.test(cartaoDeEntrada) && /bg-\[#15803d\]/.test(cartaoDeEntrada) && /bg-\[#f59e0b\]/.test(cartaoDeEntrada) && !/text-(red|green|amber)-\d/.test(cartaoDeEntrada) && !/bg-(red|green)-\d/.test(cartaoDeEntrada) && /CampoHoraDeEntrada/.test(cartaoDeEntrada),
   'leitor: as caixas de aviso de entrada usam cores fixas e o campo de hora é o que não entorta')
+const aviso = ler('components/FilaSemInternet.tsx')
+const avisoJsx = aviso.slice(aviso.indexOf('export default function AvisoFilaSemInternet'))
+ok(/bg-\[#fbbf24\]/.test(avisoJsx) && /text-\[#111827\]/.test(avisoJsx) && !/(bg|text|border)-amber-\d/.test(avisoJsx) && !/escuro/.test(avisoJsx), 'o aviso "Sem internet" é uma caixa âmbar sólida com texto escuro, igual em qualquer tema (as cores amber-* do Tailwind viravam quase transparentes no tema escuro)')
 const campo = ler('components/CampoHoraDeEntrada.tsx')
 ok(/WebkitAppearance: 'none'/.test(campo) && /maxWidth: '100%'/.test(campo) && /background: '#ffffff'/.test(campo) && /fontSize: 30/.test(campo) && (reg.match(/<CampoHoraDeEntrada/g) ?? []).length === 2 && /<CampoHoraDeEntrada id="hora-do-modal"/.test(leitor), 'o campo de hora: largura presa à caixa, fundo branco sólido, texto grande — o mesmo no leitor (sem internet e modal) e no Registrar ponto')
 ok(/categoria === 'semEntrada' && result\.funcionarioId/.test(leitor) && /REGISTRAR A ENTRADA DELE/.test(leitor) && /registrarSaidaComEntradaInformada\(eventoIdRef\.current, m\.codigo, hora,/.test(leitor) && /REGISTRAR ENTRADA E SAÍDA/.test(leitor) && /if \(r\.semRede\) \{[\s\S]{0,300}guardarLeitura\(/.test(leitor),
