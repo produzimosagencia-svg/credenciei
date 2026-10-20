@@ -16,6 +16,7 @@ import CadastroBiometrico from '@/components/CadastroBiometrico'
 import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
 import ModoSemInternet from '@/components/ModoSemInternet'
+import CampoHoraDeEntrada from '@/components/CampoHoraDeEntrada'
 import { percebeuSemRede } from '@/lib/rede-do-portao'
 import {
   guardarNaFila, guardarNaFilaJuntos, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, situacaoDeEntrada, anotarBatida,
@@ -433,10 +434,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                       ) : (
                         <>
                           <label htmlFor="hora-entrada-semnet" className="text-sm font-semibold text-slate-800 block">Que horas {semNet.nome.split(' ')[0]} entrou? *</label>
-                          <input
-                            id="hora-entrada-semnet" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
-                            className="input text-base tabular-nums" aria-label="Hora da entrada"
-                          />
+                          <CampoHoraDeEntrada id="hora-entrada-semnet" valor={horaEntrada} aoMudar={setHoraEntrada} />
                           <p className="text-slate-500 text-2xs">
                             A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora, com a foto. As duas sobem juntas quando a internet voltar.
                           </p>
@@ -534,7 +532,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         <div className="bg-white border border-brand-200 rounded-2xl p-4 space-y-2.5 shadow-sm">
           <p className="text-sm font-semibold text-slate-800">Que horas {func.nome.split(' ')[0]} entrou?</p>
           <p className="text-slate-500 text-xs -mt-1">Não há entrada registrada neste turno. Informe a hora para lançar a entrada junto com a saída.</p>
-          <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)} className="input text-base tabular-nums" aria-label="Hora da entrada" />
+          <CampoHoraDeEntrada id="hora-entrada-online" valor={horaEntrada} aoMudar={setHoraEntrada} />
           <button
             type="button" onClick={lancarEntradaERegistrarSaida} disabled={!horaEntrada || !foto || registrando}
             className="btn-press w-full btn btn-primario disabled:opacity-60"

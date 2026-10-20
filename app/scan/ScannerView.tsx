@@ -8,6 +8,7 @@ import { formatarBR } from '@/lib/tz'
 import { ScanLine, CameraOff, Copy, CheckCheck, Loader2, CloudOff } from 'lucide-react'
 import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemInternet'
 import ModoSemInternet from '@/components/ModoSemInternet'
+import CampoHoraDeEntrada from '@/components/CampoHoraDeEntrada'
 import { percebeuSemRede } from '@/lib/rede-do-portao'
 import {
   guardarNaFila, guardarNaFilaJuntos, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, situacaoDeEntrada, anotarBatidaPeloQR,
@@ -1091,50 +1092,68 @@ export default function ScannerView({
                 * SEM INTERNET: o aparelho diz se a pessoa já tem entrada (lista guardada, renovada de poucos em poucos
                 * minutos, + o que ele mesmo guardou). Na SAÍDA de quem não tem, a hora da entrada já abre para ser
                 * informada; o operador pode dizer que ela já entrou. O servidor confere tudo de novo quando a internet volta.
+                *
+                * CORES FIXAS (caixas sólidas, texto branco ou escuro): esta tela é escura nos dois temas e as cores do
+                * Tailwind (red-100, green-100…) mudam com o tema — foi o que deixou o texto ilegível (Juan, 19/10/2026).
                 */}
               {r.offline && r.pessoaId && r.situacaoEntrada && (() => {
                 const sit = r.situacaoEntrada
-                const conferido = sit.tipo !== 'desconhecida' && sit.conferidoEm ? ` (conferido às ${formatarBR(sit.conferidoEm, 'hora')})` : ''
+                const conferido = sit.tipo !== 'desconhecida' && sit.conferidoEm ? `Conferido às ${formatarBR(sit.conferidoEm, 'hora')} na lista do aparelho.` : null
+                const caixa = 'mt-5 rounded-2xl px-4 py-3 text-left'
                 if (sit.tipo === 'com_entrada') {
-                  return ehEntrada
-                    ? <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ Já tem entrada às {formatarBR(sit.em, 'hora')}{conferido}. Se está saindo, use SAÍDA.</p>
-                    : <p className="mt-4 rounded-xl bg-green-500/20 border border-green-400/50 text-green-100 text-sm font-semibold px-3 py-2 leading-snug">✓ Entrada registrada às {formatarBR(sit.em, 'hora')}{conferido}.</p>
+                  return ehEntrada ? (
+                    <div className={`${caixa} bg-[#f59e0b] text-[#111827]`}>
+                      <p className="text-base font-extrabold leading-snug">⚠ Já tem entrada às {formatarBR(sit.em, 'hora')}</p>
+                      <p className="mt-0.5 text-sm font-semibold leading-snug">Se a pessoa está saindo, volte e use SAÍDA.{conferido ? ` ${conferido}` : ''}</p>
+                    </div>
+                  ) : (
+                    <div className={`${caixa} bg-[#15803d] text-white`}>
+                      <p className="text-base font-extrabold leading-snug">✓ Entrada registrada às {formatarBR(sit.em, 'hora')}</p>
+                      {conferido && <p className="mt-0.5 text-sm font-semibold leading-snug text-white/85">{conferido}</p>}
+                    </div>
+                  )
                 }
                 if (sit.tipo === 'ja_saiu') {
-                  return ehEntrada
-                    ? null
-                    : <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ Saída já registrada às {formatarBR(sit.em, 'hora')}{conferido}. Esta pode ser repetida.</p>
+                  return ehEntrada ? null : (
+                    <div className={`${caixa} bg-[#f59e0b] text-[#111827]`}>
+                      <p className="text-base font-extrabold leading-snug">⚠ Saída já registrada às {formatarBR(sit.em, 'hora')}</p>
+                      <p className="mt-0.5 text-sm font-semibold leading-snug">Esta pode ser uma saída repetida.{conferido ? ` ${conferido}` : ''}</p>
+                    </div>
+                  )
                 }
                 if (ehEntrada) return null
                 const semEntrada = sit.tipo === 'sem_entrada'
                 return (
-                  <div className={`mt-4 text-left rounded-2xl border p-3 ${semEntrada ? 'border-red-300/70 bg-red-500/20' : 'border-amber-400/60 bg-amber-500/10'}`}>
+                  <div className="mt-5 text-left">
                     {semEntrada && (
-                      <p className="text-red-100 text-sm font-bold leading-snug mb-2">⚠ SEM ENTRADA REGISTRADA{conferido}. Informe a hora em que a pessoa entrou.</p>
+                      <div className="rounded-2xl bg-[#b91c1c] px-4 py-3 text-white">
+                        <p className="text-base font-extrabold leading-snug">⚠ SEM ENTRADA REGISTRADA</p>
+                        <p className="mt-0.5 text-sm font-semibold leading-snug text-white/90">{conferido ? `${conferido} ` : ''}Informe a hora em que a pessoa entrou.</p>
+                      </div>
                     )}
                     {!informandoEntrada ? (
-                      <button type="button" onClick={() => setInformandoEntrada(true)} className="w-full text-left text-amber-200 text-sm font-bold">
+                      <button
+                        type="button" onClick={() => setInformandoEntrada(true)}
+                        className="mt-3 w-full rounded-2xl border-2 border-[#f59e0b] bg-[#f59e0b]/15 px-4 py-3 text-left text-base font-bold leading-snug text-[#fbbf24]"
+                      >
                         A pessoa não bateu a entrada? Toque aqui para informar a hora →
                       </button>
                     ) : (
-                      <>
-                        <label className="text-white text-sm font-semibold block mb-1.5" htmlFor="hora-entrada-informada">
+                      <div className="mt-4">
+                        <label className="mb-2 block text-base font-bold text-white" htmlFor="hora-entrada-informada">
                           Que horas ela entrou? *
                         </label>
-                        <input
-                          id="hora-entrada-informada" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
-                          className="w-full rounded-xl px-3 py-2 text-xl tabular-nums bg-white/10 border border-white/30 text-white outline-none focus:border-white/60 [color-scheme:dark]"
-                        />
-                        <p className="text-white/60 text-xs mt-2 leading-snug">
-                          A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora. As duas sobem juntas quando a internet voltar.
+                        <CampoHoraDeEntrada id="hora-entrada-informada" valor={horaEntrada} aoMudar={setHoraEntrada} />
+                        <p className="mt-2 text-sm leading-snug text-white/75">
+                          A entrada fica marcada como lançada à mão, com o seu nome. A saída é guardada agora e as duas sobem juntas quando a internet voltar.
                         </p>
                         <button
                           type="button" onClick={() => { setInformandoEntrada(false); setHoraEntrada('') }}
-                          className="mt-2 text-white/70 text-xs font-semibold underline-offset-2 hover:underline"
+                          className="mt-3 text-sm font-bold text-white underline underline-offset-4"
                         >
                           Ela já entrou — guardar só a saída
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 )
@@ -1163,7 +1182,9 @@ export default function ScannerView({
               >
                 {salvando
                   ? <span className="inline-flex items-center gap-2"><Loader2 className="w-6 h-6 animate-spin" /> Salvando...</span>
-                  : `${r.offline ? 'GUARDAR' : 'SALVAR'} ${ehEntrada ? 'ENTRADA' : informandoEntrada && r.offline ? 'ENTRADA E SAÍDA' : 'SAÍDA'}`}
+                  : !ehEntrada && r.offline && informandoEntrada && !horaDeEntradaValida(horaEntrada)
+                    ? 'INFORME A HORA DA ENTRADA'
+                    : `${r.offline ? 'GUARDAR' : 'SALVAR'} ${ehEntrada ? 'ENTRADA' : informandoEntrada && r.offline ? 'ENTRADA E SAÍDA' : 'SAÍDA'}`}
               </button>
               <button
                 type="button"
@@ -1302,10 +1323,7 @@ export default function ScannerView({
             <p className="text-sm font-semibold text-[#64748b]">Registrar a entrada de</p>
             <p className="mt-0.5 text-2xl font-extrabold leading-tight text-[#0f172a]">{modalEntrada.nome}</p>
             <label htmlFor="hora-do-modal" className="mb-1.5 mt-5 block text-sm font-semibold text-[#334155]">Que horas ela entrou? *</label>
-            <input
-              id="hora-do-modal" type="time" autoFocus value={horaDoModal} onChange={e => setHoraDoModal(e.target.value)}
-              className="w-full rounded-xl border border-[#cbd5e1] bg-white px-3 py-3 text-2xl tabular-nums text-[#0f172a] outline-none focus:border-[#2563eb]"
-            />
+            <CampoHoraDeEntrada id="hora-do-modal" valor={horaDoModal} aoMudar={setHoraDoModal} autoFocus />
             <p className="mt-2 text-xs leading-snug text-[#64748b]">A entrada fica marcada como lançada à mão, com o seu nome. A saída é registrada agora, na hora de agora.</p>
             <button
               type="button" onClick={registrarEntradaESaida} disabled={gravandoModal || !horaDeEntradaValida(horaDoModal)}
