@@ -15,10 +15,10 @@
  * O servidor confere TUDO de novo no envio (`enviarBatidasGuardadas`): o aparelho só guarda, não decide.
  */
 import { enviarBatidasGuardadas, type BatidaGuardada, type RespostaDaGuardada } from './actions'
-import { pacoteParaSemInternet, relogioDoServidor, type PessoaParaSemInternet, type SituacaoGuardada } from './actions-offline'
+import { pacoteParaSemInternet, estadoDeEntradasParaSemInternet, relogioDoServidor, type PessoaParaSemInternet, type SituacaoGuardada, type EstadoDeEntradas } from './actions-offline'
 import { chaveBusca } from './format'
 
-export type { PessoaParaSemInternet, SituacaoGuardada }
+export type { PessoaParaSemInternet, SituacaoGuardada, EstadoDeEntradas }
 
 export type ItemNaFila = BatidaGuardada & {
   eventoId: string
@@ -40,7 +40,11 @@ export type RecusaGuardada = {
   motivo: string
 }
 
-type Pacote = { eventoId: string; geradoEm: string; pessoas: PessoaParaSemInternet[] }
+type Pacote = {
+  eventoId: string; geradoEm: string; pessoas: PessoaParaSemInternet[]
+  /** Quem tem entrada aberta e quem já saiu, renovado de poucos em poucos minutos (lib/estado-de-entradas.ts). */
+  estado?: EstadoDeEntradas
+}
 
 const BANCO = 'credenciei-portao'
 /** Avisa as telas abertas que a fila mudou. */
@@ -123,10 +127,10 @@ export const horaDeEntradaValida = (hora: string) => /^([01]\d|2[0-3]):[0-5]\d$/
  * saída na ordem de horário — é o que faz a fila (e o servidor) lançarem a entrada primeiro.
  */
 export function entradaInformadaParaSaida(
-  p: { eventoId: string; pessoaId: string; nome: string | null; equipe: string | null; hora: string; saidaLidaEm: string },
+  p: { eventoId: string; pessoaId: string; nome: string | null; equipe: string | null; hora: string; saidaLidaEm: string; via: 'qr' | 'assistido' },
 ): SemTentativas<ItemNaFila> {
   return {
-    id: idNovo(), eventoId: p.eventoId, tipo: 'entrada_informada', funcionarioId: p.pessoaId, hora: p.hora, momento: 'entrada',
+    id: idNovo(), eventoId: p.eventoId, tipo: 'entrada_informada', funcionarioId: p.pessoaId, hora: p.hora, via: p.via, momento: 'entrada',
     lidoEm: new Date(Date.parse(p.saidaLidaEm) - 1000).toISOString(), nome: p.nome, equipe: p.equipe, pessoaId: p.pessoaId,
   }
 }
@@ -177,15 +181,90 @@ export async function situacaoDoPacote(eventoId: string): Promise<{ geradoEm: st
   return p ? { geradoEm: p.geradoEm, pessoas: p.pessoas.length } : null
 }
 
+// ─── Quem já tem entrada (para a saída sem internet) ─────────────────────────
+
+/** Renova, com internet, quem tem entrada aberta. Falhar não é problema: fica a conferência que já estava guardada. */
+export async function atualizarEstado(eventoId: string): Promise<boolean> {
+  try {
+    const p = await lerPacote(eventoId)
+    if (!p) return false
+    const r = await estadoDeEntradasParaSemInternet(eventoId)
+    if (!r.estado) return false
+    const novo: Pacote = { ...(pacotesNaMemoria.get(eventoId) ?? p), estado: r.estado }
+    await naGaveta('pacotes', 'readwrite', g => g.put(novo))
+    pacotesNaMemoria.set(eventoId, novo)
+    avisarTelas()
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * O que ESTE aparelho sabe de uma batida feita agora, com internet (a dele mesmo): a lista guardada fica em dia entre
+ * uma renovação e outra — quem acabou de entrar aqui não aparece como "sem entrada" quando a internet cair.
+ */
+export async function anotarBatida(eventoId: string, pessoaId: string, tipo: 'entrada' | 'fim'): Promise<void> {
+  try {
+    const p = await lerPacote(eventoId)
+    if (!p?.estado) return
+    const agora = agoraCerto().toISOString()
+    const e = { ...p.estado.e }
+    const s = { ...p.estado.s }
+    if (tipo === 'entrada') { e[pessoaId] = agora; delete s[pessoaId] } else { s[pessoaId] = agora; delete e[pessoaId] }
+    const novo: Pacote = { ...p, estado: { ...p.estado, e, s } }
+    await naGaveta('pacotes', 'readwrite', g => g.put(novo))
+    pacotesNaMemoria.set(eventoId, novo)
+  } catch { /* é só um aviso na tela */ }
+}
+
+export async function anotarBatidaPeloQR(eventoId: string, codigo: string, tipo: 'entrada' | 'fim'): Promise<void> {
+  const pessoa = await pessoaPeloQR(eventoId, codigo).catch(() => null)
+  if (pessoa) await anotarBatida(eventoId, pessoa.id, tipo)
+}
+
+/** A entrada desta pessoa, como o aparelho enxerga agora. */
+export type SituacaoDeEntrada =
+  /** A lista guardada ainda não tem as entradas (aparelho com lista antiga): não dá para dizer. */
+  | { tipo: 'desconhecida' }
+  | { tipo: 'com_entrada'; em: string; conferidoEm: string | null }
+  /** Já saiu depois dessa entrada: outra saída agora pode ser repetida. */
+  | { tipo: 'ja_saiu'; em: string; conferidoEm: string | null }
+  | { tipo: 'sem_entrada'; conferidoEm: string }
+
+/**
+ * A pessoa tem entrada? (Juan, 19/10/2026: "não tem como ele já saber isso?") Primeiro o que este aparelho guardou na
+ * fila (a batida mais nova dela), depois a lista guardada. É só um AVISO: o servidor confere tudo na hora de enviar.
+ */
+export async function situacaoDeEntrada(eventoId: string, pessoaId: string): Promise<SituacaoDeEntrada> {
+  const p = await lerPacote(eventoId).catch(() => null)
+  const conferidoEm = p?.estado?.geradoEm ?? null
+  const itens = await itensDaFila(eventoId).catch(() => [] as ItemNaFila[])
+  const dela = itens.filter(i => (i.tipo === 'assistido' || i.tipo === 'entrada_informada' ? i.funcionarioId : i.pessoaId) === pessoaId)
+  const ultimo = dela[dela.length - 1]
+  if (ultimo) {
+    return ultimo.momento === 'entrada'
+      ? { tipo: 'com_entrada', em: ultimo.lidoEm, conferidoEm }
+      : { tipo: 'ja_saiu', em: ultimo.lidoEm, conferidoEm }
+  }
+  if (!p?.estado) return { tipo: 'desconhecida' }
+  if (p.estado.e[pessoaId]) return { tipo: 'com_entrada', em: p.estado.e[pessoaId], conferidoEm }
+  if (p.estado.s[pessoaId]) return { tipo: 'ja_saiu', em: p.estado.s[pessoaId], conferidoEm }
+  return { tipo: 'sem_entrada', conferidoEm: p.estado.geradoEm }
+}
+
 /** Baixa a lista de novo (com internet). Falhar não é problema: fica a que já estava guardada. */
 export async function atualizarPacote(eventoId: string): Promise<boolean> {
   try {
     const r = await pacoteParaSemInternet(eventoId)
     if (!r.pessoas) return false
-    const p: Pacote = { eventoId, geradoEm: r.geradoEm, pessoas: r.pessoas }
+    const antes = pacotesNaMemoria.get(eventoId) ?? (await naGaveta<Pacote>('pacotes', 'readonly', g => g.get(eventoId))) ?? null
+    const p: Pacote = { eventoId, geradoEm: r.geradoEm, pessoas: r.pessoas, ...(antes?.estado ? { estado: antes.estado } : {}) }
     await naGaveta('pacotes', 'readwrite', g => g.put(p))
     pacotesNaMemoria.set(eventoId, p)
     avisarTelas()
+    // A lista nova já sai com o estado das entradas em dia (sem esperar a próxima renovação).
+    void atualizarEstado(eventoId)
     return true
   } catch {
     return false
@@ -316,7 +395,7 @@ export async function enviarFila(): Promise<{ enviadas: number; recusadas: numbe
 function paraEnviar(i: ItemNaFila): BatidaGuardada {
   const base = { id: i.id, lidoEm: i.lidoEm, momento: i.momento, local: i.local ?? null }
   if (i.tipo === 'qr') return { ...base, tipo: 'qr', codigo: i.codigo, subeventoIds: i.subeventoIds }
-  if (i.tipo === 'entrada_informada') return { ...base, tipo: 'entrada_informada', funcionarioId: i.funcionarioId, hora: i.hora }
+  if (i.tipo === 'entrada_informada') return { ...base, tipo: 'entrada_informada', funcionarioId: i.funcionarioId, hora: i.hora, via: i.via }
   return { ...base, tipo: 'assistido', funcionarioId: i.funcionarioId, foto: i.foto, dispositivo: i.dispositivo }
 }
 

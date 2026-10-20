@@ -78,6 +78,8 @@ export type RespostaDaGuardada = any
 writeFileSync(join(pasta, 'actions-offline.ts'), `
 export async function pacoteParaSemInternet(eventoId: string) { return (globalThis as any).__servidor.pacote }
 export async function relogioDoServidor() { return Date.now() + 90_000 }
+export async function estadoDeEntradasParaSemInternet(eventoId: string) { return (globalThis as any).__servidor.estado ?? { error: 'sem estado' } }
+export type EstadoDeEntradas = any
 export type PessoaParaSemInternet = any
 export type SituacaoGuardada = any
 `)
@@ -157,7 +159,7 @@ ok(r.enviadas === 13 && servidor.recebidos.length === 13, 'QR vão de 10 em 10; 
 
 // ENTRADA INFORMADA na saída (Juan, 19/10/2026): quem chega para sair sem ter batido a entrada.
 const saidaEm = new Date(t0 + 900 * 60_000).toISOString()
-const entradaInf = F.entradaInformadaParaSaida({ eventoId: EVENTO, pessoaId: 'ana', nome: 'Ana Lima', equipe: 'BAR', hora: '14:00', saidaLidaEm: saidaEm })
+const entradaInf = F.entradaInformadaParaSaida({ eventoId: EVENTO, pessoaId: 'ana', nome: 'Ana Lima', equipe: 'BAR', hora: '14:00', saidaLidaEm: saidaEm, via: 'qr' })
 ok(Date.parse(saidaEm) - Date.parse(entradaInf.lidoEm) === 1000 && entradaInf.tipo === 'entrada_informada' && entradaInf.momento === 'entrada' && entradaInf.funcionarioId === 'ana',
   'a entrada informada fica 1 segundo ANTES da saída na ordem de horário')
 ok(F.horaDeEntradaValida('14:00') && F.horaDeEntradaValida('00:05') && F.horaDeEntradaValida('23:59') && !F.horaDeEntradaValida('24:00') && !F.horaDeEntradaValida('') && !F.horaDeEntradaValida('9:00') && !F.horaDeEntradaValida('14:60'),
@@ -172,8 +174,33 @@ r = await F.enviarFila()
 const iEntrada = servidor.recebidos.findIndex(i => i.tipo === 'entrada_informada'), iSaida = servidor.recebidos.findIndex(i => i.id === 'sj')
 ok(r.enviadas === 3 && iEntrada >= 0 && iSaida > iEntrada, 'no envio, a entrada informada chega ao servidor ANTES da saída')
 const enviadaInf = servidor.recebidos[iEntrada]
-ok(enviadaInf.hora === '14:00' && enviadaInf.funcionarioId === 'ana' && enviadaInf.momento === 'entrada' && !('nome' in enviadaInf) && !('tentativas' in enviadaInf) && !('pessoaId' in enviadaInf),
+ok(enviadaInf.hora === '14:00' && enviadaInf.funcionarioId === 'ana' && enviadaInf.via === 'qr' && enviadaInf.momento === 'entrada' && !('nome' in enviadaInf) && !('tentativas' in enviadaInf) && !('pessoaId' in enviadaInf),
   'e vai só com o que o servidor precisa (pessoa e hora)')
+
+// A PESSOA TEM ENTRADA? (Juan, 19/10/2026: "não tem como ele já saber isso?") — lista guardada + o que o aparelho mesmo guardou.
+const agoraEstado = new Date().toISOString()
+servidor.estado = { estado: { geradoEm: agoraEstado, e: { ana: '2026-10-19T11:03:00.000Z' }, s: { bia: '2026-10-19T09:00:00.000Z' } } }
+ok(await F.atualizarEstado(EVENTO), 'com internet, o aparelho renova quem tem entrada')
+let sit = await F.situacaoDeEntrada(EVENTO, 'ana')
+ok(sit.tipo === 'com_entrada' && sit.em === '2026-10-19T11:03:00.000Z' && sit.conferidoEm === agoraEstado, 'quem tem entrada aberta: "Entrada registrada às…", com a hora da conferência')
+ok((await F.situacaoDeEntrada(EVENTO, 'bia')).tipo === 'ja_saiu', 'quem já saiu depois da entrada: a saída pode ser repetida')
+ok((await F.situacaoDeEntrada(EVENTO, 'zzz')).tipo === 'sem_entrada', 'quem não tem nada na lista: SEM ENTRADA')
+servidor.estado = null
+await F.atualizarPacote(EVENTO)
+await new Promise(r => setTimeout(r, 30))
+ok((await F.situacaoDeEntrada(EVENTO, 'ana')).tipo === 'com_entrada', 'baixar a lista de novo não apaga a conferência das entradas')
+await F.anotarBatida(EVENTO, 'zzz', 'entrada')
+ok((await F.situacaoDeEntrada(EVENTO, 'zzz')).tipo === 'com_entrada', 'a batida feita neste aparelho, com internet, é anotada: se a internet cair, ele já sabe')
+await F.anotarBatida(EVENTO, 'ana', 'fim')
+ok((await F.situacaoDeEntrada(EVENTO, 'ana')).tipo === 'ja_saiu', '… e a saída também')
+await F.guardarNaFila(item('fq1', 'entrada', 800, { pessoaId: 'yyy' }))
+ok((await F.situacaoDeEntrada(EVENTO, 'yyy')).tipo === 'com_entrada', 'a entrada que este aparelho guardou sem internet conta (a mais nova da pessoa na fila)')
+await F.guardarNaFila(item('fq2', 'fim', 810, { pessoaId: 'yyy' }))
+ok((await F.situacaoDeEntrada(EVENTO, 'yyy')).tipo === 'ja_saiu', 'e a saída guardada depois dela')
+servidor.pacote = { geradoEm: new Date().toISOString(), pessoas: servidor.pacote.pessoas }
+await F.atualizarPacote('ev-2')
+await new Promise(r => setTimeout(r, 30))
+ok((await F.situacaoDeEntrada('ev-2', 'ana')).tipo === 'desconhecida', 'lista guardada sem a conferência das entradas (aparelho com lista antiga): não dá para dizer')
 rmSync(pasta, { recursive: true, force: true })
 
 console.log('\n2 · O servidor confere tudo de novo, na hora da leitura')
@@ -201,13 +228,19 @@ const upsert = acoes.slice(acoes.indexOf('async function upsertRegistro('), acoe
 ok(/if \(r\.error && 'alerta' in linha && \/alerta\/\.test/.test(upsert) && /textoDoAlerta\(alerta/.test(upsert), 'sem a coluna nova (SQL não rodado), a batida é gravada assim mesmo, com a marca na justificativa')
 
 // A entrada informada na saída: lançada ANTES da saída, marcada como manual, e quem já tem entrada não é erro.
-ok(/if \(item\.tipo === 'entrada_informada'\) \{[\s\S]{0,700}lancarEntradaInformada\(String\(item\.funcionarioId \?\? ''\), hora, \{ agora: lidoEm, semInternet: true \}\)/.test(envio), 'servidor: o item "entrada informada" lança a entrada na hora da leitura da saída')
+ok(/if \(item\.tipo === 'entrada_informada'\) \{[\s\S]{0,700}lancarEntradaInformada\(String\(item\.funcionarioId \?\? ''\), hora, \{ agora: lidoEm, semInternet: true, pelo:/.test(envio), 'servidor: o item "entrada informada" lança a entrada na hora da leitura da saída')
 const entradaInf2 = acoes.slice(acoes.indexOf('async function lancarEntradaInformada('), acoes.indexOf('export async function registrarPresencaAssistida('))
 ok(/if \(jaTem\?\.length\) return \{ ok: true, nome: func\.nome as string, jaTinha: true \}/.test(entradaInf2) && /nada a lançar/.test(envio), 'servidor: quem já tem a entrada do turno não é erro (outro portão registrou, ou a internet voltou no meio)')
 ok(/diaDeReferencia\(evento, func\.id, 'fim', contexto\.agora\)/.test(entradaInf2) && /contexto\.agora\.getTime\(\) \+ \(contexto\.semInternet \? 0 : 60_000\)/.test(entradaInf2) && /ficaria depois da saída/.test(entradaInf2),
   'servidor: o dia do turno e o "tem que ser antes da saída" valem para a hora em que a saída foi lida')
 ok(/registro_manual: true/.test(entradaInf2) && /informada no portão SEM INTERNET por \$\{perfil\.nome\}/.test(entradaInf2) && /'CORRECAO_PONTO'/.test(entradaInf2), 'servidor: a entrada fica marcada como lançada à mão, com o nome de quem informou, e na auditoria')
 ok(/const r = await lancarEntradaInformada\(funcionarioId, horaEntrada\)[\s\S]{0,200}Esta pessoa já tem entrada neste turno/.test(acoes), 'a tela de sempre (com internet) continua recusando quem já tem entrada')
+ok(/informe a hora em que ela entrou\.', semEntrada: true \}/.test(acoes) && /\.\.\.\(decidido\.semEntrada \? \{ semEntrada: true, funcionarioId: func\.id as string \} : \{\}\)/.test(acoes), 'servidor: a recusa da saída por falta de entrada vem MARCADA (e com a pessoa), para a tela oferecer informar a hora')
+const saidaComEntrada = acoes.slice(acoes.indexOf('export async function registrarSaidaComEntradaInformada('), acoes.indexOf('/** O operador leu, viu a prévia e CANCELOU'))
+ok(/validarLeituraQR\(eventoId, qrData, 'fim', true,/.test(saidaComEntrada) && /if \(!previa\.semEntrada \|\| !previa\.funcionarioId\) return previa/.test(saidaComEntrada), 'servidor: a entrada só é lançada se a saída passou por todas as outras conferências (equipe do supervisor, local, área, baixa)')
+ok(/if \(previa\.success && previa\.previa\) return await registrarPresencaQR\(eventoId, qrData, 'fim'/.test(saidaComEntrada), 'servidor: se outro portão registrou a entrada nesse meio tempo, grava só a saída (não diz "registrada" sem gravar)')
+ok(/pelo: 'scanner'/.test(saidaComEntrada) && /registrarPresencaQR\(eventoId, qrData, 'fim'/.test(saidaComEntrada) && /foi lançada, mas a saída não/.test(saidaComEntrada), 'servidor: lança a entrada (como scanner) e registra a saída pelo fluxo de sempre; se a saída falhar, diz que a entrada já foi')
+ok(/pelo === 'scanner' \? podeEscanear\(perfil\) : podeAcompanhar\(perfil\)/.test(acoes) && /pelo: item\.via === 'qr' \? 'scanner' : 'registrar'/.test(acoes), 'servidor: quem escaneia (inclusive o supervisor, na própria equipe) pode informar a entrada pelo leitor; no Registrar ponto vale a régua de lá')
 
 console.log('\n3 · As telas e o service worker')
 const leitor = ler('app/scan/ScannerView.tsx')
@@ -216,10 +249,17 @@ ok(/if \(c\.r\.offline\) \{[\s\S]{0,300}await mostrarGuardada\(/.test(leitor) &&
 ok(/Seguir sem internet/.test(leitor) && /if \(impedimento\) \{/.test(leitor), 'leitor: "Seguir sem internet" na demora; baixa/pendente recusados pela lista guardada')
 const reg = ler('app/admin/localizar/LocalizarFuncionario.tsx')
 ok(/if \(navigator\.onLine === false\) \{ void buscarSemInternet\(termo\); return \}/.test(reg) && /Guardar \{etapa === 'entrada' \? 'entrada' : comEntrada \? 'entrada e saída' : 'saída'\} neste aparelho/.test(reg), 'Registrar ponto: busca pelo CPF/nome na lista guardada e guarda a batida com a foto')
-ok(/A pessoa não bateu a entrada\? Toque aqui para informar a hora/.test(leitor) && /c\.r\.offline && informandoEntrada && !horaDeEntradaValida\(horaEntrada\)\) return/.test(leitor) && /guardarNaFilaJuntos\(\[\s*entradaInformadaParaSaida\(/.test(leitor) && /r\.offline && !ehEntrada && r\.pessoaId && !r\.entradaNaFila/.test(leitor),
+ok(/A pessoa não bateu a entrada\? Toque aqui para informar a hora/.test(leitor) && /c\.r\.offline && informandoEntrada && !horaDeEntradaValida\(horaEntrada\)\) return/.test(leitor) && /guardarNaFilaJuntos\(\[\s*entradaInformadaParaSaida\(/.test(leitor) && /r\.offline && r\.pessoaId && r\.situacaoEntrada/.test(leitor),
   'leitor: na SAÍDA sem internet, "A pessoa não bateu a entrada?" pede a hora e guarda entrada + saída juntas (só de quem está na lista guardada)')
-ok(/etapa === 'fim' && !entradaJaGuardada/.test(reg) && /A pessoa não bateu a entrada\? Informar a hora/.test(reg) && /guardarNaFilaJuntos\(\[\s*entradaInformadaParaSaida\(/.test(reg) && /comEntrada && !horaDeEntradaValida\(horaEntrada\)/.test(reg),
+ok(/situacaoDeEntrada\(eventoId, p\.id\)/.test(reg) && /A pessoa não bateu a entrada\? Informar a hora/.test(reg) && /guardarNaFilaJuntos\(\[\s*entradaInformadaParaSaida\(/.test(reg) && /comEntrada && !horaDeEntradaValida\(horaEntrada\)/.test(reg),
   'Registrar ponto sem internet: na Saída, pede a hora da entrada (com a foto da saída) e guarda as duas juntas')
+ok(/SEM ENTRADA REGISTRADA\{conferido\}/.test(leitor) && /Entrada registrada às \{formatarBR\(sit\.em, 'hora'\)\}\{conferido\}/.test(leitor) && /setInformandoEntrada\(modoDaLeitura === 'fim' && situacaoEntrada\?\.tipo === 'sem_entrada'\)/.test(leitor),
+  'leitor sem internet: diz se a pessoa JÁ TEM ENTRADA (e desde quando) e, sem entrada, já abre a hora para informar')
+ok(/SEM ENTRADA REGISTRADA\{conferido\}/.test(reg) && /setInformandoEntradaSemNet\(sit\.tipo === 'sem_entrada'\)/.test(reg) && /anotarBatida\(eventoId, func\.id, momento\)/.test(reg), 'Registrar ponto sem internet: o mesmo aviso; e a batida feita com internet é anotada no aparelho')
+ok(/categoria === 'semEntrada' && result\.funcionarioId/.test(leitor) && /REGISTRAR A ENTRADA DELE/.test(leitor) && /registrarSaidaComEntradaInformada\(eventoIdRef\.current, m\.codigo, hora,/.test(leitor) && /REGISTRAR ENTRADA E SAÍDA/.test(leitor) && /if \(r\.semRede\) \{[\s\S]{0,300}guardarLeitura\(/.test(leitor),
+  'leitor COM internet: a saída recusada por falta de entrada oferece "REGISTRAR A ENTRADA DELE", um modal pede a hora e registra entrada + saída; se a internet cair, as duas ficam guardadas')
+ok(/semEntrada \|\| \(momento === 'fim' && !func\.turnoFechado && !func\.etapas\.find\(e => e\.momento === 'entrada'\)\?\.quandoISO\)/.test(reg), 'Registrar ponto com internet: a hora da entrada (editável) aparece já ao escolher Saída para quem não tem entrada, sem tomar a recusa antes')
+ok(/const ESTADO_A_CADA_MS = 3 \* 60_000/.test(ler('components/FilaSemInternet.tsx')) && /void atualizarEstado\(eventoId\)/.test(ler('components/FilaSemInternet.tsx')), 'o aparelho renova quem tem entrada a cada 3 minutos, com internet')
 const sw = ler('public/sw.js')
 ok(/if \(req\.method !== 'GET'\) return/.test(sw) && /url\.origin !== self\.location\.origin/.test(sw) && /PAGINAS = \['\/scan', '\/admin\/scanner', '\/admin\/localizar'\]/.test(sw),
   'service worker: só GET, só do próprio site, só as 3 telas do portão e /_next/static (ações e dados passam direto)')

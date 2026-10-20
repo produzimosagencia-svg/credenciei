@@ -18,8 +18,8 @@ import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemIn
 import ModoSemInternet from '@/components/ModoSemInternet'
 import { percebeuSemRede } from '@/lib/rede-do-portao'
 import {
-  guardarNaFila, guardarNaFilaJuntos, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, entradaJaNaFila,
-  horaDeEntradaValida, type PessoaParaSemInternet,
+  guardarNaFila, guardarNaFilaJuntos, pessoaPeloCpf, pessoasPeloNome, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, situacaoDeEntrada, anotarBatida,
+  horaDeEntradaValida, type PessoaParaSemInternet, type SituacaoDeEntrada,
 } from '@/lib/fila-offline'
 
 // Reduz a foto antes de enviar (mesmo padrão de CheckinPresenca.tsx)
@@ -82,7 +82,8 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
   const [semNet, setSemNet] = useState<PessoaParaSemInternet | null>(null)
   // Saída sem internet de quem não bateu a entrada (Juan, 19/10/2026): o operador informa a hora e as duas ficam na fila.
   const [informandoEntradaSemNet, setInformandoEntradaSemNet] = useState(false)
-  const [entradaJaGuardada, setEntradaJaGuardada] = useState(false)
+  // Se a pessoa já tem entrada, como o aparelho enxerga (lista guardada + fila) — ver `situacaoDeEntrada`.
+  const [situacaoSemNet, setSituacaoSemNet] = useState<SituacaoDeEntrada | null>(null)
   const [candidatosSemNet, setCandidatosSemNet] = useState<PessoaParaSemInternet[] | null>(null)
   const [buscando, startBusca] = useTransition()
   const [registrando, startRegistro] = useTransition()
@@ -110,9 +111,12 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
     setFoto(null)
     setInformandoEntradaSemNet(false)
     setHoraEntrada('')
-    setEntradaJaGuardada(false)
-    // Este aparelho já guardou a entrada dela? Então não faz sentido perguntar a hora na saída.
-    void entradaJaNaFila(eventoId, p.id).then(setEntradaJaGuardada).catch(() => {})
+    setSituacaoSemNet(null)
+    // O aparelho diz se ela já tem entrada; sem entrada, a hora já abre para ser informada na saída.
+    void situacaoDeEntrada(eventoId, p.id).then(sit => {
+      setSituacaoSemNet(sit)
+      setInformandoEntradaSemNet(sit.tipo === 'sem_entrada')
+    }).catch(() => {})
   }
 
   /** A busca sem internet: CPF completo (pelo resumo guardado) ou parte do nome. */
@@ -148,7 +152,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
       // A entrada informada e a saída entram juntas na fila, ou nenhuma das duas.
       if (horaDaEntrada && etapa === 'fim') {
         await guardarNaFilaJuntos([
-          entradaInformadaParaSaida({ eventoId, pessoaId: p.id, nome: p.nome, equipe: p.equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm }),
+          entradaInformadaParaSaida({ eventoId, pessoaId: p.id, nome: p.nome, equipe: p.equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm, via: 'assistido' }),
           batida,
         ])
       } else {
@@ -245,6 +249,8 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
         setSemEntrada(res.semEntrada === true)
         return setErro(res.error)
       }
+      // O aparelho anota a batida feita aqui: se a internet cair, sabe que a pessoa já tem entrada (ou já saiu).
+      if (momento === 'entrada' || momento === 'fim') void anotarBatida(eventoId, func.id, momento)
       setSucesso({ nome: res.nome ?? func.nome, etapa: res.etapa ?? '', aviso: res.aviso })
     })
   }
@@ -262,6 +268,7 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
       })
       if (res.error) return setErro(`A entrada das ${horaEntrada} foi lançada, mas a saída não: ${res.error}`)
       setSemEntrada(false)
+      void anotarBatida(eventoId, func.id, 'fim')
       setSucesso({ nome: res.nome ?? func.nome, etapa: `Entrada às ${horaEntrada} (lançada) e saída` })
     })
   }
@@ -400,30 +407,47 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                     ))}
                   </div>
                 </div>
-                {/* Saída de quem não bateu a entrada: sem internet o aparelho não sabe o que os outros portões gravaram — a opção fica à mão. */}
-                {etapa === 'fim' && !entradaJaGuardada && (
-                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
-                    {!informandoEntradaSemNet ? (
-                      <button type="button" onClick={() => setInformandoEntradaSemNet(true)} className="w-full text-left text-amber-900 text-sm font-semibold">
-                        A pessoa não bateu a entrada? Informar a hora →
-                      </button>
-                    ) : (
-                      <>
-                        <label htmlFor="hora-entrada-semnet" className="text-sm font-semibold text-slate-800 block">Que horas {semNet.nome.split(' ')[0]} entrou? *</label>
-                        <input
-                          id="hora-entrada-semnet" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
-                          className="input text-base tabular-nums" aria-label="Hora da entrada"
-                        />
-                        <p className="text-slate-500 text-2xs">
-                          A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora, com a foto. As duas sobem juntas quando a internet voltar.
-                        </p>
-                        <button type="button" onClick={() => { setInformandoEntradaSemNet(false); setHoraEntrada('') }} className="text-slate-500 text-xs font-semibold underline-offset-2 hover:underline">
-                          Ela já entrou — guardar só a saída
+                {/* O aparelho diz se a pessoa já tem entrada (lista guardada + fila). Na saída de quem não tem, a hora já abre. */}
+                {(() => {
+                  const sit = situacaoSemNet
+                  const conferido = sit && sit.tipo !== 'desconhecida' && sit.conferidoEm ? ` (conferido às ${formatarBR(sit.conferidoEm, 'hora')})` : ''
+                  if (sit?.tipo === 'com_entrada') {
+                    return etapa === 'fim'
+                      ? <p className="text-green-800 text-sm font-semibold bg-green-50 border border-green-200 rounded-xl px-3 py-2">✓ Entrada registrada às {formatarBR(sit.em, 'hora')}{conferido}.</p>
+                      : <p className="text-amber-900 text-sm font-semibold bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">⚠ Já tem entrada às {formatarBR(sit.em, 'hora')}{conferido}. Se está saindo, escolha Saída.</p>
+                  }
+                  if (sit?.tipo === 'ja_saiu') {
+                    return etapa === 'fim'
+                      ? <p className="text-amber-900 text-sm font-semibold bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">⚠ Saída já registrada às {formatarBR(sit.em, 'hora')}{conferido}. Esta pode ser repetida.</p>
+                      : null
+                  }
+                  if (etapa !== 'fim') return null
+                  const semEntradaAqui = sit?.tipo === 'sem_entrada'
+                  return (
+                    <div className={`rounded-xl border p-3 space-y-2 ${semEntradaAqui ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                      {semEntradaAqui && <p className="text-red-800 text-sm font-bold">⚠ SEM ENTRADA REGISTRADA{conferido}. Informe a hora em que {semNet.nome.split(' ')[0]} entrou.</p>}
+                      {!informandoEntradaSemNet ? (
+                        <button type="button" onClick={() => setInformandoEntradaSemNet(true)} className="w-full text-left text-amber-900 text-sm font-semibold">
+                          A pessoa não bateu a entrada? Informar a hora →
                         </button>
-                      </>
-                    )}
-                  </div>
-                )}
+                      ) : (
+                        <>
+                          <label htmlFor="hora-entrada-semnet" className="text-sm font-semibold text-slate-800 block">Que horas {semNet.nome.split(' ')[0]} entrou? *</label>
+                          <input
+                            id="hora-entrada-semnet" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
+                            className="input text-base tabular-nums" aria-label="Hora da entrada"
+                          />
+                          <p className="text-slate-500 text-2xs">
+                            A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora, com a foto. As duas sobem juntas quando a internet voltar.
+                          </p>
+                          <button type="button" onClick={() => { setInformandoEntradaSemNet(false); setHoraEntrada('') }} className="text-slate-500 text-xs font-semibold underline-offset-2 hover:underline">
+                            Ela já entrou — guardar só a saída
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
                 <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFoto} />
                 {foto ? (
                   <div className="flex items-center gap-3">
@@ -442,7 +466,8 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
                   </button>
                 )}
                 {(() => {
-                  const comEntrada = etapa === 'fim' && informandoEntradaSemNet && !entradaJaGuardada
+                  const podeInformar = !situacaoSemNet || situacaoSemNet.tipo === 'sem_entrada' || situacaoSemNet.tipo === 'desconhecida'
+                  const comEntrada = etapa === 'fim' && informandoEntradaSemNet && podeInformar
                   return (
                     <button
                       type="button" disabled={!foto || (comEntrada && !horaDeEntradaValida(horaEntrada))}
@@ -503,9 +528,12 @@ export default function LocalizarFuncionario({ eventoId, soMeio = false }: { eve
           <p className="text-red-600 text-xs font-medium">{erro}</p>
         </div>
       )}
-      {semEntrada && func && (
+      {/* A hora da entrada, editável: aparece quando a saída foi recusada por falta de entrada — e JÁ ao escolher Saída para quem
+          não tem entrada no turno (Juan, 19/10/2026), sem precisar tomar a recusa antes. */}
+      {func && func.ativo && !soMeio && (semEntrada || (momento === 'fim' && !func.turnoFechado && !func.etapas.find(e => e.momento === 'entrada')?.quandoISO)) && (
         <div className="bg-white border border-brand-200 rounded-2xl p-4 space-y-2.5 shadow-sm">
           <p className="text-sm font-semibold text-slate-800">Que horas {func.nome.split(' ')[0]} entrou?</p>
+          <p className="text-slate-500 text-xs -mt-1">Não há entrada registrada neste turno. Informe a hora para lançar a entrada junto com a saída.</p>
           <input type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)} className="input text-base tabular-nums" aria-label="Hora da entrada" />
           <button
             type="button" onClick={lancarEntradaERegistrarSaida} disabled={!horaEntrada || !foto || registrando}

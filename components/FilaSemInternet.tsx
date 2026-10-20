@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CloudOff, CloudUpload, AlertTriangle, ChevronDown, ChevronUp, Check } from 'lucide-react'
 import { formatarBR } from '@/lib/tz'
 import {
-  EVENTO_DA_FILA, itensDaFila, recusasGuardadas, descartarRecusa, enviarFila, atualizarPacote, acertarRelogio, situacaoDoPacote,
+  EVENTO_DA_FILA, itensDaFila, recusasGuardadas, descartarRecusa, enviarFila, atualizarPacote, atualizarEstado, acertarRelogio, situacaoDoPacote,
   type RecusaGuardada,
 } from '@/lib/fila-offline'
 
@@ -13,6 +13,8 @@ const ENVIO_A_CADA_MS = 20_000
 const RENOVA_A_CADA_MS = 10 * 60_000
 /** A lista guardada mais nova que isto não é baixada de novo — recarregar a tela não gasta a internet do celular. */
 const LISTA_NOVA_MS = 20 * 60_000
+/** De quanto em quanto tempo o aparelho confere QUEM JÁ TEM ENTRADA (leve, só quem bateu algo nos últimos dias) — é o que a saída sem internet usa. */
+const ESTADO_A_CADA_MS = 3 * 60_000
 
 export type EstadoDaFila = {
   semInternet: boolean
@@ -74,6 +76,15 @@ export function useFilaSemInternet(eventoId: string): EstadoDaFila {
     const inicio = setTimeout(() => { void renovar() }, 1500)
     const t = setInterval(() => { void renovar() }, RENOVA_A_CADA_MS)
     return () => { clearTimeout(inicio); clearInterval(t) }
+  }, [eventoId])
+
+  // Quem já tem entrada: a cada 3 min, com internet e com a tela à vista (a lista nova já traz o estado ao ser baixada).
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (navigator.onLine === false || document.hidden) return
+      void atualizarEstado(eventoId)
+    }, ESTADO_A_CADA_MS)
+    return () => clearInterval(t)
   }, [eventoId])
 
   return estado

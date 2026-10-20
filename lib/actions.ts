@@ -6014,7 +6014,7 @@ async function inferirMomentoQR(
 ): Promise<
   | { momento: 'entrada' | 'fim'; entrada?: { em: string; dataRef: string } }
   | { reabrir: { id: string; em: string; dataRef: string } }
-  | { erro: string; recente?: boolean }
+  | { erro: string; recente?: boolean; semEntrada?: true }
 > {
   if (escolhido) {
     const aberta = await entradaEmAberto(funcionarioId, eventoId)
@@ -6033,7 +6033,7 @@ async function inferirMomentoQR(
       if (saidaRecente?.[0]) {
         return { erro: `Saída já registrada às ${formatarBR(saidaRecente[0].created_at as string, 'curto')}. Não precisa bater de novo.`, recente: true }
       }
-      return { erro: 'Esta pessoa não tem entrada registrada pra fechar. Se ela está chegando, use o botão ENTRADA. Se trabalhou sem bater a entrada, a gestão corrige em Lançar ponto.' }
+      return { erro: 'Esta pessoa não tem entrada registrada pra fechar. Se ela está chegando, use o botão ENTRADA. Se trabalhou sem bater a entrada, informe a hora em que ela entrou.', semEntrada: true }
     }
     // escolhido === 'entrada'
     if (aberta) {
@@ -7253,6 +7253,13 @@ export type ResultadoScan = {
   previa?: boolean
   /** Na prévia: é a volta de quem já tinha saído hoje (a saída vira pausa). */
   volta?: boolean
+  /**
+   * A SAÍDA foi recusada só porque a pessoa não tem entrada neste turno (Juan, 19/10/2026: "tem que ter um botão para
+   * registrar a entrada dele e abrir um modal para marcar o horário"). A tela oferece informar a hora da entrada —
+   * `registrarSaidaComEntradaInformada` lança a entrada e registra a saída. `funcionarioId` só vem junto com isto.
+   */
+  semEntrada?: boolean
+  funcionarioId?: string
   /** Só pro histórico de leituras: o operador cancelou na confirmação. */
   cancelado?: boolean
   /**
@@ -7704,7 +7711,7 @@ export type BatidaGuardada = {
    * logo antes da saída (1 segundo antes, para a ordem de horário) e o servidor lança a entrada — marcada como
    * lançada à mão — antes de gravar a saída. `hora` = "HH:MM" do turno.
    */
-  | { tipo: 'entrada_informada'; funcionarioId: string; hora: string }
+  | { tipo: 'entrada_informada'; funcionarioId: string; hora: string; via?: 'qr' | 'assistido' }
 )
 
 export type RespostaDaGuardada = {
@@ -7785,7 +7792,7 @@ async function aplicarBatidaGuardada(
 
   if (item.tipo === 'entrada_informada') {
     const hora = String(item.hora ?? '')
-    const r = await lancarEntradaInformada(String(item.funcionarioId ?? ''), hora, { agora: lidoEm, semInternet: true })
+    const r = await lancarEntradaInformada(String(item.funcionarioId ?? ''), hora, { agora: lidoEm, semInternet: true, pelo: item.via === 'qr' ? 'scanner' : 'registrar' })
     if ('error' in r) return { id, ok: false, definitivo: definitivo(r.error), mensagem: r.error }
     // Quem já tinha a entrada do turno (outro portão, ou a internet voltou no meio) não é erro: não há nada a lançar.
     return {
@@ -7795,6 +7802,42 @@ async function aplicarBatidaGuardada(
   }
 
   return recusa('Tipo de batida desconhecido.')
+}
+
+/**
+ * SAÍDA DE QUEM NÃO BATEU A ENTRADA, pelo leitor de QR (Juan, 19/10/2026): o leitor recusa a saída ("não tem entrada
+ * registrada pra fechar"), o operador pergunta a hora em que a pessoa entrou, informa no modal e esta ação lança a
+ * entrada — marcada como lançada à mão, com o nome dele, na auditoria — e registra a saída, tudo de uma vez.
+ *
+ * A entrada só é lançada se a SAÍDA passou por todas as outras conferências (equipe do supervisor, local, área, baixa):
+ * a conferência roda como prévia primeiro, e só uma recusa "sem entrada" libera o lançamento. Se a saída falhar depois,
+ * a entrada já lançada fica (a mensagem diz) — o operador pode registrar a saída de novo.
+ */
+export async function registrarSaidaComEntradaInformada(
+  eventoId: string, qrData: string, horaEntrada: string,
+  opcoes?: { subeventoIds?: string[]; local?: { latitude: number; longitude: number; precisao?: number | null } | null },
+): Promise<ResultadoScan> {
+  try {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEntrada ?? '')) return { success: false, message: 'Informe a hora em que a pessoa entrou (ex.: 14:00).' }
+    const local = posicaoValida(opcoes?.local)
+    const previa = await validarLeituraQR(eventoId, qrData, 'fim', true, opcoes?.subeventoIds, undefined, local)
+    // Outro portão registrou a entrada nesse meio tempo: a saída já seria aceita — só a saída, sem lançar nada.
+    if (previa.success && previa.previa) return await registrarPresencaQR(eventoId, qrData, 'fim', { subeventoIds: opcoes?.subeventoIds, local })
+    // Qualquer outro motivo de recusa segue o caminho de sempre: nada é lançado.
+    if (!previa.semEntrada || !previa.funcionarioId) return previa
+
+    const entrada = await lancarEntradaInformada(previa.funcionarioId, horaEntrada, { agora: new Date(), semInternet: false, pelo: 'scanner' })
+    if ('error' in entrada) return { success: false, message: entrada.error, funcionario: previa.funcionario }
+
+    const saida = await registrarPresencaQR(eventoId, qrData, 'fim', { subeventoIds: opcoes?.subeventoIds, local })
+    if (!saida.success) {
+      return { ...saida, message: `A entrada das ${horaEntrada} foi lançada, mas a saída não: ${saida.message}` }
+    }
+    return { ...saida, message: `Entrada às ${horaEntrada} (informada por você) e saída registradas.` }
+  } catch (e) {
+    console.error('[registrarSaidaComEntradaInformada]', e)
+    return { success: false, message: 'Não foi possível registrar agora. Leia o QR de novo.' }
+  }
 }
 
 /** O operador leu, viu a prévia e CANCELOU — fica no histórico de leituras. */
@@ -8145,7 +8188,10 @@ async function autorizarPresenca(args: {
   // "Acabou de registrar" é uma leitura REPETIDA, não uma recusa: a tela
   // mostra como "já validado" (âmbar), não como acesso negado (vermelho).
   if ('erro' in decidido) {
-    return { success: false, message: decidido.erro, funcionario: funcInfo, jaRegistrado: decidido.recente === true }
+    return {
+      success: false, message: decidido.erro, funcionario: funcInfo, jaRegistrado: decidido.recente === true,
+      ...(decidido.semEntrada ? { semEntrada: true, funcionarioId: func.id as string } : {}),
+    }
   }
   /*
    * Leitura guardada que chega DEPOIS de uma batida mais nova da mesma pessoa (outro portão, com internet, registrou
@@ -10733,12 +10779,14 @@ export async function lancarEntradaNaoBatida(funcionarioId: string, horaEntrada:
  */
 async function lancarEntradaInformada(
   funcionarioId: string, horaEntrada: string,
-  contexto: { agora: Date; semInternet: boolean } = { agora: new Date(), semInternet: false },
+  contexto: { agora: Date; semInternet: boolean; pelo?: 'registrar' | 'scanner' } = { agora: new Date(), semInternet: false },
 ): Promise<{ ok: true; nome: string; jaTinha?: boolean } | { error: string }> {
   try {
     const perfil = await getPerfil()
-    if (!perfil || !podeAcompanhar(perfil)) return { error: 'Sem permissão para registrar presença.' }
-    if (soBateMeio(perfil.role)) return { error: 'O supervisor só pode registrar a batida do meio.' }
+    // Pelo SCANNER (leitor de QR) vale quem escaneia — inclusive o supervisor, na própria equipe; pelo Registrar ponto, a régua de lá.
+    const pelo = contexto.pelo ?? 'registrar'
+    if (!perfil || !(pelo === 'scanner' ? podeEscanear(perfil) : podeAcompanhar(perfil))) return { error: 'Sem permissão para registrar presença.' }
+    if (pelo === 'registrar' && soBateMeio(perfil.role)) return { error: 'O supervisor só pode registrar a batida do meio.' }
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEntrada ?? '')) return { error: 'Informe a hora em que a pessoa entrou (ex.: 14:00).' }
 
     const { data: func } = await supabaseAdmin

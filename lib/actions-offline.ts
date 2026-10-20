@@ -4,6 +4,7 @@ import { getPerfil, supabaseAdmin, buscarTudo, eventosEscaneaveis, meusSetores }
 import { statusCredenciamentoValido } from './credenciamento-constantes'
 import { emLotes } from './lotes'
 import { chaveBusca } from './format'
+import { estadoDeEntradas, type EstadoDeEntradas as ContaDeEntradas } from './estado-de-entradas'
 
 /*
  * O QUE O APARELHO DO PORTÃO GUARDA PARA TRABALHAR SEM INTERNET (Juan, 18/10/2026).
@@ -35,6 +36,12 @@ export type PessoaParaSemInternet = {
   situacao: SituacaoGuardada
 }
 
+/** Quem tem entrada aberta e quem já saiu, como estava em `geradoEm` — ver lib/estado-de-entradas.ts. */
+export type EstadoDeEntradas = ContaDeEntradas & { geradoEm: string }
+
+/** Quanto tempo para trás olhar: cobre o turno que vira a madrugada e o dia anterior com folga. */
+const JANELA_DO_ESTADO_H = 60
+
 const resumo = (texto: string) => createHash('sha256').update(texto).digest('hex').slice(0, 32)
 /** O mesmo cálculo do aparelho (lib/fila-offline.ts): o token cru do QR. */
 const resumoDoToken = (token: string) => resumo(token)
@@ -46,23 +53,31 @@ export async function relogioDoServidor(): Promise<number> {
   return Date.now()
 }
 
+/** A mesma régua do portão para as duas listas: o evento que a conta opera hoje; supervisor, só a equipe dele. */
+async function equipesDoPortao(eventoId: string): Promise<{ equipes: { id: string; nome: string }[]; error?: undefined } | { equipes?: undefined; error: string }> {
+  const perfil = await getPerfil()
+  if (!perfil) return { error: 'Sem sessão.' }
+  if (!(await eventosEscaneaveis(perfil)).some(e => e.id === eventoId)) return { error: 'Sem acesso a este evento hoje.' }
+
+  const { data: fornecedores, error: erroForn } = await supabaseAdmin
+    .from('fornecedores').select('id, nome').eq('evento_id', eventoId)
+  if (erroForn) return { error: 'Não foi possível montar a lista agora.' }
+  let equipes = (fornecedores ?? []) as { id: string; nome: string }[]
+  // Supervisor: só as equipes dele (a mesma régua do leitor e do Registrar ponto).
+  if (perfil.role === 'supervisor') {
+    const meus = new Set((await meusSetores(perfil)).map(s => s.id))
+    equipes = equipes.filter(f => meus.has(f.id))
+  }
+  return { equipes }
+}
+
 export async function pacoteParaSemInternet(
   eventoId: string,
 ): Promise<{ pessoas: PessoaParaSemInternet[]; geradoEm: string; error?: undefined } | { pessoas?: undefined; error: string }> {
   try {
-    const perfil = await getPerfil()
-    if (!perfil) return { error: 'Sem sessão.' }
-    if (!(await eventosEscaneaveis(perfil)).some(e => e.id === eventoId)) return { error: 'Sem acesso a este evento hoje.' }
-
-    const { data: fornecedores, error: erroForn } = await supabaseAdmin
-      .from('fornecedores').select('id, nome').eq('evento_id', eventoId)
-    if (erroForn) return { error: 'Não foi possível montar a lista agora.' }
-    let equipes = (fornecedores ?? []) as { id: string; nome: string }[]
-    // Supervisor: só as equipes dele (a mesma régua do leitor e do Registrar ponto).
-    if (perfil.role === 'supervisor') {
-      const meus = new Set((await meusSetores(perfil)).map(s => s.id))
-      equipes = equipes.filter(f => meus.has(f.id))
-    }
+    const acesso = await equipesDoPortao(eventoId)
+    if (!acesso.equipes) return { error: acesso.error }
+    const equipes = acesso.equipes
     const nomeDaEquipe = new Map(equipes.map(f => [f.id, f.nome]))
 
     type Linha = {
@@ -101,5 +116,34 @@ export async function pacoteParaSemInternet(
   } catch (e) {
     console.error('[pacoteParaSemInternet]', e)
     return { error: 'Não foi possível montar a lista agora.' }
+  }
+}
+
+/**
+ * QUEM JÁ TEM ENTRADA (Juan, 19/10/2026): o aparelho guarda isto junto com a lista para, na saída sem internet, dizer se
+ * a pessoa bateu a entrada. Leve (só quem bateu algo nos últimos dias), e o aparelho renova de poucos em poucos minutos.
+ * É só um aviso na tela: o servidor confere tudo de novo quando a batida chega.
+ */
+export async function estadoDeEntradasParaSemInternet(
+  eventoId: string,
+): Promise<{ estado: EstadoDeEntradas; error?: undefined } | { estado?: undefined; error: string }> {
+  try {
+    const acesso = await equipesDoPortao(eventoId)
+    if (!acesso.equipes) return { error: acesso.error }
+    const permitidas = new Set(acesso.equipes.map(f => f.id))
+
+    type Linha = { funcionario_id: string; tipo: string; data_ref: string | null; created_at: string; funcionarios: { fornecedor_id: string } | null }
+    const desde = new Date(Date.now() - JANELA_DO_ESTADO_H * 60 * 60 * 1000).toISOString()
+    const linhas = await buscarTudo<Linha>((de, ate) =>
+      supabaseAdmin.from('registros')
+        .select('funcionario_id, tipo, data_ref, created_at, funcionarios!inner(fornecedor_id)')
+        .eq('evento_id', eventoId).in('tipo', ['entrada', 'fim']).gte('created_at', desde)
+        .order('id').range(de, ate) as unknown as PromiseLike<{ data: Linha[] | null; error: { message: string } | null }>,
+    )
+    const batidas = linhas.filter(l => l.funcionarios && permitidas.has(l.funcionarios.fornecedor_id))
+    return { estado: { ...estadoDeEntradas(batidas), geradoEm: new Date().toISOString() } }
+  } catch (e) {
+    console.error('[estadoDeEntradasParaSemInternet]', e)
+    return { error: 'Não foi possível conferir as entradas agora.' }
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react'
-import { registrarPresencaQR, conferirVeiculoPorQR, cancelarLeituraQR } from '@/lib/actions'
+import { registrarPresencaQR, registrarSaidaComEntradaInformada, conferirVeiculoPorQR, cancelarLeituraQR } from '@/lib/actions'
 import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import ConferenciaCpf from './ConferenciaCpf'
 import { emNavegadorEmbutido, copiarTexto } from '@/lib/navegador'
@@ -10,7 +10,8 @@ import AvisoFilaSemInternet, { useFilaSemInternet } from '@/components/FilaSemIn
 import ModoSemInternet from '@/components/ModoSemInternet'
 import { percebeuSemRede } from '@/lib/rede-do-portao'
 import {
-  guardarNaFila, guardarNaFilaJuntos, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, entradaJaNaFila, horaDeEntradaValida,
+  guardarNaFila, guardarNaFilaJuntos, pessoaPeloQR, tokenDoQR, motivoDaSituacao, agoraCerto, idNovo, entradaInformadaParaSaida, situacaoDeEntrada, anotarBatidaPeloQR,
+  horaDeEntradaValida, type SituacaoDeEntrada,
 } from '@/lib/fila-offline'
 
 type Evento = { id: string; nome: string }
@@ -54,8 +55,11 @@ type ScanResult = {
   guardado?: boolean
   /** Só da tela (prévia sem internet): quem é na lista guardada — habilita "informar a hora da entrada" na saída. */
   pessoaId?: string
-  /** Só da tela (prévia sem internet): este aparelho já guardou a entrada dela — não precisa perguntar a hora. */
-  entradaNaFila?: boolean
+  /** Só da tela (prévia sem internet): se a pessoa já tem entrada, como o aparelho enxerga (lista guardada + fila). */
+  situacaoEntrada?: SituacaoDeEntrada
+  /** Do servidor: a SAÍDA foi recusada só por falta de entrada — a tela oferece informar a hora (ver `registrarSaidaComEntradaInformada`). */
+  semEntrada?: boolean
+  funcionarioId?: string
 }
 
 /** O QR do veículo é um link (`/veiculo/{token}`), não o crachá assinado do funcionário. */
@@ -161,13 +165,14 @@ function mensagemDoErroDeCamera(e: unknown): string {
   return 'Não conseguimos abrir a câmera. Feche as outras abas e apps que usem câmera, confira se a câmera está permitida para este site e toque em "Tentar de novo".'
 }
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta' | 'guardado'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'semEntrada' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'invalido' | 'semResposta' | 'guardado'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.guardado) return 'guardado'
   if (r.semResposta) return 'semResposta'
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.veiculo || r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.semEntrada && r.funcionarioId) return 'semEntrada'
   if (r.localImpreciso) return 'localImpreciso'
   if (r.semLocalizacao) return 'semLocalizacao'
   if (r.foraDoLocal) return 'foraDoLocal'
@@ -183,6 +188,8 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   // confundir o que acabou de fazer (pedido do Juan, 26/09/2026).
   saida:       { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado:  { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
+  // Não é recusa de acesso: falta a ENTRADA dela no sistema — o operador informa a hora e a saída sai junto (19/10/2026).
+  semEntrada:  { fundo: 'bg-orange-600', icone: '⏱', titulo: 'SEM ENTRADA REGISTRADA' },
   // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
   // Vermelho de verdade: a batida NÃO é gravada (pedido do Juan, 08/10/2026 — antes só marcava; testou o
@@ -238,7 +245,7 @@ function vibrar(padrao: number | number[]) {
 }
 function sinalizar(c: Categoria) {
   if (c === 'liberado' || c === 'saida' || c === 'guardado') { vibrar(80); bipe([880]) }
-  else if (c === 'jaValidado' || c === 'semResposta') { vibrar([60, 60, 60]); bipe([660, 660]) }
+  else if (c === 'jaValidado' || c === 'semResposta' || c === 'semEntrada') { vibrar([60, 60, 60]); bipe([660, 660]) }
   else { vibrar([200, 80, 200]); bipe([220], 0.35) }
 }
 
@@ -328,6 +335,10 @@ export default function ScannerView({
    */
   const [informandoEntrada, setInformandoEntrada] = useState(false)
   const [horaEntrada, setHoraEntrada] = useState('')
+  // O modal da hora da entrada, COM internet (tela "sem entrada registrada"): o operador informa e entrada + saída saem juntas.
+  const [modalEntrada, setModalEntrada] = useState<{ codigo: string; nome: string; funcionarioId: string } | null>(null)
+  const [horaDoModal, setHoraDoModal] = useState('')
+  const [gravandoModal, setGravandoModal] = useState(false)
   // Motivo do atraso — só aparece quando a prévia pede (fornecedor com meio ligado).
   const [justificativaAtraso, setJustificativaAtraso] = useState('')
   const [conferindo, setConferindo] = useState(false)
@@ -453,7 +464,10 @@ export default function ScannerView({
     const pessoa = await pessoaPeloQR(eventoIdRef.current, codigo).catch(() => null)
     if (id !== leituraRef.current) return
     const funcionario = pessoa ? { nome: pessoa.nome, cargo: pessoa.cargo, setor: pessoa.equipe } : undefined
-    const entradaNaFila = pessoa && modoDaLeitura === 'fim' ? await entradaJaNaFila(eventoIdRef.current, pessoa.id) : false
+    // O aparelho sabe se a pessoa já tem entrada: lista guardada (renovada de poucos em poucos minutos) + o que ele mesmo guardou.
+    const situacaoEntrada: SituacaoDeEntrada | undefined = pessoa
+      ? await situacaoDeEntrada(eventoIdRef.current, pessoa.id).catch((): SituacaoDeEntrada => ({ tipo: 'desconhecida' }))
+      : undefined
     if (id !== leituraRef.current) return
     const impedimento = pessoa ? motivoDaSituacao(pessoa.situacao) : null
     if (impedimento) {
@@ -462,12 +476,13 @@ export default function ScannerView({
     }
     setValidando(false)
     setResult(null)
-    setInformandoEntrada(false)
+    // Sem entrada na lista: a hora já abre para ser informada (o operador pode dizer que ela já entrou).
+    setInformandoEntrada(modoDaLeitura === 'fim' && situacaoEntrada?.tipo === 'sem_entrada')
     setHoraEntrada('')
     setConfirmacao({
       codigo, modo: modoDaLeitura,
       r: {
-        success: true, previa: true, offline: true, funcionario, pessoaId: pessoa?.id, entradaNaFila,
+        success: true, previa: true, offline: true, funcionario, pessoaId: pessoa?.id, situacaoEntrada,
         message: pessoa
           ? 'Sem internet: a batida fica guardada neste aparelho e sobe sozinha quando a internet voltar.'
           : 'Sem internet, e esta pessoa não está na lista guardada no aparelho (cadastro novo?). A batida fica guardada e é conferida quando a internet voltar.',
@@ -491,7 +506,7 @@ export default function ScannerView({
       // A entrada informada e a saída entram juntas na fila, ou nenhuma das duas.
       if (horaDaEntrada && c.r.pessoaId) {
         await guardarNaFilaJuntos([
-          entradaInformadaParaSaida({ eventoId: eventoIdRef.current, pessoaId: c.r.pessoaId, nome, equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm }),
+          entradaInformadaParaSaida({ eventoId: eventoIdRef.current, pessoaId: c.r.pessoaId, nome, equipe, hora: horaDaEntrada, saidaLidaEm: lidoEm, via: 'qr' }),
           leitura,
         ])
       } else {
@@ -588,7 +603,41 @@ export default function ScannerView({
       return
     }
     setConfirmacao(null)
+    // O aparelho anota a batida que acabou de ser feita aqui: se a internet cair, sabe que a pessoa já tem entrada (ou já saiu).
+    if (r.success && !r.veiculo) void anotarBatidaPeloQR(eventoIdRef.current, c.codigo, c.modo)
     mostrarResultado(id, c.codigo, c.modo, r)
+  }
+
+  /*
+   * "REGISTRAR A ENTRADA DELE" (tela "sem entrada registrada", com internet): lança a entrada na hora informada e
+   * registra a saída, as duas pelo servidor de uma vez. Se a internet cair no meio, as duas ficam guardadas no aparelho.
+   */
+  const registrarEntradaESaida = async () => {
+    const m = modalEntrada
+    if (!m || gravandoModal || !horaDeEntradaValida(horaDoModal)) return
+    const id = ++leituraRef.current
+    setGravandoModal(true)
+    const hora = horaDoModal
+    const r: ScanResult = await registrarSaidaComEntradaInformada(eventoIdRef.current, m.codigo, hora, {
+      local: localizacao.atual(),
+      subeventoIds: subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined,
+    }).catch(semRede)
+    setGravandoModal(false)
+    if (r.semRede) {
+      // A internet caiu: as duas batidas (entrada informada + saída) ficam na fila do aparelho.
+      const guardada = await guardarLeitura(
+        { codigo: m.codigo, modo: 'fim', r: { success: true, message: '', funcionario: { nome: m.nome, cargo: null }, pessoaId: m.funcionarioId } }, hora,
+      )
+      setModalEntrada(null)
+      mostrarResultado(id, m.codigo, 'fim', guardada
+        ? { success: true, guardado: true, momento: 'fim', funcionario: { nome: m.nome, cargo: null }, message: `Entrada às ${hora} (informada) e saída guardadas neste aparelho. Sobem juntas quando a internet voltar.` }
+        : { success: false, message: 'Sem internet e não foi possível guardar neste aparelho. Registre pelo Registrar ponto quando a internet voltar.' })
+      return
+    }
+    setModalEntrada(null)
+    setHoraDoModal('')
+    if (r.success) void anotarBatidaPeloQR(eventoIdRef.current, m.codigo, 'fim')
+    mostrarResultado(id, m.codigo, 'fim', r)
   }
 
   const cancelar = () => {
@@ -1039,41 +1088,57 @@ export default function ScannerView({
               )}
 
               {/*
-                * Saída sem internet de quem não bateu a entrada: o aparelho não sabe o que os outros portões gravaram, então
-                * a opção fica à mão — o operador pergunta a hora e informa aqui. O servidor confere quando a internet volta
-                * (quem já tinha a entrada não é alterado).
+                * SEM INTERNET: o aparelho diz se a pessoa já tem entrada (lista guardada, renovada de poucos em poucos
+                * minutos, + o que ele mesmo guardou). Na SAÍDA de quem não tem, a hora da entrada já abre para ser
+                * informada; o operador pode dizer que ela já entrou. O servidor confere tudo de novo quando a internet volta.
                 */}
-              {r.offline && !ehEntrada && r.pessoaId && !r.entradaNaFila && (
-                <div className="mt-5 text-left rounded-2xl border border-amber-400/60 bg-amber-500/10 p-3">
-                  {!informandoEntrada ? (
-                    <button
-                      type="button" onClick={() => setInformandoEntrada(true)}
-                      className="w-full text-left text-amber-200 text-sm font-bold"
-                    >
-                      A pessoa não bateu a entrada? Toque aqui para informar a hora →
-                    </button>
-                  ) : (
-                    <>
-                      <label className="text-amber-100 text-sm font-semibold block mb-1.5" htmlFor="hora-entrada-informada">
-                        Que horas ela entrou? *
-                      </label>
-                      <input
-                        id="hora-entrada-informada" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
-                        className="w-full rounded-xl px-3 py-2 text-xl tabular-nums bg-white/10 border border-white/30 text-white outline-none focus:border-white/60 [color-scheme:dark]"
-                      />
-                      <p className="text-white/60 text-xs mt-2 leading-snug">
-                        A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora. As duas sobem juntas quando a internet voltar.
-                      </p>
-                      <button
-                        type="button" onClick={() => { setInformandoEntrada(false); setHoraEntrada('') }}
-                        className="mt-2 text-white/70 text-xs font-semibold underline-offset-2 hover:underline"
-                      >
-                        Ela já entrou — guardar só a saída
+              {r.offline && r.pessoaId && r.situacaoEntrada && (() => {
+                const sit = r.situacaoEntrada
+                const conferido = sit.tipo !== 'desconhecida' && sit.conferidoEm ? ` (conferido às ${formatarBR(sit.conferidoEm, 'hora')})` : ''
+                if (sit.tipo === 'com_entrada') {
+                  return ehEntrada
+                    ? <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ Já tem entrada às {formatarBR(sit.em, 'hora')}{conferido}. Se está saindo, use SAÍDA.</p>
+                    : <p className="mt-4 rounded-xl bg-green-500/20 border border-green-400/50 text-green-100 text-sm font-semibold px-3 py-2 leading-snug">✓ Entrada registrada às {formatarBR(sit.em, 'hora')}{conferido}.</p>
+                }
+                if (sit.tipo === 'ja_saiu') {
+                  return ehEntrada
+                    ? null
+                    : <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-sm font-semibold px-3 py-2 leading-snug">⚠ Saída já registrada às {formatarBR(sit.em, 'hora')}{conferido}. Esta pode ser repetida.</p>
+                }
+                if (ehEntrada) return null
+                const semEntrada = sit.tipo === 'sem_entrada'
+                return (
+                  <div className={`mt-4 text-left rounded-2xl border p-3 ${semEntrada ? 'border-red-300/70 bg-red-500/20' : 'border-amber-400/60 bg-amber-500/10'}`}>
+                    {semEntrada && (
+                      <p className="text-red-100 text-sm font-bold leading-snug mb-2">⚠ SEM ENTRADA REGISTRADA{conferido}. Informe a hora em que a pessoa entrou.</p>
+                    )}
+                    {!informandoEntrada ? (
+                      <button type="button" onClick={() => setInformandoEntrada(true)} className="w-full text-left text-amber-200 text-sm font-bold">
+                        A pessoa não bateu a entrada? Toque aqui para informar a hora →
                       </button>
-                    </>
-                  )}
-                </div>
-              )}
+                    ) : (
+                      <>
+                        <label className="text-white text-sm font-semibold block mb-1.5" htmlFor="hora-entrada-informada">
+                          Que horas ela entrou? *
+                        </label>
+                        <input
+                          id="hora-entrada-informada" type="time" value={horaEntrada} onChange={e => setHoraEntrada(e.target.value)}
+                          className="w-full rounded-xl px-3 py-2 text-xl tabular-nums bg-white/10 border border-white/30 text-white outline-none focus:border-white/60 [color-scheme:dark]"
+                        />
+                        <p className="text-white/60 text-xs mt-2 leading-snug">
+                          A entrada fica marcada como lançada à mão, com o seu nome, e a saída é guardada agora. As duas sobem juntas quando a internet voltar.
+                        </p>
+                        <button
+                          type="button" onClick={() => { setInformandoEntrada(false); setHoraEntrada('') }}
+                          className="mt-2 text-white/70 text-xs font-semibold underline-offset-2 hover:underline"
+                        >
+                          Ela já entrou — guardar só a saída
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
 
               {r.precisaJustificativaAtraso && (
                 <div className="mt-5 text-left">
@@ -1176,7 +1241,29 @@ export default function ScannerView({
               * de verdade — diz se a pessoa está na lista. "Voltar a ler" cobre
               * o caso inocente e mais comum: ela só precisa recarregar a tela.
               */}
-            {result.faseErrada ? (
+            {categoria === 'semEntrada' && result.funcionarioId ? (
+              /* A pessoa não tem entrada: o operador pergunta a hora e registra entrada + saída de uma vez (modal abaixo). */
+              <div className="mt-8 space-y-3 max-w-xs mx-auto">
+                <button
+                  onClick={e => {
+                    e.stopPropagation()
+                    const codigo = ultimoRef.current?.codigo
+                    if (!codigo || !result.funcionarioId) return
+                    setHoraDoModal('')
+                    setModalEntrada({ codigo, nome: result.funcionario?.nome ?? 'a pessoa', funcionarioId: result.funcionarioId })
+                  }}
+                  className="w-full bg-white text-orange-700 font-extrabold text-lg rounded-2xl py-4 shadow-lg active:scale-95 transition-all"
+                >
+                  REGISTRAR A ENTRADA DELE
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); liberar() }}
+                  className="w-full border-2 border-white/60 text-white font-semibold rounded-2xl py-3"
+                >
+                  Ler o próximo
+                </button>
+              </div>
+            ) : result.faseErrada ? (
               <div className="mt-8 space-y-3 max-w-xs mx-auto">
                 <button
                   onClick={e => { e.stopPropagation(); setConferindo(true) }}
@@ -1200,6 +1287,38 @@ export default function ScannerView({
                 {categoria === 'semResposta' ? 'Fechar e ler o próximo' : 'LER O PRÓXIMO'}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/*
+        * O MODAL DA HORA DA ENTRADA (com internet): quem está dando a saída não bateu a entrada — o operador pergunta a
+        * hora, informa aqui e o sistema registra a entrada (lançada à mão, com o nome dele) e a saída, as duas de uma vez.
+        * Cores fixas (não do tema): esta tela é escura nos dois temas e o cartão é branco.
+        */}
+      {modalEntrada && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/90 px-6" role="dialog" aria-modal="true" aria-label="Registrar a entrada">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-sm font-semibold text-[#64748b]">Registrar a entrada de</p>
+            <p className="mt-0.5 text-2xl font-extrabold leading-tight text-[#0f172a]">{modalEntrada.nome}</p>
+            <label htmlFor="hora-do-modal" className="mb-1.5 mt-5 block text-sm font-semibold text-[#334155]">Que horas ela entrou? *</label>
+            <input
+              id="hora-do-modal" type="time" autoFocus value={horaDoModal} onChange={e => setHoraDoModal(e.target.value)}
+              className="w-full rounded-xl border border-[#cbd5e1] bg-white px-3 py-3 text-2xl tabular-nums text-[#0f172a] outline-none focus:border-[#2563eb]"
+            />
+            <p className="mt-2 text-xs leading-snug text-[#64748b]">A entrada fica marcada como lançada à mão, com o seu nome. A saída é registrada agora, na hora de agora.</p>
+            <button
+              type="button" onClick={registrarEntradaESaida} disabled={gravandoModal || !horaDeEntradaValida(horaDoModal)}
+              className="mt-5 w-full rounded-2xl bg-[#2563eb] py-4 text-lg font-extrabold text-white shadow-lg transition-all active:scale-95 disabled:opacity-50"
+            >
+              {gravandoModal ? <span className="inline-flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Registrando...</span> : 'REGISTRAR ENTRADA E SAÍDA'}
+            </button>
+            <button
+              type="button" onClick={() => setModalEntrada(null)} disabled={gravandoModal}
+              className="mt-3 w-full rounded-2xl border-2 border-[#cbd5e1] py-3 text-base font-bold text-[#334155] transition-all active:scale-95 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}
