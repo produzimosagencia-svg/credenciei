@@ -7,13 +7,19 @@
  *
  * Roda com: node testes/monte-sua-equipe.mjs
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 const raiz = new URL('..', import.meta.url).pathname
 const ler = c => readFileSync(raiz + c, 'utf8')
 let falhas = 0
 const ok = (c, m) => { if (!c) falhas++; console.log(`  ${c ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m ${m}`) }
 
-const R = await import(raiz + 'lib/historico-supervisor-regras.ts')
+// As regras importam sem extensão (ok pro Next, não pro Node): copia para uma pasta do projeto e ajusta o caminho.
+const pasta = raiz + '.tmp-teste-monte-equipe/'
+rmSync(pasta, { recursive: true, force: true }); mkdirSync(pasta, { recursive: true })
+writeFileSync(pasta + 'telefone.ts', ler('lib/telefone.ts'))
+writeFileSync(pasta + 'historico-supervisor-regras.ts', ler('lib/historico-supervisor-regras.ts').replace("from './telefone'", "from './telefone.ts'"))
+const R = await import(pasta + 'historico-supervisor-regras.ts')
+process.on('exit', () => rmSync(pasta, { recursive: true, force: true }))
 
 console.log('1 · Quem aparece e se pode entrar')
 const ORG = 'org-q2', OUTRA = 'org-fatto'

@@ -11,6 +11,7 @@ import ConfirmModal from '@/components/ConfirmModal'
 import { formatarBR } from '@/lib/tz'
 import { mensagemAmigavel } from '@/lib/erros'
 import { chaveBusca, ehSupervisorDaEquipe } from '@/lib/format'
+import { telefoneValido } from '@/lib/telefone'
 import type { FuncaoNaEquipe } from '@/lib/funcao-na-equipe'
 import TrazerCrachaSupervisor from './TrazerCrachaSupervisor'
 import { type StatusCredenciamento } from '@/lib/credenciamento-constantes'
@@ -123,21 +124,39 @@ type Funcionario = {
 type FiltroRapido = 'todos' | 'pendencias' | 'presentes' | 'ausentes' | 'nao_ativados' | 'credencial'
 
 /*
- * Credencial que não chegou = a mensagem FALHOU (número errado, sem WhatsApp). "Sem mensagem" não acende: acontece
+ * WhatsApp com problema = a mensagem FALHOU (número errado, sem WhatsApp) OU o telefone da ficha é genérico/incompleto
+ * (só zeros, sem DDD…): nesse caso o sistema nem tenta enviar (Juan, 23/10/2026). "Sem mensagem" não acende: acontece
  * por motivo bom (crachá de supervisor, credencial já enviada ao mesmo número em outra equipe) e viraria alarme falso.
+ * `credencial` nulo = não se aplica (aguardando aprovação, baixa): aí nada acende.
  */
-const credencialNaoChegou = (f: { credencial?: Funcionario['credencial'] }) => f.credencial === 'falhou'
+const semTelefoneValido = (f: { credencial?: Funcionario['credencial']; telefone: string }) => f.credencial != null && !telefoneValido(f.telefone)
+const credencialNaoChegou = (f: { credencial?: Funcionario['credencial']; telefone: string }) => f.credencial === 'falhou' || semTelefoneValido(f)
 
-/** O selo da credencial no WhatsApp — só o que pede atenção grita; o resto é discreto. */
-function SeloCredencial({ status }: { status: Funcionario['credencial'] }) {
-  if (!status || status === 'sem_mensagem') return null
+/**
+ * O selo da credencial no WhatsApp — só o que pede atenção grita; o resto é discreto. Dois avisos diferentes, para não
+ * parecer que o REGISTRO falhou (Juan, 23/10/2026): telefone sem validade (nada é enviado) e mensagem não entregue
+ * (o cadastro e as batidas estão certos; só o WhatsApp não recebeu).
+ */
+function SeloCredencial({ status, telefone }: { status: Funcionario['credencial']; telefone: string }) {
+  if (status == null) return null
+  if (!telefoneValido(telefone)) {
+    return (
+      <span
+        className="shrink-0 text-2xs font-bold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded-full"
+        title="O telefone cadastrado é genérico ou incompleto, então nenhuma mensagem é enviada para esta pessoa. O cadastro e as batidas estão certos. Corrija o telefone na ficha."
+      >
+        SEM TELEFONE VÁLIDO
+      </span>
+    )
+  }
+  if (status === 'sem_mensagem') return null
   if (status === 'falhou') {
     return (
       <span
         className="shrink-0 text-2xs font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
-        title="A credencial não chegou no WhatsApp. Confira o telefone na ficha: corrigir reenvia sozinho."
+        title="A mensagem com a credencial não foi entregue no WhatsApp deste telefone. O cadastro e as batidas estão certos; só o WhatsApp não recebeu. Confira o telefone na ficha: corrigir reenvia sozinho."
       >
-        CREDENCIAL NÃO CHEGOU
+        WHATSAPP NÃO ENTREGUE
       </span>
     )
   }
@@ -458,7 +477,7 @@ export default function FuncionarioTable({
             ['presentes', 'Presentes'],
             ['ausentes', 'Ausentes'],
             ['nao_ativados', 'Não ativados'],
-            ['credencial', `Credencial não chegou${funcionarios.filter(credencialNaoChegou).length ? ` (${funcionarios.filter(credencialNaoChegou).length})` : ''}`],
+            ['credencial', `WhatsApp com problema${funcionarios.filter(credencialNaoChegou).length ? ` (${funcionarios.filter(credencialNaoChegou).length})` : ''}`],
           ] as [FiltroRapido, string][]).map(([value, label]) => (
             <button
               key={value}
@@ -641,7 +660,7 @@ export default function FuncionarioTable({
                   <EtapaChip label="Entrada" p={f.entrada} status={f.statusEntrada} />
                   <EtapaChip label="Meio" p={f.meio} status={f.statusMeio} />
                   <EtapaChip label="Saída" p={f.fim} status={f.statusFim} />
-                  <SeloCredencial status={f.credencial} />
+                  <SeloCredencial status={f.credencial} telefone={f.telefone} />
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -740,7 +759,7 @@ export default function FuncionarioTable({
                               )}
                               <p className="text-slate-400 text-xs truncate">{f.empresa}{f.cargo ? ` • ${f.cargo}` : ''}</p>
                             </div>
-                            {f.credencial && <div className="mt-0.5"><SeloCredencial status={f.credencial} /></div>}
+                            {f.credencial && <div className="mt-0.5"><SeloCredencial status={f.credencial} telefone={f.telefone} /></div>}
                             {usaEscala && diasDaEscala.length > 0 && <DiasDaPessoa f={f} />}
                           </div>
                         </div>

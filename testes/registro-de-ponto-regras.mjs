@@ -19,7 +19,7 @@ ok(/Esta equipe não tem batida de meio/.test(ep) && /\.eq\('tipo', 'entrada'\)\
 const assist = a.slice(a.indexOf('export async function registrarPresencaAssistida('))
 ok(/await etapaPermitida\(func\.id, func\.fornecedor_id as string, evento\.id, momento, refAssistido\.dataRef\)/.test(assist.slice(0, 14000)), 'Registrar ponto usa a régua')
 const manual = a.slice(a.indexOf('export async function lancarPontoManual('))
-ok(/const \{ data: temEntrada \}[\s\S]{0,300}Lance a entrada \(com o horário real\) antes da saída/.test(manual.slice(0, 9000)), 'lançamento manual também recusa saída sem entrada no dia')
+ok(/const \{ data: temEntrada \}[\s\S]{0,500}Lance a entrada \(com o horário real\) antes da saída/.test(manual.slice(0, 14000)), 'lançamento manual também recusa saída sem entrada no dia')
 const tela = ler('app/admin/localizar/LocalizarFuncionario.tsx')
 ok(/Esta equipe não tem batida de meio — só entrada e saída/.test(tela) && /func\.etapas\.length === 2 \? 'grid-cols-2' : 'grid-cols-3'/.test(tela), 'a tela: duas etapas em duas colunas; supervisor avisado quando a equipe não tem meio')
 ok(/temCartazNoLocal=\{!!evento\?\.token_portaria && \(evento as \{ portaria_ativa\?: boolean \| null \} \| null\)\?\.portaria_ativa === true\}/.test(ler('app/credential/[token]/page.tsx')), 'credencial: escanear o cartaz só com o cartaz ligado')

@@ -33,6 +33,7 @@ import {
   type Role,
 } from './permissions'
 import { inputParaISO, formatarBR } from './tz'
+import { avaliarSaida, type PerguntaDeHorario } from './turno-longo'
 import {
   diaBRT, janelaDoMeio, janelaMeio, avaliarEntradaSaida, faseAtualDoQR, conferirHorariosDoEvento, periodoDoEvento,
   somarDias, TETO_TURNO_H, horariosEsperados, pausaAbreNovoBloco, type EventoJanelas, type DiaDaJornada, type FaseDoDia,
@@ -11194,7 +11195,9 @@ export async function lancarPontoManual(
   /** Instante real da batida, no formato do input: 'AAAA-MM-DDTHH:mm' (BRT). */
   quandoLocal: string,
   motivo: string,
-): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string }> {
+  /** O operador respondeu "sim, confirmo" a uma pergunta de horário (ver `PerguntaDeHorario`). */
+  confirmacoes?: { turnoLongo?: boolean },
+): Promise<{ ok?: boolean; error?: string; nome?: string; etapa?: string; pergunta?: PerguntaDeHorario }> {
   const perfil = await getPerfil()
   /*
    * Mais restrito que o registro assistido de propósito: lá o operador de
@@ -11276,9 +11279,37 @@ export async function lancarPontoManual(
   }
   // Saída só com a entrada do dia lançada (Juan, 18/10/2026: "muita gente dando saída sem ter dado entrada").
   if (momento === 'fim') {
-    const { data: temEntrada } = await supabaseAdmin.from('registros').select('id')
+    const { data: temEntrada } = await supabaseAdmin.from('registros').select('id, created_at')
       .eq('funcionario_id', func.id).eq('evento_id', evento.id).eq('tipo', 'entrada').eq('data_ref', dataRef).limit(1)
     if (!temEntrada?.length) return { error: `Esta pessoa não tem entrada no dia ${dataRef.split('-').reverse().join('/')}. Lance a entrada (com o horário real) antes da saída.` }
+
+    /*
+     * A HORA DA SAÍDA TEM QUE FAZER SENTIDO COM A ENTRADA (Juan, 23/10/2026): no LUAN, 4 saídas ficaram ANTES da entrada
+     * (a madrugada no dia errado: entrada 11:38, saída 01:10 do mesmo dia — as horas saíam zeradas) e 35 turnos passaram de
+     * 18h. Saída antes da entrada nunca vale: pergunta se é a madrugada do DIA SEGUINTE e oferece esse horário. Turno
+     * acima de 18h pede confirmação.
+     */
+    const entradaEm = temEntrada[0].created_at as string
+    const av = avaliarSaida(entradaEm, quandoISO, quandoLocal)
+    if (av.tipo === 'antes_da_entrada') {
+      const saidaTxt = formatarBR(quandoISO, 'curto'), entradaTxt = formatarBR(entradaEm, 'curto')
+      if (!av.sugeridoLocal) return { error: `A saída (${saidaTxt}) ficaria antes da entrada (${entradaTxt}). Confira a hora e o dia.` }
+      const sugeridoISO = inputParaISO(av.sugeridoLocal)
+      const horas = sugeridoISO ? ((new Date(sugeridoISO).getTime() - new Date(entradaEm).getTime()) / 3_600_000).toFixed(1).replace('.', ',') : null
+      return {
+        error: `A saída (${saidaTxt}) ficaria antes da entrada (${entradaTxt}).`,
+        pergunta: {
+          tipo: 'dia_seguinte', sugeridoLocal: av.sugeridoLocal,
+          texto: `A saída às ${saidaTxt.split(', ').pop()} ficaria ANTES da entrada (${entradaTxt}). É a madrugada do dia seguinte${sugeridoISO ? ` (${formatarBR(sugeridoISO, 'curto')}${horas ? `, ${horas}h de trabalho` : ''})` : ''}?`,
+        },
+      }
+    }
+    if (av.tipo === 'turno_longo' && !confirmacoes?.turnoLongo) {
+      return {
+        error: `Esse turno ficaria com ${av.horas}h.`,
+        pergunta: { tipo: 'turno_longo', horas: av.horas, texto: `Entrada ${formatarBR(entradaEm, 'curto')} e saída ${formatarBR(quandoISO, 'curto')} dão ${av.horas}h de turno. A saída está certa? Se a pessoa saiu no dia anterior, corrija o dia.` },
+      }
+    }
   }
 
   /*

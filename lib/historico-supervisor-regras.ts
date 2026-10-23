@@ -73,15 +73,9 @@ export type PessoaDoHistoricoNoServidor = PessoaDoHistorico & {
   fotoPath: string | null
 }
 
-/**
- * Telefone que recebe a credencial: 10 a 13 dígitos e não o genérico de destravar cadastro (DDD + zeros, como o
- * "27 0000-0000" usado no LUAN para quem não tinha telefone).
- */
-export function telefoneValido(t: string | null | undefined): boolean {
-  const d = String(t ?? '').replace(/\D/g, '')
-  if (d.length < 10 || d.length > 13) return false
-  return !/^(55)?\d{2}0{8,9}$/.test(d)
-}
+// A regra do telefone mora em lib/telefone.ts (a fila do WhatsApp e a ficha da equipe usam a mesma).
+import { telefoneValido } from './telefone'
+export { telefoneValido }
 
 export const ROTULO_SITUACAO: Record<SituacaoNoHistorico, string> = {
   disponivel: 'pronta para entrar',

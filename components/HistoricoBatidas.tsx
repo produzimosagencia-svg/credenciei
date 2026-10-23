@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import { CalendarDays, Check, X, Clock, CameraOff, UserCheck, LogOut, AlertTriangle, LogIn, Camera, Pencil, Trash2, MapPin } from 'lucide-react'
 import { formatarBR, isoParaInput } from '@/lib/tz'
 import { lancarPontoManual, apagarBatida, type MomentoPresenca } from '@/lib/actions'
+import PerguntaDeHorario from '@/components/PerguntaDeHorario'
+import type { PerguntaDeHorario as Pergunta } from '@/lib/turno-longo'
 import { Badge } from '@/components/ui/Superficie'
 import StatCard from '@/components/StatCard'
 import DateTimePicker from '@/components/DateTimePicker'
@@ -58,6 +60,8 @@ export default function HistoricoBatidas({
   const [quando, setQuando] = useState('')
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<string | null>(null)
+  // A pergunta do servidor sobre um horário estranho: "é a madrugada do dia seguinte?" / "esse turno de 23h está certo?"
+  const [pergunta, setPergunta] = useState<Pergunta | null>(null)
   const [isPending, startTransition] = useTransition()
 
   // Supervisor só corrige o MEIO — entrada e saída ficam sem o lápis (e o servidor recusa).
@@ -74,6 +78,7 @@ export default function HistoricoBatidas({
 
   const abrirEdicao = (data: string, momento: MomentoPresenca, atual: string | null, fichaId: string) => {
     setErro(null)
+    setPergunta(null)
     setMotivo('')
     setConfirmandoApagar(false)
     setQuando(atual ? isoParaInput(atual) : `${data}T08:00`)
@@ -95,12 +100,21 @@ export default function HistoricoBatidas({
     })
   }
 
-  const salvar = () => {
+  /** `opcoes`: a resposta "sim" a uma pergunta de horário — outro horário (o dia seguinte) ou a confirmação do turno longo. */
+  const salvar = (opcoes?: { quando?: string; turnoLongo?: boolean }) => {
     if (!editando) return
     setErro(null)
+    setPergunta(null)
     if (motivoObrigatorio && !motivo.trim()) { setErro('Informe o motivo da correção.'); return }
+    const quandoFinal = opcoes?.quando ?? quando
+    if (opcoes?.quando) setQuando(opcoes.quando)
     startTransition(async () => {
-      const r = await lancarPontoManual(editando.fichaId, editando.momento, editando.data, quando, motivo || `Corrigido no histórico (era ${ROTULO_MOMENTO[editando.momento]}${editando.atual ? ` às ${formatarBR(editando.atual, 'hora')}` : ', não registrada'}).`)
+      const r = await lancarPontoManual(
+        editando.fichaId, editando.momento, editando.data, quandoFinal,
+        motivo || `Corrigido no histórico (era ${ROTULO_MOMENTO[editando.momento]}${editando.atual ? ` às ${formatarBR(editando.atual, 'hora')}` : ', não registrada'}).`,
+        opcoes?.turnoLongo ? { turnoLongo: true } : undefined,
+      )
+      if (r.pergunta) { setPergunta(r.pergunta); return }
       if (r.error) { setErro(r.error); return }
       setEditando(null)
       if (onSalvo) onSalvo()
@@ -259,9 +273,17 @@ export default function HistoricoBatidas({
               className="input text-sm" placeholder="Ex.: bateu o QR duas vezes, o horário certo é este"
             />
           </div>
-          {erro && !confirmandoApagar && <p className="text-red-600 text-xs">{erro}</p>}
+          {/* O servidor estranhou o horário: pergunta antes de salvar (saída antes da entrada, turno de mais de 18h). */}
+          {pergunta && (
+            <PerguntaDeHorario
+              pergunta={pergunta} ocupado={isPending}
+              aoConfirmar={() => salvar(pergunta.tipo === 'dia_seguinte' ? { quando: pergunta.sugeridoLocal } : { turnoLongo: true })}
+              aoCorrigir={() => setPergunta(null)}
+            />
+          )}
+          {erro && !confirmandoApagar && !pergunta && <p className="text-red-600 text-xs">{erro}</p>}
           <div className="flex gap-2">
-            <button onClick={salvar} disabled={isPending} className="btn btn-primario btn-sm disabled:opacity-50">
+            <button onClick={() => salvar()} disabled={isPending} className="btn btn-primario btn-sm disabled:opacity-50">
               {isPending ? 'Salvando…' : 'Salvar correção'}
             </button>
             <button onClick={() => setEditando(null)} disabled={isPending} className="btn btn-secundario btn-sm">

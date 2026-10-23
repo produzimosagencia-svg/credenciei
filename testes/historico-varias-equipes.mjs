@@ -24,7 +24,7 @@ console.log('\n2 · a tela do histórico')
 const tela = ler('components/HistoricoBatidas.tsx')
 ok(/\{variasEquipes && <th>Equipe<\/th>\}/.test(tela) && /h\.dias\.some\(d => d\.outraEquipe\)/.test(tela), 'coluna "Equipe" quando há dia de outra equipe')
 ok(/Trabalhou em mais de uma equipe neste evento/.test(tela), 'aviso com os dias de cada equipe')
-ok(/apagarBatida\(editando\.fichaId,/.test(tela) && /lancarPontoManual\(editando\.fichaId,/.test(tela) && !/h\.funcionarioId, editando/.test(tela), 'corrigir/apagar vai para a ficha DAQUELE dia, não para a aberta')
+ok(/apagarBatida\(editando\.fichaId,/.test(tela) && /lancarPontoManual\(\s*editando\.fichaId,/.test(tela) && !/h\.funcionarioId, editando/.test(tela), 'corrigir/apagar vai para a ficha DAQUELE dia, não para a aberta')
 ok(/podeEditar=\{podeEditar && !\(role === 'supervisor' && d\.outraEquipe\)\}/.test(tela), 'supervisor não ganha lápis no dia da outra equipe')
 ok(/key=\{`\$\{d\.data\}-\$\{d\.fichaId\}`\}/.test(tela), 'duas linhas no mesmo dia (duas equipes) não colidem')
 

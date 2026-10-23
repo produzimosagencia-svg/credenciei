@@ -3,6 +3,8 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, X, Check, ArrowLeft, ClipboardPen, AlertCircle, LogIn, Camera, LogOut, Users } from 'lucide-react'
 import { lancarPontoManual } from '@/lib/actions'
+import PerguntaDeHorario from '@/components/PerguntaDeHorario'
+import type { PerguntaDeHorario as Pergunta } from '@/lib/turno-longo'
 import { chaveBusca, formatCpf } from '@/lib/format'
 import { formatarBR } from '@/lib/tz'
 import { Secao, EmptyState } from '@/components/ui/Superficie'
@@ -72,6 +74,8 @@ export default function LancarPonto({
   const [quando, setQuando] = useState(`${diaPadrao}T08:00`)
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<string | null>(null)
+  // A pergunta do servidor sobre um horário estranho: "é a madrugada do dia seguinte?" / "esse turno de 23h está certo?"
+  const [pergunta, setPergunta] = useState<Pergunta | null>(null)
   const [feito, setFeito] = useState<string | null>(null)
   const [pendente, startTransition] = useTransition()
 
@@ -123,14 +127,19 @@ export default function LancarPonto({
   const quandoMs = new Date(`${quando}:00-03:00`).getTime()
   const novaEntrada = etapa === 'entrada' && jaSaiu && quandoMs > new Date(saidaDoDia!).getTime()
 
-  const salvar = () => {
+  /** `opcoes`: a resposta "sim" a uma pergunta de horário — outro horário (o dia seguinte) ou a confirmação do turno longo. */
+  const salvar = (opcoes?: { quando?: string; turnoLongo?: boolean }) => {
     if (!pessoa) return
     setErro(null)
+    setPergunta(null)
     setFeito(null)
+    const quandoFinal = opcoes?.quando ?? quando
+    if (opcoes?.quando) setQuando(opcoes.quando)
     startTransition(async () => {
-      const r = await lancarPontoManual(pessoa.id, etapa, dia, quando, motivo)
+      const r = await lancarPontoManual(pessoa.id, etapa, dia, quandoFinal, motivo, opcoes?.turnoLongo ? { turnoLongo: true } : undefined)
+      if (r.pergunta) { setPergunta(r.pergunta); return }
       if (r.error) { setErro(r.error); return }
-      setFeito(`${r.etapa} de ${r.nome} lançada em ${rotuloDia(dia)}, às ${quando.split('T')[1]}.`)
+      setFeito(`${r.etapa} de ${r.nome} lançada em ${rotuloDia(dia)}, às ${quandoFinal.split('T')[1]}${quandoFinal.slice(0, 10) !== dia ? ` (${quandoFinal.slice(8, 10)}/${quandoFinal.slice(5, 7)}, madrugada do dia seguinte)` : ''}.`)
       setMotivo('')
       router.refresh()
     })
@@ -319,7 +328,15 @@ export default function LancarPonto({
         </p>
       </div>
 
-      {erro && (
+      {/* O servidor estranhou o horário: pergunta antes de salvar (saída antes da entrada, turno de mais de 18h). */}
+      {pergunta && (
+        <PerguntaDeHorario
+          pergunta={pergunta} ocupado={pendente}
+          aoConfirmar={() => salvar(pergunta.tipo === 'dia_seguinte' ? { quando: pergunta.sugeridoLocal } : { turnoLongo: true })}
+          aoCorrigir={() => setPergunta(null)}
+        />
+      )}
+      {erro && !pergunta && (
         <p className="flex items-start gap-1.5 text-erro-600 text-xs">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
         </p>
@@ -331,7 +348,7 @@ export default function LancarPonto({
       )}
 
       <button
-        onClick={salvar}
+        onClick={() => salvar()}
         disabled={pendente || motivo.trim().length < 5}
         className="btn btn-primario btn-lg w-full disabled:opacity-50"
       >

@@ -22,6 +22,7 @@ import { pendenciasDoDia, ROTULO_PENDENCIA } from './pendencias'
 import { setorExigeMeio, diaExigeMeio } from './meio'
 import { registrarEstadoWhatsApp } from './saude'
 import { formatCpf } from './format'
+import { telefoneValido } from './telefone'
 import { formatarNumeroWhatsApp, enviarMensagem, estadoDaInstancia, ESPACAMENTO_MS, provedor, type ResultadoEnvio } from './whatsapp'
 import { renderizarMensagem } from './mensagens-modelos'
 
@@ -2244,6 +2245,20 @@ async function enviarUma(msg: MensagemClaimada & { agendado_para?: string }): Pr
 
   if (!(await devoEnviar(msg))) {
     await supabase.from('mensagens_agendadas').update({ status: 'cancelado' }).eq('id', msg.id)
+    return
+  }
+
+  /*
+   * TELEFONE GENÉRICO OU INCOMPLETO (Juan, 23/10/2026): quem foi cadastrado com o telefone que só destrava o cadastro
+   * (DDD + zeros) não recebe nada — antes a mensagem ia, a Meta devolvia "não entregue" e a ficha mostrava um alarme
+   * vermelho que parecia dizer que o REGISTRO tinha falhado. Agora nem tenta (e não gasta a chamada): cancela com o
+   * motivo, e a ficha mostra "Sem telefone válido".
+   */
+  if (!telefoneValido(msg.telefone)) {
+    await supabase.from('mensagens_agendadas').update({
+      status: 'cancelado',
+      erro: 'Telefone genérico ou incompleto — a mensagem não foi enviada. Corrija o telefone na ficha.',
+    }).eq('id', msg.id)
     return
   }
 
