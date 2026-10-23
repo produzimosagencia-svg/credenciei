@@ -3289,9 +3289,14 @@ async function reativarAcessosDoEvento(eventoId: string) {
     .eq('inativado_em_evento', eventoId)
 }
 
-export async function deletarEvento(id: string) {
+/**
+ * Exclui o evento. Devolve `{ error }` quando recusa (permissão, evento com batida, falha do banco) em vez de lançar:
+ * em produção o Next troca a mensagem de um erro LANÇADO por "An error occurred in the Server Components render…" e a
+ * pessoa nunca lê o motivo (Juan, 23/10/2026: tentou excluir um evento de teste e só viu isso). Em caso de sucesso redireciona.
+ */
+export async function deletarEvento(id: string): Promise<{ error: string }> {
   const perfil = await getPerfil()
-  if (!podeExcluir(perfil)) throw new Error('Apenas o master pode excluir eventos')
+  if (!podeExcluir(perfil)) return { error: 'Apenas o master pode excluir eventos.' }
   const db = supabaseAdmin
   const { data: eventoExcluido } = await db.from('eventos').select('nome, organizacao_id').eq('id', id).maybeSingle()
 
@@ -3315,9 +3320,11 @@ export async function deletarEvento(id: string) {
    */
   const { count: batidasDoEvento, error: erroBatidasEvento } = await db
     .from('registros').select('id', { count: 'exact', head: true }).eq('evento_id', id)
-  if (erroBatidasEvento) throw new Error('Não foi possível conferir as batidas deste evento. Tente de novo.')
+  if (erroBatidasEvento) return { error: 'Não foi possível conferir as batidas deste evento. Tente de novo.' }
   if ((batidasDoEvento ?? 0) > 0) {
-    throw new Error(`Este evento tem ${batidasDoEvento} batida(s) de ponto e não pode ser excluído — as batidas sumiriam. Desative o evento em vez de excluir.`)
+    return {
+      error: `Este evento tem ${batidasDoEvento} batida${batidasDoEvento === 1 ? '' : 's'} de ponto e não pode ser excluído, porque elas sumiriam. Use "Encerrar" no mesmo menu: o evento sai da operação e tudo fica guardado.`,
+    }
   }
 
   const { data: setores } = await db.from('fornecedores').select('id').eq('evento_id', id)
@@ -3330,7 +3337,7 @@ export async function deletarEvento(id: string) {
   // descartada em silêncio e o código seguia pro redirect — a tela voltava
   // pra lista, o evento continuava lá, e nada explicava o porquê.
   const { error } = await db.from('eventos').delete().eq('id', id)
-  if (error) throw new Error(mensagemAmigavel(error))
+  if (error) return { error: mensagemAmigavel(error) }
 
   // Sem eventoId: o evento não existe mais (a coluna aponta para eventos e o insert falharia).
   auditar(perfil, 'EVENTO_EXCLUIDO', {

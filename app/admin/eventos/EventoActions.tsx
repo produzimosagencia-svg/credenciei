@@ -21,12 +21,19 @@ export default function EventoActions({ eventoId, ativo, podeExcluir = false }: 
    *
    * `redirect()` do Next funciona lançando: por isso a exceção dele é
    * repassada em vez de virar mensagem de erro na tela.
+   *
+   * As ações devolvem `{ error }` quando recusam (um erro LANÇADO chega à tela como "An error occurred in the Server
+   * Components render…", sem o motivo, em produção) — a mensagem é lida do retorno.
    */
   const executar = (fn: () => Promise<unknown>) => {
     setErro(null)
     startTransition(async () => {
       try {
-        await fn()
+        const r = await fn()
+        if (r && typeof r === 'object' && 'error' in r && typeof (r as { error: unknown }).error === 'string') {
+          setConfirmOpen(false)
+          setErro((r as { error: string }).error)
+        }
       } catch (e: unknown) {
         if (e && typeof e === 'object' && 'digest' in e && String((e as { digest?: string }).digest ?? '').startsWith('NEXT_REDIRECT')) {
           throw e
@@ -61,7 +68,7 @@ export default function EventoActions({ eventoId, ativo, podeExcluir = false }: 
       {/* Alerta fora do menu: o menu fecha ao escolher, e o erro precisa
           sobreviver a esse fechamento pra ser lido. */}
       {erro && (
-        <div className="absolute right-0 top-full mt-1 w-64 z-30 bg-erro-50 border border-erro-200 text-erro-600 text-xs rounded-lg px-3 py-2 shadow-lg">
+        <div className="absolute right-0 top-full mt-1 w-72 z-30 bg-erro-50 border border-erro-200 text-erro-600 text-xs leading-snug rounded-lg px-3 py-2 shadow-lg">
           {erro}
           <button onClick={() => setErro(null)} className="block mt-1 underline">fechar</button>
         </div>

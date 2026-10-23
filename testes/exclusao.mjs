@@ -32,7 +32,12 @@ ok(/titulo="Excluir da equipe"/.test(tabela) && /Nada é apagado: ela recebe bai
 
 console.log('\nSetor e evento com batida não se excluem (12/10/2026)')
 ok(/Este fornecedor tem \$\{batidasDoSetor\} batida\(s\) de ponto e não pode ser excluído/.test(acoes) && acoes.indexOf('batidasDoSetor') < acoes.indexOf("await db.from('fornecedores').delete().eq('id', id)"), 'setor com batida: recusado antes do delete')
-ok(/Este evento tem \$\{batidasDoEvento\} batida\(s\) de ponto e não pode ser excluído/.test(acoes) && acoes.indexOf('batidasDoEvento') < acoes.indexOf("db.from('eventos').delete().eq('id', id)"), 'evento com batida: recusado antes do delete')
+ok(/Este evento tem \$\{batidasDoEvento\} batida\$\{batidasDoEvento === 1 \? '' : 's'\} de ponto e não pode ser excluído/.test(acoes) && acoes.indexOf('batidasDoEvento') < acoes.indexOf("db.from('eventos').delete().eq('id', id)"), 'evento com batida: recusado antes do delete')
+// 23/10/2026: o Juan tentou excluir um evento de teste e viu "An error occurred in the Server Components render" — a recusa era LANÇADA.
+const deletarEv = acoes.slice(acoes.indexOf('export async function deletarEvento('), acoes.indexOf('export async function atribuirEventoAOrganizacao('))
+ok(!/throw new Error/.test(deletarEv) && /Promise<\{ error: string \}>/.test(deletarEv) && (deletarEv.match(/return \{\s*error:/g) ?? []).length >= 4, 'excluir evento: a recusa é DEVOLVIDA, nunca lançada (o Next esconderia a mensagem em produção)')
+const eventoActions = ler('app/admin/eventos/EventoActions.tsx')
+ok(/'error' in r && typeof \(r as \{ error: unknown \}\)\.error === 'string'/.test(eventoActions) && /setErro\(\(r as \{ error: string \}\)\.error\)/.test(eventoActions), 'a tela do evento mostra o motivo devolvido pela ação')
 ok(/valorAnterior: horarioAnterior \? `\$\{formatarBR\(horarioAnterior, 'curto'\)\} \(horário substituído\)` : null/.test(acoes), 'corrigir um horário guarda o horário substituído na auditoria')
 const sqlProtecao = ler('supabase/upgrade-batidas-protegidas.sql')
 ok(/before delete on registros/.test(sqlProtecao) && /insert into registros_apagados/.test(sqlProtecao) && /before delete on funcionarios/.test(sqlProtecao), 'no banco: cópia de toda batida apagada e ficha com batida não se apaga')
