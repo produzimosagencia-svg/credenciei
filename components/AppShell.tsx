@@ -7,13 +7,13 @@ import {
   LogOut, Menu, X, Home, Building2, Users, ScanLine, UserSearch, Sparkles,
   Activity, ClipboardCheck, MessageCircle, FileSpreadsheet, Pencil, Settings, UserCog, UserPlus,
   ClipboardPen, ClipboardList, Truck, ShieldBan, ShieldAlert, Wallet, KanbanSquare, ChevronRight,
-  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin, DoorClosed, ListChecks,
+  FileText, Gauge, IdCard, ScanFace, CalendarDays, BookOpen, MapPin, DoorClosed, ListChecks, FileSearch,
 } from 'lucide-react'
 import {
   ROLE_LABELS, ehMaster, podeGerenciarUsuarios, podeEscanear, podeAcompanhar,
   podeGerenciarEventos, podeGerenciarVeiculos, podeGerenciarBacklog, podeGerenciarOrcamentos,
   podeVerPerformance, type Role,
-  soBateMeio, podeGerenciarListaManual, podeConferirListaManual,
+  soBateMeio, podeGerenciarListaManual, podeConferirListaManual, podeEditarIdentidade,
 } from '@/lib/permissions'
 import SinoAlertas from '@/components/performance/SinoAlertas'
 import BotaoSuporteWpp from '@/components/BotaoSuporteWpp'
@@ -278,6 +278,13 @@ function gruposPara(perfil: Perfil, temEventoComBiometria: boolean, temVinculoSu
    */
   if (podeGerenciarUsuarios(perfil) || role === 'suporte') {
     administrativo.push({ href: '/admin/auditoria', label: 'Auditoria', icon: ClipboardList })
+  }
+  /*
+   * Consulta por CPF (Juan, 23/10/2026): tudo o que o sistema sabe de uma pessoa, em todos os eventos — fichas, batidas e
+   * quem lançou cada uma, auditoria, mensagens. Mesma régua de corrigir CPF (master e suporte); o suporte só vê o escopo dele.
+   */
+  if (podeEditarIdentidade(perfil)) {
+    administrativo.push({ href: '/admin/consulta-cpf', label: 'Consulta por CPF', icon: FileSearch })
   }
   // Excluídos (restaurar): botão dentro de Auditoria, só para o master — saiu do menu em 09/10/2026.
   // Gastos (produto do papel `produtor`; o master entra só pra dar suporte): botão dentro de Financeiro — saiu do menu em 09/10/2026.

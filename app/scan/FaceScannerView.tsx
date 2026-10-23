@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { QrCode, Loader2 } from 'lucide-react'
-import { registrarPresencaFacial, registrarPresencaQR, cancelarLeituraQR } from '@/lib/actions'
+import { registrarPresencaFacial, registrarPresencaQR, registrarSaidaFacialComEntradaInformada, registrarSaidaComEntradaInformada, cancelarLeituraQR } from '@/lib/actions'
+import CampoHoraDeEntrada from '@/components/CampoHoraDeEntrada'
 import { useLocalizacaoOperador, BloqueioSemLocalizacao } from '@/components/LocalizacaoOperador'
 import FaceCapture, { type ResultadoCaptura } from '@/components/FaceCapture'
 
@@ -67,7 +68,13 @@ type ScanResult = {
   cadastradoEmOutroEvento?: { nome: string; local: string | null; data: string | null }
   /** Entrada atrasada, fornecedor exige meio (Vital, 30/09/2026) — pede o motivo antes de salvar. */
   precisaJustificativaAtraso?: boolean
+  /** A SAÍDA foi recusada só por falta de entrada — a tela oferece informar a hora (ver `registrarSaidaFacialComEntradaInformada`). */
+  semEntrada?: boolean
+  funcionarioId?: string
 }
+
+/** "HH:MM" válido (o que o campo de hora do navegador devolve). */
+const horaDeEntradaValida = (hora: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(hora ?? '')
 
 /*
  * ENTRADA / SAÍDA — mesma chave do QR (`ScannerView.tsx`), de propósito: é o
@@ -114,11 +121,12 @@ const salvarAreasDoEvento = (eventoId: string, ids: string[]) => {
  */
 const REPETIDO_MS = 15_000
 
-type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'naoIdentificado' | 'outroEvento'
+type Categoria = 'liberado' | 'saida' | 'jaValidado' | 'semEntrada' | 'localImpreciso' | 'semLocalizacao' | 'foraDoLocal' | 'areaErrada' | 'diaNaoAutorizado' | 'setorLotado' | 'negado' | 'naoIdentificado' | 'outroEvento'
 
 function categoriaDo(r: ScanResult): Categoria {
   if (r.jaRegistrado) return 'jaValidado'
   if (r.success) return r.momento !== 'fim' ? 'liberado' : 'saida'
+  if (r.semEntrada && r.funcionarioId) return 'semEntrada'
   if (r.localImpreciso) return 'localImpreciso'
   if (r.semLocalizacao) return 'semLocalizacao'
   if (r.foraDoLocal) return 'foraDoLocal'
@@ -134,6 +142,8 @@ const VISUAL: Record<Categoria, { fundo: string; icone: string; titulo: string }
   liberado:   { fundo: 'bg-green-600', icone: '✓', titulo: 'ACESSO LIBERADO' },
   saida:      { fundo: 'bg-blue-600', icone: '↩', titulo: 'SAÍDA REGISTRADA' },
   jaValidado: { fundo: 'bg-amber-600', icone: '⚠', titulo: 'JÁ VALIDADO' },
+  // Não é recusa de acesso: falta a ENTRADA dela no sistema — o operador informa a hora e a saída sai junto (23/10/2026).
+  semEntrada: { fundo: 'bg-orange-600', icone: '⏱', titulo: 'SEM ENTRADA REGISTRADA' },
   // Laranja, nem vermelho nem âmbar: a credencial é válida, só não é desta
   // portaria — bem diferente de "já validado" e de "negado" (Vital, 01/10/2026).
   localImpreciso: { fundo: 'bg-amber-600', icone: '📡', titulo: 'LOCALIZAÇÃO IMPRECISA' },
@@ -223,6 +233,12 @@ export default function FaceScannerView({
   // A prévia esperando SALVAR / CANCELAR — igual ao QR.
   const [confirmacao, setConfirmacao] = useState<{ origem: Origem; modo: Modo; r: ScanResult } | null>(null)
   const [salvando, setSalvando] = useState(false)
+  // O modal da hora da entrada (tela "sem entrada registrada"): o operador informa e entrada + saída saem juntas.
+  const [modalEntrada, setModalEntrada] = useState<{ origem: Origem; nome: string } | null>(null)
+  const [horaDoModal, setHoraDoModal] = useState('')
+  const [gravandoModal, setGravandoModal] = useState(false)
+  /** De onde veio o resultado na tela (rosto ou QR) — o botão "registrar a entrada" repete a mesma leitura. */
+  const [origemDoResultado, setOrigemDoResultado] = useState<Origem | null>(null)
   // Motivo do atraso — só aparece quando a prévia pede (fornecedor com meio ligado).
   const [justificativaAtraso, setJustificativaAtraso] = useState('')
   // Força o FaceCapture a remontar (câmera + estado do liveness do zero) a
@@ -274,7 +290,8 @@ export default function FaceScannerView({
   }
 
   /** Resultado final (gravado ou recusado) — fica na tela até "LER O PRÓXIMO". */
-  const aplicarResultadoFinal = (r: ScanResult, m: Modo) => {
+  const aplicarResultadoFinal = (r: ScanResult, m: Modo, origem?: Origem) => {
+    if (origem) setOrigemDoResultado(origem)
     const nome = r.funcionario?.nome
     if (nome) {
       ultimoRef.current = { nome, modo: m, em: Date.now(), resumo: VISUAL[categoriaDo(r)].titulo }
@@ -310,7 +327,7 @@ export default function FaceScannerView({
       return
     }
 
-    aplicarResultadoFinal(r, m)
+    aplicarResultadoFinal(r, m, origem)
   }
 
   const aoCapturar = async ({ descritor }: ResultadoCaptura) => {
@@ -350,7 +367,28 @@ export default function FaceScannerView({
     const r = await chamarServidor(c.origem, c.modo, false, c.r.precisaJustificativaAtraso ? justificativaAtraso.trim() : undefined)
     setSalvando(false)
     if (tentativaIdRef.current !== id) return
-    aplicarResultadoFinal(r, c.modo)
+    aplicarResultadoFinal(r, c.modo, c.origem)
+  }
+
+  /** "REGISTRAR A ENTRADA DELE": lança a entrada na hora informada e registra a saída, as duas pelo servidor de uma vez. */
+  const registrarEntradaESaida = async () => {
+    const m = modalEntrada
+    if (!m || gravandoModal || !horaDeEntradaValida(horaDoModal)) return
+    const id = ++tentativaIdRef.current
+    setGravandoModal(true)
+    const subeventoIds = subeventoIdsRef.current.length ? subeventoIdsRef.current : undefined
+    const local = localizacao.atual()
+    const r: ScanResult = await (m.origem.tipo === 'rosto'
+      ? registrarSaidaFacialComEntradaInformada(eventoId, m.origem.descritor, horaDoModal, {
+          latitude: local?.latitude, longitude: local?.longitude, precisao: local?.precisao ?? undefined, subeventoIds,
+        })
+      : registrarSaidaComEntradaInformada(eventoId, m.origem.texto, horaDoModal, { local, subeventoIds })
+    ).catch(semRede)
+    setGravandoModal(false)
+    setModalEntrada(null)
+    setHoraDoModal('')
+    if (tentativaIdRef.current !== id) return
+    aplicarResultadoFinal(r, 'fim', m.origem)
   }
 
   /** CANCELAR: nada é gravado. O QR lido aqui usa o mesmo cancelamento do leitor atendido. */
@@ -656,12 +694,30 @@ export default function FaceScannerView({
             <p className="text-lg mt-5 opacity-95 leading-snug">{result.message}</p>
             {result.aviso && <p className="mt-4 rounded-xl bg-amber-400 text-slate-900 text-base font-semibold px-3 py-2 leading-snug">⚠ {result.aviso}</p>}
 
-            <button
-              onClick={voltarAEscanear}
-              className="mt-8 w-full max-w-xs mx-auto block bg-white text-slate-900 font-extrabold text-lg rounded-2xl px-6 py-4 shadow-lg active:scale-95 transition-all"
-            >
-              LER O PRÓXIMO
-            </button>
+            {categoria === 'semEntrada' && result.funcionarioId && origemDoResultado ? (
+              /* A pessoa não tem entrada: o operador pergunta a hora e registra entrada + saída de uma vez (modal abaixo). */
+              <div className="mt-8 space-y-3 max-w-xs mx-auto">
+                <button
+                  onClick={() => {
+                    setHoraDoModal('')
+                    setModalEntrada({ origem: origemDoResultado, nome: result.funcionario?.nome ?? 'a pessoa' })
+                  }}
+                  className="w-full bg-white text-orange-700 font-extrabold text-lg rounded-2xl py-4 shadow-lg active:scale-95 transition-all"
+                >
+                  REGISTRAR A ENTRADA DELE
+                </button>
+                <button onClick={voltarAEscanear} className="w-full border-2 border-white/60 text-white font-semibold rounded-2xl py-3">
+                  Ler o próximo
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={voltarAEscanear}
+                className="mt-8 w-full max-w-xs mx-auto block bg-white text-slate-900 font-extrabold text-lg rounded-2xl px-6 py-4 shadow-lg active:scale-95 transition-all"
+              >
+                LER O PRÓXIMO
+              </button>
+            )}
             {categoria === 'naoIdentificado' && (
               <button
                 onClick={() => aoTrocarParaQr()}
@@ -670,6 +726,35 @@ export default function FaceScannerView({
                 <QrCode className="w-3.5 h-3.5" /> Resolver agora pelo QR Code
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/*
+        * O MODAL DA HORA DA ENTRADA: quem está dando a saída não bateu a entrada — o operador pergunta a hora, informa aqui
+        * e o sistema registra a entrada (lançada à mão, com o nome dele) e a saída, as duas de uma vez. Cores fixas: esta
+        * tela é escura nos dois temas e o cartão é branco.
+        */}
+      {modalEntrada && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/90 px-6" role="dialog" aria-modal="true" aria-label="Registrar a entrada">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-sm font-semibold text-[#64748b]">Registrar a entrada de</p>
+            <p className="mt-0.5 text-2xl font-extrabold leading-tight text-[#0f172a]">{modalEntrada.nome}</p>
+            <label htmlFor="hora-do-modal-rosto" className="mb-1.5 mt-5 block text-sm font-semibold text-[#334155]">Que horas ela entrou? *</label>
+            <CampoHoraDeEntrada id="hora-do-modal-rosto" valor={horaDoModal} aoMudar={setHoraDoModal} autoFocus />
+            <p className="mt-2 text-xs leading-snug text-[#64748b]">A entrada fica marcada como lançada à mão, com o seu nome. A saída é registrada agora, na hora de agora.</p>
+            <button
+              type="button" onClick={registrarEntradaESaida} disabled={gravandoModal || !horaDeEntradaValida(horaDoModal)}
+              className="mt-5 w-full rounded-2xl bg-[#2563eb] py-4 text-lg font-extrabold text-white shadow-lg transition-all active:scale-95 disabled:opacity-50"
+            >
+              {gravandoModal ? <span className="inline-flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" /> Registrando...</span> : 'REGISTRAR ENTRADA E SAÍDA'}
+            </button>
+            <button
+              type="button" onClick={() => setModalEntrada(null)} disabled={gravandoModal}
+              className="mt-3 w-full rounded-2xl border-2 border-[#cbd5e1] py-3 text-base font-bold text-[#334155] transition-all active:scale-95 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}

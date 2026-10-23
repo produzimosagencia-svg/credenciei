@@ -7848,6 +7848,39 @@ export async function registrarSaidaComEntradaInformada(
   }
 }
 
+/**
+ * O mesmo "REGISTRAR A ENTRADA DELE" do leitor de QR (`registrarSaidaComEntradaInformada`), para o leitor por
+ * RECONHECIMENTO FACIAL (Juan, 23/10/2026): a saída é recusada por falta de entrada, o operador informa a hora e o sistema
+ * lança a entrada (à mão, com o nome dele) e registra a saída com o mesmo rosto. Mesma garantia: a entrada só é lançada se
+ * a saída passou por todas as outras conferências (prévia primeiro).
+ */
+export async function registrarSaidaFacialComEntradaInformada(
+  eventoId: string, descritor: number[], horaEntrada: string,
+  opcoes?: { latitude?: number; longitude?: number; precisao?: number; subeventoIds?: string[] },
+): Promise<ResultadoScan> {
+  try {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaEntrada ?? '')) return { success: false, message: 'Informe a hora em que a pessoa entrou (ex.: 14:00).' }
+    const base = { latitude: opcoes?.latitude, longitude: opcoes?.longitude, precisao: opcoes?.precisao, subeventoIds: opcoes?.subeventoIds }
+    const previa = (await validarLeituraFacial(
+      eventoId, descritor, 'fim', true, base.latitude, base.longitude, base.subeventoIds, undefined, base.precisao,
+    )).resultado
+    // Outro portão registrou a entrada nesse meio tempo: a saída já seria aceita — só a saída, sem lançar nada.
+    if (previa.success && previa.previa) return await registrarPresencaFacial(eventoId, descritor, 'fim', base)
+    // Qualquer outro motivo de recusa segue o caminho de sempre: nada é lançado.
+    if (!previa.semEntrada || !previa.funcionarioId) return previa
+
+    const entrada = await lancarEntradaInformada(previa.funcionarioId, horaEntrada, { agora: new Date(), semInternet: false, pelo: 'scanner' })
+    if ('error' in entrada) return { success: false, message: entrada.error, funcionario: previa.funcionario }
+
+    const saida = await registrarPresencaFacial(eventoId, descritor, 'fim', base)
+    if (!saida.success) return { ...saida, message: `A entrada das ${horaEntrada} foi lançada, mas a saída não: ${saida.message}` }
+    return { ...saida, message: `Entrada às ${horaEntrada} (informada por você) e saída registradas.` }
+  } catch (e) {
+    console.error('[registrarSaidaFacialComEntradaInformada]', e)
+    return { success: false, message: 'Não foi possível registrar agora. Tente de novo ou use o QR Code.' }
+  }
+}
+
 /** O operador leu, viu a prévia e CANCELOU — fica no histórico de leituras. */
 export async function cancelarLeituraQR(eventoId: string, qrData: string, momento?: 'entrada' | 'fim'): Promise<void> {
   const perfil = await getPerfil()
