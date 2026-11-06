@@ -1671,6 +1671,8 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
     try {
       const escolha = JSON.parse(msg.mensagem) as {
         template?: string; parametros?: string[]; phoneNumberId?: string; imagemUrl?: string
+        /** Final do link do botão, quando o template tem URL variável (ex.: .../l/{{1}}). */
+        botaoParam?: string
       }
       if (!escolha?.template) return null
       // A imagem do cabeçalho viaja na fila junto do resto: diferente dos
@@ -1680,6 +1682,7 @@ async function montarEnvioTemplate(msg: MensagemClaimada): Promise<{ template: s
         params: escolha.parametros ?? [],
         phoneNumberId: escolha.phoneNumberId,
         imagemUrl: escolha.imagemUrl,
+        botaoParam: escolha.botaoParam?.trim() || undefined,
       }
     } catch {
       return null
