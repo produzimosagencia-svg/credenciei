@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
   for (;;) {
     const { processadas: n } = await processarFilaMensagens()
     processadas += n
-    if (n === 0 || Date.now() - inicio > 40_000) break
+    if (n === 0 || Date.now() - inicio > 50_000) break
   }
   return NextResponse.json({ processadas })
 }
