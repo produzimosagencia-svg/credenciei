@@ -435,6 +435,15 @@ Isso é Next **16.2.9**. Sinal concreto no repo: o middleware se chama **`proxy.
 - **Coletado e nunca lido**: `registros.dispositivo` (user agent inteiro, gravado em `lib/actions.ts:5140`) e a tabela `cliques_whatsapp` (`app/wa/route.ts:50`, user agent + referer) só recebem escrita.
 - Sem tracker de terceiro em lugar nenhum (nenhum pixel, GA, GTM ou Clarity), sem CORS aberto, sem segredo em variável `NEXT_PUBLIC_*`, todos os buckets privados e RLS ligada em todas as tabelas dos SQLs do repositório: esse lado está bem.
 
+**9.27: Auditoria de segurança de 24/11/2026 (relatório completo em `projetos/credenciei/2026-11-24-auditoria-14-ataques.md` no cofre).** Regras que passaram a valer e que código novo tem que respeitar:
+- **Link de "criar senha" de conta que JÁ EXISTE nunca vai pro telefone digitado num formulário.** Achar a conta pelo CPF e mandar o convite pro número que o gestor digitou era tomada de conta (supervisor de outra organização, operador, encarregado, até master pelo fluxo de Encarregado). Conta de outra organização só ganha o vínculo; aviso e link vão pro telefone que já estava nela (`criarSupervisorOuLanca`, `criarOperadorPortariaOuLanca`, `salvarEncarregado`, `gerarLinkNovaSenhaEncarregado`).
+- **`exigirAcessoFuncionarios` amarra setor ao evento** e `exigirFuncionarioDoSetor` amarra pessoa ao setor e ao evento. Ação nova que recebe `funcionarioId`/`fornecedorId`/`eventoId` passa pelos dois.
+- **Login (`/api/auth/login`) tem teto de senha errada**: 10 por conta e 50 por IP em 15 min (`aindaTemTentativa` + `podePassar` em `lib/limite.ts`, conta só falha). Sem `UPSTASH_REDIS_REST_URL`/`TOKEN` na Vercel o teto é por instância.
+- **Totem nasce com senha aleatória** (não mais igual ao login).
+- **Portaria por CPF (`identificarNaPortaria`) recebe o TOKEN do cartaz**, não o id do evento, e respeita `portaria_ativa`.
+- **`buscarCadastroPorCpf`** só consulta com setor existente e tem teto por IP (20/h); o formulário público só devolve a credencial existente para quem digita o mesmo WhatsApp da ficha.
+- **Assistente de IA**: `eventosVisiveis` só devolve evento para master/admin/gerente/cliente/supervisor; `exigirGestor` é lista branca; `excluir_setor` e `excluir_usuario` são só do master.
+
 ---
 
 ## 10. VARIÁVEIS DE AMBIENTE (apenas os NOMES)
