@@ -1,6 +1,7 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
+import { headers } from 'next/headers'
 import { randomBytes } from 'node:crypto'
 import { getPerfil, supabaseAdmin, podeEscanearEvento, meusSetores, buscarTudo, eventosAcontecendoHoje, diaDoTurno, ehDaOrganizacaoDoPerfil } from './supabase-server'
 import { historicoDoFuncionario, podeVerHistoricoDe, type HistoricoNoEvento } from './historico'
@@ -50,7 +51,7 @@ import { pessoaDaBase } from './base-pessoas'
 import { fichaQueImpedeCadastro, fichaQueVale, semFichasDeBaixaRepetidas } from './ficha-no-evento'
 import { MSG_FUNCIONALIDADE_DESLIGADA } from './encarregado'
 import { alterarEncarregadoNoSetor } from './actions-encarregado'
-import { alcancaSetor } from './autorizacao'
+import { alcancaSetor, alcancaEvento } from './autorizacao'
 import { statusCredenciamentoValido, minutosParaNovoPedido, ESPERA_NOVO_PEDIDO_MIN, type StatusCredenciamento } from './credenciamento-constantes'
 import {
   eventoUsaEscalaPorDia, diasDaEscalaDoEvento, escalaDoFuncionario,
@@ -289,6 +290,24 @@ async function exigirEventoDaOrg(eventoId: string) {
 }
 
 /**
+ * A pessoa tem que ser DESTE setor, e o setor DESTE evento (auditoria de
+ * segurança, 24/11/2026). As ações abaixo recebiam `funcionarioId`,
+ * `fornecedorId` e `eventoId` soltos do navegador e conferiam só o acesso ao
+ * setor; o `funcionarioId` podia ser de qualquer evento da plataforma. Um
+ * supervisor, passando o próprio setor, mudava valor a receber, pagamento,
+ * ativação ou aprovação de gente de outro cliente.
+ */
+async function exigirFuncionarioDoSetor(funcionarioId: string, fornecedorId: string, eventoId: string) {
+  const { data } = await supabaseAdmin
+    .from('funcionarios').select('id, fornecedor_id, fornecedores!inner(evento_id)')
+    .eq('id', funcionarioId).maybeSingle()
+  const eventoDoSetor = (data?.fornecedores as unknown as { evento_id?: string } | null)?.evento_id
+  if (!data || data.fornecedor_id !== fornecedorId || eventoDoSetor !== eventoId) {
+    throw new Error('Esta pessoa não é deste fornecedor. Recarregue a página.')
+  }
+}
+
+/**
  * Acesso à equipe (funcionários) de um fornecedor/setor: gestores de evento da
  * própria organização, OU o supervisor vinculado a ESTE setor especificamente
  * ("Gerenciar a equipe vinculada ao seu setor").
@@ -296,6 +315,22 @@ async function exigirEventoDaOrg(eventoId: string) {
 async function exigirAcessoFuncionarios(fornecedorId: string, eventoId: string) {
   const perfil = await getPerfil()
   if (!perfil) throw new Error('Sem permissão')
+  /*
+   * O SETOR TEM QUE SER DESTE EVENTO (auditoria de segurança, 24/11/2026).
+   *
+   * Antes, o gestor era conferido só pela organização do `eventoId` e o
+   * supervisor só pelo setor: os dois ids chegavam soltos do navegador. Um
+   * admin mandava o próprio evento junto com o setor de OUTRA organização e
+   * trocava telefone (desviando o link da credencial pro número dele), dava
+   * baixa, aprovava; o supervisor mandava o próprio setor com o evento de
+   * outro cliente e lia/gravava avaliações lá. Amarrar os dois fecha todas as
+   * ações que passam por aqui de uma vez.
+   */
+  const { data: setorDoEvento } = await supabaseAdmin
+    .from('fornecedores').select('evento_id').eq('id', fornecedorId).maybeSingle()
+  if (!setorDoEvento || setorDoEvento.evento_id !== eventoId) {
+    throw new Error('Este fornecedor não pertence a este evento. Recarregue a página.')
+  }
   if (perfil.role === 'supervisor') {
     /*
      * Os setores DELE, no plural.
@@ -977,13 +1012,35 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
      * já tinha. E a organização da conta NÃO é trocada — trocar tirava da
      * organização anterior o poder de editar essa pessoa.
      */
-    const { error: erroAtualizacao } = await admin.from('perfis').update({
-      nome,
-      telefone,
-      ativo,
-      organizacao_id: existente.organizacao_id ?? organizacaoId,
-      fornecedor_id: fornecedorId,
-    }).eq('id', existente.id)
+    /*
+     * CONTA DE OUTRA ORGANIZAÇÃO NÃO É DE QUEM ESCALA (auditoria de segurança,
+     * 24/11/2026). Antes, o admin de A digitava o CPF de um supervisor de B e o
+     * PRÓPRIO telefone: o código sobrescrevia nome/telefone/ativo da conta e
+     * mandava o link de "criar senha" pro telefone digitado, ou seja, pro
+     * atacante, que entrava como o supervisor de B. Agora, conta de outra
+     * organização só GANHA o setor: nome, telefone e status ficam como estão,
+     * e qualquer aviso ou link vai pro telefone que JÁ ESTAVA na conta (sem
+     * telefone na conta, nada sai). Master continua com o comportamento antigo.
+     */
+    // Também protegida quando quem escala é o SUPERVISOR (via `definirFuncaoNaEquipe`):
+    // ele não gerencia acessos, então não troca o telefone nem a senha de outro supervisor.
+    const deOutraOrganizacao = !ehMaster(perfil!.role) && (
+      (!!existente.organizacao_id && existente.organizacao_id !== organizacaoId)
+      || !podeGerenciarUsuarios(perfil)
+    )
+    const telefoneDestino: string | null = deOutraOrganizacao
+      ? ((existente.telefone as string | null) || null)
+      : telefone
+
+    const { error: erroAtualizacao } = await admin.from('perfis').update(deOutraOrganizacao
+      ? { fornecedor_id: fornecedorId }
+      : {
+          nome,
+          telefone,
+          ativo,
+          organizacao_id: existente.organizacao_id ?? organizacaoId,
+          fornecedor_id: fornecedorId,
+        }).eq('id', existente.id)
     if (erroAtualizacao) throw new Error(mensagemAmigavel(erroAtualizacao))
 
     // Pela MENSAGEM de fato agendada/enviada, não pelo vínculo — ver o
@@ -1008,7 +1065,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
      *
      * Evento NOVO continua avisando: aí é notícia de verdade.
      */
-    if (jaEraDesteEvento) {
+    if (jaEraDesteEvento || !telefoneDestino) {
       revalidatePath('/admin/usuarios')
       revalidatePath(`/admin/eventos/${eventoId}`)
       return { ok: true as const, novo: false as const, usuario: cpf, avisado: false as const }
@@ -1020,7 +1077,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
     const site = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://credenciei.vercel.app').replace(/\/$/, '')
     await agendarTemplateSupervisor({
       eventoId,
-      telefone,
+      telefone: telefoneDestino,
       template: 'supervisor_escalado_evento',
       parametros: [
         nome,
@@ -1057,7 +1114,7 @@ async function criarSupervisorOuLanca(fornecedorId: string, eventoId: string, fo
       })
       await agendarTemplateSupervisor({
         eventoId,
-        telefone,
+        telefone: telefoneDestino,
         template: 'cadastro_supervisor_cpf_link',
         parametros: [
           nome,
@@ -1356,6 +1413,23 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
       return { ok: true as const, novo: false as const, usuario: cpf, linkSenha: null, identidadePropria: true as const }
     }
 
+    /*
+     * LINK DE SENHA SÓ PARA CONTA QUE É DESTA ORGANIZAÇÃO (auditoria de
+     * segurança, 24/11/2026). Antes o link saía para QUALQUER conta achada
+     * pelo CPF (supervisor, operador ou até admin de outra organização), ia
+     * pro telefone digitado no formulário e ainda voltava na resposta: o
+     * admin de A digitava o CPF de alguém de B e criava a senha dele. Conta
+     * que já existe com outro papel ou de outra organização só ganha a função;
+     * a senha dela continua sendo a que ela já tem.
+     */
+    const contaDestaOrganizacao = existente.role === 'operador_portao'
+      && (!existente.organizacao_id || existente.organizacao_id === organizacaoId)
+    if (!ehMaster(perfil!.role) && !contaDestaOrganizacao) {
+      revalidatePath('/admin/usuarios')
+      revalidatePath(`/admin/eventos/${eventoId}`)
+      return { ok: true as const, novo: false as const, usuario: cpf, linkSenha: null, identidadePropria: true as const }
+    }
+
     const linkSenha = await criarConviteSenhaSupervisor({
       perfilId: existente.id, nome, cpf, eventoId, evento: evento.nome, setor: 'Portão',
     })
@@ -1444,9 +1518,10 @@ async function criarOperadorPortariaOuLanca(eventoId: string, formData: FormData
  * `OperadorPortariaCard.tsx`) — sem pedir nome, CPF nem telefone: um
  * aparelho não tem nada disso, e não tem WhatsApp pra receber convite.
  *
- * A SENHA É O MESMO NOME DO LOGIN (pedido do Juan, 28/09/2026) — quem
- * configura o tablet digita "totem1" duas vezes, sem precisar anotar nada à
- * parte. É uma conta `operador_portao` (só lê QR/rosto e registra ponto,
+ * A SENHA ERA O MESMO NOME DO LOGIN (pedido do Juan, 28/09/2026) — quem
+ * configura o tablet digitava "totem1" duas vezes. Desde 24/11/2026 a senha é
+ * aleatória (ver `criarTotemOuLanca`): login previsível + senha igual ao
+ * login dava o portão a qualquer pessoa da internet. É uma conta `operador_portao` (só lê QR/rosto e registra ponto,
  * sem acesso a editar evento, equipe ou usuários) — o mesmo baixo risco já
  * aceito pra essa role justifica a troca por simplicidade aqui.
  *
@@ -1500,7 +1575,18 @@ async function criarTotemOuLanca(eventoId: string, portaoNome?: string) {
   for (let tentativas = 0; tentativas < 5; tentativas++) {
     const usuario = `totem${proximoNumero}`
     const email = usuarioParaEmail(usuario)
-    const senha = usuario
+    /*
+     * SENHA ALEATÓRIA (auditoria de segurança, 24/11/2026), no lugar de
+     * "senha = login" (decisão de 28/09/2026). O login `totemN` é previsível e
+     * a tela de login é pública: qualquer pessoa na internet digitava
+     * totem1/totem1, totem2/totem2... e virava operador de portão de um
+     * evento de verdade (vê a equipe, registra presença, que é o que vira
+     * pagamento). A tela já mostra a senha uma vez e manda guardar; agora ela
+     * só deixou de ser adivinhável. 8 caracteres sem letras que se confundem
+     * (0/o, 1/l/i), fáceis de digitar no tablet.
+     */
+    const alfabeto = 'abcdefghjkmnpqrstuvwxyz23456789'
+    const senha = Array.from(randomBytes(8), b => alfabeto[b % alfabeto.length]).join('')
 
     const { data: user, error } = await admin.auth.admin.createUser({ email, password: senha, email_confirm: true })
     if (error) {
@@ -2115,6 +2201,8 @@ export async function gerarLinkDeAcesso(perfilId: string) {
   if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
     throw new Error('Sem permissão sobre este acesso')
   }
+  // Link de senha de conta MASTER só sai pela mão de outro master (auditoria de segurança, 24/11/2026).
+  if (alvo.role === 'master' && !ehMaster(perfil!.role)) throw new Error('Sem permissão sobre este acesso')
 
   /*
    * O convite guarda evento e setor só para o texto da tela de criar senha.
@@ -2183,6 +2271,16 @@ export async function solicitarRecuperacaoSenha(cpfBruto: string): Promise<{ ok:
   if (!await podePassar(`recuperar-senha:${cpf}`, 3, 60 * 60 * 1000)) {
     return { error: 'Muitas tentativas com este CPF. Espere um pouco e tente de novo.' }
   }
+  /*
+   * Teto por IP também (auditoria de segurança, 24/11/2026). Só o teto por CPF
+   * deixava um script percorrer uma lista de CPFs e fazer o sistema mandar um
+   * WhatsApp de recuperação para cada supervisor da base: spam em nome da
+   * plataforma e o tipo de volume que já restringiu o número uma vez.
+   */
+  const ipRecuperacao = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'sem-ip'
+  if (!await podePassar(`recuperar-senha-ip:${ipRecuperacao}`, 10, 60 * 60 * 1000)) {
+    return { error: 'Muitas tentativas a partir desta conexão. Espere um pouco e tente de novo.' }
+  }
 
   try {
     const { data: perfil } = await supabaseAdmin
@@ -2244,7 +2342,17 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   const admin = getAdminSupabase()
   const { data: alvo } = await admin.from('perfis').select('organizacao_id, fornecedor_id, email, role, nome, telefone, ativo, cpf').eq('id', id).single()
   if (!alvo) throw new Error('Supervisor não encontrado')
+  /*
+   * Esta tela edita SUPERVISOR e OPERADOR DE PORTÃO, nada acima disso
+   * (auditoria de segurança, 24/11/2026): sem esta linha, o admin trocava
+   * senha e e-mail de outro admin da organização mandando o id dele.
+   */
+  if (!ehMaster(perfil!.role) && !['supervisor', 'operador_portao'].includes(alvo.role as string)) {
+    throw new Error('Este acesso não é de supervisor nem de operador. Edite pela tela de Usuários.')
+  }
+  let alvoDeOutraOrganizacao = false
   if (!ehMaster(perfil!.role) && alvo.organizacao_id !== perfil!.organizacao_id) {
+    alvoDeOutraOrganizacao = true
     /*
      * Supervisor de outra organização que TAMBÉM cobre um setor desta: a
      * organização da conta dele não muda mais ao ser escalado aqui (ver
@@ -2266,6 +2374,22 @@ async function editarSupervisorOuLanca(id: string, formData: FormData): Promise<
   const cpf = normalizarCpf((formData.get('cpf') as string) ?? '')
   if (cpf.length !== 11) throw new Error('Informe o CPF do supervisor, com 11 dígitos.')
   const email = cpfParaEmail(cpf)
+
+  /*
+   * Supervisor de OUTRA organização que cobre um setor desta: a organização
+   * que o escalou ajusta o nome, mas senha, CPF, telefone e status são da
+   * conta dele, não do evento (auditoria de segurança, 24/11/2026). Trocar o
+   * telefone ou a senha aqui era tomar a conta de quem trabalha pra outro
+   * cliente.
+   */
+  if (alvoDeOutraOrganizacao && (
+    novaSenha
+    || cpf !== normalizarCpf(String(alvo.cpf ?? ''))
+    || telefone !== String(alvo.telefone ?? '').replace(/\D/g, '')
+    || (alvo.ativo !== false) !== ativo
+  )) {
+    throw new Error('Este supervisor é de outra organização: senha, CPF, telefone e status só a organização dele altera. Aqui dá pra mudar só o nome.')
+  }
 
   /*
    * O CPF digitado já é de OUTRO perfil (não deste que está sendo editado)?
@@ -3770,7 +3894,10 @@ async function garantirAbaFornecedorAsync(eventoId: string, nomeFornecedor: stri
 export async function editarFornecedor(id: string, eventoId: string, formData: FormData): Promise<{ error?: string }> {
   const perfilEditor = await exigirEventoDaOrg(eventoId)
   const db = supabaseAdmin
-  const { data: antesDoSetor } = await db.from('fornecedores').select('nome, valor_combinado, quantidade_estimada').eq('id', id).maybeSingle()
+  const { data: antesDoSetor } = await db.from('fornecedores').select('nome, valor_combinado, quantidade_estimada, evento_id').eq('id', id).maybeSingle()
+  // O setor tem que ser DESTE evento (auditoria de segurança, 24/11/2026): só o
+  // evento era conferido, e o admin editava setor de outra organização pelo id.
+  if (!antesDoSetor || antesDoSetor.evento_id !== eventoId) throw new Error('Este fornecedor não pertence a este evento. Recarregue a página.')
   const { error } = await db.from('fornecedores').update({
     nome: nomeEmMaiusculo(formData.get('nome') as string),
     valor_combinado: parseValor(formData.get('valor_combinado')),
@@ -4390,6 +4517,7 @@ export async function deletarFuncionario(id: string, fornecedorId: string, event
  */
 export async function atualizarValorReceber(funcionarioId: string, fornecedorId: string, eventoId: string, valor: number) {
   const perfil = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  await exigirFuncionarioDoSetor(funcionarioId, fornecedorId, eventoId)
   if (!Number.isFinite(valor) || valor < 0) throw new Error('Valor inválido')
   const db = supabaseAdmin
   const { data: antes } = await db.from('funcionarios').select('valor_receber').eq('id', funcionarioId).maybeSingle()
@@ -4660,6 +4788,7 @@ export async function editarDadosDaPessoaNaBase(
 /** Marca/desmarca a baixa de pagamento do valor a receber do setor. */
 export async function alternarPagamento(funcionarioId: string, fornecedorId: string, eventoId: string, pago: boolean) {
   const perfilPagamento = await exigirAcessoFuncionarios(fornecedorId, eventoId)
+  await exigirFuncionarioDoSetor(funcionarioId, fornecedorId, eventoId)
   const db = supabaseAdmin
 
   // Pagamento só para quem está ativado
@@ -4828,6 +4957,7 @@ export async function alternarAtivacao(funcionarioId: string, fornecedorId: stri
     }
   }
 
+  await exigirFuncionarioDoSetor(funcionarioId, fornecedorId, eventoId)
   const db = supabaseAdmin
   const { error } = await db.from('funcionarios').update({ ativo }).eq('id', funcionarioId)
   if (error) throw new Error('Não foi possível alterar a ativação desta pessoa. Tente de novo.')
@@ -4905,6 +5035,7 @@ export async function aprovarCredenciamento(
 > {
   try {
     const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId)
+    await exigirFuncionarioDoSetor(funcionarioId, fornecedorId, eventoId)
 
     const { data: func } = await supabaseAdmin
       .from('funcionarios').select('status_credenciamento, telefone, qr_token, cpf').eq('id', funcionarioId).single()
@@ -5154,6 +5285,7 @@ export async function negarCredenciamento(funcionarioId: string, fornecedorId: s
 > {
   try {
     const perfil = await exigirAcessoAAprovacao(fornecedorId, eventoId, motivo)
+    await exigirFuncionarioDoSetor(funcionarioId, fornecedorId, eventoId)
 
     const { data: func } = await supabaseAdmin
       .from('funcionarios').select('status_credenciamento, telefone, qr_token').eq('id', funcionarioId).single()
@@ -8605,6 +8737,16 @@ export async function consentirBiometria(funcionarioId: string, eventoId: string
   if (!func || (func.fornecedores as unknown as { evento_id: string })?.evento_id !== eventoId) {
     return { error: 'Cadastro não encontrado neste evento.' }
   }
+  /*
+   * O EVENTO TEM QUE SER DELE (auditoria de segurança, 24/11/2026). Só
+   * `podeEscanear` deixava o operador/admin de uma organização gravar o
+   * PRÓPRIO rosto como biometria de um funcionário de outra e passar no
+   * totem como ele. Vale quem alcança o evento pelo papel OU quem pode operar
+   * o portão dele hoje (operador escalado em evento de outro cliente).
+   */
+  if (!(await alcancaEvento(perfil, eventoId)) && !(await podeEscanearEvento(perfil, eventoId))) {
+    return { error: 'Este evento não é seu.' }
+  }
 
   const { error } = await supabaseAdmin.from('biometria_consentimentos').insert([{
     funcionario_id: funcionarioId, evento_id: eventoId, registrado_por_perfil_id: perfil.id,
@@ -8641,6 +8783,16 @@ export async function cadastrarBiometria(
     .single()
   if (!func || (func.fornecedores as unknown as { evento_id: string })?.evento_id !== eventoId) {
     return { error: 'Cadastro não encontrado neste evento.' }
+  }
+  /*
+   * O EVENTO TEM QUE SER DELE (auditoria de segurança, 24/11/2026). Só
+   * `podeEscanear` deixava o operador/admin de uma organização gravar o
+   * PRÓPRIO rosto como biometria de um funcionário de outra e passar no
+   * totem como ele. Vale quem alcança o evento pelo papel OU quem pode operar
+   * o portão dele hoje (operador escalado em evento de outro cliente).
+   */
+  if (!(await alcancaEvento(perfil, eventoId)) && !(await podeEscanearEvento(perfil, eventoId))) {
+    return { error: 'Este evento não é seu.' }
   }
   if (perfil.role === 'supervisor') {
     const meus = await meusSetores(perfil)
@@ -9683,7 +9835,7 @@ export async function cadastrarFuncionarioPublico(
   // (16/10/2026 — ver lib/ficha-no-evento.ts).
   const { data: existentes } = await supabaseAdmin
     .from('funcionarios')
-    .select('id, qr_token, fornecedor_id, status_credenciamento, decidido_em, descredenciado_em, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
+    .select('id, qr_token, fornecedor_id, status_credenciamento, decidido_em, descredenciado_em, telefone, subevento_id, subeventos(nome), fornecedores!inner(evento_id, nome)')
     .eq('cpf', cpf)
     .eq('fornecedores.evento_id', fornecedor.evento_id)
     .limit(20)
@@ -9699,6 +9851,17 @@ export async function cadastrarFuncionarioPublico(
       }
       const statusDoPedido = statusCredenciamentoValido(existente.status_credenciamento)
       if (statusDoPedido !== 'negado') {
+        /*
+         * A credencial existente só volta pra quem digitou o MESMO WhatsApp da
+         * ficha (auditoria de segurança, 24/11/2026). O link do formulário
+         * circula em grupo: com só o CPF de um colega, qualquer um recebia a
+         * credencial (e o QR) dele. Compara os 8 últimos dígitos, que
+         * aguentam o 55 e o nono dígito a mais ou a menos.
+         */
+        const fim8 = (t: unknown) => String(t ?? '').replace(/\D/g, '').slice(-8)
+        if (existente.telefone && fim8(existente.telefone) !== fim8(telefone)) {
+          return { error: 'Este CPF já tem cadastro nesta equipe com outro WhatsApp. Use o mesmo número do cadastro, ou peça o link da sua credencial ao supervisor.' }
+        }
         return { qrToken: existente.qr_token, status: statusDoPedido }
       }
       /*
@@ -10022,13 +10185,28 @@ export async function buscarCadastroPorCpf(
    * porque é o único identificador estável que existe aqui — não há sessão, e
    * IP em serverless atrás de CDN não é confiável.
    */
-  if (!await podePassar(`cpf:${fornecedorId}`, 40, 60 * 60 * 1000)) return null
+  /*
+   * AUDITORIA DE SEGURANÇA (24/11/2026): o teto por setor sozinho não segurava
+   * nada. A chave usava o `fornecedorId` que o próprio navegador manda, então
+   * bastava trocar o UUID a cada chamada pra nunca bater no limite; e com um
+   * setor INEXISTENTE a busca caía direto na base central, sem organização.
+   * Resultado: qualquer pessoa, sem link nenhum, consultava nome, telefone e
+   * PIX de qualquer CPF da plataforma em laço. Agora:
+   *   1. o setor tem que EXISTIR (senão nem consulta);
+   *   2. teto por IP também (20/h). Estourar só desliga o preenchimento
+   *      automático: o formulário continua funcionando, a pessoa digita.
+   */
+  const ipConsulta = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'sem-ip'
+  if (!await podePassar(`cpf-ip:${ipConsulta}`, 20, 60 * 60 * 1000)) return null
 
   const { data: fornecedor } = await supabaseAdmin
     .from('fornecedores')
     .select('id, eventos(organizacao_id)')
     .eq('id', fornecedorId)
-    .single()
+    .maybeSingle()
+  if (!fornecedor) return null
+
+  if (!await podePassar(`cpf:${fornecedorId}`, 40, 60 * 60 * 1000)) return null
   const eventoRel = fornecedor?.eventos as { organizacao_id: string | null } | { organizacao_id: string | null }[] | null
   const organizacaoId = Array.isArray(eventoRel) ? eventoRel[0]?.organizacao_id : eventoRel?.organizacao_id
 
@@ -10101,14 +10279,35 @@ export async function buscarCadastroPorCpf(
  * (escolher setor), que já existe e não muda.
  */
 export async function identificarNaPortaria(
-  eventoId: string,
+  tokenPortaria: string,
   cpfBruto: string
 ): Promise<{ qrToken?: string; naoEncontrado?: boolean; error?: string }> {
   const cpf = cpfBruto.replace(/\D/g, '')
   if (!validarCpf(cpf)) return { error: 'CPF inválido. Confira os 11 dígitos.' }
 
+  /*
+   * PELO TOKEN DO CARTAZ, NÃO PELO ID DO EVENTO (auditoria de segurança,
+   * 24/11/2026). A página da portaria diz que "o que protege é o token" e o
+   * interruptor `portaria_ativa`, mas esta ação recebia o `eventoId` cru:
+   * quem soubesse o id (ele aparece em outras telas) pegava a credencial de
+   * qualquer pessoa pelo CPF, com a portaria desligada ou o token trocado.
+   * Agora vale a mesma regra da página: token atual + portaria ligada.
+   */
+  const { data: eventoDaPortaria } = await supabaseAdmin
+    .from('eventos').select('id, ativo, portaria_ativa, cadastro_suspenso')
+    .eq('token_portaria', tokenPortaria).maybeSingle()
+  if (!eventoDaPortaria || !eventoDaPortaria.ativo || !eventoDaPortaria.portaria_ativa || eventoDaPortaria.cadastro_suspenso) {
+    return { error: 'Esta portaria não está aberta agora. Fale com a equipe do evento.' }
+  }
+  const eventoId = eventoDaPortaria.id as string
+
   // Mesmo teto do resto do fluxo público: protege um QR fixo, impresso e
-  // exposto, de virar varredura de CPF.
+  // exposto, de virar varredura de CPF. O teto por IP (30/h) impede que uma
+  // só pessoa esgote o do evento e trave a portaria de verdade.
+  const ipPortaria = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() || 'sem-ip'
+  if (!await podePassar(`portaria-cpf-ip:${ipPortaria}`, 30, 60 * 60 * 1000)) {
+    return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
+  }
   if (!await podePassar(`portaria-cpf:${eventoId}`, 60, 60 * 60 * 1000)) {
     return { error: 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.' }
   }

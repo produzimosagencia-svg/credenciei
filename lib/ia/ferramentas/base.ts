@@ -95,6 +95,15 @@ export const ROTULO_ETAPA: Record<string, string> = {
 
 /** Ids dos eventos visíveis pra este perfil. Base de quase toda consulta. */
 export async function eventosVisiveis(perfil: PerfilIA): Promise<string[]> {
+  /*
+   * Só quem GERE eventos (ou o supervisor, no próprio setor) consulta dados
+   * pelo assistente (auditoria de segurança, 24/11/2026). Antes, qualquer
+   * papel com organização (operador de portão, produtor) via pela IA a equipe
+   * inteira da organização com CPF, PIX e link da credencial, e passava nas
+   * ações de configuração. Esses papéis continuam podendo tirar dúvida de
+   * uso com o assistente; só não alcançam evento nenhum por ele.
+   */
+  if (!PAPEIS_GESTORES_IA.includes(perfil.role as string) && perfil.role !== 'supervisor') return []
   if (perfil.role === 'supervisor') {
     if (!perfil.fornecedor_id) return []
     const { data } = await supabaseAdmin
@@ -133,8 +142,16 @@ export function exigirGestor(perfil: PerfilIA, oQue: string): string | null {
   if (perfil.role === 'supervisor') {
     return `Supervisor não ${oQue}. Isso é do administrador da organização — fale com ele.`
   }
+  // Lista branca, não lista negra (auditoria de segurança, 24/11/2026): antes
+  // só o supervisor era barrado e o operador de portão criava e excluía coisas.
+  if (!PAPEIS_GESTORES_IA.includes(perfil.role as string)) {
+    return `Seu acesso não ${oQue}. Isso é do administrador da organização — fale com ele.`
+  }
   return null
 }
+
+/** Os papéis que gerem evento: o mesmo padrão de `podeGerenciarEventos` (lib/permissions.ts). */
+const PAPEIS_GESTORES_IA = ['master', 'admin', 'gerente', 'cliente']
 
 export const podeGerenciarUsuariosIA = (perfil: PerfilIA) =>
   perfil.role === 'master' || perfil.role === 'admin' || perfil.role === 'gerente'

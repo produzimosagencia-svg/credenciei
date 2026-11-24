@@ -113,7 +113,7 @@ export default async function PortariaPage({ params }: { params: Promise<{ token
             </p>
           </div>
         ) : (
-          <IdentificarPorCpf eventoId={evento.id} setores={disponiveis} />
+          <IdentificarPorCpf tokenPortaria={token} setores={disponiveis} />
         )}
       </main>
     </div>

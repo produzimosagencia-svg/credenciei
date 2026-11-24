@@ -31,6 +31,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão sobre este evento' }, { status: 403 })
   }
 
+  /*
+   * O funcionário também tem que ser DESTE evento (auditoria de segurança,
+   * 24/11/2026). Conferir só o evento deixava um admin mandar o id de um
+   * funcionário de outra organização e ver o nome/CPF dele aparecer na
+   * planilha do próprio evento.
+   */
+  const { data: func } = await supabaseAdmin
+    .from('funcionarios').select('id, fornecedores!inner(evento_id)')
+    .eq('id', funcionarioId).eq('fornecedores.evento_id', eventoId).maybeSingle()
+  if (!func) return NextResponse.json({ error: 'Funcionário não pertence a este evento' }, { status: 403 })
+
   await sincronizarRegistroNaPlanilha(funcionarioId, eventoId, tipo)
   return NextResponse.json({ ok: true })
 }

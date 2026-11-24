@@ -24,7 +24,7 @@ const mascara = (d: string) =>
  * pede pra quem já passou por aqui). Não achou → cai na escolha de setor que
  * já existia, levando o CPF digitado adiante pra não pedir de novo.
  */
-export default function IdentificarPorCpf({ eventoId, setores }: { eventoId: string; setores: Setor[] }) {
+export default function IdentificarPorCpf({ tokenPortaria, setores }: { tokenPortaria: string; setores: Setor[] }) {
   const router = useRouter()
   const [cpf, setCpf] = useState('')
   const [carregando, setCarregando] = useState(false)
@@ -36,7 +36,7 @@ export default function IdentificarPorCpf({ eventoId, setores }: { eventoId: str
     setCarregando(true)
     setErro(null)
     try {
-      const r = await identificarNaPortaria(eventoId, cpf)
+      const r = await identificarNaPortaria(tokenPortaria, cpf)
       if (r.qrToken) {
         router.push(`/credential/${r.qrToken}`)
         return // mantém "conferindo" até a navegação trocar a tela

@@ -178,6 +178,27 @@ export async function criarGasto(formData: FormData): Promise<ResultadoGasto> {
   }
 }
 
+/**
+ * O gasto tem que ser de um evento que ESTE perfil pode ver (auditoria de
+ * segurança, 24/11/2026). Editar, excluir e abrir comprovante iam direto pelo
+ * `id`: um produtor de uma organização mexia no gasto de outra se tivesse o id.
+ * Interno (sem evento) vale só pra mesma organização; o master vê tudo.
+ */
+async function gastoAlcancavel(
+  perfil: { role?: string | null; organizacao_id?: string | null },
+  gasto: { evento_id: unknown; organizacao_id: unknown },
+): Promise<boolean> {
+  if (perfil.role === 'master') return true
+  const { eventosParaGastos } = await import('./gastos')
+  const permitidos = await eventosParaGastos()
+  const ev = (gasto.evento_id as string | null) ?? EVENTO_INTERNO
+  if (!permitidos.some(e => e.id === ev)) return false
+  if (!gasto.evento_id) {
+    return !!perfil.organizacao_id && gasto.organizacao_id === perfil.organizacao_id
+  }
+  return true
+}
+
 // ─── Editar ──────────────────────────────────────────────────────────────────
 
 export async function editarGasto(id: string, formData: FormData): Promise<ResultadoGasto> {
@@ -188,6 +209,7 @@ export async function editarGasto(id: string, formData: FormData): Promise<Resul
     const { data: atual } = await supabaseAdmin
       .from('gastos_evento').select('id, evento_id, comprovante_path, descricao, valor, organizacao_id').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este gasto não existe mais.' }
+    if (!(await gastoAlcancavel(perfil, atual))) return { ok: false, erro: SEM_ACESSO }
     // Interno não tem evento_id — usa o mesmo sentinel pra pasta do
     // comprovante e pra revalidar a tela certa.
     const eventoId = (atual.evento_id as string | null) ?? EVENTO_INTERNO
@@ -235,6 +257,7 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
     const { data: atual } = await supabaseAdmin
       .from('gastos_evento').select('id, evento_id, comprovante_path, descricao, valor, organizacao_id').eq('id', id).maybeSingle()
     if (!atual) return { ok: false, erro: 'Este gasto já não existe.' }
+    if (!(await gastoAlcancavel(perfil, atual))) return { ok: false, erro: SEM_ACESSO }
 
     const { error } = await supabaseAdmin.from('gastos_evento').delete().eq('id', id)
     if (error) return { ok: false, erro: mensagemAmigavel(error) }
@@ -264,7 +287,8 @@ export async function excluirGasto(id: string): Promise<ResultadoGasto> {
 export async function urlComprovanteGasto(id: string): Promise<{ ok: true; url: string | null } | { ok: false; erro: string }> {
   const perfil = await exigirGastos()
   if (!perfil) return { ok: false, erro: SEM_ACESSO }
-  const { data } = await supabaseAdmin.from('gastos_evento').select('comprovante_path').eq('id', id).maybeSingle()
+  const { data } = await supabaseAdmin.from('gastos_evento').select('comprovante_path, evento_id, organizacao_id').eq('id', id).maybeSingle()
+  if (data && !(await gastoAlcancavel(perfil, data))) return { ok: false, erro: SEM_ACESSO }
   if (!data?.comprovante_path) return { ok: true, url: null }
   const { data: assinada } = await supabaseAdmin.storage.from('gastos').createSignedUrl(data.comprovante_path as string, 60 * 15)
   return { ok: true, url: assinada?.signedUrl ?? null }

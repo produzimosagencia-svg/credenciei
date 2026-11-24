@@ -174,6 +174,11 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
         if (!gerencia) return 'Seu papel não edita usuários. Isso é do administrador da organização.'
         const r = await exigirMesmaOrganizacao(perfil, perfil_id)
         if (!r.ok) return r.erro
+        // Mesma régua da tela (auditoria de segurança, 24/11/2026): por aqui só supervisor e operador.
+        // Sem isto, o admin trocava e-mail e senha de outro admin da organização.
+        if (!ehMaster(perfil.role) && !['supervisor', 'operador_portao'].includes(r.alvo.role)) {
+          return `${r.alvo.nome} não é supervisor nem operador. Esse acesso só é editado pela plataforma.`
+        }
 
         const mudancas: Record<string, unknown> = {}
         if (nome != null) mudancas.nome = String(nome).trim()
@@ -266,6 +271,8 @@ export function ferramentasDeUsuario(ctx: ContextoIA, pedirConfirmacao: PedirCon
       },
       executar: async ({ perfil_id }) => {
         if (!gerencia) return 'Seu papel não exclui usuários.'
+        // Excluir é só do master, como na tela (`podeExcluir`); o admin desativa (auditoria 24/11/2026).
+        if (!ehMaster(perfil.role)) return 'Só a plataforma exclui acessos. Para bloquear, desative o acesso (editar_supervisor com ativo = false).'
         if (perfil_id === perfil.id) return 'Você não pode excluir o seu próprio acesso.'
         const r = await exigirMesmaOrganizacao(perfil, perfil_id)
         if (!r.ok) return r.erro

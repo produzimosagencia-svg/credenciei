@@ -169,13 +169,20 @@ export async function planilhaEquipeCsv(fornecedorId: string): Promise<string> {
     .neq('ativo', false)
     .order('nome')
 
-  const esc = (v: unknown) => {
-    const s = String(v ?? '')
+  const esc = (v: unknown, textoLivre = false) => {
+    /*
+     * Nome e função vêm do formulário PÚBLICO de cadastro. Um nome que começa
+     * com `=`, `+`, `-` ou `@` vira FÓRMULA quando a planilha abre no Excel
+     * (ex.: um HIPERLINK disfarçado). O apóstrofo na frente faz o Excel tratar
+     * como texto (auditoria de segurança, 24/11/2026).
+     */
+    const bruto = String(v ?? '')
+    const s = textoLivre && /^[=+\-@\t\r]/.test(bruto) ? `'${bruto}` : bruto
     return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const linhas = [
     'Nome;CPF;Telefone;Função',
-    ...(funcs ?? []).map(f => [f.nome, f.cpf, f.telefone, f.cargo].map(esc).join(';')),
+    ...(funcs ?? []).map(f => [esc(f.nome, true), esc(f.cpf), esc(f.telefone), esc(f.cargo, true)].join(';')),
   ]
   // BOM pro Excel abrir os acentos certos.
   return '﻿' + linhas.join('\r\n')

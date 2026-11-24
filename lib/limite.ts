@@ -95,3 +95,28 @@ export async function podePassar(chave: string, teto: number, janelaMs: number):
     return podePassarEmMemoria(chave, teto, janelaMs)
   }
 }
+
+/**
+ * Pergunta se ainda sobra tentativa, SEM consumir (auditoria de segurança,
+ * 24/11/2026). Par de `podePassar` para quem só quer contar FALHAS: o login
+ * confere aqui antes de tentar e só gasta uma tentativa (com `podePassar`)
+ * quando a senha erra. Assim o operador que entra certo em vários aparelhos
+ * no começo do evento nunca é barrado; só quem erra a senha em série.
+ *
+ * Mesma tolerância de `podePassar`: Upstash fora do ar cai pro mapa em
+ * memória, nunca para o login por causa da dependência.
+ */
+export async function aindaTemTentativa(chave: string, teto: number, janelaMs: number): Promise<boolean> {
+  const emMemoria = () => {
+    const atual = balde.get(chave)
+    return !atual || atual.expiraEm <= Date.now() || atual.contagem < teto
+  }
+  if (!redis) return emMemoria()
+  try {
+    const { remaining } = await limitadorDoUpstash(teto, janelaMs).getRemaining(chave)
+    return remaining > 0
+  } catch (e) {
+    console.error('[limite] Upstash indisponível, caindo pro limite em memória', e)
+    return emMemoria()
+  }
+}

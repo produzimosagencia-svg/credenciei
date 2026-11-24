@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { identificadorParaEmail } from '@/lib/usuario'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { mensagemAmigavel } from '@/lib/erros'
+import { aindaTemTentativa, podePassar } from '@/lib/limite'
 
 export async function POST(request: NextRequest) {
   const { email, senha } = await request.json()
@@ -33,6 +34,36 @@ export async function POST(request: NextRequest) {
   // Sem "@" é nome de usuário de supervisor; com "@" é e-mail de admin/master.
   // A mesma tela atende os dois, sem a pessoa escolher tipo de conta.
   const identificador = identificadorParaEmail(digitado)
+
+  /*
+   * LIMITE DE SENHA ERRADA (auditoria de segurança, 24/11/2026).
+   *
+   * Antes não havia nenhum: o login de supervisor é o CPF (fácil de achar) e
+   * a senha mínima é de 6 caracteres, então um script testava senhas em laço.
+   * O limite do próprio Supabase não ajuda aqui: quem fala com o Supabase é a
+   * Vercel, então ele vê o IP da Vercel, não o de quem ataca, e um ataque
+   * podia até esgotar o limite dele e travar o login de TODO MUNDO.
+   *
+   * Conta só FALHA (ver `aindaTemTentativa`): entrar certo nunca gasta nada,
+   * então o operador que loga em vários celulares no começo do evento não é
+   * barrado. 10 erros na mesma conta em 15 min trava aquela conta; 50 erros do
+   * mesmo IP em 15 min trava o IP (cobre quem testa uma senha em muitos CPFs;
+   * folgado de propósito, porque o wi-fi do evento junta todo mundo num IP só).
+   */
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'sem-ip'
+  const JANELA_LOGIN_MS = 15 * 60 * 1000
+  const chaveConta = `login-falha:conta:${identificador.toLowerCase()}`
+  const chaveIp = `login-falha:ip:${ip}`
+  if (!(await aindaTemTentativa(chaveConta, 10, JANELA_LOGIN_MS)) || !(await aindaTemTentativa(chaveIp, 50, JANELA_LOGIN_MS))) {
+    return NextResponse.json(
+      { error: 'Muitas tentativas de senha errada. Espere 15 minutos ou use "Esqueci minha senha".' },
+      { status: 429 },
+    )
+  }
+  const registrarFalha = async () => {
+    await podePassar(chaveConta, 10, JANELA_LOGIN_MS)
+    await podePassar(chaveIp, 50, JANELA_LOGIN_MS)
+  }
 
   const cookieStore = await cookies()
 
@@ -85,6 +116,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (error) {
+    await registrarFalha()
     return NextResponse.json({ error: mensagemAmigavel(error) }, { status: 401 })
   }
 

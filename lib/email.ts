@@ -68,6 +68,18 @@ export async function enviarEmail(opcoes: {
   }
 }
 
+/**
+ * Escapa texto que vai DENTRO do HTML do e-mail (nome de pessoa, evento,
+ * setor). Esses nomes são digitados por gente de fora da plataforma; sem
+ * isto, um nome com `<a href=...>` virava link falso no e-mail que sai com a
+ * marca do Credenciei (auditoria de segurança, 24/11/2026).
+ */
+export function escaparHtml(texto: unknown): string {
+  return String(texto ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 /** Casca HTML mínima e sóbria — sem imagem, sem CSS externo (cliente de email é hostil). */
 export function molduraEmail(titulo: string, corpoHtml: string): string {
   return `<!doctype html><html><body style="margin:0;background:#f5f3f1;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1c1917">

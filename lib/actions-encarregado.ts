@@ -225,6 +225,8 @@ export async function salvarEncarregado(
     let perfilId = (atuais ?? [])[0]?.perfil_id as string | undefined
     let criouAgora = false
     let criouFuncaoExtra = false
+    /** A conta achada pelo CPF JÁ EXISTIA (não foi criada agora): ver o bloco do link de senha abaixo. */
+    let contaJaExistia = false
     const cpf = normalizarCpf((func.cpf as string) ?? '')
     const telefone = normalizarCpf((func.telefone as string) ?? '')
 
@@ -247,6 +249,7 @@ export async function salvarEncarregado(
           .from('perfis').select('id, role, ativo, nome').eq('cpf', cpf).maybeSingle()
         if (existente) {
           perfilId = existente.id as string
+          contaJaExistia = true
           if (existente.role !== 'encarregado') {
             /*
              * Quem já tem OUTRA função (supervisor, Gestor de credenciamento…) ganha a de
@@ -259,7 +262,8 @@ export async function salvarEncarregado(
             if (!funcao.ok) return { erro: funcao.erro }
             criouFuncaoExtra = true
           } else if (existente.ativo === false) {
-            await supabaseAdmin.from('perfis').update({ ativo: true, telefone }).eq('id', perfilId)
+            // Só reativa: o telefone da conta NÃO é trocado pelo da ficha (auditoria 24/11/2026, ver abaixo).
+            await supabaseAdmin.from('perfis').update({ ativo: true }).eq('id', perfilId)
           }
         } else {
           const { data: user, error: erroAuth } = await supabaseAdmin.auth.admin.createUser({
@@ -351,7 +355,18 @@ export async function salvarEncarregado(
      * supervisor): o template precisa estar aprovado na Meta, e quem foi
      * designado ainda entra por "Esqueci a senha".
      */
-    const primeiroAcesso = jaTinha.size === 0 && paraAdicionar.length > 0
+    /*
+     * LINK DE SENHA SÓ PARA CONTA CRIADA AGORA (auditoria de segurança,
+     * 24/11/2026). A ficha do funcionário (CPF e telefone) é digitada por quem
+     * cuida da equipe. Antes, uma ficha com o CPF de um master/admin/
+     * supervisor e o telefone do atacante, designada como Encarregado, fazia o
+     * sistema achar a conta da vítima pelo CPF e mandar o link de "criar
+     * senha" DELA pro telefone da ficha: tomada de conta. Conta que já existia
+     * já tem senha; ganha o setor e só. Se ela não lembrar a senha, o caminho
+     * é "Esqueci minha senha" (vai pro telefone da PRÓPRIA conta) ou
+     * `gerarLinkNovaSenhaEncarregado`.
+     */
+    const primeiroAcesso = jaTinha.size === 0 && paraAdicionar.length > 0 && !contaJaExistia
     /*
      * E o link vai UMA vez por evento (Juan, 09/10/2026): `jaTinha` só enxerga os setores de quem chama, então
      * Encarregado de outro supervisor, ou quem saiu e voltou (Função na ficha da equipe), recebia de novo.
@@ -442,6 +457,21 @@ export async function gerarLinkNovaSenhaEncarregado(
     if (alvo.ativo === false) return { erro: 'O acesso desta pessoa está desativado.' }
     const cpf = normalizarCpf(alvo.cpf ?? '')
     if (cpf.length !== 11) return { erro: 'O CPF deste acesso está inválido. Fale com o suporte.' }
+
+    /*
+     * A conta de Encarregado não tem organização e pode servir setores de
+     * vários clientes. Quem gera o link de senha (e o recebe na tela) tem que
+     * ser responsável por TODOS os setores dela; senão um gestor de A
+     * designava um Encarregado de B e criava a senha dele (auditoria de
+     * segurança, 24/11/2026). Fora disso, a própria pessoa usa "Esqueci
+     * minha senha", que vai pro telefone da conta.
+     */
+    const { data: vinculosDaConta } = await supabaseAdmin
+      .from('encarregados_setor').select('fornecedor_id').eq('perfil_id', vinculo.perfil_id as string)
+    const meusIds = new Set(g.setores.map(s => s.id))
+    if ((vinculosDaConta ?? []).some(v => !meusIds.has(v.fornecedor_id as string))) {
+      return { erro: 'Esta pessoa também é Encarregada em setores de outro responsável. Peça para ela usar "Esqueci minha senha" na tela de login.' }
+    }
 
     const link = await criarConviteSenhaSupervisor({
       perfilId: vinculo.perfil_id as string, nome: alvo.nome, cpf, eventoId,

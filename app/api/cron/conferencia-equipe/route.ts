@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
 import { planilhaEquipeCsv, CONFERENCIA_EQUIPE_ATIVA } from '@/lib/conferencia'
-import { enviarEmail, molduraEmail } from '@/lib/email'
+import { enviarEmail, molduraEmail, escaparHtml } from '@/lib/email'
 import { registrarExecucaoConferenciaEquipe } from '@/lib/performance-checks'
 
 export const runtime = 'nodejs'
@@ -94,9 +94,9 @@ export async function GET(request: NextRequest) {
           para: email,
           assunto: `Confira sua equipe — ${ev.nome}`,
           html: molduraEmail('Confira sua equipe antes do evento', `
-            <p>Olá, ${sup.nome}.</p>
-            <p>O evento <strong>${ev.nome}</strong> começa amanhã. Antes disso, confira no sistema
-            a lista de pessoas vinculadas ao fornecedor <strong>${setorNome}</strong> e confirme quem
+            <p>Olá, ${escaparHtml(sup.nome)}.</p>
+            <p>O evento <strong>${escaparHtml(ev.nome)}</strong> começa amanhã. Antes disso, confira no sistema
+            a lista de pessoas vinculadas ao fornecedor <strong>${escaparHtml(setorNome)}</strong> e confirme quem
             realmente faz parte da equipe — quem não for, você tira pela própria tela.</p>
             <p style="margin:20px 0"><a href="${link}" style="background:#FF4A0F;color:#fff;text-decoration:none;padding:11px 20px;border-radius:10px;font-weight:700;display:inline-block">Conferir a equipe</a></p>
             <p style="font-size:13px;color:#78716c">A planilha da equipe atual vai anexa a este email, para consulta.</p>

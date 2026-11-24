@@ -218,6 +218,8 @@ export function ferramentasDeSetor(ctx: ContextoIA, pedirConfirmacao: PedirConfi
       executar: async ({ fornecedor_id }) => {
         const barrado = exigirGestor(perfil, 'exclui fornecedores')
         if (barrado) return barrado
+        // Excluir é só do master, como na tela (`podeExcluir`), auditoria de segurança 24/11/2026.
+        if (perfil.role !== 'master') return 'Só a plataforma exclui fornecedores. Fale com o suporte do Credenciei.'
         const r = await resolverSetor(perfil, fornecedor_id)
         if (!r.ok) return r.erro
 
